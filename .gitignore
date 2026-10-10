@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Secrets and local endpoints (never commit)
+.env
+.env.*
+!.env.example
+
+# Harness working state
+.cache/
+runs/
+reports/scratch/
+audit/scratch/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
