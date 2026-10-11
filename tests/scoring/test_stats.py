@@ -271,32 +271,84 @@ def test_single_cluster_reports_point_without_interval() -> None:
     assert (paired.low, paired.high, paired.p_value) == (None, None, None)
 
 
-def test_point_survives_when_every_resample_is_dropped() -> None:
-    """Only cluster 0 has a denominator; a lone resample that misses it leaves no interval."""
-    clusters = np.repeat(np.arange(10), 2)
-    den = np.where(clusters == 0, 1.0, 0.0)
-    num = den.copy()
-    seed = next(
-        s for s in range(100) if 0 not in np.random.default_rng(s).integers(0, 10, size=(1, 10))
+def _seed_missing_clusters(missing: set[int], n_clusters: int) -> int:
+    """First seed whose single resample of ``n_clusters`` draws none of ``missing``."""
+    return next(
+        s
+        for s in range(1000)
+        if not missing & set(np.random.default_rng(s).integers(0, n_clusters, (1, n_clusters)).flat)
     )
+
+
+def test_point_survives_when_every_resample_is_dropped() -> None:
+    """Only clusters 0 and 1 have a denominator; a lone resample that misses both leaves no
+    interval, but the point is still reported."""
+    clusters = np.repeat(np.arange(10), 2)
+    den = np.where(clusters < 2, 1.0, 0.0)
+    num = den.copy()
+    seed = _seed_missing_clusters({0, 1}, 10)
     iv = ratio_ci(num, den, clusters, n_boot=1, seed=seed)
     assert (iv.point, iv.low, iv.high, iv.dropped_resamples) == (1.0, None, None, 1)
     assert not iv.is_na
     assert iv.format() == "1.000"
 
 
-def test_ratio_ci_drops_and_counts_zero_denominator_resamples() -> None:
-    """Only cluster 0 has a nonzero denominator; resamples missing it are dropped."""
+def test_paired_point_survives_when_every_resample_is_dropped() -> None:
+    """Paired counterpart: ``diff`` is still reported; only the interval and p-value are lost."""
+    clusters = np.repeat(np.arange(10), 2)
+    den_a = np.where(clusters < 2, 1.0, 0.0)
+    seed = _seed_missing_clusters({0, 1}, 10)
+    res = paired_bootstrap_diff(
+        den_a, den_a, np.zeros(20), np.ones(20), clusters, n_boot=1, seed=seed
+    )
+    assert (res.diff, res.point_a, res.point_b) == (1.0, 1.0, 0.0)
+    assert (res.low, res.high, res.p_value, res.dropped_resamples) == (None, None, None, 1)
+
+
+def test_one_effective_cluster_reports_point_without_interval() -> None:
+    """Only cluster 0 has a nonzero denominator. Every usable resample repeats it and reproduces
+    the observed ratio, so a bootstrap would print a zero-width interval: false certainty."""
     clusters = np.repeat(np.arange(10), 5)
     den = np.where(clusters == 0, 1.0, 0.0)
     num = np.where((clusters == 0) & (np.arange(50) % 2 == 0), 1.0, 0.0)
     iv = ratio_ci(num, den, clusters, n_boot=2000, seed=1)
-    # P(cluster 0 never drawn in 10 draws) = 0.9^10 ≈ 0.349
-    assert 550 < iv.dropped_resamples < 850
-    # Every usable resample repeats cluster 0, so its ratio is exactly the point estimate.
     assert iv.point == pytest.approx(3 / 5)
-    assert iv.low == pytest.approx(iv.point)
-    assert iv.high == pytest.approx(iv.point)
+    assert (iv.low, iv.high, iv.dropped_resamples, iv.n_clusters) == (None, None, 0, 10)
+    assert iv.format() == "0.600"
+
+    others = np.ones(50)
+    for res in (
+        paired_bootstrap_diff(num, den, num, others, clusters, seed=1),
+        paired_bootstrap_diff(num, others, num, den, clusters, seed=1),
+    ):
+        assert res.diff is not None
+        assert (res.low, res.high, res.p_value, res.dropped_resamples) == (None, None, None, 0)
+        assert res.n_clusters == 10
+
+
+def test_ratio_ci_drops_and_counts_zero_denominator_resamples() -> None:
+    """Only clusters 0 and 1 have a nonzero denominator; resamples missing both are dropped and
+    the interval is the reference percentile over the rest."""
+    n_boot, seed = 2000, 1
+    clusters = np.repeat(np.arange(10), 5)
+    den = np.where(clusters < 2, 1.0, 0.0)
+    num = np.zeros(50)
+    num[[0, 2, 4, 5]] = 1.0  # cluster 0: 3/5, cluster 1: 1/5
+    iv = ratio_ci(num, den, clusters, n_boot=n_boot, seed=seed)
+
+    idx = np.random.default_rng(seed).integers(0, 10, size=(n_boot, 10))
+    cluster_num = np.array([num[clusters == c].sum() for c in range(10)])
+    cluster_den = np.array([den[clusters == c].sum() for c in range(10)])
+    boot_num, boot_den = cluster_num[idx].sum(axis=1), cluster_den[idx].sum(axis=1)
+    usable = boot_den != 0
+    low, high = np.quantile(boot_num[usable] / boot_den[usable], [0.025, 0.975])
+    # P(clusters 0 and 1 both missed in 10 draws) = 0.8^10 ≈ 0.107
+    assert 140 < iv.dropped_resamples < 300
+    assert iv.dropped_resamples == int(np.count_nonzero(~usable))
+    assert iv.point == pytest.approx(4 / 10)
+    assert iv.low == pytest.approx(float(low), abs=1e-12)
+    assert iv.high == pytest.approx(float(high), abs=1e-12)
+    assert iv.low is not None and iv.high is not None and iv.low < iv.high
 
 
 def test_cluster_bootstrap_wider_than_iid_under_within_cluster_correlation() -> None:
@@ -374,6 +426,18 @@ def test_ratio_ci_rejects_malformed_input() -> None:
         ratio_ci([1, 1], [1, -0.5])
 
 
+def test_mean_ci_passes_alpha_through() -> None:
+    rng = np.random.default_rng(10)
+    x = rng.exponential(2.0, 80)
+    clusters = np.repeat(np.arange(20), 4)
+    narrow = mean_ci(x, clusters, alpha=0.1)
+    assert narrow == ratio_ci(x, np.ones(80), clusters, alpha=0.1)
+    wide = mean_ci(x, clusters)
+    assert narrow.low is not None and narrow.high is not None
+    assert wide.low is not None and wide.high is not None
+    assert wide.low < narrow.low and narrow.high < wide.high
+
+
 def test_mean_ci_is_ratio_over_unit_counts() -> None:
     costs = [0.0, 1.0, 1.0, 10.0, 2.0, 0.5]
     clusters = ["c1", "c1", "c2", "c2", "c2", "c3"]
@@ -407,9 +471,10 @@ def test_paired_large_difference_hits_p_floor() -> None:
     assert res.low == res.high == 1.0
 
 
-def test_paired_p_value_matches_reference_in_mid_range() -> None:
+@pytest.mark.parametrize("alpha", [0.05, 0.10])
+def test_paired_p_value_matches_reference_in_mid_range(alpha: float) -> None:
     """Pins the two-sided p = 2 · min tail. Here a one-sided p (≈ 0.04) would wrongly reject at
-    0.05; the two-sided one does not."""
+    0.05; the two-sided one does not. The interval tails follow ``alpha``; the p-value doesn't."""
     n, n_boot, seed = 300, 2000, 4
     num_a = np.zeros(n)
     num_a[:36] = 1.0
@@ -417,7 +482,7 @@ def test_paired_p_value_matches_reference_in_mid_range() -> None:
     num_b[:2] = 0.0
     num_b[36:44] = 1.0  # b is worse on 8 cases and better on 2
     den = np.ones(n)
-    res = paired_bootstrap_diff(num_a, den, num_b, den, None, n_boot=n_boot, seed=seed)
+    res = paired_bootstrap_diff(num_a, den, num_b, den, None, n_boot=n_boot, seed=seed, alpha=alpha)
 
     idx = np.random.default_rng(seed).integers(0, n, size=(n_boot, n))
     diffs = num_a[idx].mean(axis=1) - num_b[idx].mean(axis=1)
@@ -426,8 +491,8 @@ def test_paired_p_value_matches_reference_in_mid_range() -> None:
     assert res.diff == pytest.approx(-6 / 300)
     assert res.p_value == pytest.approx(expected, abs=1e-12)
     assert res.p_value == pytest.approx(0.079)
-    assert res.low == pytest.approx(float(np.quantile(diffs, 0.025)), abs=1e-12)
-    assert res.high == pytest.approx(float(np.quantile(diffs, 0.975)), abs=1e-12)
+    assert res.low == pytest.approx(float(np.quantile(diffs, alpha / 2)), abs=1e-12)
+    assert res.high == pytest.approx(float(np.quantile(diffs, 1 - alpha / 2)), abs=1e-12)
 
 
 def test_paired_uses_the_same_resamples_as_ratio_ci() -> None:
@@ -481,10 +546,12 @@ def test_paired_handles_empty_denominators() -> None:
     assert res.point_a == 0.5 and res.point_b is None
 
     clusters = np.repeat(np.arange(10), 3)
-    den_a = np.where(clusters == 0, 1.0, 0.0)
+    den_a = np.where(clusters < 2, 1.0, 0.0)
     res = paired_bootstrap_diff(den_a, den_a, np.zeros(30), np.ones(30), clusters, seed=2)
-    assert 550 < res.dropped_resamples < 850
+    # P(clusters 0 and 1 both missed in 10 draws) = 0.8^10 ≈ 0.107
+    assert 140 < res.dropped_resamples < 300
     assert res.p_value == pytest.approx(1 / (DEFAULT_N_BOOT - res.dropped_resamples + 1))
+    assert res.low == res.high == 1.0
 
 
 def test_paired_rejects_misaligned_units() -> None:
@@ -551,6 +618,21 @@ def _mdd(psi: float, n: int) -> float:
     return delta
 
 
+@pytest.mark.parametrize("alpha", [0.01, 0.05, 0.2])
+@pytest.mark.parametrize("power", [0.5, 0.8, 0.95])
+def test_mdd_solves_the_unsquared_equation(alpha: float, power: float) -> None:
+    """Every returned δ satisfies Connor's equation before squaring, including at tiny n."""
+    z_a, z_b = norm.ppf(1 - alpha / 2), norm.ppf(power)
+    for n in range(1, 40):
+        for psi in (0.05, 0.3, 0.7, 1.0):
+            delta = minimum_detectable_difference(psi, n, alpha=alpha, power=power)
+            if delta is None:
+                continue
+            lhs = np.sqrt(n) * delta - z_a * np.sqrt(psi)
+            rhs = z_b * np.sqrt(psi - delta**2)
+            assert lhs == pytest.approx(rhs, abs=1e-9)
+
+
 def test_mdd_shrinks_with_size_and_grows_with_discordance() -> None:
     by_n = [_mdd(0.1, n) for n in (200, 400, 800)]
     by_psi = [_mdd(psi, 300) for psi in (0.05, 0.1, 0.2)]
@@ -563,6 +645,9 @@ def test_mdd_undetectable_and_bad_input() -> None:
     assert minimum_detectable_difference(0.02, 200) is None
     assert minimum_detectable_difference(0.0, 200) is None
     assert minimum_detectable_difference(0.5, 2) is None  # n below z_a² − z_b²
+    # Squaring Connor's equation admits a false root (0.9745) when z_a² − z_b² ≤ n < z_a².
+    assert minimum_detectable_difference(1.0, 6, alpha=0.01) is None
+    assert minimum_detectable_difference(1.0, 7, alpha=0.01) is not None
     with pytest.raises(ValueError, match="alpha"):
         minimum_detectable_difference(0.1, 200, alpha=0.0)
     for power in (0.3, 1.0):
@@ -696,6 +781,52 @@ def test_kappa_ci_brackets_point_and_is_deterministic() -> None:
     assert clustered.method == "bootstrap_cluster"
     assert clustered.n_clusters == 50
     assert clustered.point == iv.point
+
+
+def _reference_kappa_bootstrap(
+    a: list[int],
+    b: list[int],
+    categories: list[int],
+    clusters: list[int] | None,
+    n_boot: int,
+    seed: int,
+    alpha: float,
+) -> tuple[float, float]:
+    """Naive percentile bootstrap: sklearn's quadratic κ on each resample of whole clusters.
+
+    ``clusters`` must be labelled 0..k−1 in first-appearance order (the coding ``kappa_ci``
+    uses); ``None`` resamples items iid.
+    """
+    codes = np.arange(len(a)) if clusters is None else np.array(clusters)
+    n_clusters = int(codes.max()) + 1
+    members = [np.flatnonzero(codes == c) for c in range(n_clusters)]
+    arr_a, arr_b = np.array(a), np.array(b)
+    idx = np.random.default_rng(seed).integers(0, n_clusters, (n_boot, n_clusters))
+    kappas = []
+    for row in idx:
+        items = np.concatenate([members[c] for c in row])
+        kappas.append(
+            cohen_kappa_score(arr_a[items], arr_b[items], labels=categories, weights="quadratic")
+        )
+    low, high = np.quantile(kappas, [alpha / 2, 1 - alpha / 2])
+    return float(low), float(high)
+
+
+@pytest.mark.parametrize("alpha", [0.05, 0.10])
+@pytest.mark.parametrize("clustered", [False, True])
+def test_kappa_ci_matches_naive_sklearn_bootstrap(alpha: float, clustered: bool) -> None:
+    """Pins κ's interval level: it drives the SPEC §13.3 gate (CI lower bound ≥ 0.4)."""
+    rng = np.random.default_rng(12)
+    a = rng.integers(1, 5, 150).tolist()
+    b = np.clip(np.array(a) + rng.integers(-1, 2, 150), 1, 4).tolist()
+    clusters = [i // 3 for i in range(150)] if clustered else None
+    n_boot, seed = 400, 7
+    iv = kappa_ci(a, b, [1, 2, 3, 4], n_boot, seed, alpha=alpha, clusters=clusters)
+    low, high = _reference_kappa_bootstrap(a, b, [1, 2, 3, 4], clusters, n_boot, seed, alpha)
+    assert iv.dropped_resamples == 0
+    assert iv.alpha == alpha
+    assert iv.low == pytest.approx(low, abs=1e-12)
+    assert iv.high == pytest.approx(high, abs=1e-12)
 
 
 def test_kappa_ci_undefined_and_dropped_resamples() -> None:

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import random
 import string
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from identitybench.schemas.enums import Split
@@ -56,17 +56,34 @@ class Family:
             raise ValueError(f"family {self.id!r} has no variant {variant!r}") from None
 
 
+FamilyCheck = Callable[[Family], None]
+"""Bank-specific validation of one family (e.g. "ticket IDs only in ticket mentions"); raises
+``ValueError`` naming the family and template. Runs whenever a bank is built, including on the
+held-out families a fresh release swaps in."""
+
+
 class Bank:
     """An ordered, immutable collection of families with split-aware selection.
 
     All families must cover the same variants, so choosing a family never depends on the
-    variant (see the module docstring).
+    variant (see the module docstring). ``allowed_slots`` (the bank's slot defaults plus the slots
+    callers supply) and ``check`` validate every template when the bank is built, so a typo such
+    as ``{entitlment_name}`` fails on import or when held-out families are loaded, not on the
+    seeds that happen to draw that template. Both carry over to :meth:`replace_split`.
     """
 
-    def __init__(self, name: str, families: Sequence[Family]) -> None:
+    def __init__(
+        self,
+        name: str,
+        families: Sequence[Family],
+        *,
+        allowed_slots: Collection[str] | None = None,
+        check: FamilyCheck | None = None,
+    ) -> None:
         if not families:
             raise ValueError(f"{name}: no families")
         variants = tuple(families[0].variants)
+        allowed = None if allowed_slots is None else frozenset(allowed_slots)
         seen: set[str] = set()
         for family in families:
             if family.id in seen:
@@ -78,10 +95,22 @@ class Bank:
                     f"{name}: family {family.id!r} covers {sorted(family.variants)}, "
                     f"expected {sorted(variants)}"
                 )
+            if allowed is not None:
+                for template in family.templates:
+                    problems = template_problems(template, allowed)
+                    if problems:
+                        raise ValueError(
+                            f"{name}: family {family.id!r}, template {template!r}: "
+                            + "; ".join(problems)
+                        )
+            if check is not None:
+                check(family)
             seen.add(family.id)
         self.name = name
         self.families: tuple[Family, ...] = tuple(families)
         self.variants: tuple[str, ...] = variants
+        self.allowed_slots: frozenset[str] | None = allowed
+        self.check: FamilyCheck | None = check
 
     def select(self, *, split: Split) -> list[Family]:
         """Families in ``split``, in definition order."""
@@ -104,7 +133,8 @@ class Bank:
         the maintainer loads unpublished families (e.g. with :func:`families_from_mapping`) and
         swaps them in for the placeholder ``fresh`` families shipped in the source tree. The new
         families must belong to ``split`` and cover exactly this bank's variants (in any order;
-        they are reordered to match).
+        they are reordered to match), and they pass the same slot and family checks as the
+        shipped ones, so a bad held-out template fails here rather than mid-build.
         """
         if not families:
             raise ValueError(f"{self.name}: no replacement families for split={split}")
@@ -120,7 +150,12 @@ class Bank:
             ordered = {variant: family.variants[variant] for variant in self.variants}
             replacements.append(Family(family.id, split, ordered))
         kept = [f for f in self.families if f.split != split]
-        return Bank(self.name, [*kept, *replacements])
+        return Bank(
+            self.name,
+            [*kept, *replacements],
+            allowed_slots=self.allowed_slots,
+            check=self.check,
+        )
 
 
 def coerce_split(split: Split | str) -> Split:
@@ -132,6 +167,27 @@ def template_fields(template: str) -> tuple[str, ...]:
     """Slot names a template uses, in order of first appearance."""
     names = (field for _, field, _, _ in _FORMATTER.parse(template) if field is not None)
     return tuple(dict.fromkeys(names))
+
+
+def template_problems(template: str, allowed: Collection[str]) -> list[str]:
+    """Why ``template`` can't be filled from ``allowed`` slot names (empty when it can).
+
+    Flags unbalanced braces, slots outside ``allowed`` (typos, positional ``{}``, attribute or
+    index access) and format specs or conversions, which :func:`fill` refuses.
+    """
+    try:
+        parts = list(_FORMATTER.parse(template))
+    except ValueError as exc:
+        return [f"malformed template ({exc})"]
+    problems: list[str] = []
+    for _, field, spec, conversion in parts:
+        if field is None:
+            continue
+        if field not in allowed:
+            problems.append(f"unknown slot {{{field}}}")
+        if spec or conversion:
+            problems.append(f"slot {{{field}}} must not use a format spec or conversion")
+    return problems
 
 
 def require_slots(slots: Mapping[str, object], required: Sequence[str], *, what: str) -> None:
@@ -188,7 +244,7 @@ def families_from_mapping(
     """Families from plain data, ``{group: {variant: [template, ...]}}``, e.g. parsed YAML.
 
     Family IDs are ``{prefix}.{split}.{group}`` like those of :func:`grouped_families`;
-    :meth:`Bank.replace_split` checks the variants against the bank.
+    :meth:`Bank.replace_split` checks the variants, slot names and bank rules against the bank.
     """
     return [
         Family(
@@ -202,23 +258,26 @@ def families_from_mapping(
 
 def grouped_families[V: str](
     prefix: str,
-    templates: Mapping[tuple[V, Split], Sequence[str]],
+    templates: Mapping[tuple[V, Split], Sequence[str | tuple[str, ...]]],
     groups: Mapping[Split, Sequence[str]],
 ) -> list[Family]:
-    """Deal each ``(variant, split)`` template list round-robin into that split's groups.
+    """Deal each ``(variant, split)`` entry list round-robin into that split's groups.
 
     ``groups[split]`` names the families of a split; family IDs are ``{prefix}.{split}.{group}``.
+    An entry is one template, or a tuple of alternatives that all go to the same family (e.g. a
+    template naming a team plus a sibling that doesn't, for callers who can't supply the team).
     Round-robin dealing keeps every family covering every variant as long as each variant has at
-    least as many templates per split as the split has groups (checked by ``Bank``).
+    least as many entries per split as the split has groups (checked by ``Bank``).
     """
     dealt: dict[tuple[Split, str], dict[str, list[str]]] = {}
     for split, names in groups.items():
         for name in names:
             dealt[split, name] = {}
-    for (variant, split), items in templates.items():
+    for (variant, split), entries in templates.items():
         names = groups[split]
-        for i, template in enumerate(items):
-            dealt[split, names[i % len(names)]].setdefault(str(variant), []).append(template)
+        for i, entry in enumerate(entries):
+            alternatives = (entry,) if isinstance(entry, str) else entry
+            dealt[split, names[i % len(names)]].setdefault(str(variant), []).extend(alternatives)
     return [
         Family(
             f"{prefix}.{split.value}.{name}",

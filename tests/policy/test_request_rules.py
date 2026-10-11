@@ -241,6 +241,10 @@ def test_appr_002_without_a_manager_cites_no_manager(req: CaseBuilder) -> None:
 
 BG = ("req_1", "is_break_glass", True)
 REF = ("req_1", "ticket_ref", "INC-1")
+APP = ("ent_req", "app_id", "app_main")
+"""The entitlement's application, compared with the ticket's related applications."""
+BENEFICIARY = ("req_1", "beneficiary_id", "u_ben")
+"""The beneficiary, compared with the ticket's assignee."""
 
 
 def test_appr_003_break_glass_without_ticket(req: CaseBuilder) -> None:
@@ -255,22 +259,42 @@ def test_appr_003_ticket_not_in_the_case(req: CaseBuilder) -> None:
 
 
 @pytest.mark.parametrize(
-    ("fields", "failing_claim"),
+    ("fields", "failing_claims"),
     [
-        ({"type": "change"}, ("INC-1", "type", "change")),
-        ({"status": "closed"}, ("INC-1", "status", "closed")),
-        ({"assignee_id": "u_mgr"}, ("INC-1", "assignee_id", "u_mgr")),
-        ({"related_app_ids": ("app_crm",)}, ("ent_req", "app_id", "app_main")),
+        ({"type": "change"}, [("INC-1", "type", "change")]),
+        ({"status": "closed"}, [("INC-1", "status", "closed")]),
+        ({"assignee_id": "u_mgr"}, [("INC-1", "assignee_id", "u_mgr"), BENEFICIARY]),
+        ({"related_app_ids": ("app_crm",)}, [APP, ("INC-1", "related_app_ids", "app_crm")]),
     ],
+    ids=["type", "status", "assignee", "application"],
 )
 def test_appr_003_each_failed_check(
-    req: CaseBuilder, fields: dict[str, Any], failing_claim: tuple[str, str, object]
+    req: CaseBuilder, fields: dict[str, Any], failing_claims: list[tuple[str, str, object]]
 ) -> None:
+    """Each failed comparison cites both of its sides (SPEC §9.1: the claims the finding's
+    truth depends on)."""
     req.ticket("INC-1", **fields)
     gold = decide(req.request(break_glass=True, ticket_ref="INC-1"))
     assert gold.decision == "DENY"
     assert finding_rules(gold) == ["APPR-003"]
-    assert claim_triples(certificate(gold, "APPR-003")) == [[BG, REF, failing_claim]]
+    assert claim_triples(certificate(gold, "APPR-003")) == [[BG, REF, *failing_claims]]
+
+
+def test_appr_003_cites_every_application_the_ticket_covers(req: CaseBuilder) -> None:
+    """The entitlement's application is missing from the whole list, so every element is cited,
+    in sorted order whatever the ticket's order (the conformance scenario
+    req-bg-incident-for-another-application pins this shape)."""
+    req.ticket("INC-1", related_app_ids=("app_hr", "app_crm", "app_hr"))
+    gold = decide(req.request(break_glass=True, ticket_ref="INC-1"))
+    assert claim_triples(certificate(gold, "APPR-003")) == [
+        [
+            BG,
+            REF,
+            APP,
+            ("INC-1", "related_app_ids", "app_crm"),
+            ("INC-1", "related_app_ids", "app_hr"),
+        ]
+    ]
 
 
 def test_appr_003_unassigned_incident(req: CaseBuilder) -> None:
@@ -290,15 +314,18 @@ def test_appr_003_unassigned_and_closed_cites_the_closure(req: CaseBuilder) -> N
 
 
 def test_appr_003_several_failures_are_alternatives(req: CaseBuilder) -> None:
-    req.ticket("INC-1", status="closed", related_app_ids=("app_crm",))
+    req.ticket("INC-1", status="closed", assignee_id="u_mgr", related_app_ids=("app_crm",))
     gold = decide(req.request(break_glass=True, ticket_ref="INC-1"))
     assert claim_triples(certificate(gold, "APPR-003")) == [
+        [BG, REF, ("INC-1", "assignee_id", "u_mgr"), BENEFICIARY],
         [BG, REF, ("INC-1", "status", "closed")],
-        [BG, REF, ("ent_req", "app_id", "app_main")],
+        [BG, REF, APP, ("INC-1", "related_app_ids", "app_crm")],
     ]
 
 
 def test_valid_break_glass_bypasses_appr_001_and_is_capped_at_one_day(req: CaseBuilder) -> None:
+    """APPR-004 cites both sides of each comparison that makes the request valid, as APPR-003
+    does for a failed one."""
     req.set("ent_req", risk_tier="critical", data_classification="confidential")
     req.ticket("INC-1")
     gold = decide(req.request(break_glass=True, ticket_ref="INC-1"))
@@ -312,7 +339,9 @@ def test_valid_break_glass_bypasses_appr_001_and_is_capped_at_one_day(req: CaseB
             ("INC-1", "type", "incident"),
             ("INC-1", "status", "open"),
             ("INC-1", "assignee_id", "u_ben"),
+            BENEFICIARY,
             ("INC-1", "related_app_ids", "app_main"),
+            APP,
         ]
     ]
 
@@ -395,9 +424,10 @@ def test_just_001_any_open_ticket_for_the_app_satisfies_it(req: CaseBuilder) -> 
         ),
         (
             {"related_app_ids": ("app_crm",)},
-            [[CLS, ("req_1", "ticket_ref", "CHG-7"), ("ent_req", "app_id", "app_main")]],
+            [[CLS, ("req_1", "ticket_ref", "CHG-7"), APP, ("CHG-7", "related_app_ids", "app_crm")]],
         ),
     ],
+    ids=["not-in-the-case", "closed", "other-application"],
 )
 def test_just_001_ticket_failures(
     req: CaseBuilder, ticket_fields: dict[str, Any] | None, expected: list[list[object]]

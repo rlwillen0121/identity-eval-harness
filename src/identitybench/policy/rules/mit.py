@@ -2,7 +2,8 @@
 
 MIT-001 is not a finding: it is the exception evaluated inside every SoD predicate (see
 ``rules/sod.py``), recorded as an ``ExceptionEval``. MIT-002 and MIT-003 are findings about the
-conflicts MIT-001 mitigated.
+conflicts MIT-001 mitigated, so they read exactly what the SoD rules read (the input contract in
+``rules/sod.py``) and nothing else.
 """
 
 from __future__ import annotations
@@ -60,7 +61,8 @@ class ControlRenewal(ReviewRule):
     human to renew it, so each item conferring a side of that conflict escalates.
 
     Claims: the SoD conflict claims (this item's conferral, the other side's conferral) plus the
-    control's ``expires_on``.
+    control's ``expires_on``. Like the SoD rules it sees held access only, so only an item valid
+    on the as-of date confers a side (SPEC §7.2).
     """
 
     id = "MIT-002"

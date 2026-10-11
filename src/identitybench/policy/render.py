@@ -114,22 +114,22 @@ def _dates(tasks: Sequence[Task]) -> str:
     return "## Dates and durations\n\n" + _bullets(lines)
 
 
-_REVIEW_RECORDS = (
-    "Review items are judged on their records, whatever their dates: LIFE-001 and LIFE-003 apply "
-    "to every item of the holder, and the ELIG rules and APPR-005 judge the entitlements an "
-    "item's membership or assignment names, even if the item has expired or hasn't started yet. "
-    "The SOD rules and MIT-002 are the exception: they consider only sources valid on the as-of "
-    "date, because a conflict exists only in held access."
+_REVIEW_ITEM_BULLETS = (
+    "Identity-wide rules (LIFE-001, LIFE-003, ELIG-*) apply to every item that confers the "
+    "affected access.",
+    "Source-specific rules (HYG-001, HYG-004, HYG-005) apply only to the item they describe.",
+    "Items are judged on their records, whatever their dates. LIFE-001 and LIFE-003 apply to "
+    "every item of the holder, and the ELIG rules and APPR-005 judge the entitlements an item "
+    "confers once valid (an assignment's entitlement, or every entitlement in a membership's role "
+    "at any depth), even if the item has expired or hasn't started yet. The SOD rules and MIT-002 "
+    "are the exception: they consider only sources valid on the as-of date, because a conflict "
+    "exists only in held access.",
 )
-"""Not in SPEC §7.2. It states a reading the bullets leave open, and that changes gold: an item
-that hasn't started yet is revoked by an ELIG rule or escalated by APPR-005, where "every item
-that confers the affected access" could also read as CERTIFY. REVOKE removes the record, so the
-oracle judges what the record names: a terminated holder's future-dated or expired items are
-revoked (SPEC §9.3: a terminated holder's items are never certified), and an item that will
-confer ineligible access once it starts is revoked before it does. Conflicts are different:
-they exist only in held access, which counts valid sources alone. The text names each rule,
-because it sits after SPEC §7.3's "Expired memberships and assignments confer no access" and
-must not read as contradicting it."""
+"""SPEC §7.2's sub-bullets for review items, verbatim. The third (added in SPEC 0.4.1) changes
+gold for items that haven't started yet or have expired: an ELIG rule revokes them and APPR-005
+escalates them, where "every item that confers the affected access" alone could read as CERTIFY.
+Its "once valid" keeps it consistent with SPEC §7.3's "Expired memberships and assignments
+confer no access" in the preamble, and its last sentence keeps SoD and MIT-002 on held access."""
 
 _REVIEW_LEAVE = "Leave of absence alone is not grounds to revoke an item."
 """LIFE-002's review parenthetical (SPEC §7.4). LIFE-002 has no review effect, so a rendering
@@ -151,10 +151,7 @@ def _precedence(tasks: Sequence[Task]) -> str:
             "Access review items: `REVOKE` beats `ESCALATE`, which beats `CERTIFY`. Each item is "
             "one membership or one assignment, and REVOKE removes only that item. When the same "
             "entitlement is held through several sources, each source is judged on its own:\n"
-            "  - Identity-wide rules (LIFE-001, LIFE-003, ELIG-*) apply to every item that "
-            "confers the affected access.\n"
-            "  - Source-specific rules (HYG-001, HYG-004, HYG-005) apply only to the item they "
-            "describe."
+            + "\n".join(f"  - {bullet}" for bullet in _REVIEW_ITEM_BULLETS)
         )
     if Task.jml in tasks:
         lines.append(
@@ -162,9 +159,8 @@ def _precedence(tasks: Sequence[Task]) -> str:
             "Operations are evaluated in date order against the state model."
         )
     parts = ["## Precedence", _bullets(lines)]
-    if Task.access_review in tasks:
-        leave = [] if Task.access_request in tasks else [_REVIEW_LEAVE]
-        parts.append(" ".join([_REVIEW_RECORDS, *leave]))
+    if Task.access_review in tasks and Task.access_request not in tasks:
+        parts.append(_REVIEW_LEAVE)
     if Task.access_request in tasks or Task.access_review in tasks:
         parts.append(
             "Exceptions live inside rules, not in the precedence order: a rule whose exception "
@@ -407,10 +403,11 @@ def _glossary(tasks: Sequence[Task]) -> str:
     if Task.access_review in tasks:
         lines.append(
             "**Review item**: `item_id`, `kind` (`membership`, `assignment`), `ref` (the "
-            "membership or assignment ID). An item's holder is the membership's identity, or the "
-            "identity (`identity_id`) of the assignment's account. An assignment on an account "
-            "with no `identity_id`, such as a service account, has no holder, so rules about the "
-            "holder don't apply to it: a service account's owner is not its holder."
+            "membership or assignment ID), `note` (free text). An item's holder is the "
+            "membership's identity, or the identity (`identity_id`) of the assignment's account. "
+            "An assignment on an account with no `identity_id`, such as a service account, has "
+            "no holder, so rules about the holder don't apply to it: a service account's owner "
+            "is not its holder."
         )
     if Task.jml in tasks:
         lines.append(

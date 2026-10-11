@@ -7,10 +7,23 @@ from pathlib import Path
 
 import pytest
 
-from identitybench.providers._cli import MAX_ARG_BYTES, SYSTEM_BEGIN, SYSTEM_END, SYSTEM_POINTER
+from identitybench.providers._cli import (
+    MAX_ARG_BYTES,
+    NEUTRAL_SYSTEM,
+    SYSTEM_BEGIN,
+    SYSTEM_END,
+    SYSTEM_POINTER,
+)
 from identitybench.providers._subprocess import Command, ProcessResult
 from identitybench.providers.grok_cli import GrokCliProvider
-from tests.providers.fakes import DECISION_SCHEMA, FakeRunner, flag_value, make_request, ok
+from tests.providers.fakes import (
+    DECISION_SCHEMA,
+    FakeRunner,
+    attached_value,
+    flag_value,
+    make_request,
+    ok,
+)
 
 # Real `grok --output-format json --json-schema ...` output.
 VERIFIED = {
@@ -53,7 +66,7 @@ def provider(runner: FakeRunner, **kwargs) -> GrokCliProvider:
 
 async def test_argv_and_prompt_file() -> None:
     runner = FakeRunner(ok(VERIFIED))
-    await provider(runner).complete(make_request("Decide REQ-1.", system="SYS"))
+    response = await provider(runner).complete(make_request("Decide REQ-1.", system="SYS"))
     command = runner.command
     prompt_file = flag_value(command.argv, "--prompt-file")
     assert command.argv == (
@@ -62,8 +75,7 @@ async def test_argv_and_prompt_file() -> None:
         "grok-4.7",
         "--prompt-file",
         prompt_file,
-        "--system-prompt-override",
-        "SYS",
+        "--system-prompt-override=SYS",
         "--tools",
         "read_file",
         "--disallowed-tools",
@@ -71,6 +83,7 @@ async def test_argv_and_prompt_file() -> None:
         "--disable-web-search",
         "--no-subagents",
         "--no-plan",
+        "--no-auto-update",
         "--max-turns",
         "2",
         "--verbatim",
@@ -81,16 +94,85 @@ async def test_argv_and_prompt_file() -> None:
     assert runner.snapshots[0].files[prompt_file] == "Decide REQ-1."
     assert runner.snapshots[0].cwd_entries == []
     assert Path(prompt_file).parent != Path(command.cwd)
+    assert "substituted_system" not in (response.raw or {})
 
 
-async def test_schema_and_reasoning_effort_flags() -> None:
+async def test_schema_and_reasoning_effort_flags_are_attached() -> None:
     runner = FakeRunner(ok(VERIFIED))
     response = await provider(runner, effort="high").complete(make_request(schema=DECISION_SCHEMA))
     argv = runner.command.argv
-    assert json.loads(flag_value(argv, "--json-schema")) == DECISION_SCHEMA
-    assert flag_value(argv, "--reasoning-effort") == "high"
+    assert json.loads(attached_value(argv, "--json-schema")) == DECISION_SCHEMA
+    assert attached_value(argv, "--reasoning-effort") == "high"
+    assert "--json-schema" not in argv
+    assert "--reasoning-effort" not in argv
     assert response.raw is not None
     assert response.raw["effort"] == "high"  # the provider default applied, so it is recorded
+
+
+TAKES_A_VALUE = frozenset(
+    {"-m", "--prompt-file", "--tools", "--disallowed-tools", "--max-turns", "--output-format"}
+)
+SWITCHES = frozenset(
+    {"--disable-web-search", "--no-subagents", "--no-plan", "--no-auto-update", "--verbatim"}
+)
+ATTACHED = ("--system-prompt-override=", "--json-schema=", "--reasoning-effort=")
+
+
+def separate_values(argv: tuple[str, ...]) -> list[str]:
+    """The values passed as their own argv element, read the way grok's parser (clap) reads
+    them; fails on any element the parser would see as an unknown flag."""
+    values: list[str] = []
+    args = iter(argv[1:])
+    for arg in args:
+        if arg in TAKES_A_VALUE:
+            values.append(next(args))
+        else:
+            assert arg in SWITCHES or arg.startswith(ATTACHED), f"unknown flag {arg!r}"
+    return values
+
+
+@pytest.mark.parametrize(
+    "system",
+    [
+        "- You are an access reviewer.\n- Follow the policy.",
+        "---\ntitle: Access policy\nversion: 3\n---\nYou are an access reviewer.",
+        "--foo is not a flag here",
+        "-",
+    ],
+)
+async def test_a_system_prompt_starting_with_a_dash_is_never_a_separate_argument(
+    system: str,
+) -> None:
+    runner = FakeRunner(ok(VERIFIED))
+    response = await provider(runner, effort="low").complete(
+        make_request(system=system, schema=DECISION_SCHEMA)
+    )
+    argv = runner.command.argv
+    assert attached_value(argv, "--system-prompt-override") == system
+    assert system not in argv
+    assert not [value for value in separate_values(argv) if value.startswith("-")]
+    assert response.ok
+
+
+@pytest.mark.parametrize("system", ["", "  \n\t"])
+async def test_an_empty_system_prompt_is_replaced_by_the_neutral_one(system: str) -> None:
+    runner = FakeRunner(ok(VERIFIED))
+    response = await provider(runner).complete(make_request("Decide.", system=system))
+    argv = runner.command.argv
+    assert attached_value(argv, "--system-prompt-override") == NEUTRAL_SYSTEM
+    assert runner.snapshots[0].files[flag_value(argv, "--prompt-file")] == "Decide."
+    assert response.raw is not None
+    assert response.raw["substituted_system"] == NEUTRAL_SYSTEM
+
+
+async def test_the_substitution_is_recorded_on_failed_calls_too() -> None:
+    runner = FakeRunner(ok({"type": "error", "message": "model grok-9 not found"}, returncode=1))
+    response = await provider(runner).complete(make_request(system=""))
+    assert response.error is not None
+    assert response.raw == {
+        "substituted_system": NEUTRAL_SYSTEM,
+        "ignored_params": ["max_output_tokens"],
+    }
 
 
 async def test_parses_the_verified_payload() -> None:
@@ -185,21 +267,22 @@ async def test_grok_variables_api_keys_and_home_relative_variables_are_dropped(
         "XDG_STATE_HOME",
     ):
         monkeypatch.setenv(name, "/elsewhere")
+    # Auto-update is pinned off by --no-auto-update; a user switch could only re-enable it.
+    monkeypatch.setenv("GROK_AUTO_UPDATE", "true")
     monkeypatch.setenv("GROK_DISABLE_AUTOUPDATER", "1")
     monkeypatch.setenv("UNRELATED", "kept")
     runner = FakeRunner(ok(VERIFIED))
     await provider(runner).complete(make_request())
     env = runner.command.env
     assert not {key for key, value in env.items() if value == "/elsewhere"}
-    # Only the variables the call sets itself, plus the user's auto-update choice.
+    # Only the variables the call sets itself.
     assert {key for key in env if key.startswith("GROK_")} == {
         "GROK_HOME",
         "GROK_MEMORY",
         "GROK_SUBAGENTS",
         "GROK_WEB_FETCH",
-        "GROK_DISABLE_AUTOUPDATER",
     }
-    assert env["GROK_DISABLE_AUTOUPDATER"] == "1"
+    assert "--no-auto-update" in runner.command.argv
     assert env["UNRELATED"] == "kept"
 
 
@@ -289,14 +372,33 @@ async def test_refusal_stop_reason() -> None:
     assert response.error is None
 
 
-async def test_large_system_prompt_is_prepended_into_the_prompt_file() -> None:
+@pytest.mark.parametrize(
+    "size",
+    [
+        MAX_ARG_BYTES + 1,
+        # Fits on its own, but not together with the attached flag name.
+        MAX_ARG_BYTES - len("--system-prompt-override=") + 1,
+    ],
+)
+async def test_large_system_prompt_is_prepended_into_the_prompt_file(size: int) -> None:
     runner = FakeRunner(ok(VERIFIED))
-    system = "R" * (MAX_ARG_BYTES + 1)
-    await provider(runner).complete(make_request("Decide.", system=system))
+    system = "R" * size
+    response = await provider(runner).complete(make_request("Decide.", system=system))
+    assert response.ok
     argv = runner.command.argv
-    assert flag_value(argv, "--system-prompt-override") == SYSTEM_POINTER
+    assert attached_value(argv, "--system-prompt-override") == SYSTEM_POINTER
+    assert all(len(arg.encode()) <= MAX_ARG_BYTES for arg in argv)
     prompt = runner.snapshots[0].files[flag_value(argv, "--prompt-file")]
     assert prompt == f"{SYSTEM_BEGIN}\n{system}\n{SYSTEM_END}\n\nDecide."
+
+
+async def test_a_system_prompt_that_just_fits_stays_in_argv() -> None:
+    runner = FakeRunner(ok(VERIFIED))
+    system = "R" * (MAX_ARG_BYTES - len("--system-prompt-override="))
+    await provider(runner).complete(make_request("Decide.", system=system))
+    argv = runner.command.argv
+    assert attached_value(argv, "--system-prompt-override") == system
+    assert runner.snapshots[0].files[flag_value(argv, "--prompt-file")] == "Decide."
 
 
 async def test_garbage_output_is_an_error() -> None:

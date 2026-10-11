@@ -199,9 +199,15 @@ class Timeline:
     """One result per input operation, in listed order."""
     counters: SimCounters
     memberships: Mapping[str, Membership]
-    """Every membership record that was on file at any point (view records and grants)."""
+    """The first record filed under each membership ID that was on file at any point: the view's
+    records, then one per membership a grant created. A content-derived ID granted again after a
+    removal keeps its first record, so no record overwrites an earlier one. The later record
+    differs only in ``granted_on``, and on every day the ID is on file both are valid (grants
+    never expire, and the first grant is the earliest), so validity read from this record is
+    right on each of those days."""
     assignments: Mapping[str, Assignment]
-    """Every assignment record that was on file at any point (view records and grants)."""
+    """The first record filed under each assignment ID that was on file at any point, on the
+    same terms as ``memberships``."""
     accounts: Mapping[str, Account]
     """Every account (view records and accounts created by grants), with its starting status.
     Per-day status lives in ``DayState.accounts``."""
@@ -408,7 +414,7 @@ class _Simulator:
                 granted_on=day,
             )
             self.memberships[membership_id] = record
-            self.membership_records[membership_id] = record
+            self.membership_records.setdefault(membership_id, record)
             self.known.add(membership_id)
             changed = True
         apps = {
@@ -439,7 +445,7 @@ class _Simulator:
                 granted_on=day,
             )
             self.assignments[assignment_id] = record
-            self.assignment_records[assignment_id] = record
+            self.assignment_records.setdefault(assignment_id, record)
             self.known.add(assignment_id)
             changed = True
         return OpOutcome.CHANGED if changed else OpOutcome.NOOP

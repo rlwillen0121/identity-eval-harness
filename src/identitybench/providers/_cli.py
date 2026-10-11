@@ -15,11 +15,18 @@ would score a prompt that silently differs between machines.
 The CLIs can't take a multi-turn transcript or native tools, so transcripts are rendered into a
 single user message and requests with tools are rejected (``capabilities().native_tools`` is
 False for every CLI provider).
+
+A CLI's endpoint identity (SPEC §11.4) covers more than its version and the model: the harness's
+own setup (fixed flags, disabled features, the private home's contents, environment rules) and
+the provider's default effort change the prompt or the model's behaviour too, so they are hashed
+in as well (``CliProvider.setup_revision``). Changing that setup invalidates cached responses
+instead of serving them as if the new setup had produced them.
 """
 
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import logging
 import math
@@ -32,6 +39,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, ClassVar, TypedDict
 
 from identitybench.providers._json import load_object
@@ -53,6 +61,7 @@ from identitybench.providers.base import (
     ModelResponse,
     ProviderCapabilities,
     Role,
+    ToolCall,
     hash_endpoint,
 )
 
@@ -71,6 +80,18 @@ SYSTEM_POINTER = (
 )
 """Short system prompt used when the real one is too large for argv and moves into the prompt."""
 
+NEUTRAL_SYSTEM = "You are a helpful assistant."
+"""System prompt sent in place of an empty one by CLIs that replace their own system prompt.
+
+An empty value doesn't mean "no system prompt" to these CLIs: grok treats
+``--system-prompt-override ""`` as unset and falls back to its built-in coding-agent prompt
+(measured on grok 1.0.46: ~2.8K input tokens with an empty override against ~1.8K with a short
+one), and claude isn't trusted to do better with ``--system-prompt ""``. The API providers send
+no system prompt at all, so the CLI rows get the closest equivalent instead: the default that
+chat templates conventionally apply to a conversation without a system message, which carries no
+task instructions. Responses record the substitution in ``raw["substituted_system"]``.
+"""
+
 _EFFORT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$")
 
 
@@ -79,6 +100,22 @@ def prepend_system(system: str, body: str) -> str:
     if not system:
         return body
     return f"{SYSTEM_BEGIN}\n{system}\n{SYSTEM_END}\n\n{body}"
+
+
+def system_override(system: str, body: str, *, prefix: str = "") -> tuple[str, str, dict[str, Any]]:
+    """``(system argument, prompt body, raw notes)`` for a CLI that replaces its system prompt.
+
+    - An empty or whitespace-only ``system`` becomes ``NEUTRAL_SYSTEM`` (noted in the raw notes),
+      so the CLI never falls back to its own agent prompt.
+    - A ``system`` too large for one argv element (``prefix`` is whatever shares the element with
+      it, such as an attached ``--flag=``) moves to the top of the body between delimiter lines,
+      and the argument becomes ``SYSTEM_POINTER``.
+    """
+    if not system.strip():
+        return NEUTRAL_SYSTEM, body, {"substituted_system": NEUTRAL_SYSTEM}
+    if exceeds_arg_limit(prefix + system):
+        return SYSTEM_POINTER, prepend_system(system, body), {}
+    return system, body, {}
 
 
 def render_transcript(messages: Sequence[Message]) -> str:
@@ -227,6 +264,9 @@ def probe_version(binary: str) -> str:
 class Invocation:
     argv: tuple[str, ...]
     stdin: str | None = None
+    raw: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    """Facts about how the request was sent (e.g. a substituted system prompt), merged into the
+    response's ``raw``."""
 
 
 @dataclass(frozen=True)
@@ -329,6 +369,9 @@ class CliProvider(ABC):
     ENV_DROP: ClassVar[frozenset[str]] = frozenset()
     ENV_DROP_PREFIXES: ClassVar[tuple[str, ...]] = ()
     ENV_KEEP: ClassVar[frozenset[str]] = frozenset()
+    ENV_SET: ClassVar[Mapping[str, str]] = MappingProxyType({})
+    """Variables set for every call whatever the parent environment holds (e.g. switching the
+    CLI's self-updater off, so the version in the endpoint identity stays the one that runs)."""
 
     def __init__(
         self,
@@ -351,20 +394,112 @@ class CliProvider(ABC):
         self._version = version
         self._max_retries = max_retries
         self._retry_base_delay_s = retry_base_delay_s
+        self._setup_revision: str | None = None
 
     def capabilities(self) -> ProviderCapabilities:
         return self.CAPABILITIES
 
     def endpoint_identity(self) -> str:
+        """Hash of the kind, CLI version, model, ``setup_revision()`` and the default effort.
+
+        The default effort is the constructor's, which applies whenever a request leaves effort
+        unset; a request's own effort is part of the cache key already.
+        """
         if self._version is None:
             self._version = probe_version(self.binary)
-        return hash_endpoint(self.kind, self._version, self.model)
+        return hash_endpoint(
+            self.kind, self._version, self.model, self.setup_revision(), self.effort
+        )
+
+    def setup_revision(self) -> str:
+        """Short hash of the call setup the harness controls, computed once per provider.
+
+        It is derived from the setup itself rather than a hand-bumped constant, so no change can
+        be forgotten: the argv, stdin and input files ``_build`` produces for two template
+        requests (an empty system prompt, no schema and no effort; then a system prompt, a
+        multi-turn transcript, a schema and an effort), the environment and files ``_isolate``
+        sets up in a private home (login links excluded: whether the user is logged in is not
+        setup), the environment rules, and the large-system-prompt fallback. Temporary paths,
+        the binary's location and the model name are replaced by placeholders, so the revision
+        is the same on every machine and for every model of the provider.
+
+        An ``OSError`` while setting up the scratch home propagates: a machine that can't do that
+        can't run a call either.
+        """
+        if self._setup_revision is None:
+            self._setup_revision = self._compute_setup_revision()
+        return self._setup_revision
+
+    def _compute_setup_revision(self) -> str:
+        transcript = (
+            Message(Role.user, "<prompt>"),
+            Message(
+                Role.assistant,
+                "<reply>",
+                tool_calls=(ToolCall("<call-id>", "<tool>", {"<arg>": "<value>"}),),
+            ),
+            Message(Role.tool, "<result>", tool_call_id="<call-id>"),
+            Message(Role.user, "<follow-up>"),
+        )
+        templates = (
+            (ModelRequest(system="", messages=(Message(Role.user, "<prompt>"),)), None),
+            (
+                ModelRequest(
+                    system="<system>",
+                    messages=transcript,
+                    output_schema={"type": "object", "properties": {}},
+                ),
+                "<effort>" if self.SUPPORTS_EFFORT else None,
+            ),
+        )
+        with tempfile.TemporaryDirectory(
+            prefix=f"identitybench-{self.kind}-setup-", ignore_cleanup_errors=True
+        ) as tmp:
+            root = Path(tmp).resolve()
+            invocations: list[dict[str, Any]] = []
+            for number, (request, effort) in enumerate(templates):
+                io_dir = root / f"t{number}" / "io"
+                work_dir = root / f"t{number}" / "work"
+                io_dir.mkdir(parents=True)
+                work_dir.mkdir()
+                built = self._build(request, effort, io_dir, work_dir)
+                argv = [
+                    "<binary>",
+                    *("<model>" if arg == self.model else arg for arg in built.argv[1:]),
+                ]
+                invocations.append(
+                    {
+                        "argv": argv,
+                        "stdin": built.stdin,
+                        "raw": dict(built.raw),
+                        "files": _files(io_dir),
+                    }
+                )
+            home = root / "home"
+            home.mkdir()
+            isolation = self._isolate(home)
+            setup = {
+                "invocations": invocations,
+                "isolation": {"env": dict(isolation.env), "files": _files(home)},
+                "env": {
+                    "drop": sorted(self.ENV_DROP),
+                    "drop_prefixes": list(self.ENV_DROP_PREFIXES),
+                    "keep": sorted(self.ENV_KEEP),
+                    "set": dict(self.ENV_SET),
+                    "home_relative": sorted(HOME_RELATIVE_VARS),
+                },
+                "large_system": [MAX_ARG_BYTES, SYSTEM_POINTER, SYSTEM_BEGIN, SYSTEM_END],
+            }
+            text = json.dumps(setup, sort_keys=True, ensure_ascii=False).replace(str(root), "<tmp>")
+        return hashlib.sha256(text.encode()).hexdigest()[:16]
 
     def child_env(self, base: Mapping[str, str] | None = None) -> dict[str, str]:
         """The environment for the CLI process: ``base`` (default ``os.environ``) minus the
-        variables this CLI must not inherit."""
+        variables this CLI must not inherit, plus ``ENV_SET``."""
         source = os.environ if base is None else base
-        return {name: value for name, value in source.items() if not self._drops(name)}
+        env = {name: value for name, value in source.items() if not self._drops(name)}
+        env.update(self.ENV_SET)
+        return env
 
     def _drops(self, name: str) -> bool:
         if name in self.ENV_KEEP:
@@ -481,6 +616,8 @@ class CliProvider(ABC):
                 self._after_call(work_dir, env)
             if len(attempts) > 1:
                 _merge_attempts(response, attempts, wall_s=time.perf_counter() - started)
+            if built.raw:
+                response.raw = {**(response.raw or {}), **built.raw}
             if request.params.effort is None and effort is not None:
                 # The provider's own default applied; record it, since the request (and so the
                 # cache key and manifest parameters) says nothing about effort.
@@ -513,6 +650,16 @@ class CliProvider(ABC):
 
     def _fail(self, message: str, result: ProcessResult | None = None) -> ModelResponse:
         return ModelResponse(error=self._error_text(message, result))
+
+
+def _files(directory: Path) -> dict[str, str]:
+    """Regular files under ``directory`` by relative path, with their text; symlinks (login
+    links) are skipped."""
+    return {
+        str(path.relative_to(directory)): path.read_text(encoding="utf-8", errors="replace")
+        for path in sorted(directory.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
 
 
 def _merge_attempts(final: ModelResponse, attempts: Sequence[ModelResponse], wall_s: float) -> None:

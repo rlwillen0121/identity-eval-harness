@@ -4,15 +4,21 @@ import hashlib
 import os
 import shutil
 import subprocess
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 
 from identitybench import __version__
 from identitybench.providers.base import GenerationParams, Usage
-from identitybench.runner.config import Repeats, make_config_id
-from identitybench.runner.dataset import write_sha256sums
+from identitybench.runner.config import ExperimentConfig, Repeats, make_config_id
+from identitybench.runner.cost import BudgetGuard, CostTracker, PricingTable, load_pricing
+from identitybench.runner.dataset import (
+    DEFAULT_SAMPLE_UNIT,
+    DEFAULT_STRATA_NAME,
+    suite_task_tier,
+    write_sha256sums,
+)
 from identitybench.runner.manifest import (
     ConfigManifest,
     CostSummary,
@@ -20,6 +26,8 @@ from identitybench.runner.manifest import (
     DatasetInfo,
     DatasetMismatchError,
     ParamsRecord,
+    PriceRowRecord,
+    PricingRecord,
     RunManifest,
     UsageTotals,
     dataset_fingerprint,
@@ -46,7 +54,10 @@ def _manifest() -> RunManifest:
         ),
         split=Split.test,
         sample=0.1,
+        sample_unit="family",
+        sample_strata="suite_task_tier",
         repeats=Repeats(k=3, subset=100),
+        repair=True,
         configs=[
             ConfigManifest(
                 config_id=cid,
@@ -69,6 +80,15 @@ def _manifest() -> RunManifest:
             )
         },
         cost={cid: CostSummary(cost_mode="metered", metered_api_usd=0.12, reported_usd=None)},
+        pricing=PricingRecord(
+            path="pricing.yaml",
+            sha256="c" * 64,
+            rows={
+                "claude-opus-5-5": PriceRowRecord(
+                    as_of=date(2026, 10, 6), source="Anthropic API pricing"
+                )
+            },
+        ),
         counts=Counts(cases=30, calls=30, cache_hits=4, errors=1, refusals=0, invalid=2),
         experiment={"name": "v1-leaderboard"},
     )
@@ -82,7 +102,108 @@ def test_manifest_roundtrip(tmp_path: Path) -> None:
     assert loaded.harness_version == __version__
     assert loaded.usage[loaded.configs[0].config_id].cache_read_tokens == 2
     assert loaded.created_at == CREATED
+    assert loaded.repair is True
+    assert (loaded.sample, loaded.sample_unit, loaded.sample_strata) == (
+        0.1,
+        "family",
+        "suite_task_tier",
+    )
+    assert loaded.pricing is not None
+    assert loaded.pricing.rows["claude-opus-5-5"].as_of == date(2026, 10, 6)
     assert not list(path.parent.glob("*.tmp"))
+
+
+def test_manifest_defaults_describe_the_sampler() -> None:
+    """A manifest that leaves them out still says what ``sample`` counts."""
+    data = _manifest().model_dump(mode="json")
+    for key in ("sample_unit", "sample_strata", "repair", "pricing"):
+        del data[key]
+    loaded = RunManifest.model_validate(data)
+    assert (loaded.sample_unit, loaded.sample_strata) == (DEFAULT_SAMPLE_UNIT, "suite_task_tier")
+    assert suite_task_tier.__name__ == DEFAULT_STRATA_NAME
+    assert loaded.repair is False and loaded.pricing is None
+    bad = _manifest().model_dump(mode="json")
+    bad["sample_unit"] = "campaign"
+    with pytest.raises(ValueError):
+        RunManifest.model_validate(bad)
+
+
+def test_manifest_records_the_resolved_repair_flag(tmp_path: Path) -> None:
+    cfg = ExperimentConfig.model_validate(
+        {
+            "name": "t",
+            "dataset": "d",
+            "tasks": ["requests"],
+            "baselines": ["oracle"],
+            "repair": True,
+        }
+    )
+    manifest = _manifest().model_copy(
+        update={"repair": cfg.repair, "experiment": cfg.resolved_dict()}
+    )
+    loaded = RunManifest.load(manifest.save(tmp_path / "m.json"))
+    assert loaded.repair is True and loaded.experiment["repair"] is True
+
+
+def _pricing_file(tmp_path: Path) -> Path:
+    path = tmp_path / "prices" / "pricing.yaml"
+    path.parent.mkdir()
+    path.write_text(
+        "models:\n"
+        "  m1: {input: 1, output: 2, as_of: 2026-01-01, source: vendor page A}\n"
+        "  m2: {input: 3, output: 4, as_of: 2026-02-02, source: vendor page B}\n"
+        "  m3: {input: 5, output: 6, as_of: 2026-03-03, source: vendor page C}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_pricing_record_from_trackers(tmp_path: Path) -> None:
+    path = _pricing_file(tmp_path)
+    guard = BudgetGuard(10.0, table=load_pricing(path))
+    guard.track("a", "m2", "metered")
+    guard.track("b", "m1", "metered")
+    guard.track("c", "unpriced", "metered")
+    guard.track("d", "m3", "unmetered")
+    guard.track("e", "m3", "reported")
+    record = PricingRecord.from_trackers(guard.trackers.values(), base=tmp_path)
+    assert record is not None
+    assert record.path == "prices/pricing.yaml"
+    assert record.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    # Only rows a config was billed from, sorted by model.
+    assert list(record.rows) == ["m1", "m2"]
+    assert record.rows["m2"] == PriceRowRecord(as_of=date(2026, 2, 2), source="vendor page B")
+    # The record is portable: outside ``base`` only the file name is kept.
+    elsewhere = PricingRecord.from_trackers(guard.trackers.values(), base=tmp_path / "x")
+    assert elsewhere is not None and elsewhere.path == "pricing.yaml"
+    manifest = _manifest().model_copy(update={"pricing": record})
+    assert RunManifest.load(manifest.save(tmp_path / "m.json")).pricing == record
+
+
+def test_pricing_record_none_without_metered_configs(tmp_path: Path) -> None:
+    trackers = [CostTracker("q", mode="unmetered"), CostTracker("c", mode="reported")]
+    assert PricingRecord.from_trackers(trackers) is None
+
+
+def test_pricing_record_refuses_mixed_tables(tmp_path: Path) -> None:
+    path = _pricing_file(tmp_path)
+    other = tmp_path / "other.yaml"
+    other.write_bytes(path.read_bytes() + b"# different file\n")
+    trackers = [
+        CostTracker("m1", table=load_pricing(path)),
+        CostTracker("m2", table=load_pricing(other)),
+    ]
+    with pytest.raises(ValueError, match="different pricing tables"):
+        PricingRecord.from_trackers(trackers)
+
+
+def test_pricing_record_for_in_memory_table() -> None:
+    table = PricingTable.model_validate(
+        {"models": {"m": {"input": 1, "output": 1, "as_of": "2026-01-01", "source": "s"}}}
+    )
+    record = PricingRecord.from_trackers([CostTracker("m", table=table)])
+    assert record is not None
+    assert record.path is None and record.sha256 == table.sha256
 
 
 def test_manifest_fields_are_typed() -> None:

@@ -38,8 +38,13 @@ from identitybench.providers.factory import PROVIDER_KINDS, ModelSpec, ProviderK
 from identitybench.providers.openai_compat import (
     DEFAULT_BASE_URL_ENV as OPENAI_DEFAULT_BASE_URL_ENV,
 )
-from identitybench.runner.cost import CostMode, default_cost_mode, reports_cost
-from identitybench.runner.dataset import SampleSpec, normalize_suite
+from identitybench.runner.cost import (
+    CostMode,
+    default_cost_mode,
+    points_at_metered_vendor,
+    reports_cost,
+)
+from identitybench.runner.dataset import SampleSpec, normalize_suite, portable_path
 from identitybench.schemas.enums import Split, Suite
 
 __all__ = [
@@ -53,6 +58,7 @@ __all__ = [
     "Params",
     "ProviderKind",
     "Repeats",
+    "StrictFloat",
     "load_config",
     "make_config_id",
     "slug",
@@ -64,6 +70,21 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 StrictInt = Annotated[int, Strict()]
 """YAML ``true`` would otherwise coerce to 1 for a seed, count or limit."""
+
+
+def _check_number(value: Any) -> Any:
+    """Accept a real int or float only: YAML ``true`` would otherwise become 1.0 (a $1 budget,
+    temperature 1), and a quoted ``"0.5"`` would be coerced silently."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"expected a number, got {type(value).__name__}")
+    return value
+
+
+StrictFloat = Annotated[float, BeforeValidator(_check_number)]
+"""A float field that still accepts an int (``temperature: 0``) but never a bool or string."""
+
+_PATH_EXTRA_KEYS = ("binary", "path")
+"""``ModelSpec.extra`` options that hold a local path (CLI binary, replay file)."""
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -197,7 +218,7 @@ class _Strict(BaseModel):
 class Params(_Strict):
     """Experiment-wide generation defaults (SPEC §16 ``params``)."""
 
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    temperature: StrictFloat | None = Field(default=None, ge=0.0, le=2.0)
     """None means "don't send" (several current models reject non-default temperatures)."""
     max_output_tokens: StrictInt = Field(default=4096, ge=1)
     effort: Effort | None = None
@@ -223,16 +244,18 @@ class ModelEntry(_Strict):
     base_url_env: EnvName = None
     api_key_env: EnvName = None
     cache_namespace: OptNoUrlStr = None
-    """Bump when a self-hosted deployment changes behind the same URL (SPEC §11.4)."""
+    """Part of the endpoint identity; bump it when a self-hosted deployment changes behind the
+    same URL (SPEC §11.4). Any model may set one."""
     effort: Effort | None = None
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    temperature: StrictFloat | None = Field(default=None, ge=0.0, le=2.0)
     max_output_tokens: StrictInt | None = Field(default=None, ge=1)
-    timeout_s: float | None = Field(default=None, gt=0)
+    timeout_s: StrictFloat | None = Field(default=None, gt=0)
     concurrency: StrictInt | None = Field(default=None, ge=1)
     cost_mode: CostMode | None = None
     """How this model's spend is known (see ``cost.CostMode``). None picks the provider kind's
-    default (``cost.default_cost_mode``: an ``openai_compatible`` entry with a
-    ``cache_namespace`` is self-hosted, so ``unmetered``)."""
+    default (``cost.default_cost_mode``): an ``openai_compatible`` entry counts as self-hosted,
+    so ``unmetered``, only when it sets a ``cache_namespace`` and names its own endpoint with
+    ``base_url_env``; OpenAI itself stays ``metered`` with or without a namespace."""
     extra: dict[str, Any] = Field(default_factory=dict)
     """Provider constructor options, as ``ModelSpec.extra`` (recorded in the manifest)."""
 
@@ -260,7 +283,7 @@ class ModelEntry(_Strict):
     @property
     def resolved_cost_mode(self) -> CostMode:
         return self.cost_mode or default_cost_mode(
-            self.provider, cache_namespace=self.cache_namespace
+            self.provider, cache_namespace=self.cache_namespace, base_url_env=self.base_url_env
         )
 
     @property
@@ -344,14 +367,22 @@ class ExperimentConfig(_Strict):
     params: Params = Field(default_factory=Params)
     repeats: Repeats = Field(default_factory=Repeats)
     concurrency: StrictInt = Field(default=4, ge=1)
-    budget_usd: float | None = Field(default=None, ge=0.0)
+    budget_usd: StrictFloat | None = Field(default=None, ge=0.0)
     """Experiment-wide hard stop on summed spend across all configs (``cost.BudgetGuard``)."""
     loss_matrix: LossMatrix = "default"
     """``default`` (SPEC §12.3) or an inline mapping; the scorer validates the inline shape."""
     sample: Sample = None
-    """Fraction in (0, 1] or an absolute count of sampling units; None runs every case."""
+    """A fraction in (0, 1] (a float) or a count (an int); None runs every case.
+
+    Both are in **families** (a base case plus every twin and adversarial copy of it, see
+    ``dataset.stratified_sample``), so ``sample: 30`` can return more than 30 cases, and the
+    int ``1`` means one family while the float ``1.0`` means everything. The manifest records
+    the unit next to the number (``RunManifest.sample_unit``)."""
     seed: StrictInt = Field(default=0, ge=0)
     """Seed for sampling and repeat-subset selection."""
+    repair: bool = Field(default=False, strict=True)
+    """SPEC §11.3: off by default. When on, an output that fails validation gets one re-ask with
+    the validation error; repaired predictions are flagged and the flag is in the manifest."""
 
     @field_validator("name")
     @classmethod
@@ -442,18 +473,29 @@ class ExperimentConfig(_Strict):
         """Every (model, prompt) cell's config_id, in matrix order."""
         return [make_config_id(m.label, p, self.mode) for m in self.models for p in self.prompts]
 
-    def resolved_dict(self) -> dict[str, Any]:
+    def resolved_dict(self, *, base: Path | str | None = None) -> dict[str, Any]:
         """JSON-safe dict with every default filled in, for the run manifest.
 
         Each model entry shows what it actually ran with: the generation settings after the
         experiment ``params`` were applied (``temperature``/``effort`` None means not sent)
-        and its resolved ``cost_mode``. Every field is explicit, so loading the dict back
-        gives a config with the same per-model behavior.
+        and its resolved ``cost_mode``. Every field is explicit (``repair`` included), so
+        loading the dict back gives a config with the same per-model behavior.
+
+        Manifests get published (SPEC §15), so local paths go through
+        ``dataset.portable_path``: an absolute ``dataset`` or ``extra.binary``/``extra.path``
+        is recorded relative to ``base`` (default: the working directory), else by its last
+        component, never with a home directory in it. A config with relative paths (the
+        committed kind) round-trips unchanged.
         """
         data = self.model_dump(mode="json")
+        data["dataset"] = portable_path(self.dataset, base)
         models: list[dict[str, Any]] = []
         for entry, dumped in zip(self.models, data["models"], strict=True):
             spec = entry.to_spec(self.params)
+            extra = dict(dumped["extra"])
+            for key in _PATH_EXTRA_KEYS:
+                if isinstance(extra.get(key), str):
+                    extra[key] = portable_path(extra[key], base)
             models.append(
                 dumped
                 | {
@@ -461,6 +503,7 @@ class ExperimentConfig(_Strict):
                     "effort": spec.effort,
                     "max_output_tokens": spec.max_output_tokens,
                     "cost_mode": entry.resolved_cost_mode,
+                    "extra": extra,
                 }
             )
         data["models"] = models
@@ -479,6 +522,19 @@ class ExperimentConfig(_Strict):
                     "is costed as a metered API; if it is self-hosted, set "
                     "cost_mode: unmetered (or a cache_namespace) so it shows $0, not unknown"
                 )
+            if entry.resolved_cost_mode == "unmetered" and points_at_metered_vendor(
+                entry.provider, entry.base_url_env
+            ):
+                budget = (
+                    f" and budget_usd ({self.budget_usd:g}) will not count its spend"
+                    if self.budget_usd is not None
+                    else ""
+                )
+                out.append(
+                    f"model {entry.label!r} ({entry.provider}) calls a metered API but has "
+                    f"cost_mode: unmetered, so its paid calls are recorded as $0{budget}; "
+                    "remove cost_mode unless it really is a self-hosted endpoint"
+                )
             if (
                 self.budget_usd is not None
                 and entry.resolved_cost_mode == "reported"
@@ -488,6 +544,10 @@ class ExperimentConfig(_Strict):
                     f"model {entry.label!r} ({entry.provider}) reports no cost, so "
                     "budget_usd can't limit its spend"
                 )
+        if isinstance(self.sample, int) and self.sample == 1:
+            out.append(
+                "sample: 1 is a count (one family), not 100%; write sample: 1.0 for every case"
+            )
         return out
 
 

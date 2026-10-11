@@ -1,10 +1,19 @@
 """Eligibility rules ELIG-001..005 (SPEC §7.4).
 
 ELIG-001, -002, -003 and -005 judge an (identity, entitlement, application) triple. A request
-judges the beneficiary against the requested entitlement. A review item is identity-wide
-(SPEC §7.2): it is judged against every entitlement its record grants, so each item conferring
-an ineligible entitlement is revoked, and its claim sets start with the conferral (role path or
-``assignment.entitlement_id``) of that entitlement.
+judges the beneficiary against the requested entitlement. In reviews they are identity-wide
+(SPEC §7.2) and judge the item's record whatever its dates: every entitlement the record confers
+once valid (an assignment's entitlement, or every entitlement in a membership's role at any
+depth), even if the item has expired or hasn't started yet. Each item conferring an ineligible
+entitlement is revoked, and its claim sets start with the conferral (role path or
+``assignment.entitlement_id``) of that entitlement; each entitlement and each role path to it is
+an alternative.
+
+Input contract: the identity's attributes the rule names, and the entitlement and its
+application. In a request those are the beneficiary and the requested entitlement, which the
+request context checks. In a review, every role in the item's expansion, every entitlement it
+reaches and each one's application must be in the view (``OracleInputError`` otherwise); an item
+without a holder (an orphaned or service account) isn't judged.
 """
 
 from __future__ import annotations
@@ -71,7 +80,8 @@ class NonEmployeeProdAdmin(EligibilityRule):
     """ELIG-001: non-employees may not hold admin privilege on a production application.
 
     Claims: ``identity.employment_type`` (contractor, intern or vendor),
-    ``entitlement.privilege = admin``, ``application.environment = prod``.
+    ``entitlement.privilege = admin``, ``application.environment = prod``. Reads exactly those
+    fields (see the module docstring for the input contract).
     """
 
     id = "ELIG-001"
@@ -102,7 +112,7 @@ class RestrictedData(EligibilityRule):
     """ELIG-002: interns and vendors may not hold restricted entitlements.
 
     Claims: ``identity.employment_type`` (intern or vendor),
-    ``entitlement.data_classification = restricted``.
+    ``entitlement.data_classification = restricted``. Reads exactly those fields.
     """
 
     id = "ELIG-002"
@@ -130,7 +140,8 @@ class RestrictedData(EligibilityRule):
 class RegionRestricted(EligibilityRule):
     """ELIG-003: a region-restricted application is only for identities located in its region.
 
-    Claims: ``application.region_restriction``, ``identity.location.region``.
+    Claims: ``application.region_restriction``, ``identity.location.region``. Reads exactly those
+    fields; a null ``region_restriction`` means the application is unrestricted.
     """
 
     id = "ELIG-003"
@@ -156,7 +167,8 @@ class RegionRestricted(EligibilityRule):
 class NotRequestable(RequestRule):
     """ELIG-004: an entitlement that isn't requestable can't be requested.
 
-    Claims: ``entitlement.requestable = false``.
+    Claims: ``entitlement.requestable = false``. Input contract: the requested entitlement's
+    ``requestable`` flag. It has no review effect (SPEC §7.4).
     """
 
     id = "ELIG-004"
@@ -175,7 +187,8 @@ class IneligibleEmploymentType(EligibilityRule):
     """ELIG-005: the identity's employment type must be one of the entitlement's eligible types.
 
     Claims: ``identity.employment_type``. The eligible list itself can't certify an absence, so
-    the identity's type is the citable fact.
+    the identity's type is the citable fact. Reads the identity's ``employment_type`` and the
+    entitlement's ``eligible_employment_types``.
     """
 
     id = "ELIG-005"

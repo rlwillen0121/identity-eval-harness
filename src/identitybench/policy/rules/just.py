@@ -32,7 +32,12 @@ class SensitiveNeedsTicket(RequestRule):
     Claims: ``entitlement.data_classification`` plus, per failed check (each an alternative):
     no ``ticket_ref`` → nothing more; a ref not in the ticket list → ``request.ticket_ref``; a
     closed ticket → ``request.ticket_ref`` and ``ticket.status``; a ticket for other applications
-    → ``request.ticket_ref`` and ``entitlement.app_id``.
+    → ``request.ticket_ref``, ``entitlement.app_id`` and every element of
+    ``ticket.related_app_ids`` (both sides of the comparison).
+
+    Input contract: the entitlement's ``data_classification``, the request's ``ticket_ref`` and,
+    when the ref names a ticket in the case's ticket list, its ``status`` and
+    ``related_app_ids``. Nothing it reads can be missing once the request context is built.
     """
 
     id = "JUST-001"

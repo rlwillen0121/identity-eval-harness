@@ -4,6 +4,11 @@ Each function returns a list of human-readable problems (empty when everything h
 generator raises if any check fails, so the guarantees the SPEC promises ("at most one control
 per (identity, rule)", "birthright role sets are free of SoD conflicts") hold for every world;
 dataset validation can rerun them on a loaded world.
+
+The SPEC §9.2 completeness conditions are world invariants too, so every case slice inherits
+them: every provisioned (account, entitlement) pair has a usage record, and every membership's
+source matches its role's kind (``birthright`` memberships in birthright roles, ``request``
+memberships in business roles). A view breaking either is incomplete and the oracle rejects it.
 """
 
 from __future__ import annotations
@@ -12,11 +17,13 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from typing import Protocol
 
+from identitybench.policy.constants import PRIVILEGED_CAP_DAYS
 from identitybench.world.eligibility import ineligibility
 from identitybench.world.entities import (
     RISK_ORDER,
     AccountKind,
     AccountStatus,
+    Assignment,
     AssignmentSource,
     EmploymentType,
     Entitlement,
@@ -255,6 +262,8 @@ def _identity_problems(world: World) -> list[str]:
 
 
 def _access_problems(world: World) -> list[str]:
+    """Memberships, accounts, assignments and usage: integrity, the request rules a
+    request-sourced assignment must satisfy, and SPEC §9.2 completeness."""
     problems: list[str] = []
     graph = RoleGraph(world.roles)
     for m in world.memberships.values():
@@ -303,14 +312,7 @@ def _access_problems(world: World) -> list[str]:
         if s.expires_on is not None and s.expires_on < s.granted_on:
             problems.append(f"{s.id}: expires before it is granted")
         if s.source is AssignmentSource.request:
-            # A request ID claims an approved request; no request could produce these.
-            if not ent.requestable:
-                problems.append(f"{s.id}: request-sourced but {ent.id} isn't requestable")
-            cap = ent.max_duration_days
-            if cap is not None and (
-                s.expires_on is None or (s.expires_on - s.granted_on).days + 1 > cap
-            ):
-                problems.append(f"{s.id}: request-sourced grant longer than {cap} days")
+            problems.extend(_request_problems(world, s, ent, account.identity_id))
 
     usage_pairs: Counter[tuple[str, str]] = Counter()
     for u in world.usage.values():
@@ -351,6 +353,33 @@ def _access_problems(world: World) -> list[str]:
     provisioned |= {(s.account_id, s.entitlement_id) for s in world.assignments.values()}
     missing = sorted(provisioned - set(usage_pairs))
     problems.extend(f"no usage record for {pair}" for pair in missing[:20])
+    if len(missing) > 20:
+        problems.append(f"{len(missing) - 20} more provisioned pairs without a usage record")
+    return problems
+
+
+def _request_problems(
+    world: World, s: Assignment, ent: Entitlement, holder_id: str | None
+) -> list[str]:
+    """A request ID claims an approved request, so the grant must be one a request could
+    produce (SPEC §7.4): the entitlement is requestable (ELIG-004), and the grant ends within
+    the entitlement's maximum duration (TEMP-002), within 7 days if it is privileged
+    (TEMP-001), and on or before a contractor holder's contract end (LIFE-004)."""
+    problems: list[str] = []
+    if not ent.requestable:
+        problems.append(f"{s.id}: request-sourced but {ent.id} isn't requestable")
+    days = None if s.expires_on is None else (s.expires_on - s.granted_on).days + 1
+    cap = ent.max_duration_days
+    if cap is not None and (days is None or days > cap):
+        problems.append(f"{s.id}: request-sourced grant longer than {cap} days")
+    if ent.privileged and (days is None or days > PRIVILEGED_CAP_DAYS):
+        problems.append(
+            f"{s.id}: request-sourced privileged grant longer than {PRIVILEGED_CAP_DAYS} days"
+        )
+    holder = world.identities.get(holder_id) if holder_id is not None else None
+    contract_end = holder.contract_end_date if holder is not None else None
+    if contract_end is not None and (s.expires_on is None or s.expires_on > contract_end):
+        problems.append(f"{s.id}: request-sourced grant runs past the contract end {contract_end}")
     return problems
 
 

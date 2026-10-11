@@ -6,7 +6,9 @@ collected (and the loader tests run) before the oracle exists; until it does, th
 with an import error. There are no xfail markers by design: every scenario must pass.
 
 Each scenario's view is serialized to JSON and parsed back before the oracle sees it, because
-that round trip is exactly what a model receives (SPEC §9.2).
+that round trip is exactly what a model receives (SPEC §9.2). A scenario that expects
+``error: incomplete_view`` must make the oracle refuse its view with ``OracleInputError``
+(§9.2: "incomplete cases are rejected rather than filled in with defaults").
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from tests.conformance.compare import compare_jml, compare_request, compare_revi
 from tests.conformance.loader import (
     ORG_NAME,
     STANDARD_SOD,
+    ErrorExpect,
     JmlExpect,
     Scenario,
     SimulationExpect,
@@ -30,10 +33,12 @@ from tests.conformance.simulation import compare_simulation
 
 SCENARIOS = load_all()
 
-REQUESTS = [pytest.param(s, id=s.id) for s in SCENARIOS if s.task is Task.access_request]
-REVIEWS = [pytest.param(s, id=s.id) for s in SCENARIOS if s.task is Task.access_review]
-JML_EVENTS = [pytest.param(s, id=s.id) for s in SCENARIOS if isinstance(s.expect, JmlExpect)]
-PLANS = [pytest.param(s, id=s.id) for s in SCENARIOS if isinstance(s.expect, SimulationExpect)]
+DECIDED = [s for s in SCENARIOS if not isinstance(s.expect, ErrorExpect)]
+REQUESTS = [pytest.param(s, id=s.id) for s in DECIDED if s.task is Task.access_request]
+REVIEWS = [pytest.param(s, id=s.id) for s in DECIDED if s.task is Task.access_review]
+JML_EVENTS = [pytest.param(s, id=s.id) for s in DECIDED if isinstance(s.expect, JmlExpect)]
+PLANS = [pytest.param(s, id=s.id) for s in DECIDED if isinstance(s.expect, SimulationExpect)]
+REFUSED = [pytest.param(s, id=s.id) for s in SCENARIOS if isinstance(s.expect, ErrorExpect)]
 
 
 def _as_served(scenario: Scenario) -> CaseView:
@@ -79,6 +84,30 @@ def test_plan_simulation_scenario(scenario: Scenario) -> None:
         comparison = compare(view, simulate(view, scenario.reference_plan, horizon), timeline)
     problems = compare_simulation(scenario, timeline, comparison)
     assert not problems, describe(scenario, problems)
+
+
+@pytest.mark.parametrize("scenario", REFUSED)
+def test_incomplete_view_is_refused(scenario: Scenario) -> None:
+    """SPEC §9.2: a view missing a usage record, or with a membership whose source doesn't match
+    its role's kind, is incomplete, and the oracle rejects it whatever the task."""
+    from identitybench.policy.jml import plan_jml
+    from identitybench.policy.oracle import OracleInputError, decide_request, decide_review
+
+    deciders = {
+        Task.access_request: decide_request,
+        Task.access_review: decide_review,
+        Task.jml: plan_jml,
+    }
+    view = _as_served(scenario)
+    try:
+        gold = deciders[scenario.task](view)
+    except OracleInputError:
+        return
+    pytest.fail(
+        describe(
+            scenario, [f"expected OracleInputError for an incomplete view, got a {gold.kind} gold"]
+        )
+    )
 
 
 def test_policy_text_matches_tables() -> None:

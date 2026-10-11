@@ -112,6 +112,14 @@ def flag_value(argv: tuple[str, ...], flag: str) -> str:
     return argv[index + 1]
 
 
+def attached_value(argv: tuple[str, ...], flag: str) -> str:
+    """The value of the one ``--flag=value`` element of ``argv``."""
+    prefix = f"{flag}="
+    values = [arg.removeprefix(prefix) for arg in argv if arg.startswith(prefix)]
+    assert len(values) == 1, f"expected one {prefix}… argument, got {len(values)}"
+    return values[0]
+
+
 # --------------------------------------------------------------------------- SDK fakes
 
 

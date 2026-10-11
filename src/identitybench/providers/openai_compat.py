@@ -7,8 +7,12 @@ environment.
 - **Reasoning effort** is sent as ``reasoning_effort`` when configured, unless the server
   doesn't understand it (``reasoning_effort_param=False``); a dropped effort is reported in
   ``raw["ignored_params"]``.
-- **Temperature** is sent whenever configured. Some OpenAI reasoning models accept only the
-  default; configure ``temperature`` per model rather than globally for those.
+- **Temperature** is sent whenever configured, except to OpenAI reasoning models
+  (``NO_TEMPERATURE_MODELS``) at OpenAI's own endpoint: they reject any non-default value with a
+  400, so one experiment-wide ``temperature: 0`` would make every call fail. For those it is
+  dropped, reported in ``raw["ignored_params"]``, and ``supports_temperature`` is False. Other
+  endpoints get the temperature whatever the model is called: a self-hosted server can serve any
+  name, and its own model decides what it accepts.
 - Usage: ``prompt_tokens`` includes cached tokens, so uncached input is
   ``prompt_tokens - cached_tokens``; ``completion_tokens`` already includes reasoning tokens.
 - ``message.refusal`` or a ``content_filter`` finish reason come back as ``refused=True``.
@@ -28,6 +32,7 @@ import json
 import os
 import time
 from typing import Any, Literal, cast
+from urllib.parse import urlsplit
 
 import openai
 from openai import AsyncOpenAI
@@ -55,6 +60,14 @@ UNPARSED_ARGUMENTS_KEY = "_unparsed_arguments"
 JSON, so the runner can count the call as malformed instead of losing it."""
 
 _PLACEHOLDER_API_KEY = "not-set"
+
+VENDOR_HOST = "api.openai.com"
+
+NO_TEMPERATURE_MODELS: tuple[str, ...] = ("gpt-5", "o1", "o3", "o4")
+"""OpenAI reasoning-model families that accept only the default temperature (any other value is
+a 400). A model matches when its ID is a family name or starts with one followed by ``-`` or
+``.`` (``gpt-5``, ``gpt-5-mini``, ``gpt-5.1``, ``o3-pro``, ``o4-mini``), after an ``ft:``
+fine-tune prefix; ``gpt-50`` or ``o1x`` would not."""
 
 MaxTokensParam = Literal["max_completion_tokens", "max_tokens"]
 
@@ -87,6 +100,20 @@ def _tool_call(call: Any) -> ToolCall | None:
     if arguments is None:
         arguments = {UNPARSED_ARGUMENTS_KEY: raw_arguments}
     return ToolCall(id=call.id, name=function.name, arguments=arguments)
+
+
+def accepts_temperature(model: str) -> bool:
+    """False for the OpenAI reasoning models in ``NO_TEMPERATURE_MODELS``."""
+    name = model.removeprefix("ft:")
+    return not any(
+        name == family or name.startswith((f"{family}-", f"{family}."))
+        for family in NO_TEMPERATURE_MODELS
+    )
+
+
+def is_vendor_endpoint(base_url: str | None) -> bool:
+    """Whether ``base_url`` is OpenAI's own API, where model names mean OpenAI's models."""
+    return base_url is not None and urlsplit(base_url).hostname == VENDOR_HOST
 
 
 def default_api_key_env(base_url_env: str | None) -> str | None:
@@ -129,6 +156,9 @@ class OpenAICompatProvider:
         self._timeout_s = timeout_s
         self._client = client
         self._base_url = self._resolve_base_url()
+        self._drops_temperature = is_vendor_endpoint(self._base_url) and not accepts_temperature(
+            model
+        )
 
     def _resolve_base_url(self) -> str | None:
         if self._base_url_env is None:
@@ -142,7 +172,9 @@ class OpenAICompatProvider:
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
-            native_structured_output=True, native_tools=True, supports_temperature=True
+            native_structured_output=True,
+            native_tools=True,
+            supports_temperature=not self._drops_temperature,
         )
 
     def endpoint_identity(self) -> str:
@@ -184,7 +216,7 @@ class OpenAICompatProvider:
                 }
                 for tool in request.tools
             ]
-        if request.params.temperature is not None:
+        if request.params.temperature is not None and not self._drops_temperature:
             params["temperature"] = request.params.temperature
         if request.params.effort is not None and self._reasoning_effort_param:
             params["reasoning_effort"] = request.params.effort
@@ -221,9 +253,20 @@ class OpenAICompatProvider:
         start = time.perf_counter()
         response = await self._complete(request)
         response.latency_s = time.perf_counter() - start
-        if request.params.effort is not None and not self._reasoning_effort_param:
-            response.raw = {**(response.raw or {}), "ignored_params": ["effort"]}
+        ignored = self._ignored_params(request)
+        if ignored:
+            response.raw = {**(response.raw or {}), "ignored_params": ignored}
         return response
+
+    def _ignored_params(self, request: ModelRequest) -> list[str]:
+        """Requested settings this endpoint doesn't receive, recorded so the manifest's
+        parameters aren't misread."""
+        ignored: list[str] = []
+        if request.params.temperature is not None and self._drops_temperature:
+            ignored.append("temperature")
+        if request.params.effort is not None and not self._reasoning_effort_param:
+            ignored.append("effort")
+        return ignored
 
     async def _complete(self, request: ModelRequest) -> ModelResponse:
         if self._base_url is None:

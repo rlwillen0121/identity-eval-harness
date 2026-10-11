@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import date
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from identitybench.runner.cost import (
     default_cost_mode,
     default_pricing_path,
     load_pricing,
+    points_at_metered_vendor,
     reports_cost,
 )
 from identitybench.runner.manifest import CostSummary
@@ -111,6 +113,34 @@ def test_custom_table_with_explicit_rates(tmp_path: Path) -> None:
     assert cost_usd("m", usage, table=table, cache_ttl="1h") == pytest.approx((2 + 2 + 1 + 6) / M)
     big = Usage(input_tokens=11, output_tokens=1)
     assert cost_usd("m", big, table=table) == pytest.approx((110 + 20) / M)
+
+
+def test_loaded_table_keeps_its_provenance(tmp_path: Path) -> None:
+    table = load_pricing(SOURCE_PRICING_PATH)
+    assert table.source_path == SOURCE_PRICING_PATH
+    assert table.sha256 == hashlib.sha256(SOURCE_PRICING_PATH.read_bytes()).hexdigest()
+    # Same rows, different bytes (a comment): a different file, so a different sha256.
+    copy = tmp_path / "pricing.yaml"
+    copy.write_bytes(SOURCE_PRICING_PATH.read_bytes() + b"# edited\n")
+    assert load_pricing(copy).models == table.models
+    assert load_pricing(copy).sha256 != table.sha256
+    # An in-memory table has no file, and a content hash that is stable.
+    memory = PricingTable.model_validate(table.model_dump())
+    assert memory.source_path is None
+    assert memory.sha256 == PricingTable.model_validate(table.model_dump()).sha256
+    assert len(memory.sha256) == 64
+
+
+def test_tracker_exposes_its_table_and_row() -> None:
+    table = load_pricing(SOURCE_PRICING_PATH)
+    opus = CostTracker("claude-opus-5-5", table=table)
+    assert opus.pricing is table
+    assert opus.price is not None and opus.price.as_of == date(2026, 10, 6)
+    unpriced = CostTracker("gpt-5", table=table)
+    assert unpriced.pricing is table and unpriced.price is None
+    # Non-metered modes never touch a pricing file.
+    assert CostTracker("claude-opus-5-5", mode="reported").pricing is None
+    assert CostTracker("qwen", mode="unmetered").price is None
 
 
 def test_pricing_rejects_bad_rows() -> None:
@@ -298,10 +328,81 @@ def test_which_clis_report_cost(kind: str, reports: bool) -> None:
     assert reports_cost(kind) is reports
 
 
-def test_default_cost_mode_cache_namespace_means_self_hosted() -> None:
+def test_default_cost_mode_self_hosted_needs_namespace_and_own_endpoint() -> None:
     assert default_cost_mode("openai_compatible") == "metered"
-    assert default_cost_mode("openai_compatible", cache_namespace="d1") == "unmetered"
+    # A namespace alone never makes OpenAI free (SPEC §11.4: optional for any model).
+    assert default_cost_mode("openai_compatible", cache_namespace="d1") == "metered"
+    assert (
+        default_cost_mode("openai_compatible", cache_namespace="d1", base_url_env="OPENAI_BASE_URL")
+        == "metered"
+    )
+    # A custom endpoint alone stays unknown (metered, unpriced), the safe direction.
+    assert default_cost_mode("openai_compatible", base_url_env="LOCAL_LLM_BASE_URL") == "metered"
+    assert (
+        default_cost_mode(
+            "openai_compatible", cache_namespace="d1", base_url_env="LOCAL_LLM_BASE_URL"
+        )
+        == "unmetered"
+    )
     assert default_cost_mode("anthropic", cache_namespace="d1") == "metered"
+
+
+@pytest.mark.parametrize(
+    ("kind", "env", "metered"),
+    [
+        ("anthropic", None, True),
+        ("openai_compatible", None, True),
+        ("openai_compatible", "OPENAI_BASE_URL", True),
+        ("openai_compatible", "LOCAL_LLM_BASE_URL", False),
+        ("anthropic_compatible", "LOCAL_LLM_BASE_URL", False),
+        ("claude_cli", None, False),
+        ("replay", None, False),
+    ],
+)
+def test_points_at_metered_vendor(kind: str, env: str | None, metered: bool) -> None:
+    assert points_at_metered_vendor(kind, env) is metered
+
+
+def test_paid_api_with_namespace_stays_under_budget() -> None:
+    """The round-3 probe: OpenAI entries with a namespace and an Opus entry marked unmetered.
+    The OpenAI ones stay metered (unpriced, so flagged); the Opus one draws a warning."""
+    cfg = ExperimentConfig.model_validate(
+        {
+            "name": "x",
+            "dataset": "d",
+            "tasks": ["access_request"],
+            "budget_usd": 5,
+            "models": [
+                {
+                    "provider": "openai_compatible",
+                    "model": "gpt-5",
+                    "label": "a",
+                    "cache_namespace": "v2",
+                },
+                {
+                    "provider": "openai_compatible",
+                    "model": "gpt-5",
+                    "label": "b",
+                    "cache_namespace": "v2",
+                    "base_url_env": "OPENAI_BASE_URL",
+                },
+                {"provider": "anthropic", "model": "claude-opus-5-5", "cost_mode": "unmetered"},
+            ],
+        }
+    )
+    modes = [m.resolved_cost_mode for m in cfg.models]
+    assert modes == ["metered", "metered", "unmetered"]
+    guard = BudgetGuard(cfg.budget_usd)
+    for entry, cid in zip(cfg.models, cfg.config_ids(), strict=True):
+        guard.track(cid, entry.model, entry.resolved_cost_mode).add(
+            Usage(input_tokens=10 * M, output_tokens=M)
+        )
+    assert guard.unenforceable() == ["a__baseline__context", "b__baseline__context"]
+    assert guard.trackers["a__baseline__context"].metered_api_usd is None  # unknown, not $0
+    warnings = cfg.warnings()
+    assert len(warnings) == 1
+    assert "claude-opus-5-5" in warnings[0] and "unmetered" in warnings[0]
+    assert "budget_usd (5)" in warnings[0]
 
 
 def test_tracker_would_exceed_per_config() -> None:

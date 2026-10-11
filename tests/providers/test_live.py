@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from identitybench.providers._cli import NEUTRAL_SYSTEM
 from identitybench.providers._json import extract_json_object
 from identitybench.providers.anthropic_api import AnthropicProvider
 from identitybench.providers.base import ModelResponse, Provider
@@ -49,6 +50,8 @@ TINY_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 SYSTEM = "You are a test fixture for an evaluation harness. Follow the user's instruction exactly."
+DASH_SYSTEM = f"---\npurpose: harness test\n---\n- {SYSTEM}"
+"""Front matter and a bullet: grok's parser rejects a separate argument starting with ``-``."""
 USER = 'Reply with exactly this JSON object and nothing else: {"decision": "DENY"}'
 
 
@@ -64,8 +67,14 @@ def require_env(name: str) -> str:
     return value
 
 
-async def call(provider: Provider, *, schema: dict[str, Any] | None = TINY_SCHEMA, **params: Any):
-    response = await provider.complete(make_request(USER, system=SYSTEM, schema=schema, **params))
+async def call(
+    provider: Provider,
+    *,
+    schema: dict[str, Any] | None = TINY_SCHEMA,
+    system: str = SYSTEM,
+    **params: Any,
+):
+    response = await provider.complete(make_request(USER, system=system, schema=schema, **params))
     print(f"\n{provider.kind}:{provider.model} -> {response!r}")  # visible with -s
     return response
 
@@ -126,7 +135,7 @@ def personal_home(tmp_path: Path, real_home: Path, rule_files: tuple[str, ...]) 
 async def test_grok_cli() -> None:
     require_binary("grok")
     model = os.environ.get("IDENTITYBENCH_LIVE_GROK_MODEL", "grok-4.7")
-    response = await call(GrokCliProvider(model, effort="low"))
+    response = await call(GrokCliProvider(model, effort="low"), system=DASH_SYSTEM)
     assert_denied(response)
     assert response.parsed == {"decision": "DENY"}
     assert response.usage.output_tokens > 0
@@ -135,17 +144,20 @@ async def test_grok_cli() -> None:
 
 async def test_grok_cli_is_isolated_from_the_users_setup(tmp_path: Path, monkeypatch) -> None:
     """A rule planted in the user's grok home must not reach the model, and nothing else of the
-    user's setup may inflate the prompt. (Without isolation the reply ends with the marker.)"""
+    user's setup may inflate the prompt. (Without isolation the reply ends with the marker.) The
+    request has no system prompt, so the neutral one replaces it rather than grok's own agent
+    prompt."""
     require_binary("grok")
     real = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok")
     home = personal_home(tmp_path, real, ("AGENTS.md", "rules/marker.md"))
     monkeypatch.setenv("GROK_HOME", str(home))
     model = os.environ.get("IDENTITYBENCH_LIVE_GROK_MODEL", "grok-4.7")
     provider = GrokCliProvider(model, effort="low")
-    response = await provider.complete(make_request(GREETING, system=SYSTEM))
+    response = await provider.complete(make_request(GREETING, system=""))
     print(f"\n{provider.kind}:{provider.model} -> {response!r}")
     assert response.error is None, response.error
     assert MARKER not in (response.text or "")
+    assert (response.raw or {}).get("substituted_system") == NEUTRAL_SYSTEM
     usage = response.usage
     assert usage.input_tokens + usage.cache_read_tokens < MAX_ISOLATED_INPUT_TOKENS
 
@@ -170,13 +182,15 @@ async def test_codex_cli_is_isolated_from_the_users_setup(tmp_path: Path, monkey
 
 async def test_claude_cli_is_isolated_from_the_users_setup() -> None:
     """The user's CLAUDE.md, skills, plugins, hooks and MCP servers must not reach the prompt:
-    with all of them off, a tiny request costs about 1.2K input tokens."""
+    with all of them off, a tiny request costs about 1.2K input tokens. The request has no system
+    prompt, so the neutral one replaces it rather than the CLI's own agent prompt."""
     require_binary("claude")
     model = os.environ.get("IDENTITYBENCH_LIVE_CLAUDE_MODEL", "claude-haiku-5-5")
     provider = ClaudeCliProvider(model, effort="low")
-    response = await provider.complete(make_request(GREETING, system=SYSTEM))
+    response = await provider.complete(make_request(GREETING, system=""))
     print(f"\n{provider.kind}:{provider.model} -> {response!r}")
     assert response.error is None, response.error
+    assert (response.raw or {}).get("substituted_system") == NEUTRAL_SYSTEM
     usage = response.usage
     total_in = usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
     assert total_in < MAX_ISOLATED_INPUT_TOKENS

@@ -290,6 +290,30 @@ def test_missing_role_in_held_access_is_rejected(req: CaseBuilder) -> None:
         decide_request(req.request())
 
 
+def test_missing_usage_record_makes_a_request_view_incomplete(req: CaseBuilder) -> None:
+    """SPEC §9.2: no request rule reads usage, but a view missing a record for a provisioned
+    pair is incomplete, so it is refused (conformance A25)."""
+    req.entitlement("ent_view")
+    req.assignment("as_view", "acct_ben_main", "ent_view")
+    assert decide_checked(req.request()).decision == "APPROVE"
+    req.no_usage("acct_ben_main", "ent_view")
+    message = r"no usage record for \(account acct_ben_main, entitlement ent_view\)"
+    with pytest.raises(OracleInputError, match=message):
+        decide_request(req.request())
+
+
+def test_membership_source_must_match_its_role_kind_in_requests(req: CaseBuilder) -> None:
+    """SPEC §9.2: the view is rejected even when the membership is someone else's and no rule
+    would read it."""
+    req.identity("u_peer")
+    req.role("role_base", kind="birthright", attribute_rule=None)
+    req.membership("rm_peer", "u_peer", "role_base", source="request")
+    with pytest.raises(OracleInputError, match="rm_peer has source 'request' but its role"):
+        decide_request(req.request())
+    req.set("rm_peer", source="birthright")
+    assert decide_checked(req.request()).decision == "APPROVE"
+
+
 def test_contradictory_controls_and_packs_are_rejected(req: CaseBuilder) -> None:
     req.entitlement("ent_x")
     req.assignment("as_x", "acct_ben_main", "ent_x")

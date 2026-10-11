@@ -10,9 +10,12 @@ from openai.types.chat import ChatCompletion
 from identitybench.providers.base import Message, Provider, Role, ToolCall, hash_endpoint
 from identitybench.providers.openai_compat import (
     DEFAULT_BASE_URL,
+    NO_TEMPERATURE_MODELS,
     UNPARSED_ARGUMENTS_KEY,
     OpenAICompatProvider,
+    accepts_temperature,
     default_api_key_env,
+    is_vendor_endpoint,
 )
 from tests.providers.fakes import DECISION_SCHEMA, LOOKUP_TOOL, FakeOpenAIClient, make_request
 
@@ -112,6 +115,119 @@ async def test_nothing_is_recorded_as_ignored_when_everything_applies() -> None:
     no_effort = provider(completion(), reasoning_effort_param=False)
     response = await no_effort.complete(make_request())
     assert "ignored_params" not in (response.raw or {})
+
+
+# --------------------------------------------------------------------------- temperature
+
+REASONING_MODELS = [
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano-2025-08-07",
+    "gpt-5.1",
+    "gpt-5.2-codex",
+    "o1",
+    "o1-pro",
+    "o3",
+    "o3-mini",
+    "o4-mini",
+    "ft:o4-mini-2025-04-16:acme::abc123",
+]
+
+
+@pytest.mark.parametrize("model", REASONING_MODELS)
+async def test_temperature_is_dropped_for_openai_reasoning_models(model: str, monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    p = OpenAICompatProvider(model, client=FakeOpenAIClient(completion()))  # type: ignore[arg-type]
+    response = await p.complete(make_request(temperature=0.0))
+    assert "temperature" not in sent(p)
+    assert response.raw is not None
+    assert response.raw["ignored_params"] == ["temperature"]
+    assert p.capabilities().supports_temperature is False
+
+
+async def test_temperature_is_sent_to_openai_models_that_accept_it(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    p = OpenAICompatProvider("gpt-4.1", client=FakeOpenAIClient(completion()))  # type: ignore[arg-type]
+    response = await p.complete(make_request(temperature=0.0))
+    assert sent(p)["temperature"] == 0.0
+    assert "ignored_params" not in (response.raw or {})
+    assert p.capabilities().supports_temperature is True
+
+
+@pytest.mark.parametrize(
+    ("base_url_env", "url"),
+    [
+        ("OPENAI_BASE_URL", "https://api.openai.com/v1/"),
+        ("OPENAI_BASE_URL", "https://api.openai.com"),
+    ],
+)
+async def test_the_vendor_endpoint_is_recognized_however_it_is_spelled(
+    base_url_env: str, url: str, monkeypatch
+) -> None:
+    monkeypatch.setenv(base_url_env, url)
+    p = OpenAICompatProvider("o3", client=FakeOpenAIClient(completion()))  # type: ignore[arg-type]
+    await p.complete(make_request(temperature=0.0))
+    assert "temperature" not in sent(p)
+
+
+async def test_a_self_hosted_server_gets_the_temperature_whatever_the_model_name(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://localhost:8000/v1")
+    p = OpenAICompatProvider(
+        "gpt-5-mini",
+        base_url_env="LOCAL_LLM_BASE_URL",
+        client=FakeOpenAIClient(completion()),  # type: ignore[arg-type]
+    )
+    response = await p.complete(make_request(temperature=0.0))
+    assert sent(p)["temperature"] == 0.0
+    assert "ignored_params" not in (response.raw or {})
+    assert p.capabilities().supports_temperature is True
+
+
+async def test_dropped_temperature_and_effort_are_both_recorded(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    p = OpenAICompatProvider(
+        "gpt-5",
+        reasoning_effort_param=False,
+        client=FakeOpenAIClient(completion()),  # type: ignore[arg-type]
+    )
+    response = await p.complete(make_request(temperature=0.0, effort="high"))
+    assert "temperature" not in sent(p)
+    assert "reasoning_effort" not in sent(p)
+    assert response.raw is not None
+    assert response.raw["ignored_params"] == ["temperature", "effort"]
+
+
+async def test_an_unset_temperature_is_not_recorded_as_ignored(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    p = OpenAICompatProvider("o3", client=FakeOpenAIClient(completion()))  # type: ignore[arg-type]
+    response = await p.complete(make_request())
+    assert "ignored_params" not in (response.raw or {})
+
+
+def test_no_temperature_table() -> None:
+    for model in REASONING_MODELS:
+        assert not accepts_temperature(model), model
+    for model in ("gpt-4.1", "gpt-4o-mini", "gpt-50", "o1x", "local-model", "ft:gpt-4.1:a::b"):
+        assert accepts_temperature(model), model
+    assert len(NO_TEMPERATURE_MODELS) == len(set(NO_TEMPERATURE_MODELS))
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (DEFAULT_BASE_URL, True),
+        ("https://api.openai.com", True),
+        ("https://API.OpenAI.com/v1", True),
+        ("http://localhost:8000/v1", False),
+        ("https://api.openai.com.example.net/v1", False),
+        ("https://gateway.example/openai/v1", False),
+        (None, False),
+    ],
+)
+def test_is_vendor_endpoint(url: str | None, expected: bool) -> None:
+    assert is_vendor_endpoint(url) is expected
 
 
 def test_rejects_unknown_max_tokens_param() -> None:

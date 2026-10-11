@@ -22,6 +22,8 @@ and lets concurrent calls reserve their estimated cost before they start.
 from __future__ import annotations
 
 import functools
+import hashlib
+import json
 import os
 from collections.abc import Iterator
 from datetime import date
@@ -29,9 +31,12 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from identitybench.providers.base import Usage
+from identitybench.providers.openai_compat import (
+    DEFAULT_BASE_URL_ENV as OPENAI_DEFAULT_BASE_URL_ENV,
+)
 
 PRICING_ENV = "IDENTITYBENCH_PRICING"
 """Environment variable naming a pricing file; overrides the default lookup."""
@@ -63,20 +68,45 @@ _REPORTS_COST = frozenset({"claude_cli", "grok_cli"})
 """CLI kinds whose provider fills ``ModelResponse.reported_cost_usd``."""
 
 
-def default_cost_mode(provider_kind: str, *, cache_namespace: str | None = None) -> CostMode:
+def default_cost_mode(
+    provider_kind: str,
+    *,
+    cache_namespace: str | None = None,
+    base_url_env: str | None = None,
+) -> CostMode:
     """The usual cost mode for a provider kind.
 
-    ``openai_compatible`` covers OpenAI itself, so it defaults to ``metered``, except when the
-    entry sets ``cache_namespace``: SPEC §11.4 defines that field for self-hosted endpoints
-    (bump it when the deployment changes), so such an entry is self-hosted and its API cost is
-    a real $0. A self-hosted server without a namespace should say ``cost_mode: unmetered``;
-    otherwise its cost stays *unknown* (the safe direction: the budget guard flags it rather
-    than counting it as free). ``anthropic_compatible`` exists for self-hosted Messages-API
-    servers (SPEC §11.1). Unknown kinds (e.g. baselines) cost nothing.
+    ``openai_compatible`` covers OpenAI itself, so it defaults to ``metered``. It counts as
+    self-hosted (a real $0) only when the entry sets a ``cache_namespace`` *and* names its own
+    endpoint (``base_url_env`` other than OpenAI's default): SPEC §11.4 makes the namespace
+    optional for any model, so a paid entry may set one too (to force fresh inferences), and a
+    namespace alone must never make a metered API free. Any other self-hosted server should say
+    ``cost_mode: unmetered``; otherwise its cost stays *unknown* (the safe direction: the
+    budget guard flags it rather than counting it as free). ``anthropic_compatible`` exists for
+    self-hosted Messages-API servers (SPEC §11.1). Unknown kinds (e.g. baselines) cost nothing.
     """
-    if provider_kind == "openai_compatible" and cache_namespace is not None:
+    if (
+        provider_kind == "openai_compatible"
+        and cache_namespace is not None
+        and not points_at_metered_vendor(provider_kind, base_url_env)
+    ):
         return "unmetered"
     return _DEFAULT_COST_MODE.get(provider_kind, "unmetered")
+
+
+def points_at_metered_vendor(provider_kind: str, base_url_env: str | None = None) -> bool:
+    """Whether an entry talks to a commercial per-token API: the ``anthropic`` kind, or
+    ``openai_compatible`` on OpenAI's default endpoint (no ``base_url_env``, or OpenAI's own).
+
+    An entry like that resolving to ``unmetered`` would show $0 for paid calls and escape the
+    budget stop, so the config warns about it.
+    """
+    if provider_kind == "anthropic":
+        return True
+    return provider_kind == "openai_compatible" and base_url_env in (
+        None,
+        OPENAI_DEFAULT_BASE_URL_ENV,
+    )
 
 
 def reports_cost(provider_kind: str) -> bool:
@@ -147,10 +177,33 @@ class ModelPrice(Rates):
 
 
 class PricingTable(_Strict):
+    """Price rows by model name, plus where they came from.
+
+    ``load_pricing`` records the file's path and the sha256 of its bytes, because which file
+    is read depends on the environment (``default_pricing_path``) and the manifest must say
+    which prices produced its costs. A table built in memory has no path, and its sha256 is
+    that of its canonical JSON.
+    """
+
     models: dict[str, ModelPrice]
+    _source_path: Path | None = PrivateAttr(default=None)
+    _file_sha256: str | None = PrivateAttr(default=None)
 
     def get(self, model: str) -> ModelPrice | None:
         return self.models.get(model)
+
+    @property
+    def source_path(self) -> Path | None:
+        """The file this table was loaded from (None for an in-memory table)."""
+        return self._source_path
+
+    @property
+    def sha256(self) -> str:
+        """sha256 of the file's bytes, or of the canonical JSON of an in-memory table."""
+        if self._file_sha256 is not None:
+            return self._file_sha256
+        payload = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def default_pricing_path() -> Path:
@@ -172,10 +225,13 @@ def default_pricing_path() -> Path:
 
 
 def load_pricing(path: Path | str | None = None) -> PricingTable:
-    """Parse a pricing file (default: ``default_pricing_path()``)."""
+    """Parse a pricing file (default: ``default_pricing_path()``), keeping its path and sha256."""
     p = default_pricing_path() if path is None else Path(path)
-    data = yaml.safe_load(p.read_text(encoding="utf-8"))
-    return PricingTable.model_validate(data)
+    raw = p.read_bytes()
+    table = PricingTable.model_validate(yaml.safe_load(raw.decode("utf-8")))
+    table._source_path = p  # pyright: ignore[reportPrivateUsage]
+    table._file_sha256 = hashlib.sha256(raw).hexdigest()  # pyright: ignore[reportPrivateUsage]
+    return table
 
 
 @functools.cache
@@ -224,7 +280,12 @@ class CostTracker:
         self.mode: CostMode = mode
         self.reports_cost = reports_cost
         self._cache_ttl: CacheTtl = cache_ttl
-        self._price = (table or default_pricing()).get(model) if mode == "metered" else None
+        self.pricing: PricingTable | None = (
+            (table or default_pricing()) if mode == "metered" else None
+        )
+        """The table metered calls are priced from (None unless ``mode`` is ``metered``, so a
+        run with no metered model never needs a pricing file)."""
+        self._price = self.pricing.get(model) if self.pricing is not None else None
         self.usage = Usage()
         self.calls = 0
         self.unreported_calls = 0
@@ -232,6 +293,11 @@ class CostTracker:
         self.metered_usd = 0.0
         self.reported_usd: float | None = None
         self.spend_usd = 0.0
+
+    @property
+    def price(self) -> ModelPrice | None:
+        """The ``pricing.yaml`` row this config's calls are billed from, if any."""
+        return self._price
 
     @property
     def priced(self) -> bool:

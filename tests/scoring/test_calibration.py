@@ -104,11 +104,13 @@ def test_realistic_tied_confidence_mix_keeps_levels_apart() -> None:
     st.integers(min_value=1, max_value=20),
     st.data(),
 )
-def test_values_holding_a_bin_worth_of_cases_are_never_merged(
+def test_values_each_holding_a_bin_worth_of_cases_get_their_own_bins(
     levels: list[int], base: int, data: st.DataObject
 ) -> None:
-    """With at most 5 distinct values each held by c..2c cases, every value holds at least
-    n/10 cases, so 10 equal-mass bins must keep every value in its own bin."""
+    """Two values that *each* hold at least n/B cases never share a bin. With at most 5 distinct
+    values each held by c..2c cases, every value holds at least n/10 cases, so 10 equal-mass
+    bins keep every value apart. (A value with n/B cases may still absorb a small neighbour;
+    see the next test.)"""
     conf: list[float] = []
     correct: list[bool] = []
     for level in levels:
@@ -118,10 +120,34 @@ def test_values_holding_a_bin_worth_of_cases_are_never_merged(
     assert ece(conf, correct) == pytest.approx(_per_value_ece(conf, correct), abs=1e-12)
 
 
+def test_a_bin_worth_of_cases_can_absorb_a_small_neighbour() -> None:
+    """n = 100, B = 10: 0.5 holds exactly n/B cases yet shares bin 1 with the lone 0.6, whose
+    opposite-sign error partly cancels. Acceptable: the shared bin holds 11 < 2n/B cases.
+
+    Bins {0.1×6, 0 correct}, {0.5×10 + 0.6×1, 8 correct}, {0.9×83, 75 correct}:
+    (|0 − 0.6| + |8 − 5.6| + |75 − 74.7|) / 100 = 0.033, against 0.045 with 0.6 on its own.
+    """
+    conf = [0.1] * 6 + [0.5] * 10 + [0.6] + [0.9] * 83
+    correct = [False] * 6 + [True] * 8 + [False] * 2 + [False] + [True] * 75 + [False] * 8
+    assert ece(conf, correct) == pytest.approx(0.033)
+    assert _per_value_ece(conf, correct) == pytest.approx(0.045)
+
+
 def test_equal_width_edges_go_to_upper_bin() -> None:
-    # 0.3 belongs to [0.3, 0.4) and 1.0 to the last bin; each is alone in its bin.
-    assert ece([0.3, 1.0], [False, True], strategy="equal_width") == pytest.approx(0.15)
+    """Each pair has opposite-sign errors, so the result changes if the pair is split."""
+    # 0.3 opens [0.3, 0.4) with 0.25 below it: (0.75 + 0.3) / 2. Same bin would give 0.225.
+    assert ece([0.25, 0.3], [True, False], strategy="equal_width") == pytest.approx(0.525)
+    # 1.0 is clamped into [0.9, 1.0] with 0.95: |1 − 1.95| / 2. Its own bin would give 0.525.
+    assert ece([0.95, 1.0], [True, False], strategy="equal_width") == pytest.approx(0.475)
     assert ece([0.0], [False], strategy="equal_width") == 0.0
+
+
+def test_equal_width_epsilon_rescues_values_just_below_an_edge() -> None:
+    """``0.7 − 0.4`` is 0.29999999999999993; it must share [0.3, 0.4) with 0.35:
+    |1 − 0.65| / 2 = 0.175. Falling into [0.2, 0.3) instead would give (0.7 + 0.35) / 2."""
+    conf = 0.7 - 0.4
+    assert conf < 0.3
+    assert ece([conf, 0.35], [True, False], strategy="equal_width") == pytest.approx(0.175)
 
 
 def test_one_bin_ece_is_absolute_overconfidence() -> None:
@@ -290,6 +316,15 @@ def _clean_test_set(n_negatives: int) -> list[SelectiveCase]:
     negatives = [SelectiveCase(0.95, N, N, True)] * n_negatives
     approvals = [SelectiveCase(0.97, A, A, True)] * 50
     return negatives + approvals
+
+
+def test_certify_threshold_passes_alpha_through() -> None:
+    cert = certify_threshold(HAND, 0.8, 0.02, alpha=0.1)
+    assert cert.upper == clopper_pearson_upper(1, 4, 0.1)
+    assert cert.upper is not None and cert.upper < clopper_pearson_upper(1, 4)
+    # Zero errors on 200 negatives: 1 − 0.05^(1/200) ≈ 0.0149 meets 1.5% at 95%, not at 99%.
+    assert certify_threshold(_clean_test_set(200), 0.9, 0.015).meets
+    assert not certify_threshold(_clean_test_set(200), 0.9, 0.015, alpha=0.01).meets
 
 
 def test_certify_threshold_spec_sample_size_limits() -> None:

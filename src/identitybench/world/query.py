@@ -7,8 +7,13 @@ directions (an identity's accounts, an account's assignments, a manager's report
 Peer stats (SPEC §6.2) are computed here: the share of an identity's peers (same department and
 canonical title, excluding the identity and terminated people) who hold an entitlement through
 valid sources on a given day. No policy rule reads them; they exist to measure over-reliance.
-Canonical titles are generator-only (never serialized), so peer stats need a freshly built
-world; on a world reloaded from JSON they raise instead of silently grouping by noisy titles.
+
+Canonical titles are generator-only (``Identity.canonical_title`` is excluded from
+serialization), so peer stats need a world fresh from ``generator.build_world``. On a world
+reloaded from JSON, ``peers`` and ``peer_share`` raise ``PeerStatsUnavailable``, naming the
+``build_world`` call that rebuilds it, instead of silently grouping peers by noisy titles
+(which would change the peer stats in over-reliance twins between a fresh and a reloaded
+world). Every other lookup works on a reloaded world.
 """
 
 from __future__ import annotations
@@ -32,6 +37,10 @@ from identitybench.world.rolegraph import RoleGraph
 
 PeerGroup = tuple[str, str]
 """(department, canonical title)."""
+
+
+class PeerStatsUnavailable(ValueError):
+    """Peer stats were asked of a world without canonical titles (reloaded from JSON)."""
 
 
 class WorldIndex:
@@ -103,7 +112,8 @@ class WorldIndex:
     def peers(self, identity_id: str) -> tuple[str, ...]:
         """Same department and canonical title, excluding the identity and terminated people.
 
-        Raises ``ValueError`` if the world has no canonical titles (it was reloaded from JSON).
+        Raises ``PeerStatsUnavailable`` if the world has no canonical titles (it was reloaded
+        from JSON).
         """
         group = self._groups().get(self._group_of(identity_id), ())
         return tuple(i for i in group if i != identity_id)
@@ -111,7 +121,8 @@ class WorldIndex:
     def peer_share(self, identity_id: str, entitlement_id: str, on: date) -> float:
         """Share of the identity's peers holding ``entitlement_id`` on ``on`` (0.0 if no peers).
 
-        Raises ``ValueError`` if the world has no canonical titles (it was reloaded from JSON).
+        Raises ``PeerStatsUnavailable`` if the world has no canonical titles (it was reloaded
+        from JSON).
         """
         group_key = self._group_of(identity_id)
         members = self._groups().get(group_key, ())
@@ -127,11 +138,15 @@ class WorldIndex:
     def _group_of(self, identity_id: str) -> PeerGroup:
         identity = self.world.identities[identity_id]
         if identity.canonical_title is None:
-            # Falling back to the noisy title would quietly change peer groups, and with them
-            # the peer stats in over-reliance twins, between a fresh and a reloaded world.
-            raise ValueError(
-                f"{identity_id} has no canonical title; peer stats need a freshly built world "
-                "(canonical titles are generator-only and not serialized)"
+            world = self.world
+            rebuild = (
+                f"build_world({world.profile!r}, {world.seed}, "
+                f"date.fromisoformat({world.anchor_date.isoformat()!r}))"
+            )
+            raise PeerStatsUnavailable(
+                f"{identity_id} has no canonical title: world {world.world_id} was reloaded "
+                "from JSON, and canonical titles are generator-only (never serialized). Peer "
+                f"stats need a freshly generated world; rebuild it with {rebuild}."
             )
         return (identity.department, identity.canonical_title)
 
@@ -241,5 +256,8 @@ def index_for(world: World) -> WorldIndex:
 
 
 def peer_share(world: World, identity_id: str, entitlement_id: str, on: date) -> float:
-    """Share of the identity's peers holding the entitlement through valid sources on ``on``."""
+    """Share of the identity's peers holding the entitlement through valid sources on ``on``.
+
+    Raises ``PeerStatsUnavailable`` on a world reloaded from JSON (see the module docstring).
+    """
     return index_for(world).peer_share(identity_id, entitlement_id, on)

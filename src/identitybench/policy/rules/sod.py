@@ -23,7 +23,14 @@ Claim recipe (request): ``request.entitlement_id``; the conflicting held grant's
 (``membership.role_id`` → each ``child_roles`` hop → ``role.entitlements``, or
 ``assignment.entitlement_id``); then the control's ``expires_on`` (``granted_on`` if it hasn't
 started) when a control exists. Review: this item's conferral of one side, the conferral of one
-other-side grant, then the control date. Each role path is a separate alternative.
+other-side grant, then the control date. Each claim set cites exactly one role path per side,
+and each role path is a separate alternative: a pairing that would cite two paths to the same
+role is dropped in favor of the pairings that cite one (``normalize_claim_sets``).
+
+Input contract: the policy pack's sides (each rule at most once, only known SoD rule IDs); the
+beneficiary's or holder's memberships with every role in their expansion, and the assignments on
+their accounts; and at most one control per (identity, rule). A missing role, a duplicate or
+unknown rule, or a second control raises ``OracleInputError``.
 """
 
 from __future__ import annotations

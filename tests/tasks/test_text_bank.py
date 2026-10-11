@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import itertools
 import random
+import re
 from collections.abc import Mapping
+from difflib import SequenceMatcher
 
 import pytest
 
@@ -17,6 +20,7 @@ from identitybench.tasks.text._bank import (
     grouped_families,
     require_slots,
     template_fields,
+    template_problems,
 )
 from identitybench.tasks.text._pools import COMMON_DEFAULTS, pick_name
 
@@ -50,15 +54,43 @@ def test_every_split_has_families(bank: Bank) -> None:
         assert bank.select(split=split), (bank.name, split)
 
 
+SLOT = re.compile(r"\{[a-z_]+\}")
+NEAR_DUPLICATE = 0.85
+"""SequenceMatcher ratio at which two templates count as the same prose ("Work purposes." vs
+"For work purposes." is 0.875)."""
+
+
+def prose(template: str) -> str:
+    """A template with every slot replaced by one placeholder, so "pls add {app}" and
+    "pls add {entitlement_name}" compare equal, and with case and spacing normalized."""
+    return " ".join(SLOT.sub("{}", template).lower().split())
+
+
 @pytest.mark.parametrize("bank", ALL_BANKS, ids=lambda b: b.name)
-def test_no_template_text_shared_across_splits(bank: Bank) -> None:
-    owner: dict[str, Split] = {}
-    for family in bank.families:
-        for template in family.templates:
-            normalized = template.strip().lower()
-            if normalized in owner:
-                assert owner[normalized] == family.split, f"{template!r} appears in two splits"
-            owner[normalized] = family.split
+def test_no_template_prose_shared_across_splits(bank: Bank) -> None:
+    """SPEC §9.4, §10.5: test never sees dev prose, and fresh neither, not even reworded slots."""
+    by_split = {
+        split: sorted({prose(t) for f in bank.select(split=split) for t in f.templates})
+        for split in Split
+    }
+    for a, b in itertools.combinations(Split, 2):
+        shared = set(by_split[a]) & set(by_split[b])
+        assert not shared, (a, b, shared)
+        for x, y in itertools.product(by_split[a], by_split[b]):
+            matcher = SequenceMatcher(None, x, y)
+            if (
+                matcher.real_quick_ratio() < NEAR_DUPLICATE
+                or matcher.quick_ratio() < NEAR_DUPLICATE
+            ):
+                continue
+            assert matcher.ratio() < NEAR_DUPLICATE, f"[{a}] {x!r} ~ [{b}] {y!r}"
+
+
+def test_prose_normalization_catches_slot_renames() -> None:
+    assert prose("pls add {entitlement_name}") == prose("Pls  add {app}")
+    assert SequenceMatcher(None, prose("Work purposes."), prose("For work purposes.")).ratio() >= (
+        NEAR_DUPLICATE
+    )
 
 
 def test_family_ids_unique_across_banks() -> None:
@@ -94,6 +126,76 @@ def test_family_templates_for_unknown_variant_raises() -> None:
     assert fam.templates_for("w") == ("yo",)
     with pytest.raises(ValueError, match="no variant"):
         fam.templates_for("z")
+
+
+def test_grouped_families_keeps_alternatives_in_one_family() -> None:
+    families = grouped_families(
+        "x",
+        {("v", Split.dev): (("v1", "v1b"), "v2"), ("w", Split.dev): ("w1", ("w2", "w2b"))},
+        {Split.dev: ("a", "b")},
+    )
+    assert families[0].variants == {"v": ("v1", "v1b"), "w": ("w1",)}
+    assert families[1].variants == {"v": ("v2",), "w": ("w2", "w2b")}
+
+
+@pytest.mark.parametrize("bank", ALL_BANKS, ids=lambda b: b.name)
+def test_every_shipped_bank_validates_its_slots(bank: Bank) -> None:
+    assert bank.allowed_slots is not None
+    for template in (t for f in bank.families for t in f.templates):
+        assert template_problems(template, bank.allowed_slots) == [], template
+
+
+def test_template_problems() -> None:
+    allowed = {"app", "entitlement_name"}
+    assert template_problems("need {app} / {entitlement_name}", allowed) == []
+    assert template_problems("{{literal}} braces are fine", allowed) == []
+    assert template_problems("need {entitlment_name}", allowed) == [
+        "unknown slot {entitlment_name}"
+    ]
+    assert template_problems("need {}", allowed) == ["unknown slot {}"]
+    assert template_problems("need {app.name}", allowed) == ["unknown slot {app.name}"]
+    assert template_problems("need {app:>9}", allowed) == [
+        "slot {app} must not use a format spec or conversion"
+    ]
+    assert template_problems("need {app!r}", allowed) == [
+        "slot {app} must not use a format spec or conversion"
+    ]
+    assert template_problems("need {app", allowed)[0].startswith("malformed template")
+
+
+def test_bank_rejects_unknown_slots_and_runs_family_check() -> None:
+    good = Family("x.dev.a", Split.dev, {"v": ("need {app}",)})
+    typo = Family("x.dev.b", Split.dev, {"v": ("need {ap}",)})
+    Bank("b", [good], allowed_slots={"app"})
+    with pytest.raises(ValueError, match=r"x\.dev\.b.*unknown slot \{ap\}"):
+        Bank("b", [good, typo], allowed_slots={"app"})
+
+    def no_shouting(family: Family) -> None:
+        if any(t.isupper() for t in family.templates):
+            raise ValueError(f"{family.id}: shouting")
+
+    with pytest.raises(ValueError, match="shouting"):
+        Bank("b", [Family("x.dev.c", Split.dev, {"v": ("NEED",)})], check=no_shouting)
+
+
+def test_replace_split_applies_the_banks_checks_to_held_out_families() -> None:
+    """A typo in an unpublished fresh family fails when it is loaded, not mid-release."""
+    bank = Bank(
+        "toy",
+        [
+            Family("toy.dev.a", Split.dev, {"x": ("{app}",)}),
+            Family("toy.fresh.a", Split.fresh, {"x": ("{app}!",)}),
+        ],
+        allowed_slots={"app"},
+    )
+    ok = bank.replace_split(
+        Split.fresh, families_from_mapping("toy", Split.fresh, {"h": {"x": ["{app}?"]}})
+    )
+    assert ok.allowed_slots == bank.allowed_slots
+    with pytest.raises(ValueError, match="unknown slot"):
+        bank.replace_split(
+            Split.fresh, families_from_mapping("toy", Split.fresh, {"h": {"x": ["{aap}?"]}})
+        )
 
 
 def test_grouped_families_deals_round_robin() -> None:

@@ -6,14 +6,18 @@ import json
 import os
 import stat
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
+from identitybench.providers import _cli, codex_cli, grok_cli
 from identitybench.providers._cli import (
     MAX_ARG_BYTES,
+    NEUTRAL_SYSTEM,
     SYSTEM_BEGIN,
     SYSTEM_END,
+    SYSTEM_POINTER,
     as_float,
     as_int,
     link_credentials,
@@ -25,6 +29,7 @@ from identitybench.providers._cli import (
     served_models,
     structured_text,
     sync_back,
+    system_override,
     valid_effort,
 )
 from identitybench.providers._subprocess import Command, ProcessResult
@@ -80,6 +85,23 @@ def test_multi_turn_transcript_is_rendered_with_roles_and_tool_traffic() -> None
 def test_prepend_system_uses_delimiters_and_skips_empty_system() -> None:
     assert prepend_system("", "body") == "body"
     assert prepend_system("rules", "body") == f"{SYSTEM_BEGIN}\nrules\n{SYSTEM_END}\n\nbody"
+
+
+def test_system_override() -> None:
+    assert system_override("SYS", "body") == ("SYS", "body", {})
+    neutral = {"substituted_system": NEUTRAL_SYSTEM}
+    assert system_override("", "body") == (NEUTRAL_SYSTEM, "body", neutral)
+    assert system_override(" \n\t", "body") == (NEUTRAL_SYSTEM, "body", neutral)
+    big = "x" * (MAX_ARG_BYTES + 1)
+    assert system_override(big, "body") == (
+        SYSTEM_POINTER,
+        f"{SYSTEM_BEGIN}\n{big}\n{SYSTEM_END}\n\nbody",
+        {},
+    )
+    # The prefix shares the argv element, so it counts toward the limit.
+    fits = "x" * (MAX_ARG_BYTES - 3)
+    assert system_override(fits, "body")[0] == fits
+    assert system_override(fits, "body", prefix="--a=")[0] == SYSTEM_POINTER
 
 
 def test_parse_json_payload() -> None:
@@ -255,6 +277,119 @@ def test_endpoint_identity_hashes_kind_version_and_model() -> None:
         != GrokCliProvider("claude-haiku-5-5", version="2.1.296").endpoint_identity()
     )
     assert len(a.endpoint_identity()) == 16
+
+
+def test_endpoint_identity_includes_the_constructor_default_effort() -> None:
+    identities = {
+        ClaudeCliProvider("m", version="1", effort=effort).endpoint_identity()
+        for effort in (None, "low", "high")
+    }
+    assert len(identities) == 3
+    assert (
+        CodexCliProvider("m", version="1").endpoint_identity()
+        != CodexCliProvider("m", version="1", effort="high").endpoint_identity()
+    )
+
+
+def test_endpoint_identity_changes_with_the_codex_feature_and_config_setup(monkeypatch) -> None:
+    before = CodexCliProvider("m", version="1").endpoint_identity()
+    monkeypatch.setattr(codex_cli, "DISABLED_FEATURES", codex_cli.DISABLED_FEATURES[1:])
+    fewer_features = CodexCliProvider("m", version="1").endpoint_identity()
+    monkeypatch.setattr(codex_cli, "CONFIG_OVERRIDES", ())
+    no_overrides = CodexCliProvider("m", version="1").endpoint_identity()
+    assert len({before, fewer_features, no_overrides}) == 3
+
+
+def test_endpoint_identity_changes_with_the_grok_isolation_setup(monkeypatch) -> None:
+    before = GrokCliProvider("m", version="1").endpoint_identity()
+    monkeypatch.setattr(grok_cli, "ISOLATION_ENV", {**grok_cli.ISOLATION_ENV, "GROK_MEMORY": "1"})
+    changed_env = GrokCliProvider("m", version="1").endpoint_identity()
+    monkeypatch.setattr(grok_cli, "DISALLOWED_TOOLS", grok_cli.DISALLOWED_TOOLS[:2])
+    changed_tools = GrokCliProvider("m", version="1").endpoint_identity()
+    assert len({before, changed_env, changed_tools}) == 3
+
+
+def test_endpoint_identity_changes_with_the_environment_rules_and_neutral_system(
+    monkeypatch,
+) -> None:
+    before = ClaudeCliProvider("m", version="1").endpoint_identity()
+    monkeypatch.setattr(ClaudeCliProvider, "ENV_SET", {})
+    no_env_set = ClaudeCliProvider("m", version="1").endpoint_identity()
+    monkeypatch.setattr(_cli, "NEUTRAL_SYSTEM", "Be terse.")
+    other_neutral = ClaudeCliProvider("m", version="1").endpoint_identity()
+    assert len({before, no_env_set, other_neutral}) == 3
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda **kw: ClaudeCliProvider("m", version="1", **kw),
+        lambda **kw: CodexCliProvider("m", version="1", **kw),
+        lambda **kw: GrokCliProvider("m", version="1", **kw),
+        lambda **kw: CursorCliProvider(version="1", **kw),
+    ],
+)
+def test_setup_revision_is_independent_of_machine_details(
+    make, tmp_path: Path, monkeypatch
+) -> None:
+    """Same setup, same revision: whatever the temporary directory, the binary's location, the
+    model name or whether the user is logged in."""
+    first = make().setup_revision()
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    assert make(binary="/opt/elsewhere/cli").setup_revision() == first
+    for name in ("GROK_HOME", "CODEX_HOME"):
+        empty = tmp_path / f"no-login-{name}"
+        empty.mkdir()
+        monkeypatch.setenv(name, str(empty))
+    assert make().setup_revision() == first
+    assert len(first) == 16
+
+
+def test_setup_revision_ignores_the_model_but_the_identity_does_not() -> None:
+    a, b = GrokCliProvider("grok-a", version="1"), GrokCliProvider("grok-b", version="1")
+    assert a.setup_revision() == b.setup_revision()
+    assert a.endpoint_identity() != b.endpoint_identity()
+
+
+def test_setup_revisions_differ_between_cli_kinds() -> None:
+    revisions = {
+        ClaudeCliProvider("m", version="1").setup_revision(),
+        CodexCliProvider("m", version="1").setup_revision(),
+        GrokCliProvider("m", version="1").setup_revision(),
+        CursorCliProvider("m", version="1").setup_revision(),
+    }
+    assert len(revisions) == 4
+
+
+def test_setup_revision_leaves_nothing_behind(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    GrokCliProvider("m", version="1").setup_revision()
+    CodexCliProvider("m", version="1").setup_revision()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("make", "prompt_of"),
+    [
+        (
+            lambda runner: CodexCliProvider("m", runner=runner, version="1"),
+            lambda command: command.stdin,
+        ),
+        (
+            lambda runner: CursorCliProvider(runner=runner, version="1", binary="cursor-agent"),
+            lambda command: command.argv[-1],
+        ),
+    ],
+)
+async def test_clis_without_a_system_override_send_an_empty_system_as_nothing(
+    make, prompt_of
+) -> None:
+    """Codex and Cursor keep their own system prompt whatever the request says, and an empty
+    request system adds no delimiter block, so there is nothing to substitute."""
+    runner = FakeRunner(ok(SUCCESS))
+    response = await make(runner).complete(make_request("Decide.", system=""))
+    assert prompt_of(runner.command) == "Decide."
+    assert "substituted_system" not in (response.raw or {})
 
 
 def test_endpoint_identity_probes_the_binary_version_once() -> None:

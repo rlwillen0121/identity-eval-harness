@@ -386,6 +386,42 @@ def test_role_with_both_sides_escalates_on_its_own(rev: CaseBuilder) -> None:
     ]
 
 
+def test_two_paths_to_a_role_with_both_sides_are_separate_minimal_sets(rev: CaseBuilder) -> None:
+    """The shape hypothesis found: role_ops reaches role_close directly and through role_mid,
+    and role_close lists both sides. Pairing one path to each side would also give a set citing
+    both paths, from which either path could be dropped with the rest still showing the
+    conflict. Only the minimal sets remain, one path each, for SOD-002 and for MIT-002."""
+    rev.entitlement("ent_post")
+    rev.entitlement("ent_approve")
+    rev.sod("SOD-002", ["ent_post"], ["ent_approve"])
+    rev.role("role_close", entitlements=["ent_post", "ent_approve"])
+    rev.role("role_mid", child_roles=["role_close"])
+    rev.role("role_ops", child_roles=["role_close", "role_mid"])
+    rev.membership("rm_ops", "u_ben", "role_ops", granted_on=day(-30))
+    both_sides = [
+        ("role_close", "entitlements", "ent_approve"),
+        ("role_close", "entitlements", "ent_post"),
+    ]
+    direct = [("rm_ops", "role_id", "role_ops"), ("role_ops", "child_roles", "role_close")]
+    nested = [
+        ("rm_ops", "role_id", "role_ops"),
+        ("role_ops", "child_roles", "role_mid"),
+        ("role_mid", "child_roles", "role_close"),
+    ]
+    record = item(review(rev.campaign("rm_ops")), "rv_rm_ops")
+    assert claim_triples(certificate(record, "SOD-002")) == [
+        [*direct, *both_sides],
+        [*nested, *both_sides],
+    ]
+    rev.control("mc_1", "SOD-002", "u_ben", expires_on=day(10))
+    record = item(review(rev.campaign("rm_ops")), "rv_rm_ops")
+    expiry = ("mc_1", "expires_on", "2026-10-20")
+    assert claim_triples(certificate(record, "MIT-002")) == [
+        [*direct, *both_sides, expiry],
+        [*nested, *both_sides, expiry],
+    ]
+
+
 def test_mitigated_conflict_certifies_with_the_exception_recorded(rev: CaseBuilder) -> None:
     review_world(rev)
     rev.control("mc_1", "SOD-002", "u_ben", expires_on=day(31))

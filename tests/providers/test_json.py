@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from hypothesis import given
@@ -78,6 +79,46 @@ def test_strip_reasoning() -> None:
     assert strip_reasoning("reasoning</think>answer") == "answer"
     assert strip_reasoning("answer<think>unfinished") == "answer"
     assert strip_reasoning("no tags") == "no tags"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'x {"a": "<think>"} y',
+        'x {"a": "</think>"} y',
+        'x {"a": "<thinking>open", "b": "close</thinking>"} y',
+    ],
+)
+def test_strip_reasoning_ignores_tags_inside_a_decoded_object(text: str) -> None:
+    assert strip_reasoning(text) == text
+
+
+def test_strip_reasoning_still_strips_real_tags_next_to_an_object_with_a_tag() -> None:
+    text = '<think>draft</think>{"a": "<think>"} tail<think>unfinished'
+    assert strip_reasoning(text) == '{"a": "<think>"} tail'
+
+
+def _regex_strip_reasoning(text: str) -> str:
+    """The original regex implementation, the reference for texts without objects."""
+    text = re.sub(r"<(think|thinking)>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    closes = list(re.finditer(r"</(?:think|thinking)>", text, flags=re.IGNORECASE))
+    if closes:
+        text = text[closes[-1].end() :]
+    opened = re.search(r"<(?:think|thinking)>", text, flags=re.IGNORECASE)
+    return text[: opened.start()] if opened is not None else text
+
+
+@given(
+    st.lists(
+        st.sampled_from(
+            ["<think>", "</think>", "<thinking>", "</thinking>", "<THINK>", "</Think>", "a", "b "]
+        ),
+        max_size=12,
+    )
+)
+def test_strip_reasoning_matches_the_regex_semantics_without_objects(parts: list[str]) -> None:
+    text = "".join(parts)
+    assert strip_reasoning(text) == _regex_strip_reasoning(text)
 
 
 DENY = {"decision": "DENY", "rules": ["SOD-001"]}
@@ -166,6 +207,70 @@ def test_does_not_repair_trailing_commas() -> None:
     assert extract_json_object('{"a": 1,}') is None
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('prose {"a": "has <think> inside"} end', {"a": "has <think> inside"}),
+        ('prose {"a": "has </think> inside"} end', {"a": "has </think> inside"}),
+        (
+            '<think>Draft {"decision": "APPROVE"}</think> Final: '
+            '{"decision": "DENY", "note": "no <think> here"} done',
+            {"decision": "DENY", "note": "no <think> here"},
+        ),
+    ],
+)
+def test_a_think_tag_inside_a_decoded_object_is_not_reasoning(
+    text: str, expected: dict[str, object]
+) -> None:
+    assert extract_json_object(text) == expected
+
+
+# --------------------------------------------------------------------------- required keys
+
+KEYS = ("decision", "rules")
+
+
+def test_required_keys_rescue_an_answer_followed_by_a_small_object() -> None:
+    text = 'Answer: {"decision":"DENY","rules":[]} Note: see {"rule":"LIFE-001"}'
+    assert extract_json_object(text, KEYS) == {"decision": "DENY", "rules": []}
+    # Without required keys the last object wins, aside or not.
+    assert extract_json_object(text) == {"rule": "LIFE-001"}
+
+
+def test_required_keys_keep_the_defence_against_an_earlier_example() -> None:
+    text = (
+        'Schema example: {"decision": "APPROVE", "rules": []}. My answer: '
+        '{"decision": "DENY", "rules": ["SOD-001"]} (see {"rule": "SOD-001"})'
+    )
+    assert extract_json_object(text, KEYS) == DENY
+
+
+def test_without_an_object_holding_the_required_keys_the_last_object_wins() -> None:
+    text = '{"decision": "DENY"} and then {"rule": "LIFE-001"}'
+    assert extract_json_object(text, KEYS) == {"rule": "LIFE-001"}
+    assert extract_json_object('{"rule": "LIFE-001"}', KEYS) == {"rule": "LIFE-001"}
+
+
+def test_required_keys_count_only_top_level_keys() -> None:
+    text = f'{DENY_JSON} then {{"meta": {{"decision": "APPROVE", "rules": []}}}}'
+    assert extract_json_object(text, KEYS) == DENY
+
+
+@pytest.mark.parametrize("keys", [list(KEYS), set(KEYS), frozenset(KEYS), {"decision": 1}])
+def test_required_keys_accept_any_collection(keys: object) -> None:
+    text = f'{DENY_JSON} Note: {{"rule": "LIFE-001"}}'
+    assert extract_json_object(text, keys) == DENY  # type: ignore[arg-type]
+
+
+def test_empty_required_keys_mean_none() -> None:
+    assert extract_json_object(f'{DENY_JSON} {{"x": 1}}', ()) == {"x": 1}
+
+
+def test_required_keys_as_a_single_string_is_a_programming_error() -> None:
+    with pytest.raises(TypeError, match="collection"):
+        extract_json_object(DENY_JSON, "decision")
+
+
 json_values = st.recursive(
     st.none() | st.booleans() | st.integers() | st.text(max_size=8),
     lambda children: (
@@ -196,3 +301,15 @@ def test_a_later_object_always_beats_an_earlier_one(
 ) -> None:
     text = f"{json.dumps(draft)}{between} {json.dumps(final)}"
     assert extract_json_object(text) == final
+
+
+@given(
+    aside=st.dictionaries(
+        st.text(max_size=6).filter(lambda key: key not in KEYS), json_values, max_size=3
+    ),
+    between=st.text(alphabet=st.characters(blacklist_characters="{}`<"), max_size=20),
+)
+def test_an_answer_with_the_required_keys_beats_any_trailing_aside(
+    aside: dict[str, object], between: str
+) -> None:
+    assert extract_json_object(f"{DENY_JSON}{between} {json.dumps(aside)}", KEYS) == DENY

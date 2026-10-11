@@ -14,18 +14,27 @@ removes it and the injected ones with ``--disallowed-tools``, which leaves zero 
 search, subagents, plan mode and memory are switched off as well.
 
 The prompt goes in through ``--prompt-file`` and is sent verbatim; the system prompt is replaced
-with ``--system-prompt-override``. Structured output uses ``--json-schema``; the CLI returns the
-object as ``structuredOutput``. ``--max-turns 2`` leaves room for the structured-output turn
-(there are no tools for a turn to use).
+with ``--system-prompt-override`` (an empty one by ``NEUTRAL_SYSTEM``). Structured output uses
+``--json-schema``; the CLI returns the object as ``structuredOutput``. ``--max-turns 2`` leaves
+room for the structured-output turn (there are no tools for a turn to use).
 
-Every ``GROK_*`` variable of the parent environment is removed from the child's, apart from the
-auto-update switches. Grok 1.0.46 reads well over a hundred of them, among them ones that route
-requests elsewhere (``GROK_XAI_API_BASE_URL``, ``GROK_WS_URL``, ``GROK_MODELS_BASE_URL``), point
-it back at the user's real configuration (``GROK_CONFIG``, ``GROK_CONFIG_PATH``,
-``GROK_MANAGED_CONFIG_URL``), swap its auth (``GROK_AUTH_PROVIDER_*``) or turn on Claude and
-Cursor setup loading (``GROK_CLAUDE_*_ENABLED``); a hand-picked list would always lag the binary.
-The variables the call needs (``GROK_HOME`` and the feature switches) are set afresh.
-``XAI_API_KEY`` is removed too, so the call stays on the subscription login like the other CLIs.
+Values go in attached form (``--system-prompt-override=<text>``): grok's argument parser (clap)
+reads a separate value that starts with ``-`` as an unknown flag and exits with status 2, so a
+system prompt opening with a Markdown bullet (``- ``), a rule or front matter (``---``) would
+fail every call. ``--no-auto-update`` keeps the CLI from updating itself during a run, after
+``endpoint_identity`` recorded the version: grok 1.0.46's headless agent code includes its update
+checker, and nothing else in the call turns it off. The flag is session-scoped and writes no
+config.
+
+Every ``GROK_*`` variable of the parent environment is removed from the child's. Grok 1.0.46
+reads well over a hundred of them, among them ones that route requests elsewhere
+(``GROK_XAI_API_BASE_URL``, ``GROK_WS_URL``, ``GROK_MODELS_BASE_URL``), point it back at the
+user's real configuration (``GROK_CONFIG``, ``GROK_CONFIG_PATH``, ``GROK_MANAGED_CONFIG_URL``),
+swap its auth (``GROK_AUTH_PROVIDER_*``), turn on Claude and Cursor setup loading
+(``GROK_CLAUDE_*_ENABLED``) or re-enable auto-update (``GROK_AUTO_UPDATE``); a hand-picked list
+would always lag the binary. The variables the call needs (``GROK_HOME`` and the feature
+switches) are set afresh. ``XAI_API_KEY`` is removed too, so the call stays on the subscription
+login like the other CLIs.
 
 Grok's usage block is Anthropic-shaped: ``input_tokens`` excludes cache reads and
 ``output_tokens`` includes ``reasoning_tokens`` (``total_tokens`` = input + cache read + output).
@@ -39,7 +48,6 @@ from pathlib import Path
 from typing import Unpack
 
 from identitybench.providers._cli import (
-    SYSTEM_POINTER,
     CliOptions,
     CliProvider,
     Invocation,
@@ -47,18 +55,18 @@ from identitybench.providers._cli import (
     as_dict,
     as_float,
     as_int,
-    exceeds_arg_limit,
     link_credentials,
     parse_json_payload,
-    prepend_system,
     render_transcript,
     served_models,
     structured_text,
+    system_override,
 )
 from identitybench.providers._subprocess import ProcessResult
 from identitybench.providers.base import ModelRequest, ModelResponse, Usage
 
 PROMPT_FILE = "prompt.md"
+SYSTEM_FLAG = "--system-prompt-override="
 _RAW_KEYS = ("num_turns", "session_id", "duration_ms")
 
 ALLOWLISTED_TOOL = "read_file"
@@ -80,9 +88,6 @@ class GrokCliProvider(CliProvider):
     KIND = "grok_cli"
     ENV_DROP = frozenset({"XAI_API_KEY"})
     ENV_DROP_PREFIXES = ("GROK_",)
-    ENV_KEEP = frozenset({"GROK_AUTO_UPDATE", "GROK_DISABLE_AUTOUPDATER"})
-    """The user's auto-update choice: dropping it could let the CLI update itself mid-run, after
-    ``endpoint_identity`` recorded the old version."""
 
     def __init__(
         self,
@@ -112,11 +117,9 @@ class GrokCliProvider(CliProvider):
     def _build(
         self, request: ModelRequest, effort: str | None, io_dir: Path, work_dir: Path
     ) -> Invocation:
-        body = render_transcript(request.messages)
-        system = request.system
-        if exceeds_arg_limit(system):
-            body = prepend_system(system, body)
-            system = SYSTEM_POINTER
+        system, body, notes = system_override(
+            request.system, render_transcript(request.messages), prefix=SYSTEM_FLAG
+        )
         prompt_path = io_dir / PROMPT_FILE
         prompt_path.write_text(body, encoding="utf-8")
         argv = [
@@ -125,8 +128,7 @@ class GrokCliProvider(CliProvider):
             self.model,
             "--prompt-file",
             str(prompt_path),
-            "--system-prompt-override",
-            system,
+            f"{SYSTEM_FLAG}{system}",
             "--tools",
             ALLOWLISTED_TOOL,
             "--disallowed-tools",
@@ -134,6 +136,7 @@ class GrokCliProvider(CliProvider):
             "--disable-web-search",
             "--no-subagents",
             "--no-plan",
+            "--no-auto-update",
             "--max-turns",
             "2",
             "--verbatim",
@@ -141,10 +144,10 @@ class GrokCliProvider(CliProvider):
             "json",
         ]
         if request.output_schema is not None:
-            argv += ["--json-schema", json.dumps(request.output_schema)]
+            argv.append(f"--json-schema={json.dumps(request.output_schema)}")
         if effort is not None:
-            argv += ["--reasoning-effort", effort]
-        return Invocation(argv=tuple(argv))
+            argv.append(f"--reasoning-effort={effort}")
+        return Invocation(argv=tuple(argv), raw=notes)
 
     def _parse(self, result: ProcessResult, request: ModelRequest, io_dir: Path) -> ModelResponse:
         payload = parse_json_payload(result.stdout)

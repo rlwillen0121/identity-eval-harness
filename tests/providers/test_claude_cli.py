@@ -4,7 +4,13 @@ import json
 
 import pytest
 
-from identitybench.providers._cli import MAX_ARG_BYTES, SYSTEM_BEGIN, SYSTEM_END, SYSTEM_POINTER
+from identitybench.providers._cli import (
+    MAX_ARG_BYTES,
+    NEUTRAL_SYSTEM,
+    SYSTEM_BEGIN,
+    SYSTEM_END,
+    SYSTEM_POINTER,
+)
 from identitybench.providers.base import Message, Role
 from identitybench.providers.claude_cli import ClaudeCliProvider
 from tests.providers.fakes import DECISION_SCHEMA, FakeRunner, flag_value, make_request, ok
@@ -63,6 +69,31 @@ async def test_argv_matches_the_stripped_down_invocation() -> None:
     assert "--fallback-model" not in command.argv
 
 
+@pytest.mark.parametrize("system", ["", " \n"])
+async def test_an_empty_system_prompt_is_replaced_by_the_neutral_one(system: str) -> None:
+    runner = FakeRunner(ok(VERIFIED))
+    response = await provider(runner).complete(make_request("Decide.", system=system))
+    command = runner.command
+    assert flag_value(command.argv, "--system-prompt") == NEUTRAL_SYSTEM
+    assert command.stdin == "Decide."
+    assert response.raw is not None
+    assert response.raw["substituted_system"] == NEUTRAL_SYSTEM
+
+
+async def test_a_real_system_prompt_is_not_recorded_as_substituted() -> None:
+    response = await provider(FakeRunner(ok(VERIFIED))).complete(make_request(system="SYS"))
+    assert "substituted_system" not in (response.raw or {})
+
+
+@pytest.mark.parametrize("system", ["- Follow the policy.", "---\ntitle: policy\n---\nRules."])
+async def test_a_system_prompt_starting_with_a_dash_is_passed_verbatim(system: str) -> None:
+    """The claude CLI's parser takes the next argument as a required option's value, whatever
+    it starts with (unlike grok's; see test_grok_cli)."""
+    runner = FakeRunner(ok(VERIFIED))
+    await provider(runner).complete(make_request(system=system))
+    assert flag_value(runner.command.argv, "--system-prompt") == system
+
+
 async def test_schema_and_effort_flags() -> None:
     runner = FakeRunner(ok(VERIFIED))
     await provider(runner, binary="/opt/claude").complete(
@@ -98,6 +129,7 @@ async def test_env_drops_api_credentials_and_parent_session_vars(monkeypatch) ->
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription-login")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/tmp/cfg")
     monkeypatch.setenv("OPENAI_API_KEY", "unrelated")
+    monkeypatch.setenv("DISABLE_AUTOUPDATER", "0")
     runner = FakeRunner(ok(VERIFIED))
     await provider(runner).complete(make_request())
     env = runner.command.env
@@ -116,6 +148,15 @@ async def test_env_drops_api_credentials_and_parent_session_vars(monkeypatch) ->
     assert env["CLAUDE_CONFIG_DIR"] == "/tmp/cfg"
     assert env["OPENAI_API_KEY"] == "unrelated"
     assert "PATH" in env
+    # The self-updater is off for every call, so the probed version is the one that runs.
+    assert env["DISABLE_AUTOUPDATER"] == "1"
+
+
+async def test_the_updater_is_disabled_even_when_the_parent_never_mentions_it(monkeypatch) -> None:
+    monkeypatch.delenv("DISABLE_AUTOUPDATER", raising=False)
+    runner = FakeRunner(ok(VERIFIED))
+    await provider(runner).complete(make_request())
+    assert runner.command.env["DISABLE_AUTOUPDATER"] == "1"
 
 
 async def test_parses_the_verified_payload() -> None:

@@ -331,13 +331,34 @@ def test_hyg_001_role_that_confers_nothing_ages_from_its_grant(rev: CaseBuilder)
     assert hyg_001(rev, "rm_empty") == ("CERTIFY", [])
 
 
-def test_hyg_001_missing_usage_record_is_an_input_error(rev: CaseBuilder) -> None:
+MISSING_X = r"no usage record for \(account acct_ben_main, entitlement ent_x\)"
+
+
+def test_missing_usage_record_makes_the_view_incomplete(rev: CaseBuilder) -> None:
+    """SPEC §9.2: a missing record isn't unknown usage (that is telemetry `unavailable`), so the
+    view is refused, even for an item too young for HYG-001 to read its telemetry."""
     dormant_assignment(rev, last_used=-300)
-    rev.drop("use_x")
-    with pytest.raises(OracleInputError, match="usage record"):
+    rev.no_usage("acct_ben_main", "ent_x")
+    with pytest.raises(OracleInputError, match=MISSING_X):
         decide_review(rev.campaign("as_x"))
     rev.set("as_x", granted_on=day(-90))
-    assert item(review(rev.campaign("as_x")), "rv_as_x").decision == "CERTIFY"
+    with pytest.raises(OracleInputError, match=MISSING_X):
+        decide_review(rev.campaign("as_x"))
+
+
+def test_missing_usage_record_outside_the_campaign_makes_the_view_incomplete(
+    rev: CaseBuilder,
+) -> None:
+    """The gap is in a birthright membership's expansion, which isn't reviewed and is exempt
+    from dormancy anyway: the view is still incomplete (conformance A25)."""
+    young_items(rev)
+    rev.entitlement("ent_x")
+    rev.role("role_base", entitlements=["ent_x"], kind="birthright")
+    rev.membership("rm_base", "u_ben", "role_base", source="birthright")
+    assert item(review(rev.campaign("as_b")), "rv_as_b").decision == "CERTIFY"
+    rev.no_usage("acct_ben_main", "ent_x")
+    with pytest.raises(OracleInputError, match=MISSING_X):
+        decide_review(rev.campaign("as_b"))
 
 
 def test_hyg_001_membership_holder_without_an_account_is_an_input_error(rev: CaseBuilder) -> None:
@@ -429,14 +450,23 @@ def mover(b: CaseBuilder, moved_days_ago: int | None) -> None:
     b.set("u_ben", department="Sales", prior_department="Finance", move_date=move_date)
 
 
+HYG_005_LEAD = [
+    ("rm_fin", "source", "birthright"),
+    ("u_ben", "move_date", "2026-09-26"),
+    ("rm_fin", "role_id", "role_fin"),
+]
+
+
 def test_hyg_005_grace_boundary_13_vs_14(rev: CaseBuilder) -> None:
+    """The certificate cites both sides of the mismatch: what the role's attribute rule allows
+    and the holder's attribute."""
     mover(rev, 14)
     record = item(review(rev.campaign("rm_fin")), "rv_rm_fin")
     assert record.decision == "REVOKE"
     assert claim_triples(certificate(record, "HYG-005")) == [
         [
-            ("rm_fin", "source", "birthright"),
-            ("u_ben", "move_date", "2026-09-26"),
+            *HYG_005_LEAD,
+            ("role_fin", "attribute_rule.departments", "Finance"),
             ("u_ben", "department", "Sales"),
         ]
     ]
@@ -456,22 +486,57 @@ def test_hyg_005_still_matching_birthright_stays(rev: CaseBuilder) -> None:
 
 
 def test_hyg_005_every_mismatch_is_an_alternative(rev: CaseBuilder) -> None:
+    """One claim set per mismatched dimension, each citing every value the rule allows on it
+    (sorted, whatever the rule's order). The matching employment type is in no set."""
     mover(rev, 60)
     rule = AttributeRule(
-        departments=("Finance",), regions=("EU",), employment_types=(EmploymentType.employee,)
+        departments=("Legal", "Finance"),
+        regions=("EU",),
+        employment_types=(EmploymentType.employee,),
     )
     rev.set("role_fin", attribute_rule=rule)
     record = item(review(rev.campaign("rm_fin")), "rv_rm_fin")
-    assert [cs[-1] for cs in claim_triples(certificate(record, "HYG-005"))] == [
-        ("u_ben", "department", "Sales"),
-        ("u_ben", "location.region", "NA"),
+    lead = [
+        ("rm_fin", "source", "birthright"),
+        ("u_ben", "move_date", "2026-08-11"),
+        ("rm_fin", "role_id", "role_fin"),
+    ]
+    assert claim_triples(certificate(record, "HYG-005")) == [
+        [
+            *lead,
+            ("role_fin", "attribute_rule.departments", "Finance"),
+            ("role_fin", "attribute_rule.departments", "Legal"),
+            ("u_ben", "department", "Sales"),
+        ],
+        [*lead, ("role_fin", "attribute_rule.regions", "EU"), ("u_ben", "location.region", "NA")],
+    ]
+
+
+def test_hyg_005_cites_the_employment_types_the_rule_allows(rev: CaseBuilder) -> None:
+    """A converted contractor in the same department: only the employment type mismatches."""
+    mover(rev, 60)
+    rev.identity("u_ben", employment_type="contractor", move_date=day(-60))
+    rule = AttributeRule(employment_types=(EmploymentType.intern, EmploymentType.employee))
+    rev.set("role_fin", attribute_rule=rule)
+    record = item(review(rev.campaign("rm_fin")), "rv_rm_fin")
+    (claim_set,) = claim_triples(certificate(record, "HYG-005"))
+    assert claim_set[-3:] == [
+        ("role_fin", "attribute_rule.employment_types", "employee"),
+        ("role_fin", "attribute_rule.employment_types", "intern"),
+        ("u_ben", "employment_type", "contractor"),
     ]
 
 
 def test_hyg_005_only_judges_birthright_memberships(rev: CaseBuilder) -> None:
+    """A requested membership of a mover isn't HYG-005's business. It has to be in a business
+    role: the same membership in the birthright role would be a contradictory view."""
     mover(rev, 60)
-    rev.set("rm_fin", source="request", granted_on=day(-10))
-    assert item(review(rev.campaign("rm_fin")), "rv_rm_fin").decision == "CERTIFY"
+    rev.role("role_fin_projects", entitlements=["ent_fin"])
+    rev.membership("rm_projects", "u_ben", "role_fin_projects", granted_on=day(-10))
+    assert item(review(rev.campaign("rm_projects")), "rv_rm_projects").decision == "CERTIFY"
+    rev.set("rm_fin", source="request")
+    with pytest.raises(OracleInputError, match="membership rm_fin has source 'request'"):
+        decide_review(rev.campaign("rm_projects"))
 
 
 def test_hyg_005_needs_the_attribute_rule(rev: CaseBuilder) -> None:
@@ -499,3 +564,28 @@ def test_review_input_errors(rev: CaseBuilder) -> None:
     rev.membership("rm_ghost", "u_ghost", "role_a")
     with pytest.raises(OracleInputError, match="u_ghost"):
         decide_review(rev.campaign("rm_ghost"))
+
+
+@pytest.mark.parametrize(
+    ("kind", "source"),
+    [("birthright", "request"), ("business", "birthright")],
+    ids=["request-in-birthright-role", "birthright-in-business-role"],
+)
+def test_membership_source_must_match_its_role_kind(
+    rev: CaseBuilder, kind: str, source: str
+) -> None:
+    """SPEC §9.2: a view breaking this is rejected, whichever item is under review."""
+    young_items(rev)
+    rev.role("role_odd", entitlements=["ent_a"], kind=kind)
+    rev.membership("rm_odd", "u_ben", "role_odd", source=source, granted_on=day(-10))
+    message = f"membership rm_odd has source '{source}' but its role role_odd is a {kind} role"
+    with pytest.raises(OracleInputError, match=message):
+        decide_review(rev.campaign("as_b"))
+
+
+def test_membership_in_a_role_outside_the_view_is_rejected(rev: CaseBuilder) -> None:
+    """Even an expired membership: its source can't be checked against a missing role."""
+    young_items(rev)
+    rev.membership("rm_lost", "u_ben", "role_lost", expires_on=day(-30))
+    with pytest.raises(OracleInputError, match="rm_lost is in role 'role_lost', which isn't in"):
+        decide_review(rev.campaign("as_b"))

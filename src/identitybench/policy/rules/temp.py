@@ -25,7 +25,8 @@ from identitybench.schemas.enums import Effect
 class PrivilegedCap(RequestRule):
     """TEMP-001: a privileged entitlement is granted for at most 7 days at a time.
 
-    Cap: 7 days. Claims: ``entitlement.privileged = true``.
+    Cap: 7 days. Claims: ``entitlement.privileged = true``. Input contract: the requested
+    entitlement's ``privileged`` flag.
     """
 
     id = "TEMP-001"
@@ -45,8 +46,9 @@ class PrivilegedCap(RequestRule):
 class MaxDurationCap(RequestRule):
     """TEMP-002: an entitlement with a ``max_duration_days`` is granted for at most that long.
 
-    Cap: ``max_duration_days``. Claims: ``entitlement.max_duration_days``. A non-positive maximum
-    can't be a duration, so it is rejected as malformed input.
+    Cap: ``max_duration_days``. Claims: ``entitlement.max_duration_days``. Input contract: the
+    requested entitlement's ``max_duration_days`` (null means no maximum). A non-positive maximum
+    can't be a duration, so it raises ``OracleInputError`` as malformed input.
     """
 
     id = "TEMP-002"

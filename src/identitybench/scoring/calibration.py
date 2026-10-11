@@ -82,8 +82,11 @@ def _equal_mass_bins(conf: FloatArray, n_bins: int) -> NDArray[np.intp]:
     ``⌊p · B / n⌋``. Placing a group by its first position instead would let a large group that
     starts late in a segment swallow the earlier, smaller group there, and their opposite-sign
     errors would cancel. With midpoints, two groups share a bin only if together they hold fewer
-    than ``2n / B`` cases, so any value held by at least ``n / B`` cases is never merged with
-    another. Without ties this is a plain equal-count split.
+    than ``2n / B`` cases, so two values *each* held by at least ``n / B`` cases never share a
+    bin. A value with ``n / B`` cases can still absorb a small neighbour: with ``n = 100`` and
+    ``B = 10``, ``[0.1]×6 + [0.5]×10 + [0.6]×1 + [0.9]×83`` puts 0.5 and 0.6 together in bin 1.
+    That merge is acceptable, since a shared bin stays under ``2n / B`` cases. Without ties this
+    is a plain equal-count split.
     """
     n = conf.size
     order = np.argsort(conf, kind="stable")
@@ -98,8 +101,10 @@ def _equal_mass_bins(conf: FloatArray, n_bins: int) -> NDArray[np.intp]:
 def _equal_width_bins(conf: FloatArray, n_bins: int) -> NDArray[np.intp]:
     """Bins ``[0, 1/B), …, [(B−1)/B, 1]``; a value on an edge belongs to the upper bin.
 
-    The tiny epsilon keeps decimal edges such as 0.3 out of the lower bin when ``0.3 × 10``
-    rounds to 2.9999….
+    Literal edges such as 0.3 bin correctly on their own (``0.3 × 10 == 3.0`` in doubles). The
+    tiny epsilon is for confidences produced by arithmetic that land a rounding error below an
+    edge: ``0.7 − 0.4`` is ``0.29999999999999993``, and without it that value would fall into
+    ``[0.2, 0.3)``.
     """
     raw = np.floor(conf * n_bins + 1e-9).astype(np.intp)
     return np.minimum(raw, n_bins - 1)

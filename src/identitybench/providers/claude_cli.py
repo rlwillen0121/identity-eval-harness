@@ -2,7 +2,9 @@
 
 The call is stripped down to a plain model call: the system prompt is replaced, every built-in
 tool is disabled (``--tools ""``), MCP servers and user/project/local settings are not loaded,
-nothing is persisted, and the process runs in an empty temporary directory. ``--safe-mode`` also
+nothing is persisted, and the process runs in an empty temporary directory. An empty system
+prompt is replaced by ``NEUTRAL_SYSTEM`` rather than passed as ``--system-prompt ""``, which the
+CLI could read as unset and answer with its own agent prompt. ``--safe-mode`` also
 turns off every customization the flags above don't name (CLAUDE.md files, installed plugins,
 hooks, custom agents and commands, output styles), ``--disable-slash-commands`` removes skills
 and ``--no-chrome`` the browser integration. (``--bare`` would be stricter still but only
@@ -14,7 +16,8 @@ child environment so the CLI can't silently switch from the subscription login t
 a different endpoint. So are the parent Claude Code session's variables (``CLAUDECODE``,
 ``CLAUDE_CODE_*``, ``CLAUDE_EFFORT``): when the harness itself runs inside Claude Code they would
 otherwise tie the child to that session or override ``--effort``. ``CLAUDE_CODE_OAUTH_TOKEN`` is
-kept because it *is* a subscription login.
+kept because it *is* a subscription login. ``DISABLE_AUTOUPDATER=1`` is set so the CLI can't
+update itself during a run, after ``endpoint_identity`` recorded the version.
 
 Sampling temperature can't be set through the CLI (and current Claude models reject it anyway);
 ``max_output_tokens`` is not configurable either. The CLI's ``--fallback-model`` is never passed:
@@ -25,22 +28,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import Unpack
 
 from identitybench.providers._cli import (
-    SYSTEM_POINTER,
     CliOptions,
     CliProvider,
     Invocation,
     as_dict,
     as_float,
     as_int,
-    exceeds_arg_limit,
     parse_json_payload,
-    prepend_system,
     render_transcript,
     served_models,
     structured_text,
+    system_override,
 )
 from identitybench.providers._subprocess import ProcessResult
 from identitybench.providers.base import ModelRequest, ModelResponse, Usage
@@ -62,6 +64,7 @@ class ClaudeCliProvider(CliProvider):
     )
     ENV_DROP_PREFIXES = ("CLAUDE_CODE_",)
     ENV_KEEP = frozenset({"CLAUDE_CODE_OAUTH_TOKEN"})
+    ENV_SET = MappingProxyType({"DISABLE_AUTOUPDATER": "1"})
 
     def __init__(
         self,
@@ -77,11 +80,7 @@ class ClaudeCliProvider(CliProvider):
     def _build(
         self, request: ModelRequest, effort: str | None, io_dir: Path, work_dir: Path
     ) -> Invocation:
-        body = render_transcript(request.messages)
-        system = request.system
-        if exceeds_arg_limit(system):
-            body = prepend_system(system, body)
-            system = SYSTEM_POINTER
+        system, body, notes = system_override(request.system, render_transcript(request.messages))
         argv = [
             self.binary,
             "-p",
@@ -105,7 +104,7 @@ class ClaudeCliProvider(CliProvider):
             argv += ["--json-schema", json.dumps(request.output_schema)]
         if effort is not None:
             argv += ["--effort", effort]
-        return Invocation(argv=tuple(argv), stdin=body)
+        return Invocation(argv=tuple(argv), stdin=body, raw=notes)
 
     def _parse(self, result: ProcessResult, request: ModelRequest, io_dir: Path) -> ModelResponse:
         payload = parse_json_payload(result.stdout)

@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from identitybench import CANARY
 from identitybench.runner.dataset import (
+    _key_str,  # pyright: ignore[reportPrivateUsage]
     canonical_line,
     normalize_suite,
+    portable_path,
     read_cases,
     read_jsonl,
     stratified_sample,
@@ -258,6 +264,90 @@ def test_custom_strata() -> None:
     cases = _population()
     sample = stratified_sample(cases, 0.5, strata=lambda c: c.task, seed=0)
     assert Counter(c.task for c in sample) == {Task.access_request: 90, Task.access_review: 10}
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+_HASH_SEED_SCRIPT = """
+import json
+from identitybench.runner.dataset import stratified_sample
+from tests.runner.test_dataset import _population
+
+cases = _population()
+by_set = stratified_sample(
+    cases, 0.2, strata=lambda c: frozenset({c.tier.value, "x", "requests"}), seed=1, unit="case"
+)
+by_dict = stratified_sample(
+    cases, 0.2, strata=lambda c: {"tier": c.tier.value, "task": c.task.value, "z": 1}, seed=1
+)
+print(json.dumps([[c.case_id for c in by_set], [c.case_id for c in by_dict]]))
+"""
+
+
+def test_unordered_strata_same_under_every_hash_seed() -> None:
+    """Set- and dict-valued stratum keys must not pick up PYTHONHASHSEED's iteration order."""
+    outputs: set[str] = set()
+    for hash_seed in ("1", "2", "3", "4"):
+        env = {**os.environ, "PYTHONHASHSEED": hash_seed}
+        proc = subprocess.run(
+            [sys.executable, "-c", _HASH_SEED_SCRIPT],
+            cwd=_REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        )
+        outputs.add(proc.stdout)
+    assert len(outputs) == 1
+    by_set, by_dict = json.loads(outputs.pop())
+    assert len(by_set) == 40 and len(by_dict) == 40
+    here = stratified_sample(
+        _population(),
+        0.2,
+        strata=lambda c: frozenset({c.tier.value, "x", "requests"}),
+        seed=1,
+        unit="case",
+    )
+    assert [c.case_id for c in here] == by_set
+
+
+def test_stratum_keys_are_canonical() -> None:
+    assert _key_str(frozenset({"b", "a", "c"})) == _key_str({"c", "a", "b"}) == '["a", "b", "c"]'
+    assert _key_str({"y": 2, "x": 1}) == _key_str({"x": 1, "y": 2}) == '[["x", "1"], ["y", "2"]]'
+    assert _key_str(["a", Tier.L1]) == _key_str(("a", Tier.L1)) == '["a", "L1"]'
+    # Scalars keep the string form the pinned samples were drawn with.
+    assert _key_str((Suite.requests, Task.access_request, Tier.L2)) == json.dumps(
+        [str(Suite.requests), str(Task.access_request), str(Tier.L2)]
+    )
+    assert _key_str(date(2026, 1, 2)) == '"2026-01-02"'
+    assert _key_str(None) == '"None"'
+    with pytest.raises(TypeError, match="unsupported stratum key"):
+        _key_str(object())
+    with pytest.raises(TypeError):
+        stratified_sample(_population(), 0.5, strata=lambda c: object())
+
+
+def test_portable_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home" / "someone"
+    monkeypatch.setenv("HOME", str(home))
+    assert portable_path("datasets/identitybench-v1") == "datasets/identitybench-v1"
+    assert portable_path(home / "data" / "x", base=home) == "data/x"
+    assert portable_path(home / "data" / "x", base=tmp_path / "other") == "x"
+    assert portable_path("~/data/x", base=home) == "data/x"
+    assert portable_path("~/data/x", base=tmp_path / "other") == "x"
+    # A base above the home directory would put the user name in the path.
+    assert portable_path(home / "data" / "x", base=tmp_path) == "x"
+    assert portable_path(tmp_path / "shared" / "x", base=tmp_path) == "shared/x"
+    monkeypatch.chdir(tmp_path)
+    assert portable_path(tmp_path / "shared" / "x") == "shared/x"
+    # A symlinked file keeps its configured name rather than its target's.
+    target = tmp_path / "real-binary-1.2.3"
+    target.write_text("", encoding="utf-8")
+    link = tmp_path / "other" / "grok"
+    link.parent.mkdir()
+    link.symlink_to(target)
+    assert portable_path(link, base=tmp_path / "elsewhere") == "grok"
 
 
 def _v1_shaped() -> list[Case]:

@@ -15,10 +15,12 @@ Conventions shared by the whole module:
   the same interval. The resample index stream depends only on ``(seed, n_boot, n_clusters)``,
   so a single-config interval and a paired comparison with the same seed and clusters see the
   same resamples.
-* With fewer than two clusters (or units, for iid resampling) every resample is the observed
-  sample, so the bootstrap cannot see sampling variation at all. Rather than print a
-  zero-width interval that looks like certainty, such intervals report the point with
-  ``low``/``high`` (and a paired p-value) of ``None``.
+* With fewer than two *effective* clusters (or units, for iid resampling) the bootstrap cannot
+  see sampling variation at all. A cluster is effective when its denominator is nonzero: if
+  only one cluster has a denominator, every usable resample repeats that cluster and
+  reproduces the observed ratio. Rather than print a zero-width interval that looks like
+  certainty, such intervals report the point with ``low``/``high`` (and a paired p-value) of
+  ``None``.
 * Bootstrap intervals collapse to [0, 0] when no events are observed. For independent units with
   fewer than ``RARE_EVENT_THRESHOLD`` events, callers should report :func:`binomial_ci` (exact
   Clopper–Pearson) instead, as SPEC §12.8 requires for request WAR and JML unsafe plan rate.
@@ -100,9 +102,10 @@ class Interval:
 
     ``point``, ``low`` and ``high`` are all ``None`` when the estimand is undefined (empty
     denominator). Only ``low`` and ``high`` are ``None`` when the point is defined but no interval
-    can be computed: every bootstrap resample had to be dropped, or there were fewer than two
-    clusters to resample. For kappa, ``numerator_total`` and ``denominator_total`` are the
-    weighted observed and chance-expected disagreement (κ = 1 − numerator/denominator). For
+    can be computed: every bootstrap resample had to be dropped, or fewer than two clusters had a
+    nonzero denominator. ``n_clusters`` still counts every cluster. For kappa,
+    ``numerator_total`` and ``denominator_total`` are the weighted observed and chance-expected
+    disagreement (κ = 1 − numerator/denominator). For
     one-sided bounds ``low`` is 0. ``alpha`` is the interval's error rate: a two-sided
     ``1 − alpha`` interval, or a one-sided ``1 − alpha`` upper bound.
     """
@@ -148,8 +151,10 @@ class Interval:
 class PairedResult:
     """Difference ``a − b`` between two configurations scored on the same units.
 
-    ``diff``, ``low``, ``high`` and ``p_value`` are ``None`` when either configuration's
-    estimand is undefined or no resample was usable.
+    ``diff`` is ``None`` only when either configuration's estimand is undefined, and then so are
+    ``low``, ``high`` and ``p_value``. With both points defined, ``diff`` is always reported;
+    ``low``, ``high`` and ``p_value`` are still ``None`` when no resample was usable or either
+    configuration has fewer than two clusters with a nonzero denominator.
     """
 
     diff: float | None
@@ -307,8 +312,8 @@ def ratio_ci(
     clusters are resampled (SPEC §12.8: campaigns for reviews, families for robustness);
     otherwise units are resampled iid. Resamples whose denominator sums to 0 are dropped and
     counted in ``dropped_resamples``. When the observed denominator is 0 the estimate is n/a and
-    no bootstrap is run; with a single cluster only the point is reported. Denominators must be
-    non-negative.
+    no bootstrap is run. When fewer than two clusters have a nonzero denominator only the point
+    is reported (see the module docstring). Denominators must be non-negative.
     """
     num = _as_vector(numerators, "numerators")
     den = _as_denominators(denominators, "denominators", num.size)
@@ -320,7 +325,8 @@ def ratio_ci(
         return Interval(
             None, None, None, num.size, n_clusters, num_total, den_total, method, alpha=alpha
         )
-    if n_clusters < 2:
+    sums = _cluster_sums(np.column_stack([num, den]), codes, n_clusters)
+    if np.count_nonzero(sums[:, 1]) < 2:
         return Interval(
             num_total / den_total,
             None,
@@ -332,7 +338,6 @@ def ratio_ci(
             method,
             alpha=alpha,
         )
-    sums = _cluster_sums(np.column_stack([num, den]), codes, n_clusters)
     boot = _resampled_sums(sums, n_boot, seed)
     valid = boot[:, 1] != 0.0
     low, high = _percentile_ci(boot[valid, 0] / boot[valid, 1], alpha)
@@ -450,8 +455,9 @@ def paired_bootstrap_diff(
     resample applies the same clusters to both configurations and the case-mix noise they share
     cancels. Resamples where either denominator is 0 are dropped. The two-sided p-value is
     ``2 × min(P*(d ≤ 0), P*(d ≥ 0))`` over the usable resamples, capped at 1 and floored at
-    ``1 / (usable + 1)`` because a finite bootstrap cannot resolve smaller p-values. With a single
-    cluster only the point difference is reported. Denominators must be non-negative.
+    ``1 / (usable + 1)`` because a finite bootstrap cannot resolve smaller p-values. When either
+    configuration has fewer than two clusters with a nonzero denominator only the point
+    difference is reported. Denominators must be non-negative.
     """
     na = _as_vector(num_a, "num_a")
     n = na.size
@@ -465,10 +471,9 @@ def paired_bootstrap_diff(
     point_b = float(nb.sum()) / den_b_total if den_b_total != 0.0 else None
     if point_a is None or point_b is None:
         return PairedResult(None, None, None, None, point_a, point_b, n, n_clusters)
-    if n_clusters < 2:
-        return PairedResult(point_a - point_b, None, None, None, point_a, point_b, n, n_clusters)
-
     sums = _cluster_sums(np.column_stack([na, da, nb, db]), codes, n_clusters)
+    if np.count_nonzero(sums[:, 1]) < 2 or np.count_nonzero(sums[:, 3]) < 2:
+        return PairedResult(point_a - point_b, None, None, None, point_a, point_b, n, n_clusters)
     boot = _resampled_sums(sums, n_boot, seed)
     valid = (boot[:, 1] != 0.0) & (boot[:, 3] != 0.0)
     kept = boot[valid]
@@ -537,13 +542,16 @@ def minimum_detectable_difference(
     ``√n · δ = z₁₋α/₂ · √ψ + z_power · √(ψ − δ²)`` for ``δ``, where ``ψ`` is the
     discordance rate (from :func:`discordance` on a pilot, e.g. M2) and ``δ`` is the difference
     in rates over the same ``n_units`` denominator units. Squaring gives a quadratic whose
-    larger root is the answer.
+    larger root is the answer, but squaring also admits a spurious root: the larger root solves
+    the unsquared equation only when ``n_units ≥ z₁₋α/₂²`` (the left side ``√n · δ − z · √ψ``
+    must be non-negative). Below that size (3.84 at alpha 0.05, 6.63 at 0.01) no ``δ``
+    reaches the target power.
 
     The approximation assumes independent units (base request cases, JML events). For
     clustered units (review items within campaigns) it is optimistic; simulate with
     :func:`paired_bootstrap_diff` instead. Returns ``None`` when no difference is detectable at
-    that size and discordance: ``δ`` cannot exceed ``ψ`` (every disagreement favoring one
-    config), and a solution above it means the target power is out of reach.
+    that size and discordance: ``n_units`` is below ``z₁₋α/₂²``, or the solution exceeds ``ψ``
+    (``δ`` cannot exceed ``ψ``, every disagreement favoring one config).
     """
     _check_alpha(alpha)
     if not 0.5 <= power < 1.0:
@@ -554,9 +562,10 @@ def minimum_detectable_difference(
         raise ValueError(f"n_units must be at least 1, got {n_units}")
     z_a, z_b = _norm_ppf(1.0 - alpha / 2.0), _norm_ppf(power)
     # (n + z_b²)·δ² − 2·√n·z_a·√ψ·δ + (z_a² − z_b²)·ψ = 0, discriminant ∝ n − z_a² + z_b².
-    spread = n_units - z_a**2 + z_b**2
-    if discordance_rate == 0.0 or spread < 0.0:
+    # n ≥ z_a² rejects the spurious root and keeps spread ≥ z_b² ≥ 0 (power ≥ 0.5).
+    if discordance_rate == 0.0 or n_units < z_a**2:
         return None
+    spread = n_units - z_a**2 + z_b**2
     delta = (
         math.sqrt(discordance_rate)
         * (math.sqrt(n_units) * z_a + z_b * math.sqrt(spread))

@@ -66,6 +66,7 @@ def test_spec_example_parses(tmp_path: Path) -> None:
     assert cfg.loss_matrix == "default"
     assert len(cfg.baselines) == 6
     assert cfg.sample is None and cfg.seed == 0
+    assert cfg.repair is False
 
 
 def test_resolved_dict_is_json_safe_and_complete(tmp_path: Path) -> None:
@@ -73,6 +74,7 @@ def test_resolved_dict_is_json_safe_and_complete(tmp_path: Path) -> None:
     resolved = cfg.resolved_dict()
     assert json.loads(json.dumps(resolved)) == resolved
     assert resolved["dataset"] == "datasets/identitybench-v1"
+    assert resolved["repair"] is False
     assert resolved["tasks"] == ["requests"]
     assert resolved["split"] == "test"
     opus, _, openai, local = resolved["models"]
@@ -535,6 +537,16 @@ def test_prompt_and_baseline_names_are_safe(field: str, value: str) -> None:
         {"models": [{"provider": "anthropic", "model": "m", "effort": "turbo"}]},
         {"models": [{"provider": "anthropic", "model": "m", "max_output_tokens": True}]},
         {"models": [{"provider": "anthropic", "model": "m", "cost_mode": "free"}]},
+        {"params": {"temperature": True}},
+        {"params": {"temperature": "0.5"}},
+        {"models": [{"provider": "anthropic", "model": "m", "temperature": True}]},
+        {"models": [{"provider": "anthropic", "model": "m", "timeout_s": True}]},
+        {"models": [{"provider": "anthropic", "model": "m", "timeout_s": "30"}]},
+        {"budget_usd": True},
+        {"budget_usd": False},
+        {"budget_usd": "50"},
+        {"repair": 1},
+        {"repair": "yes"},
     ],
 )
 def test_strict_scalar_fields(override: dict[str, object]) -> None:
@@ -561,6 +573,160 @@ def test_default_cost_modes(kind: str, mode: str) -> None:
     if kind == "anthropic_compatible":
         data["base_url_env"] = "X_BASE_URL"
     assert ModelEntry.model_validate(data).resolved_cost_mode == mode
+
+
+def test_float_fields_still_accept_ints_and_floats() -> None:
+    cfg = ExperimentConfig.model_validate(
+        _base(
+            params={"temperature": 0},
+            budget_usd=50,
+            models=[
+                {"provider": "anthropic", "model": "m", "temperature": 0.7, "timeout_s": 30},
+            ],
+        )
+    )
+    assert cfg.params.temperature == 0 and cfg.budget_usd == 50
+    assert cfg.models[0].temperature == 0.7 and cfg.models[0].timeout_s == 30
+    with pytest.raises(ValidationError):
+        ExperimentConfig.model_validate(_base(params={"temperature": 2.5}))
+
+
+def test_yaml_booleans_rejected_in_float_fields(tmp_path: Path) -> None:
+    text = "name: t\ndataset: d\ntasks: [requests]\nbudget_usd: true\nbaselines: [oracle]\n"
+    with pytest.raises(ValidationError, match="expected a number"):
+        load_config(_write(tmp_path, text))
+
+
+def test_repair_defaults_off_and_is_resolved() -> None:
+    off = ExperimentConfig.model_validate(_base())
+    assert off.repair is False
+    assert off.resolved_dict()["repair"] is False
+    on = ExperimentConfig.model_validate(_base(repair=True))
+    resolved = on.resolved_dict()
+    assert resolved["repair"] is True
+    assert ExperimentConfig.model_validate(resolved).repair is True
+
+
+def test_repair_from_yaml(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, spec_example() + "repair: true\n"))
+    assert cfg.repair is True
+    assert load_config(_write(tmp_path, spec_example())).repair is False
+
+
+def _absolute_strings(node: object) -> list[str]:
+    if isinstance(node, str):
+        return [node] if node.startswith(("/", "~")) or Path(node).is_absolute() else []
+    if isinstance(node, dict):
+        return [x for v in node.values() for x in _absolute_strings(v)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType, reportUnknownMemberType]
+    if isinstance(node, list):
+        return [x for v in node for x in _absolute_strings(v)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+    return []
+
+
+def test_resolved_dict_never_records_absolute_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home" / "someone"
+    monkeypatch.setenv("HOME", str(home))
+    cfg = ExperimentConfig.model_validate(
+        _base(
+            dataset=str(home / "datasets" / "identitybench-v1"),
+            models=[
+                {
+                    "provider": "grok_cli",
+                    "model": "grok-4",
+                    "extra": {"binary": str(home / ".local" / "bin" / "grok")},
+                },
+                {"provider": "claude_cli", "model": "c", "extra": {"binary": "~/bin/claude"}},
+                {"provider": "codex_cli", "model": "x", "extra": {"binary": "codex"}},
+                {
+                    "provider": "replay",
+                    "model": "m",
+                    "extra": {"path": str(home / "runs" / "x" / "responses.jsonl")},
+                },
+            ],
+        )
+    )
+    monkeypatch.chdir(tmp_path)
+    resolved = cfg.resolved_dict()
+    assert _absolute_strings(resolved) == []
+    assert "someone" not in json.dumps(resolved)
+    assert resolved["dataset"] == "identitybench-v1"
+    extras = [m["extra"] for m in resolved["models"]]
+    assert extras == [
+        {"binary": "grok"},
+        {"binary": "claude"},
+        {"binary": "codex"},
+        {"path": "responses.jsonl"},
+    ]
+    # Relative to a base above them, paths keep their structure; the config is untouched.
+    under = cfg.resolved_dict(base=home)
+    assert under["dataset"] == "datasets/identitybench-v1"
+    assert under["models"][0]["extra"] == {"binary": ".local/bin/grok"}
+    assert under["models"][3]["extra"] == {"path": "runs/x/responses.jsonl"}
+    assert cfg.models[0].extra["binary"] == str(home / ".local" / "bin" / "grok")
+
+
+def test_integer_sample_of_one_warns() -> None:
+    assert any(
+        "sample: 1 is a count" in w
+        for w in ExperimentConfig.model_validate(_base(sample=1)).warnings()
+    )
+    assert ExperimentConfig.model_validate(_base(sample=1.0)).warnings() == []
+    assert ExperimentConfig.model_validate(_base(sample=2)).warnings() == []
+
+
+def test_namespace_alone_does_not_make_openai_self_hosted() -> None:
+    """SPEC §11.4: any model may set cache_namespace, so it is no self-hosting marker alone."""
+    paid = {"provider": "openai_compatible", "model": "gpt-5", "cache_namespace": "v2"}
+    assert ModelEntry.model_validate(paid).resolved_cost_mode == "metered"
+    default_env = {**paid, "base_url_env": "OPENAI_BASE_URL"}
+    assert ModelEntry.model_validate(default_env).resolved_cost_mode == "metered"
+    local = {**paid, "base_url_env": "LOCAL_LLM_BASE_URL"}
+    assert ModelEntry.model_validate(local).resolved_cost_mode == "unmetered"
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"provider": "anthropic", "model": "claude-opus-5-5", "cost_mode": "unmetered"},
+        {"provider": "openai_compatible", "model": "gpt-5", "cost_mode": "unmetered"},
+        {
+            "provider": "openai_compatible",
+            "model": "gpt-5",
+            "base_url_env": "OPENAI_BASE_URL",
+            "cost_mode": "unmetered",
+        },
+    ],
+)
+def test_unmetered_metered_vendor_warns(entry: dict[str, object]) -> None:
+    without_budget = ExperimentConfig.model_validate(_base(models=[entry]))
+    (warning,) = without_budget.warnings()
+    assert "calls a metered API" in warning and "budget_usd" not in warning
+    with_budget = ExperimentConfig.model_validate(_base(models=[entry], budget_usd=50))
+    (warning,) = with_budget.warnings()
+    assert "budget_usd (50) will not count its spend" in warning
+
+
+def test_unmetered_self_hosted_does_not_warn() -> None:
+    entries = [
+        {
+            "provider": "openai_compatible",
+            "model": "q",
+            "base_url_env": "AI_BASE_URL",
+            "cache_namespace": "d1",
+        },
+        {
+            "provider": "openai_compatible",
+            "model": "r",
+            "base_url_env": "AI_BASE_URL",
+            "cost_mode": "unmetered",
+        },
+        {"provider": "anthropic_compatible", "model": "s", "base_url_env": "AI_BASE_URL"},
+        {"provider": "replay", "model": "t", "extra": {"path": "r.jsonl"}},
+    ]
+    cfg = ExperimentConfig.model_validate(_base(models=entries, budget_usd=5))
+    assert cfg.warnings() == []
 
 
 def test_load_config_errors(tmp_path: Path) -> None:

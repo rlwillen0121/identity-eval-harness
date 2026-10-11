@@ -11,7 +11,8 @@ import os
 import re
 import subprocess
 import tempfile
-from datetime import datetime
+from collections.abc import Iterable
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +21,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from identitybench import __version__
 from identitybench.providers.base import GenerationParams, Usage
 from identitybench.runner.config import Mode, Repeats, slug
-from identitybench.runner.cost import CostMode, CostTracker
-from identitybench.runner.dataset import SHA256SUMS, SampleSpec, verify_sha256sums
+from identitybench.runner.cost import CostMode, CostTracker, PricingTable
+from identitybench.runner.dataset import (
+    DEFAULT_SAMPLE_UNIT,
+    DEFAULT_STRATA_NAME,
+    SHA256SUMS,
+    SampleSpec,
+    SamplingUnit,
+    portable_path,
+    verify_sha256sums,
+)
 from identitybench.schemas.enums import Split
 
 _VERSION_SUFFIX = re.compile(r"^(?P<name>.+?)-(?P<version>v\d+(?:\.\d+)*)$")
@@ -108,6 +117,56 @@ class CostSummary(_Model):
         )
 
 
+class PriceRowRecord(_Model):
+    """When and where one model's price was taken (its ``pricing.yaml`` row)."""
+
+    as_of: date
+    source: str
+
+
+class PricingRecord(_Model):
+    """Which price table produced the manifest's metered costs (SPEC §11.4: "recorded usage x a
+    dated pricing.yaml").
+
+    The file that is read depends on the environment (``cost.default_pricing_path``), so the
+    manifest names it and its sha256, plus the date and source of every row a config was
+    billed from.
+    """
+
+    path: str | None
+    """Portable path of the pricing file; None for a table built in memory."""
+    sha256: str
+    rows: dict[str, PriceRowRecord] = Field(default_factory=dict)
+    """Keyed by model name: only the rows some config's calls were priced from."""
+
+    @classmethod
+    def from_trackers(
+        cls, trackers: Iterable[CostTracker], *, base: Path | str | None = None
+    ) -> PricingRecord | None:
+        """The record for a run's trackers (``BudgetGuard.trackers.values()``).
+
+        None when no tracker is metered, since then no price table was used. Raises
+        ``ValueError`` if metered trackers were priced from different tables: one manifest
+        must not mix price lists.
+        """
+        tables: dict[str, PricingTable] = {}
+        rows: dict[str, PriceRowRecord] = {}
+        for tracker in trackers:
+            if tracker.pricing is None:
+                continue
+            tables[tracker.pricing.sha256] = tracker.pricing
+            price = tracker.price
+            if price is not None:
+                rows[tracker.model] = PriceRowRecord(as_of=price.as_of, source=price.source)
+        if not tables:
+            return None
+        if len(tables) > 1:
+            raise ValueError(f"trackers use {len(tables)} different pricing tables")
+        (table,) = tables.values()
+        path = None if table.source_path is None else portable_path(table.source_path, base)
+        return cls(path=path, sha256=table.sha256, rows=dict(sorted(rows.items())))
+
+
 class Counts(_Model):
     cases: int = 0
     calls: int = 0
@@ -127,6 +186,12 @@ class RunManifest(_Model):
     dataset: DatasetInfo
     split: Split
     sample: SampleSpec | None = None
+    """``ExperimentConfig.sample``: a fraction or a count of ``sample_unit``s (None: all cases).
+    An integer counts families by default, so a sample can hold more cases than its number."""
+    sample_unit: SamplingUnit = DEFAULT_SAMPLE_UNIT
+    """What ``sample`` counts (``dataset.stratified_sample``'s ``unit``)."""
+    sample_strata: str = DEFAULT_STRATA_NAME
+    """Name of the stratification key the sample was drawn with."""
     repeats: Repeats = Field(default_factory=Repeats)
     repair: bool = False
     """JSON repair is off by default and recorded when enabled (SPEC §11.3)."""
@@ -138,6 +203,9 @@ class RunManifest(_Model):
     """Keyed by ``config_id``."""
     cost: dict[str, CostSummary] = Field(default_factory=dict)
     """Keyed by ``config_id``."""
+    pricing: PricingRecord | None = None
+    """The price table behind ``cost`` (``PricingRecord.from_trackers``); None when no config
+    is metered."""
     counts: Counts = Field(default_factory=Counts)
     experiment: dict[str, Any] = Field(default_factory=dict)
     """The resolved experiment config (``ExperimentConfig.resolved_dict()``)."""
@@ -238,25 +306,12 @@ def dataset_fingerprint(dataset_dir: Path | str) -> str:
     return digest.hexdigest()
 
 
-def _portable_path(root: Path, base: Path | None) -> str:
-    """``root`` as a path that is safe to publish: relative paths as given, absolute ones made
-    relative to ``base`` (default: the working directory) or else just the directory name, so
-    a published manifest never carries a home directory or user name."""
-    if not root.is_absolute():
-        return root.as_posix()
-    anchor = (base or Path.cwd()).resolve()
-    try:
-        return root.resolve().relative_to(anchor).as_posix()
-    except ValueError:
-        return root.name
-
-
 def dataset_info(dataset_dir: Path | str, *, base: Path | str | None = None) -> DatasetInfo:
     """Name, version, fingerprint and portable path of a dataset directory.
 
     Name and version come from the directory name (``identitybench-v1`` -> ``identitybench``,
     ``v1``); a name without a ``-vN`` suffix gets version ``unversioned``. ``base`` is what an
-    absolute ``dataset_dir`` is recorded relative to (see ``_portable_path``).
+    absolute ``dataset_dir`` is recorded relative to (see ``dataset.portable_path``).
     """
     root = Path(dataset_dir)
     match = _VERSION_SUFFIX.match(root.name)
@@ -265,5 +320,5 @@ def dataset_info(dataset_dir: Path | str, *, base: Path | str | None = None) -> 
         name=name,
         version=version,
         sha256=dataset_fingerprint(root),
-        path=_portable_path(root, None if base is None else Path(base)),
+        path=portable_path(root, base),
     )

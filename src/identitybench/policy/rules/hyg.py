@@ -20,6 +20,7 @@ from identitybench.policy.constants import DORMANCY_DAYS, MOVE_GRACE_DAYS
 from identitybench.policy.registry import register
 from identitybench.policy.rules.base import (
     NOT_APPLICABLE,
+    ClaimSet,
     Evaluation,
     ItemContext,
     ReviewRule,
@@ -67,19 +68,12 @@ def _usage_pairs(ctx: ItemContext, source: Membership | Assignment) -> list[tupl
 def _usage_records(ctx: ItemContext, source: Membership | Assignment) -> list[UsageRecord]:
     """Every usage record for the item's (account, entitlement) pairs, sorted by ID.
 
-    A missing record is an incomplete case (SPEC §9.2). Unknown usage is expressed explicitly as
-    telemetry ``unavailable``, never by leaving the record out.
+    Each pair is a provisioned pair, and the review context has already rejected a view in which
+    a provisioned pair has no record (``RecordIndex.check_usage_records``, SPEC §9.2), so no pair
+    comes back empty: unknown usage is a record with telemetry ``unavailable``.
     """
-    usage: list[UsageRecord] = []
-    for account_id, entitlement_id in _usage_pairs(ctx, source):
-        found = ctx.records.usage_for(account_id, entitlement_id)
-        if not found:
-            raise OracleInputError(
-                f"HYG-001 needs the usage record for account {account_id} and entitlement "
-                f"{entitlement_id} ({ctx.item.item_id})"
-            )
-        usage.extend(found)
-    return sorted(usage, key=lambda u: u.id)
+    pairs = _usage_pairs(ctx, source)
+    return sorted((u for pair in pairs for u in ctx.records.usage_for(*pair)), key=lambda u: u.id)
 
 
 @register
@@ -103,6 +97,16 @@ class Dormant(ReviewRule):
     cites the assignment's ``source``; an extra true claim doesn't stop a citation from
     satisfying the certificate (SPEC §13.1), and the conformance tables settle this reading
     (AMBIGUITIES A3).
+
+    Input contract (SPEC §9.2): the holder's ``status`` and ``leave_returned_on`` and, for an item
+    old enough to be dormant, the usage record of every (account, entitlement) pair the item
+    covers: an assignment's own pair; for a membership, each entitlement in the role's expansion
+    through each of the holder's human accounts in that entitlement's application. The review
+    context rejects any view missing a usage record (unknown usage is a record with telemetry
+    ``unavailable``, never a missing one). For such an item the rule itself raises
+    ``OracleInputError`` when a membership's expansion reaches an entitlement the view doesn't
+    define, or an application in which the holder has no human account: the telemetry it needs
+    can't exist.
     """
 
     id = "HYG-001"
@@ -152,6 +156,8 @@ class OrphanedAccount(ReviewRule):
 
     Claims: ``account.kind = human`` (the missing ``identity_id`` is an absence, so it can't be
     cited).
+
+    Input contract: the assignment's account, whose presence the review context checks.
     """
 
     id = "HYG-002"
@@ -173,8 +179,11 @@ class UnownedServiceAccount(ReviewRule):
     """HYG-003: an item on a service account whose owner is terminated or missing needs a human.
 
     Claims: ``account.kind = service`` alone when there is no ``owner_id``; otherwise also
-    ``account.owner_id`` and ``owner.status = terminated``. An owner ID that names no identity in
-    the view is an incomplete case, not a missing owner.
+    ``account.owner_id`` and ``owner.status = terminated``.
+
+    Input contract: the account's ``kind`` and ``owner_id`` and, when there is an owner, the
+    owner's identity record. An owner ID that names no identity in the view raises
+    ``OracleInputError``: it is an incomplete case, not a missing owner.
     """
 
     id = "HYG-003"
@@ -202,6 +211,8 @@ class PastExpiry(ReviewRule):
 
     Applies iff ``expires_on < as_of``; an item expiring today is still valid. Claims:
     ``item.expires_on``.
+
+    Input contract: the item's own ``expires_on`` (null means no expiry), always present.
     """
 
     id = "HYG-004"
@@ -221,11 +232,18 @@ class StaleBirthright(ReviewRule):
     """HYG-005: a mover's old birthright membership is revoked once the grace period is over.
 
     Applies to a membership with source ``birthright`` whose role's attribute rule no longer
-    matches the holder, on or after ``move_date + 14`` days. No ``move_date``, no finding.
+    matches the holder, on or after ``move_date + 14`` days. It needs a move date: without one
+    the rule doesn't fire (SPEC 0.4.1).
 
-    Claims: ``membership.source = birthright``, ``holder.move_date``, and one holder attribute
-    the rule no longer matches (``department``, ``employment_type`` or ``location.region``;
-    several mismatches are alternatives).
+    Claims, per holder attribute the rule no longer matches (several mismatches are
+    alternatives): ``membership.source = birthright``, ``holder.move_date``,
+    ``membership.role_id`` (whose rule it is), every value the role's ``attribute_rule`` allows
+    on that dimension (``attribute_rule.departments``, ``.employment_types`` or ``.regions``)
+    and the holder's ``department``, ``employment_type`` or ``location.region``: both sides of
+    the comparison.
+
+    Input contract: the holder's ``move_date`` and attributes, and the membership's role with its
+    ``attribute_rule``. A birthright role without an attribute rule raises ``OracleInputError``.
     """
 
     id = "HYG-005"
@@ -233,8 +251,8 @@ class StaleBirthright(ReviewRule):
     effects = effects_of(review=Effect.REVOKE)
     summary = (
         "A birthright membership (`source` `birthright`) whose role's `attribute_rule` no longer "
-        "matches the identity, on or after `move_date` + {days} days. With no `move_date` it "
-        "doesn't apply."
+        "matches the identity, on or after `move_date` + {days} days. Without a move date the "
+        "rule doesn't fire."
     )
     params = days_param(MOVE_GRACE_DAYS)
 
@@ -247,20 +265,40 @@ class StaleBirthright(ReviewRule):
             return NOT_APPLICABLE
         if ctx.as_of < holder.move_date + timedelta(days=MOVE_GRACE_DAYS):
             return NOT_APPLICABLE
-        rule = require_role(ctx.view.roles, source.role_id).attribute_rule
+        role = require_role(ctx.view.roles, source.role_id)
+        rule = role.attribute_rule
         if rule is None:
-            raise OracleInputError(
-                f"HYG-005 needs the attribute rule of birthright role {source.role_id}"
-            )
+            raise OracleInputError(f"HYG-005 needs the attribute rule of birthright role {role.id}")
         # One single-dimension rule per attribute reuses AttributeRule's matching semantics and
-        # names the attribute that no longer matches.
-        dimensions = (
-            ("department", AttributeRule(departments=rule.departments)),
-            ("employment_type", AttributeRule(employment_types=rule.employment_types)),
-            ("location.region", AttributeRule(regions=rule.regions)),
+        # names the attribute that no longer matches. A dimension can only mismatch when it
+        # lists values (None matches any value), so ``allowed`` is never None below.
+        dimensions: tuple[tuple[str, str, AttributeRule, tuple[str, ...] | None], ...] = (
+            (
+                "department",
+                "departments",
+                AttributeRule(departments=rule.departments),
+                rule.departments,
+            ),
+            (
+                "employment_type",
+                "employment_types",
+                AttributeRule(employment_types=rule.employment_types),
+                rule.employment_types,
+            ),
+            ("location.region", "regions", AttributeRule(regions=rule.regions), rule.regions),
         )
-        mismatches = [ctx.claim(holder.id, f) for f, part in dimensions if not part.matches(holder)]
-        if not mismatches:
-            return NOT_APPLICABLE
-        lead = (ctx.claim(source.id, "source"), ctx.claim(holder.id, "move_date"))
-        return self.fire(ctx, [(*lead, mismatch) for mismatch in mismatches])
+        lead = (
+            ctx.claim(source.id, "source"),
+            ctx.claim(holder.id, "move_date"),
+            ctx.claim(source.id, "role_id"),
+        )
+        claim_sets: list[ClaimSet] = []
+        for holder_field, rule_field, part, allowed in dimensions:
+            if part.matches(holder):
+                continue
+            required = [
+                ctx.claim(role.id, f"attribute_rule.{rule_field}", value)
+                for value in sorted({str(v) for v in allowed or ()})
+            ]
+            claim_sets.append((*lead, *required, ctx.claim(holder.id, holder_field)))
+        return self.fire(ctx, claim_sets) if claim_sets else NOT_APPLICABLE

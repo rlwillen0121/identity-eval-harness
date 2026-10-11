@@ -1,7 +1,11 @@
 """Lifecycle rules LIFE-001..004 (SPEC §7.4).
 
 LIFE-001 and LIFE-003 are identity-wide in reviews (SPEC §7.2): they attach to every item of the
-affected holder, because the holder's status, not the item, is what's wrong.
+affected holder, whatever the item's dates, because the holder's status, not the item, is what's
+wrong. An item without a holder (an orphaned or service account) isn't judged.
+
+Input contract: the beneficiary's or holder's identity record, which the contexts check, and,
+for a contractor, a ``contract_end_date`` (``contract_end``).
 """
 
 from __future__ import annotations
@@ -45,7 +49,8 @@ class Terminated(RequestRule, ReviewRule):
     """LIFE-001: a terminated beneficiary or holder gets no access.
 
     Claims: ``identity.status = terminated``. In reviews it applies to every item of the holder,
-    valid or not, so no item of a terminated holder is ever certified.
+    valid or not, so no item of a terminated holder is ever certified. Reads the identity's
+    ``status`` only: a termination date alone (a notice period) doesn't apply it.
     """
 
     id = "LIFE-001"
@@ -73,7 +78,7 @@ class OnLeave(RequestRule):
     """LIFE-002: a request for a beneficiary on leave of absence goes to a human.
 
     Claims: ``beneficiary.status = leave_of_absence``. Reviews ignore leave (it isn't grounds to
-    revoke), so the rule has no review effect.
+    revoke), so the rule has no review effect. Reads the beneficiary's ``status`` only.
     """
 
     id = "LIFE-002"
@@ -98,6 +103,8 @@ class ContractEnded(RequestRule, ReviewRule):
 
     Claims: ``identity.employment_type = contractor``, ``identity.contract_end_date``. A contract
     ending on the as-of date is still in force. In reviews it applies to every item of the holder.
+    Input contract: ``employment_type``, and ``contract_end_date`` for a contractor
+    (``OracleInputError`` if a contractor has none).
     """
 
     id = "LIFE-003"
@@ -134,7 +141,7 @@ class ContractCap(RequestRule):
     Applies to every contractor request. Cap: ``contract_end_date - as_of + 1`` days, which is
     positive unless the contract already ended, and then LIFE-003 denies the request, so the cap
     never reaches an approval. Claims: ``beneficiary.employment_type = contractor``,
-    ``beneficiary.contract_end_date``.
+    ``beneficiary.contract_end_date``. Input contract: as LIFE-003.
     """
 
     id = "LIFE-004"
