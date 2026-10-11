@@ -16,6 +16,7 @@ from __future__ import annotations
 from identitybench.world.entities import RoleKind
 from identitybench.world.specs import (
     EMP,
+    ENTERPRISE_TIER,
     EVERYONE,
     STAFF,
     STARTUP_TIER,
@@ -274,6 +275,11 @@ ROLE_SPECS: tuple[RoleSpec, ...] = (
         "role_idp_admin", "Identity Platform Administration", BIZ,
         entitlements=("ent_idp_user_admin", "ent_idp_super_admin", "ent_idp_app_admin"),
         audience=("IT", "Security"), min_tier=STARTUP_TIER,
+    ),
+    RoleSpec(
+        "role_pam_operator", "Privileged Session Operators", BIZ,
+        entitlements=("ent_pam_session_launch", "ent_pam_session_audit"),
+        audience=("IT", "Security", "Engineering"), min_tier=ENTERPRISE_TIER,
     ),
     RoleSpec(
         "role_access_approver", "Access Request Approval", BIZ,

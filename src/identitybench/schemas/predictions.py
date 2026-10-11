@@ -72,6 +72,10 @@ class ToolTrace(_Frozen):
     """Entity IDs returned by tools before submitting, in first-fetch order."""
     tool_names: tuple[str, ...] = ()
     """Tool name of every call, in order."""
+    requested_ids: tuple[str, ...] = ()
+    """Entity IDs the agent explicitly passed as tool arguments before submitting, in
+    first-request order. Unlike ``fetched_ids``, a record a listing merely returned isn't here,
+    so it supports a strict retrieval metric (the agent singled the record out)."""
 
 
 class Prediction(_Frozen):

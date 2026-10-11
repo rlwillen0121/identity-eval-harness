@@ -29,6 +29,17 @@ Conventions shared by the whole module:
   two configs disagree on, which :func:`discordance` counts and
   :func:`minimum_detectable_difference` turns into the smallest difference a release can claim
   to detect.
+* A paired bootstrap p-value is anti-conservative when few units carry the difference: its
+  tail shrinks like e^-d in the number d of units that do, whatever n is. At n = 40 with every
+  discordant unit favoring one side, d = 4 gives a bootstrap p near 0.03 where the exact test
+  gives 0.125. :func:`paired_signflip_test` is the exact randomization test of the same
+  difference over the resampling units: each unit keeps the size of its paired difference and
+  its sign is flipped at random. Comparisons report the larger of the two p-values
+  (``scoring.summary.compare_configs``). For 0/1 outcomes on independent units every
+  difference is ±1 and the test is the exact two-sided sign (McNemar) test. A plain sign test
+  would ignore sizes, so an NRC difference resting on four catastrophic approvals, with twenty
+  cheap escalations pointing the other way, would pass on the twenty; the sign-flip test weighs
+  each unit by its difference and leaves the four to carry their own weight.
 """
 
 from __future__ import annotations
@@ -36,6 +47,7 @@ from __future__ import annotations
 import math
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any, Final, Literal
 
 import numpy as np
@@ -47,12 +59,14 @@ __all__ = [
     "DEFAULT_ALPHA",
     "DEFAULT_N_BOOT",
     "DEFAULT_POWER",
+    "MAX_EXACT_WORK",
     "RARE_EVENT_THRESHOLD",
     "Discordance",
     "HolmResult",
     "Interval",
     "IntervalMethod",
     "PairedResult",
+    "SignFlipTest",
     "binomial_ci",
     "clopper_pearson",
     "clopper_pearson_upper",
@@ -63,8 +77,11 @@ __all__ = [
     "mean_ci",
     "minimum_detectable_difference",
     "paired_bootstrap_diff",
+    "paired_signflip_test",
     "quadratic_weighted_kappa",
     "ratio_ci",
+    "sign_test_p",
+    "signflip_p",
 ]
 
 DEFAULT_N_BOOT: Final = 2000
@@ -80,8 +97,29 @@ RARE_EVENT_THRESHOLD: Final = 5
 """Below this many events on independent units, report an exact Clopper–Pearson bound."""
 
 _MAX_GATHER: Final = 1 << 22
-"""Upper bound on elements in one bootstrap index chunk (~32 MB of int64), so memory stays flat
-however many units are resampled."""
+"""Upper bound on elements in one array of resampling indices, sign draws or exact sign-flip
+probabilities (~32 MB of 8-byte entries), so memory stays flat however many units there are."""
+
+_TIE_TOLERANCE: Final = 1e-9
+"""Two per-unit totals closer than this (relative to their size, or absolutely below 1) are a
+tie in :func:`paired_signflip_test`. Totals are sums of loss-matrix entries or 0/1 flags, so
+equal decisions give equal totals up to float rounding (a custom routing cost of 1.7 summed in
+a different order), while a real difference is at least the smallest gap between two
+loss-matrix entries, many orders of magnitude above this. The same tolerance decides whether a
+difference sits on a lattice (:func:`signflip_p`)."""
+
+_LATTICE_DENOMINATOR: Final = 10**6
+"""Largest denominator :func:`signflip_p` tries when it reads a per-unit difference as a
+fraction. Default loss-matrix costs are multiples of 0.5 (risk weights 0.5 to 4 times
+half-integer cells), and a custom matrix written with a few decimals stays far below this."""
+
+MAX_EXACT_WORK: Final = 2 * 10**9
+"""Budget for an exact sign-flip null distribution (:func:`signflip_p`), counted as
+d · (2·M + 1) for d differences whose sizes sum to M lattice steps (an upper bound on the array
+updates). Default costs need about 10^7 at SPEC §10.3's size. At the edge of the budget one
+comparison takes up to a few seconds (measured: 0.6 s for about 7,000 discordant request cases,
+2.4 s at the widest span the budget admits). Past it the p-value is a seeded Monte Carlo
+estimate instead."""
 
 type FloatArray = NDArray[np.float64]
 type IntArray = NDArray[np.intp]
@@ -188,6 +226,38 @@ class Discordance:
     @property
     def rate(self) -> float | None:
         """Share of units where the configurations differ; ``None`` with no units."""
+        return self.n_discordant / self.n_units if self.n_units else None
+
+
+@dataclass(frozen=True, slots=True)
+class SignFlipTest:
+    """Paired sign-flip test on per-unit differences ``a − b`` (ties dropped).
+
+    ``n_units`` counts the units (clusters, when clustered) that bear on the metric: a nonzero
+    shared denominator or a nonzero numerator for either configuration. For the compared
+    metrics a numerator implies its denominator, so these are the units the metric is a rate
+    over. ``a_higher`` counts those where ``a``'s contribution
+    exceeds ``b``'s (for WAR, units where ``a`` wrongfully approved more), ``b_higher`` the
+    reverse; the rest are ties. ``p_value`` is the two-sided sign-flip p-value of the
+    differences (:func:`signflip_p`), 1 when no unit differs. ``exact`` is False only when the
+    differences sit on no lattice small enough to enumerate and ``p_value`` is a seeded Monte
+    Carlo estimate.
+    """
+
+    n_units: int
+    a_higher: int
+    b_higher: int
+    p_value: float
+    exact: bool
+
+    @property
+    def n_discordant(self) -> int:
+        """Units whose contributions differ: the d of the test."""
+        return self.a_higher + self.b_higher
+
+    @property
+    def rate(self) -> float | None:
+        """Share of the denominator's units that differ; ``None`` with no such unit."""
         return self.n_discordant / self.n_units if self.n_units else None
 
 
@@ -494,6 +564,216 @@ def paired_bootstrap_diff(
         n_units=n,
         n_clusters=n_clusters,
         dropped_resamples=dropped,
+    )
+
+
+def sign_test_p(n_positive: int, n_negative: int) -> float:
+    """Exact two-sided sign test p-value for ``n_positive`` and ``n_negative`` nonzero signs.
+
+    Under the null each discordant unit is equally likely to go either way, so the split is
+    Binomial(d, 1/2) with d = ``n_positive + n_negative``; the p-value is twice the smaller
+    tail, capped at 1. It is computed in exact integer arithmetic (no floating-point tail sums),
+    and is 1 when d = 0. With d discordant units the smallest attainable value is 2/2^d, so at
+    alpha 0.05 at least six units must differ, all in one direction, before anything can be
+    rejected. For binary outcomes this is the exact McNemar test, and it is :func:`signflip_p`
+    of differences that all have one size, which that function computes through here.
+
+    Past about 1,075 one-way units the exact value is below the smallest positive float, and
+    the result is floored there rather than rounded to 0: a p-value is never published as
+    exactly zero, and rounding up only makes the test more conservative.
+    """
+    if n_positive < 0 or n_negative < 0:
+        raise ValueError(f"sign counts must be non-negative, got {n_positive}, {n_negative}")
+    d = n_positive + n_negative
+    if d == 0:
+        return 1.0
+    # Σ_{i ≤ k} C(d, i), each term from the last: C(d, i + 1) = C(d, i) · (d − i) / (i + 1).
+    term = tail = 1
+    for i in range(min(n_positive, n_negative)):
+        term = term * (d - i) // (i + 1)
+        tail += term
+    return max(math.ulp(0.0), min(1.0, 2 * tail / 2**d))
+
+
+def _lattice(magnitudes: FloatArray) -> list[int] | None:
+    """Each magnitude as a whole number of one common step, or None when they share none.
+
+    Each distinct magnitude is read as the nearest fraction whose denominator is at most
+    ``_LATTICE_DENOMINATOR`` and must match it to ``_TIE_TOLERANCE``; the step is the largest
+    one that all those fractions are whole multiples of. Reading through fractions also puts
+    float noise back on the lattice: 1.7 + 1.7 + 1.7 and 5.1 are both 51 tenths, so a signed sum
+    that differs from the observed one only by rounding counts as reaching it.
+    """
+    values, inverse = np.unique(magnitudes, return_inverse=True)
+    fractions: list[Fraction] = []
+    for value in (float(v) for v in values):
+        fraction = Fraction(value).limit_denominator(_LATTICE_DENOMINATOR)
+        if abs(float(fraction) - value) > _TIE_TOLERANCE * max(1.0, value):
+            return None
+        fractions.append(fraction)
+    scale = math.lcm(*(f.denominator for f in fractions))
+    whole = [f.numerator * (scale // f.denominator) for f in fractions]
+    step = math.gcd(*whole)
+    return [whole[int(i)] // step for i in inverse]
+
+
+def _signflip_exact(steps: Sequence[int], observed: int) -> float:
+    """``P(|Σ ε_i · steps_i| ≥ observed)`` for independent fair signs ε_i, by dynamic programming.
+
+    The signed sum lives on the integers in ``[−Σ steps, Σ steps]``; each step splits every
+    reachable sum's probability evenly between ``sum − step`` and ``sum + step``. Steps are
+    taken smallest first so the array stays short for as long as possible. Every entry is
+    non-negative, so the additions lose no relative precision and a small tail stays accurate.
+    """
+    dist = np.ones(1, dtype=np.float64)
+    for step in sorted(steps):
+        grown = np.zeros(dist.size + 2 * step, dtype=np.float64)
+        grown[: dist.size] = dist
+        grown[2 * step :] += dist
+        grown *= 0.5
+        dist = grown
+    distance = np.abs(np.arange(dist.size) - dist.size // 2)
+    return float(dist[distance >= observed].sum())
+
+
+def _signflip_monte_carlo(
+    magnitudes: FloatArray, observed: float, n_draws: int, seed: int
+) -> float:
+    """Seeded Monte Carlo sign-flip p-value, ``(k + 1) / (n_draws + 1)``.
+
+    ``k`` counts the draws of independent fair signs whose signed sum lands at least as far from
+    0 as the observed one, within float rounding. Counting the observed assignment itself (the
+    +1) keeps it a valid p-value at any ``n_draws`` (Phipson and Smyth 2010) and never below
+    ``1 / (n_draws + 1)``. Chunks are sized like the bootstrap's, so memory stays flat.
+    """
+    rng = np.random.default_rng(seed)
+    threshold = observed - _TIE_TOLERANCE * max(1.0, float(magnitudes.sum()))
+    rows_per_chunk = max(1, _MAX_GATHER // magnitudes.size)
+    hits = 0
+    for start in range(0, n_draws, rows_per_chunk):
+        rows = min(rows_per_chunk, n_draws - start)
+        signs = rng.integers(0, 2, size=(rows, magnitudes.size)) * 2 - 1
+        hits += int(np.count_nonzero(np.abs(signs @ magnitudes) >= threshold))
+    return (hits + 1) / (n_draws + 1)
+
+
+def _signflip(
+    differences: FloatArray, *, n_draws: int, seed: int, max_exact_work: int
+) -> tuple[float, bool]:
+    """:func:`signflip_p` and whether it was computed exactly."""
+    if n_draws < 1:
+        raise ValueError(f"n_draws must be at least 1, got {n_draws}")
+    if max_exact_work < 0:
+        raise ValueError(f"max_exact_work must be non-negative, got {max_exact_work}")
+    nonzero = differences[np.abs(differences) > _TIE_TOLERANCE]
+    if nonzero.size == 0:
+        return 1.0, True
+    magnitudes = np.abs(nonzero)
+    largest = float(magnitudes.max())
+    if float(np.ptp(magnitudes)) <= _TIE_TOLERANCE * max(1.0, largest):
+        # Every difference has one size: the exact sign test, whatever that size is.
+        positive = int(np.count_nonzero(nonzero > 0.0))
+        return sign_test_p(positive, nonzero.size - positive), True
+    steps = _lattice(magnitudes)
+    if steps is not None:
+        span = 2 * sum(steps) + 1
+        if span <= _MAX_GATHER and len(steps) * span <= max_exact_work:
+            up = (nonzero > 0.0).tolist()
+            observed = abs(sum(s if u else -s for s, u in zip(steps, up, strict=True)))
+            # The float64 sum of 2^-d multiples can round past 1 when the observed sum is the
+            # smallest reachable one (the whole distribution is summed), so cap it: Holm
+            # rejects p-values outside [0, 1].
+            return min(1.0, max(math.ulp(0.0), _signflip_exact(steps, observed))), True
+    return _signflip_monte_carlo(magnitudes, abs(float(nonzero.sum())), n_draws, seed), False
+
+
+def signflip_p(
+    differences: Numbers,
+    *,
+    n_draws: int = DEFAULT_N_BOOT,
+    seed: int = 0,
+    max_exact_work: int = MAX_EXACT_WORK,
+) -> float:
+    """Two-sided paired sign-flip p-value: ``P(|Σ ε_i · δ_i| ≥ |Σ δ_i|)`` for fair signs ε_i.
+
+    This is the exact randomization test (Fisher's, also called Pitman's) of a sum of paired
+    differences. Under the null that two configurations are exchangeable on every unit, each
+    unit's difference δ_i was as likely to come out −δ_i, so its sign is flipped at random while
+    its size is kept. When every δ_i has one size this is the exact two-sided sign test
+    (:func:`sign_test_p`): d = 4 one-way differences give 2/2^4 = 0.125. Unlike the sign test it
+    weighs each unit by its difference: four differences of −40 against twenty of +1 give 0.125,
+    where the sign test (20 against 4) would give 0.0015.
+
+    Differences within ``_TIE_TOLERANCE`` of 0 are ties and are dropped (a zero difference is
+    the same under either sign); with none left the p-value is 1. Differences of one size
+    always take the exact sign-test path. Otherwise the value is exact when the differences are
+    whole multiples of one small common step (any loss matrix whose costs have a few decimals),
+    the null distribution's 2·M + 1 lattice points for M total steps fit in one array of
+    ``_MAX_GATHER`` entries, and d · (2·M + 1) is at most ``max_exact_work``. Costs that share
+    no small common step take the Monte Carlo path at any size: ``n_draws`` sign draws seeded
+    with ``seed``, ``(k + 1) / (n_draws + 1)``, still a valid p-value, never below
+    ``1 / (n_draws + 1)``, and the same for the same inputs. An exact value below the smallest
+    positive float is floored there, as in :func:`sign_test_p`, and float rounding never takes
+    it above 1.
+    """
+    diffs = _as_vector(differences, "differences")
+    return _signflip(diffs, n_draws=n_draws, seed=seed, max_exact_work=max_exact_work)[0]
+
+
+def paired_signflip_test(
+    num_a: Numbers,
+    den_a: Numbers,
+    num_b: Numbers,
+    den_b: Numbers,
+    clusters: Labels | None,
+    *,
+    n_draws: int = DEFAULT_N_BOOT,
+    seed: int = 0,
+    max_exact_work: int = MAX_EXACT_WORK,
+) -> SignFlipTest:
+    """Paired sign-flip test on each unit's contribution to ``ratio_a − ratio_b``.
+
+    For the metrics compared here the denominator is defined by gold alone (WAR's gold
+    non-APPROVE cases, NRC's ``always_escalate`` cost), so both configurations share it, and
+    the difference of the two ratios is ``Σ (num_a − num_b) / Σ den``: each unit (each cluster,
+    when clustered) moves the difference by its own numerator difference δ_i. The test drops
+    ties and computes :func:`signflip_p` of the δ_i, which is the randomization distribution of
+    the metric difference itself. For a 0/1 outcome on independent units every δ_i is ±1 and
+    this is the exact sign (McNemar) test. For a cost (NRC), or a per-campaign total of review
+    items, each unit counts by its size, so a difference resting on four catastrophic approvals
+    gets the p-value of four units, however many cheap escalations point the other way. It is
+    the conservative companion to :func:`paired_bootstrap_diff`, whose p-value is
+    anti-conservative when only a few units carry the difference (see the module docstring).
+
+    Entry ``i`` of every array describes the same unit. ``den_a`` and ``den_b`` must be equal,
+    or the numerator difference isn't the metric difference and ``ValueError`` is raised.
+    Per-unit totals within ``_TIE_TOLERANCE`` of each other are ties. ``n_draws``, ``seed``
+    and ``max_exact_work`` only matter when the p-value can't be computed exactly
+    (:func:`signflip_p`).
+    """
+    na = _as_vector(num_a, "num_a")
+    n = na.size
+    da = _as_denominators(den_a, "den_a", n)
+    nb = _as_vector(num_b, "num_b", n)
+    db = _as_denominators(den_b, "den_b", n)
+    if not np.array_equal(da, db):
+        raise ValueError("a sign-flip test needs a shared denominator: den_a and den_b differ")
+    codes, n_clusters = _cluster_codes(clusters, n)
+    sums = _cluster_sums(np.column_stack([na, nb, da]), codes, n_clusters)
+    a_sum, b_sum, den_sum = sums[:, 0], sums[:, 1], sums[:, 2]
+    tied = np.isclose(a_sum, b_sum, rtol=_TIE_TOLERANCE, atol=_TIE_TOLERANCE)
+    # Units that bear on the metric: in its denominator, or (never, for a rate whose numerator
+    # implies its denominator) contributing to a numerator from outside it.
+    bearing = (den_sum != 0.0) | (a_sum != 0.0) | (b_sum != 0.0)
+    p_value, exact = _signflip(
+        (a_sum - b_sum)[~tied], n_draws=n_draws, seed=seed, max_exact_work=max_exact_work
+    )
+    return SignFlipTest(
+        n_units=int(np.count_nonzero(bearing)),
+        a_higher=int(np.count_nonzero(~tied & (a_sum > b_sum))),
+        b_higher=int(np.count_nonzero(~tied & (a_sum < b_sum))),
+        p_value=p_value,
+        exact=exact,
     )
 
 

@@ -1,8 +1,8 @@
 """Access-hygiene rules HYG-001..005 (SPEC §7.4 and its "Dormancy" subsection).
 
-All five judge one review item's own record. HYG-001, HYG-004 and HYG-005 are source-specific
-(SPEC §7.2): when an entitlement is held through several sources, only the described item is
-affected.
+All five judge one review item's own record, whatever its dates. HYG-001, HYG-004 and HYG-005 are
+source-specific (SPEC §7.2): when an entitlement is held through several sources, only the
+described item is affected.
 """
 
 from __future__ import annotations
@@ -88,6 +88,12 @@ class Dormant(ReviewRule):
     membership's last use is the latest across its expansion. Dormant iff
     ``as_of - clock start > 90`` days. A role that confers nothing needs no telemetry ("every
     entitlement" holds vacuously), so its clock is just the grant or leave-return date.
+
+    Like every item rule it judges the item's record whatever its dates (SPEC §7.2: REVOKE removes
+    the record), so validity on the as-of date isn't a precondition. An expired item that has gone
+    unused is dormant too, and HYG-004 revokes it as well. A future-dated item can never be
+    dormant: its clock starts no earlier than ``granted_on``, which is after the as-of date, so
+    ``as_of - clock start`` is negative.
 
     Claims: ``membership.source = request`` for a membership, since birthright memberships are
     exempt (every assignment is request- or direct-sourced, so an assignment's ``source`` decides

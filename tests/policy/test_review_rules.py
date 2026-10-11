@@ -172,6 +172,25 @@ def test_other_eligibility_rules_revoke(
     assert claim_triples(certificate(record, rule))[0][0] == ("as_x", "entitlement_id", "ent_x")
 
 
+def test_elig_005_cites_the_conferral_and_both_sides(rev: CaseBuilder) -> None:
+    """The conferral, then both sides of the comparison: the holder's type and each eligible type
+    once (the list shows the type is missing from it), however the list repeats or orders them."""
+    rev.identity("u_ben", employment_type="intern")
+    rev.entitlement("ent_x", eligible_employment_types=("employee", "contractor", "employee"))
+    rev.role("role_x", entitlements=["ent_x"])
+    rev.membership("rm_x", "u_ben", "role_x", granted_on=day(-10))
+    record = item(review(rev.campaign("rm_x")), "rv_rm_x")
+    assert claim_triples(certificate(record, "ELIG-005")) == [
+        [
+            ("rm_x", "role_id", "role_x"),
+            ("role_x", "entitlements", "ent_x"),
+            ("u_ben", "employment_type", "intern"),
+            ("ent_x", "eligible_employment_types", "contractor"),
+            ("ent_x", "eligible_employment_types", "employee"),
+        ]
+    ]
+
+
 # ---- APPR-005 -----------------------------------------------------------------------------------
 
 
@@ -275,6 +294,22 @@ def test_hyg_001_leave_return_restarts_the_clock(rev: CaseBuilder) -> None:
 def test_hyg_001_never_applies_while_on_leave(rev: CaseBuilder) -> None:
     dormant_assignment(rev, last_used=-300)
     rev.set("u_ben", status="leave_of_absence")
+    assert hyg_001(rev) == ("CERTIFY", [])
+
+
+def test_hyg_001_judges_expired_and_future_dated_records(rev: CaseBuilder) -> None:
+    """Like every item rule, HYG-001 judges the item's record whatever its dates. An expired item
+    unused for over 90 days is dormant too (HYG-004 revokes it as well). A future-dated item never
+    is, however stale the usage or leave return before it: its clock starts at ``granted_on``."""
+    dormant_assignment(rev, last_used=-200, granted=-300)
+    rev.set("as_x", expires_on=day(-1))
+    record = item(review(rev.campaign("as_x")), "rv_as_x")
+    assert finding_rules(record) == ["HYG-001", "HYG-004"]
+    assert claim_triples(certificate(record, "HYG-001")) == [
+        [("use_x", "last_used_on", "2026-03-24"), ("use_x", "telemetry", "available")]
+    ]
+    rev.set("as_x", granted_on=day(3), expires_on=None)
+    rev.set("u_ben", leave_returned_on=day(-150))
     assert hyg_001(rev) == ("CERTIFY", [])
 
 

@@ -16,6 +16,16 @@ environment.
 - Usage: ``prompt_tokens`` includes cached tokens, so uncached input is
   ``prompt_tokens - cached_tokens``; ``completion_tokens`` already includes reasoning tokens.
 - ``message.refusal`` or a ``content_filter`` finish reason come back as ``refused=True``.
+- **Reported cost.** A gateway that bills per call and says so in the response (OpenRouter puts
+  the call's USD in ``usage.cost``) gets it recorded as ``reported_cost_usd``, so a
+  ``cost_mode: reported`` entry is costed, and budgeted, from what the call actually cost. A
+  missing or non-numeric cost stays None (unknown), never 0. The upstream host that served the
+  call (OpenRouter's top-level ``provider``) goes to ``raw["upstream_provider"]``, since one
+  model name can be served by hosts that answer differently.
+- **Routing preferences** (``provider_routing``, OpenRouter's ``provider`` request object: host
+  ``order``, ``allow_fallbacks``, ``require_parameters``...) go in the request body. Routing can
+  change which host answers, so it is part of the endpoint identity and therefore of every
+  cache key.
 
 Base URL and key are always passed to the SDK explicitly, so it never falls back to
 ``OPENAI_BASE_URL``/``OPENAI_API_KEY`` behind the configuration's back. Without an explicit
@@ -28,9 +38,12 @@ works against a key-protected server and never hands a real OpenAI key to a LAN 
 
 from __future__ import annotations
 
+import contextlib
 import json
+import math
 import os
 import time
+from collections.abc import Mapping
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
@@ -55,6 +68,10 @@ from identitybench.providers.base import (
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_BASE_URL_ENV = "OPENAI_BASE_URL"
 DEFAULT_API_KEY_ENV = "OPENAI_API_KEY"
+OPENROUTER_BASE_URL_ENV = "OPENROUTER_BASE_URL"
+"""The variable ``.env.example`` gives OpenRouter's endpoint. Config files name variables, never
+URLs, so this name is how cost accounting recognises an entry as a per-call-billed gateway that
+reports its cost (``runner.cost.default_cost_mode``)."""
 UNPARSED_ARGUMENTS_KEY = "_unparsed_arguments"
 """``ToolCall.arguments`` key holding the raw string when a tool call's arguments aren't valid
 JSON, so the runner can count the call as malformed instead of losing it."""
@@ -70,6 +87,10 @@ a 400). A model matches when its ID is a family name or starts with one followed
 fine-tune prefix; ``gpt-50`` or ``o1x`` would not."""
 
 MaxTokensParam = Literal["max_completion_tokens", "max_tokens"]
+
+_ROUTING_FLAGS = ("allow_fallbacks", "require_parameters")
+"""Boolean keys of a routing preference. YAML ``allow_fallbacks: "false"`` is a truthy string
+that would let a request fall back to an unintended host, so these are type-checked."""
 
 
 def _usage(completion: ChatCompletion) -> Usage:
@@ -89,6 +110,55 @@ def _usage(completion: ChatCompletion) -> Usage:
         cache_write_tokens=cache_write,
         reasoning_tokens=reasoning,
     )
+
+
+def _reported_cost(completion: ChatCompletion) -> float | None:
+    """USD the endpoint reports for this call (OpenRouter's ``usage.cost``), or None.
+
+    Only a finite, non-negative number counts: an absent, null, string or boolean value is an
+    unknown cost, which the budget treats as such rather than as a free call.
+    """
+    usage = completion.usage
+    extra = (usage.model_extra if usage is not None else None) or {}
+    cost = extra.get("cost")
+    if isinstance(cost, bool) or not isinstance(cost, int | float):
+        return None
+    return float(cost) if math.isfinite(cost) and cost >= 0 else None
+
+
+def _upstream_provider(completion: ChatCompletion) -> str | None:
+    """The host a gateway routed the call to (OpenRouter's top-level ``provider``), if named."""
+    upstream = (completion.model_extra or {}).get("provider")
+    return upstream if isinstance(upstream, str) and upstream else None
+
+
+def provider_routing_problem(value: object) -> str | None:
+    """Why ``value`` is not a usable routing preference, or None if it is.
+
+    It must be a non-empty mapping with string keys and JSON values (it is sent as the request
+    body's ``provider`` object and hashed into the endpoint identity). The keys OpenRouter
+    documents most often are type-checked; other keys pass through, so new routing options
+    need no harness change.
+    """
+    if not isinstance(value, Mapping) or not value:
+        return "must be a non-empty mapping"
+    routing = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) and key for key in routing):
+        return "keys must be non-empty strings"
+    try:
+        json.dumps(routing, allow_nan=False)
+    except (TypeError, ValueError):
+        return "values must be JSON (strings, numbers, booleans, lists, mappings)"
+    order = routing.get("order")
+    if order is not None and (
+        not isinstance(order, list)
+        or not all(isinstance(host, str) and host for host in cast(list[object], order))
+    ):
+        return "order must be a list of host names"
+    for flag in _ROUTING_FLAGS:
+        if flag in routing and not isinstance(routing[flag], bool):
+            return f"{flag} must be true or false"
+    return None
 
 
 def _tool_call(call: Any) -> ToolCall | None:
@@ -138,12 +208,17 @@ class OpenAICompatProvider:
         cache_namespace: str | None = None,
         reasoning_effort_param: bool = True,
         max_tokens_param: MaxTokensParam = "max_completion_tokens",
+        provider_routing: Mapping[str, Any] | None = None,
         max_retries: int = 4,
         timeout_s: float = 600.0,
         client: AsyncOpenAI | None = None,
     ) -> None:
         if max_tokens_param not in ("max_completion_tokens", "max_tokens"):
             raise ValueError(f"unsupported max_tokens_param {max_tokens_param!r}")
+        if provider_routing is not None:
+            problem = provider_routing_problem(provider_routing)
+            if problem is not None:
+                raise ValueError(f"provider_routing {problem}")
         self.model = model
         self._base_url_env = base_url_env
         self._api_key_env = (
@@ -152,6 +227,16 @@ class OpenAICompatProvider:
         self._cache_namespace = cache_namespace
         self._reasoning_effort_param = reasoning_effort_param
         self._max_tokens_param = max_tokens_param
+        # A JSON round trip gives a private copy (the caller's mapping can't change requests
+        # after the identity was computed) and is the canonical text the identity hashes.
+        self._routing_json = (
+            json.dumps(provider_routing, sort_keys=True, separators=(",", ":"))
+            if provider_routing is not None
+            else None
+        )
+        self._provider_routing: dict[str, Any] | None = (
+            json.loads(self._routing_json) if self._routing_json is not None else None
+        )
         self._max_retries = max_retries
         self._timeout_s = timeout_s
         self._client = client
@@ -178,8 +263,14 @@ class OpenAICompatProvider:
         )
 
     def endpoint_identity(self) -> str:
+        """Hash of base URL, model and cache namespace, plus the routing preference when one is
+        set (a different host order can produce a different answer). Without routing the parts
+        are exactly the earlier ones, so existing cache entries stay valid."""
         base = self._base_url or f"unset:{self._base_url_env}"
-        return hash_endpoint(base, self.model, self._cache_namespace)
+        parts = [base, self.model, self._cache_namespace]
+        if self._routing_json is not None:
+            parts.append(self._routing_json)
+        return hash_endpoint(*parts)
 
     # ------------------------------------------------------------------ request construction
 
@@ -220,6 +311,9 @@ class OpenAICompatProvider:
             params["temperature"] = request.params.temperature
         if request.params.effort is not None and self._reasoning_effort_param:
             params["reasoning_effort"] = request.params.effort
+        if self._provider_routing is not None:
+            # The SDK merges ``extra_body`` into the JSON body; ``provider`` isn't an SDK field.
+            params["extra_body"] = {"provider": self._provider_routing}
         return params
 
     @staticmethod
@@ -288,8 +382,11 @@ class OpenAICompatProvider:
             return self._to_response(completion, request)
         except (AttributeError, TypeError, ValueError, RecursionError) as exc:
             # A compatible server can return a shape the SDK accepted leniently but that lacks
-            # fields a real completion always has; that is a failed call, not a crash.
-            return self._fail(f"malformed response ({type(exc).__name__}: {exc})")
+            # fields a real completion always has; that is a failed call, not a crash. The call
+            # may still have been billed, so its usage and reported cost are kept when readable.
+            failed = self._fail(f"malformed response ({type(exc).__name__}: {exc})")
+            self._keep_accounting(failed, completion)
+            return failed
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
@@ -310,15 +407,31 @@ class OpenAICompatProvider:
 
     # ------------------------------------------------------------------ response parsing
 
+    @staticmethod
+    def _keep_accounting(response: ModelResponse, completion: ChatCompletion) -> None:
+        """Copy usage, reported cost and upstream host onto a failed ``response`` as far as the
+        malformed ``completion`` allows; whatever can't be read stays at its default."""
+        with contextlib.suppress(AttributeError, TypeError, ValueError):
+            response.usage = _usage(completion)
+        with contextlib.suppress(AttributeError, TypeError, ValueError):
+            response.reported_cost_usd = _reported_cost(completion)
+            upstream = _upstream_provider(completion)
+            if upstream is not None:
+                response.raw = {**(response.raw or {}), "upstream_provider": upstream}
+
     def _to_response(self, completion: ChatCompletion, request: ModelRequest) -> ModelResponse:
         response = ModelResponse(
             usage=_usage(completion),
             served_model=completion.model or None,
+            reported_cost_usd=_reported_cost(completion),
             raw={"id": completion.id},
         )
         fingerprint = getattr(completion, "system_fingerprint", None)
         if fingerprint and response.raw is not None:
             response.raw["system_fingerprint"] = fingerprint
+        upstream = _upstream_provider(completion)
+        if upstream is not None and response.raw is not None:
+            response.raw["upstream_provider"] = upstream
         if not completion.choices:
             response.error = redact(f"{self.kind}: response has no choices")
             return response

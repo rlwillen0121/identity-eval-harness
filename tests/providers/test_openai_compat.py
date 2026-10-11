@@ -16,6 +16,7 @@ from identitybench.providers.openai_compat import (
     accepts_temperature,
     default_api_key_env,
     is_vendor_endpoint,
+    provider_routing_problem,
 )
 from tests.providers.fakes import DECISION_SCHEMA, LOOKUP_TOOL, FakeOpenAIClient, make_request
 
@@ -28,12 +29,16 @@ def completion(
     tool_calls: list[dict[str, Any]] | None = None,
     usage: dict[str, Any] | None = None,
     model: str = "gpt-test-2026",
+    **top: Any,
 ) -> ChatCompletion:
+    """A completion as the SDK parses it; ``top`` adds non-OpenAI top-level fields (a gateway's
+    ``provider``), which the SDK keeps in ``model_extra``."""
     message: dict[str, Any] = {"role": "assistant", "content": content, "refusal": refusal}
     if tool_calls is not None:
         message["tool_calls"] = tool_calls
     return ChatCompletion.model_validate(
         {
+            **top,
             "id": "chatcmpl-1",
             "object": "chat.completion",
             "created": 0,
@@ -468,6 +473,7 @@ def test_custom_url_variable_never_pairs_with_the_openai_key(
         ("OPENAI_BASE_URL", "OPENAI_API_KEY"),
         ("LOCAL_LLM_BASE_URL", "LOCAL_LLM_API_KEY"),
         ("GATEWAY_URL", "GATEWAY_API_KEY"),
+        ("OPENROUTER_BASE_URL", "OPENROUTER_API_KEY"),
         ("OPENAI_URL", None),
         ("ANTHROPIC_BASE_URL", None),
         ("CUSTOM_ENDPOINT", None),
@@ -518,3 +524,176 @@ async def test_deeply_nested_tool_arguments_are_kept_unparsed() -> None:
         make_request(tools=(LOOKUP_TOOL,))
     )
     assert response.tool_calls[0].arguments == {UNPARSED_ARGUMENTS_KEY: raw_arguments}
+
+
+# --------------------------------------------------------------------------- reported cost
+
+OPENROUTER_USAGE: dict[str, Any] = {
+    "prompt_tokens": 120,
+    "completion_tokens": 40,
+    "total_tokens": 160,
+    "cost": 0.0001172292,
+    "is_byok": False,
+    "cost_details": {"upstream_inference_cost": 0.0001172292},
+}
+"""Usage as OpenRouter returns it: the call's USD in ``cost``, beside the OpenAI fields."""
+
+
+async def test_reported_cost_and_upstream_provider_are_recorded() -> None:
+    reply = completion(
+        '{"decision": "DENY", "rules": []}', usage=OPENROUTER_USAGE, provider="Baidu"
+    )
+    response = await provider(reply).complete(make_request(schema=DECISION_SCHEMA))
+    assert response.ok
+    assert response.reported_cost_usd == 0.0001172292
+    assert response.raw is not None
+    assert response.raw["upstream_provider"] == "Baidu"
+    assert response.parsed == {"decision": "DENY", "rules": []}
+    assert (response.usage.input_tokens, response.usage.output_tokens) == (120, 40)
+
+
+async def test_a_missing_cost_is_unknown_not_zero() -> None:
+    """OpenAI and self-hosted servers send no cost; the budget must see None, never $0."""
+    response = await provider(completion()).complete(make_request())
+    assert response.reported_cost_usd is None
+    assert "upstream_provider" not in (response.raw or {})
+    no_usage = completion().model_copy(update={"usage": None})
+    response = await provider(no_usage).complete(make_request())
+    assert response.reported_cost_usd is None
+
+
+@pytest.mark.parametrize("cost", [None, "0.01", True, -0.5, float("nan"), float("inf"), [0.01]])
+async def test_a_cost_that_is_not_a_usable_number_is_unknown(cost: object) -> None:
+    usage = {**OPENROUTER_USAGE, "cost": cost}
+    response = await provider(completion(usage=usage)).complete(make_request())
+    assert response.reported_cost_usd is None
+
+
+async def test_a_zero_cost_is_a_real_zero() -> None:
+    """Free model variants report ``cost: 0``, an integer, which is a known $0."""
+    usage = {**OPENROUTER_USAGE, "cost": 0}
+    response = await provider(completion(usage=usage)).complete(make_request())
+    assert response.reported_cost_usd == 0.0
+
+
+@pytest.mark.parametrize("upstream", ["", 7, None])
+async def test_an_unnamed_upstream_provider_is_not_recorded(upstream: object) -> None:
+    response = await provider(completion(provider=upstream)).complete(make_request())
+    assert "upstream_provider" not in (response.raw or {})
+
+
+async def test_an_error_after_usage_came_back_keeps_the_cost() -> None:
+    """A billed call that fails to parse still spent money; the budget must count it."""
+    empty = completion(usage=OPENROUTER_USAGE, provider="Mistral").model_copy(
+        update={"choices": []}
+    )
+    response = await provider(empty).complete(make_request())
+    assert response.error == "openai_compatible: response has no choices"
+    assert response.reported_cost_usd == 0.0001172292
+    assert response.raw is not None and response.raw["upstream_provider"] == "Mistral"
+
+    shaped = completion(usage=OPENROUTER_USAGE, provider="Mistral")
+    broken = ChatCompletion.model_construct(**{**dict(shaped), "choices": [object()]})
+    response = await provider(broken).complete(make_request())
+    assert response.error is not None and "malformed response" in response.error
+    assert response.reported_cost_usd == 0.0001172292
+    assert response.usage.output_tokens == 40
+    assert response.raw == {"upstream_provider": "Mistral"}
+
+
+# --------------------------------------------------------------------------- routing preferences
+
+ROUTING: dict[str, Any] = {
+    "order": ["Baidu", "Alibaba"],
+    "allow_fallbacks": False,
+    "require_parameters": True,
+}
+
+
+async def test_routing_preference_goes_in_the_request_body() -> None:
+    p = provider(completion(), provider_routing=ROUTING)
+    await p.complete(make_request(schema=DECISION_SCHEMA))
+    assert sent(p)["extra_body"] == {"provider": ROUTING}
+
+
+async def test_no_routing_sends_no_extra_body() -> None:
+    p = provider(completion())
+    await p.complete(make_request())
+    assert "extra_body" not in sent(p)
+
+
+def test_routing_is_part_of_the_endpoint_identity(monkeypatch) -> None:
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    model = "deepseek/deepseek-v4-pro-0813"
+    plain = OpenAICompatProvider(model, base_url_env="OPENROUTER_BASE_URL")
+    routed = OpenAICompatProvider(
+        model, base_url_env="OPENROUTER_BASE_URL", provider_routing=ROUTING
+    )
+    reordered = OpenAICompatProvider(
+        model,
+        base_url_env="OPENROUTER_BASE_URL",
+        provider_routing={**ROUTING, "order": ["Alibaba", "Baidu"]},
+    )
+    same = OpenAICompatProvider(
+        model, base_url_env="OPENROUTER_BASE_URL", provider_routing=dict(reversed(ROUTING.items()))
+    )
+    # Without routing the identity is what it always was, so existing cache entries hold.
+    assert plain.endpoint_identity() == hash_endpoint("https://openrouter.ai/api/v1", model, None)
+    assert routed.endpoint_identity() != plain.endpoint_identity()
+    assert reordered.endpoint_identity() != routed.endpoint_identity()  # host order matters
+    assert same.endpoint_identity() == routed.endpoint_identity()  # key order doesn't
+
+
+async def test_routing_is_copied_so_later_edits_change_nothing() -> None:
+    routing: dict[str, Any] = {"order": ["Baidu"], "allow_fallbacks": False}
+    p = provider(completion(), provider_routing=routing)
+    identity = p.endpoint_identity()
+    routing["order"].append("Alibaba")
+    await p.complete(make_request())
+    assert sent(p)["extra_body"] == {"provider": {"order": ["Baidu"], "allow_fallbacks": False}}
+    assert p.endpoint_identity() == identity
+
+
+@pytest.mark.parametrize(
+    ("routing", "problem"),
+    [
+        ({}, "non-empty mapping"),
+        (["Baidu"], "non-empty mapping"),
+        ("Baidu", "non-empty mapping"),
+        ({1: "x"}, "keys must be non-empty strings"),
+        ({"": "x"}, "keys must be non-empty strings"),
+        ({"order": {"Baidu"}}, "values must be JSON"),
+        ({"max_price": {"prompt": float("nan")}}, "values must be JSON"),
+        ({"order": "Baidu"}, "order must be a list of host names"),
+        ({"order": ["Baidu", ""]}, "order must be a list of host names"),
+        ({"allow_fallbacks": "false"}, "allow_fallbacks must be true or false"),
+        ({"require_parameters": 1}, "require_parameters must be true or false"),
+    ],
+)
+def test_bad_routing_preferences_are_rejected(routing: object, problem: str) -> None:
+    found = provider_routing_problem(routing)
+    assert found is not None and problem in found
+    if isinstance(routing, dict):
+        with pytest.raises(ValueError, match=f"^provider_routing .*{problem}"):
+            OpenAICompatProvider("m", provider_routing=routing)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "routing",
+    [
+        ROUTING,
+        {"only": ["Mistral"]},
+        {"sort": "price", "max_price": {"prompt": 1, "completion": 2}},
+    ],
+)
+def test_good_routing_preferences_pass(routing: dict[str, Any]) -> None:
+    assert provider_routing_problem(routing) is None
+
+
+def test_openrouter_entry_reads_its_paired_key(monkeypatch) -> None:
+    """.env.example pairs OPENROUTER_BASE_URL with OPENROUTER_API_KEY; OpenAI's key stays home."""
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test-key-123")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-openai-key-123")
+    p = OpenAICompatProvider("mistralai/mistral-large-4-0", base_url_env="OPENROUTER_BASE_URL")
+    assert p._get_client().api_key == "or-test-key-123"

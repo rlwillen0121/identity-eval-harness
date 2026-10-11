@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from identitybench.providers import _cli, codex_cli, grok_cli
+from identitybench.providers import _cli, claude_cli, codex_cli, grok_cli
 from identitybench.providers._cli import (
     MAX_ARG_BYTES,
     NEUTRAL_SYSTEM,
@@ -349,6 +349,14 @@ def test_setup_revision_ignores_the_model_but_the_identity_does_not() -> None:
     a, b = GrokCliProvider("grok-a", version="1"), GrokCliProvider("grok-b", version="1")
     assert a.setup_revision() == b.setup_revision()
     assert a.endpoint_identity() != b.endpoint_identity()
+
+
+def test_setup_revision_covers_how_an_action_protocol_turn_is_sent(monkeypatch) -> None:
+    """``claude_cli`` withholds ``--json-schema`` from a JSON action protocol turn; a change to
+    that must reach the cache key, so the revision builds such a turn as a template."""
+    before = ClaudeCliProvider("m", version="1").setup_revision()
+    monkeypatch.setattr(claude_cli, "ACTION_SCHEMA_NAME", "not_the_action_schema")
+    assert ClaudeCliProvider("m", version="1").setup_revision() != before
 
 
 def test_setup_revisions_differ_between_cli_kinds() -> None:

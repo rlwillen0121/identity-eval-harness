@@ -27,10 +27,7 @@ other-side grant, then the control date. Each claim set cites exactly one role p
 and each role path is a separate alternative: a pairing that would cite two paths to the same
 role is dropped in favor of the pairings that cite one (``normalize_claim_sets``).
 
-Input contract: the policy pack's sides (each rule at most once, only known SoD rule IDs); the
-beneficiary's or holder's memberships with every role in their expansion, and the assignments on
-their accounts; and at most one control per (identity, rule). A missing role, a duplicate or
-unknown rule, or a second control raises ``OracleInputError``.
+Input contract: stated once on ``SodRule``, which the six rules share, and restated per rule.
 """
 
 from __future__ import annotations
@@ -59,7 +56,19 @@ def _side_text(entitlement_ids: tuple[str, ...]) -> str:
 
 
 class SodRule(RequestRule, ReviewRule):
-    """A SoD rule whose sides come from the policy pack (see the module docstring)."""
+    """A SoD rule whose sides come from the policy pack (see the module docstring for scope and
+    claims).
+
+    Input contract, shared by the six rules (``OracleInputError`` otherwise): the policy pack
+    lists each SoD rule at most once and only known SoD rule IDs; every role in the expansion of
+    the beneficiary's or holder's memberships is in the view; and the identity has at most one
+    control for the rule, whose ``granted_on`` and ``expires_on`` decide MIT-001. The context's
+    view-wide check (``RecordIndex.check_complete``) enforces the last one for every identity and
+    rule before any rule runs, conflict or not, and also requires each membership's role and each
+    assignment's account. A rule the pack omits has no sides and never applies. The
+    beneficiary's or holder's identity record is checked by the context, and an item without a
+    holder (an orphaned or service account) confers no side.
+    """
 
     family = "SOD"
     effects = effects_of(request=Effect.DENY, review=Effect.ESCALATE)
@@ -86,7 +95,12 @@ class SodRule(RequestRule, ReviewRule):
 
 @register
 class VendorMasterVsPayment(SodRule):
-    """SOD-001: create or modify vendors ⟂ approve vendor payments."""
+    """SOD-001: create or modify vendors ⟂ approve vendor payments.
+
+    Input contract: the ``SodRule`` contract for SOD-001: its sides in the policy pack, the
+    beneficiary's or holder's memberships (every role in their expansion) and assignments,
+    and at most one SOD-001 control for the identity.
+    """
 
     id = "SOD-001"
     summary = (
@@ -96,7 +110,12 @@ class VendorMasterVsPayment(SodRule):
 
 @register
 class JournalPostVsApprove(SodRule):
-    """SOD-002: post journal entries ⟂ approve journal entries."""
+    """SOD-002: post journal entries ⟂ approve journal entries.
+
+    Input contract: the ``SodRule`` contract for SOD-002: its sides in the policy pack, the
+    beneficiary's or holder's memberships (every role in their expansion) and assignments,
+    and at most one SOD-002 control for the identity.
+    """
 
     id = "SOD-002"
     summary = "A person must not be able to both post and approve general-ledger journal entries."
@@ -104,7 +123,12 @@ class JournalPostVsApprove(SodRule):
 
 @register
 class ChangeApproveVsDeploy(SodRule):
-    """SOD-003: approve change requests ⟂ deploy to production (SOX-scoped apps)."""
+    """SOD-003: approve change requests ⟂ deploy to production (SOX-scoped apps).
+
+    Input contract: the ``SodRule`` contract for SOD-003: its sides in the policy pack, the
+    beneficiary's or holder's memberships (every role in their expansion) and assignments,
+    and at most one SOD-003 control for the identity.
+    """
 
     id = "SOD-003"
     summary = (
@@ -115,7 +139,12 @@ class ChangeApproveVsDeploy(SodRule):
 
 @register
 class IdpAdminVsAccessApproval(SodRule):
-    """SOD-004: administer identity-provider accounts ⟂ approve access requests."""
+    """SOD-004: administer identity-provider accounts ⟂ approve access requests.
+
+    Input contract: the ``SodRule`` contract for SOD-004: its sides in the policy pack, the
+    beneficiary's or holder's memberships (every role in their expansion) and assignments,
+    and at most one SOD-004 control for the identity.
+    """
 
     id = "SOD-004"
     summary = (
@@ -126,7 +155,12 @@ class IdpAdminVsAccessApproval(SodRule):
 
 @register
 class PayrollEditVsApprove(SodRule):
-    """SOD-005: edit payroll ⟂ approve payroll runs."""
+    """SOD-005: edit payroll ⟂ approve payroll runs.
+
+    Input contract: the ``SodRule`` contract for SOD-005: its sides in the policy pack, the
+    beneficiary's or holder's memberships (every role in their expansion) and assignments,
+    and at most one SOD-005 control for the identity.
+    """
 
     id = "SOD-005"
     summary = "A person must not be able to both edit payroll and approve payroll runs."
@@ -134,7 +168,12 @@ class PayrollEditVsApprove(SodRule):
 
 @register
 class PurchaseOrderVsReceipt(SodRule):
-    """SOD-006: create purchase orders ⟂ record goods receipt."""
+    """SOD-006: create purchase orders ⟂ record goods receipt.
+
+    Input contract: the ``SodRule`` contract for SOD-006: its sides in the policy pack, the
+    beneficiary's or holder's memberships (every role in their expansion) and assignments,
+    and at most one SOD-006 control for the identity.
+    """
 
     id = "SOD-006"
     summary = "A person must not be able to both create purchase orders and record goods receipt."

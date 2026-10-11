@@ -59,8 +59,10 @@ def day(offset: int) -> date:
 class CaseBuilder:
     """Mutable entity collections that build into a ``CaseView``."""
 
-    def __init__(self, as_of: date = AS_OF) -> None:
+    def __init__(self, as_of: date = AS_OF, *, label: str | None = None) -> None:
         self.as_of = as_of
+        self.label = label
+        """Names a hand-built world in failure reports (hypothesis prints example arguments)."""
         self.identities: dict[str, Identity] = {}
         self.applications: dict[str, Application] = {}
         self.entitlements: dict[str, Entitlement] = {}
@@ -75,6 +77,9 @@ class CaseBuilder:
         self.peer_stats: dict[str, dict[str, float]] = {}
         self.usage_gaps: set[tuple[str, str]] = set()
         """Provisioned (account, entitlement) pairs left without a usage record (``no_usage``)."""
+
+    def __repr__(self) -> str:
+        return f"CaseBuilder(label={self.label!r})" if self.label else super().__repr__()
 
     # ---- entities ---------------------------------------------------------------------------
 

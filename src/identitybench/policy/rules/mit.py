@@ -2,8 +2,8 @@
 
 MIT-001 is not a finding: it is the exception evaluated inside every SoD predicate (see
 ``rules/sod.py``), recorded as an ``ExceptionEval``. MIT-002 and MIT-003 are findings about the
-conflicts MIT-001 mitigated, so they read exactly what the SoD rules read (the input contract in
-``rules/sod.py``) and nothing else.
+conflicts MIT-001 mitigated, so they read exactly what the SoD rules read (``SodRule``'s input
+contract) and nothing else.
 """
 
 from __future__ import annotations
@@ -43,6 +43,12 @@ class MitigatingControlException(Rule):
     """MIT-001: a valid mitigating control for (identity, rule) stops that SoD rule applying.
 
     Evaluated inside the SoD predicates, never on its own, so it has no evaluation hook.
+
+    Input contract: the identity's control for the SoD rule being decided, if any, with its
+    ``granted_on`` and ``expires_on`` (valid iff ``granted_on <= as_of <= expires_on``). At most
+    one control per (identity, rule): a second makes the view contradictory, and the request or
+    review context raises ``OracleInputError`` before any rule runs, whether or not a conflict
+    would need the control (``RecordIndex.check_controls``).
     """
 
     id = "MIT-001"
@@ -63,6 +69,10 @@ class ControlRenewal(ReviewRule):
     Claims: the SoD conflict claims (this item's conferral, the other side's conferral) plus the
     control's ``expires_on``. Like the SoD rules it sees held access only, so only an item valid
     on the as-of date confers a side (SPEC §7.2).
+
+    Input contract: exactly the SoD rules' (``SodRule``), whose analysis it reuses: the policy
+    pack's sides, the holder's memberships (every role in their expansion) and assignments, and
+    at most one control per (holder, rule), of which it reads the ``expires_on``.
     """
 
     id = "MIT-002"
@@ -94,6 +104,12 @@ class ControlExpiryCap(RequestRule):
     ``expires_on - as_of + 1`` days, using the earliest-expiring control when several apply.
     Claims: the SoD conflict claims (``request.entitlement_id`` and the held grant's conferral)
     plus that control's ``expires_on``; controls tied on the earliest expiry are alternatives.
+    Only the earliest expiry is cited: the cap is a minimum, and like the caps of other rules
+    that don't bind, the later expiries don't decide it.
+
+    Input contract: exactly the SoD rules' (``SodRule``), whose analysis it reuses: the policy
+    pack's sides, the beneficiary's memberships (every role in their expansion) and assignments,
+    and at most one control per (beneficiary, rule), of which it reads the ``expires_on``.
     """
 
     id = "MIT-003"

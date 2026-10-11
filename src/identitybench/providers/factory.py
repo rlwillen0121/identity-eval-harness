@@ -12,6 +12,11 @@ CLI kinds, ``temperature`` for models that reject it, ``effort`` for a server co
 ``params`` block can cover every model; the provider lists them in ``raw["ignored_params"]`` of
 each response instead.
 
+``extra`` holds constructor options, which never reach the request, with one exception:
+``openai_compatible``'s ``provider_routing`` (OpenRouter's ``provider`` preference object) is
+sent in every request body, and the provider folds it into its endpoint identity, so it is part
+of every cache key like any other setting that can change the answer.
+
 Where a provider would otherwise apply a hidden default effort (``codex_cli``), the spec's
 generation parameters carry that default explicitly, so the cache key and manifest record the
 effort the model actually ran at.
@@ -30,7 +35,10 @@ from identitybench.providers.codex_cli import DEFAULT_EFFORT as CODEX_DEFAULT_EF
 from identitybench.providers.codex_cli import CodexCliProvider
 from identitybench.providers.cursor_cli import CursorCliProvider
 from identitybench.providers.grok_cli import GrokCliProvider
-from identitybench.providers.openai_compat import OpenAICompatProvider
+from identitybench.providers.openai_compat import (
+    OpenAICompatProvider,
+    provider_routing_problem,
+)
 from identitybench.providers.replay import ReplayProvider
 
 ProviderKind = Literal[
@@ -51,7 +59,9 @@ _CLI_KINDS = frozenset({"claude_cli", "codex_cli", "grok_cli", "cursor_cli"})
 _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
     "anthropic": frozenset({"max_retries"}),
     "anthropic_compatible": frozenset({"max_retries"}),
-    "openai_compatible": frozenset({"max_retries", "reasoning_effort_param", "max_tokens_param"}),
+    "openai_compatible": frozenset(
+        {"max_retries", "reasoning_effort_param", "max_tokens_param", "provider_routing"}
+    ),
     "claude_cli": frozenset({"binary"}),
     "codex_cli": frozenset({"binary"}),
     "grok_cli": frozenset({"binary"}),
@@ -74,6 +84,8 @@ def _extra_problem(name: str, value: object) -> str | None:
     elif name == "max_tokens_param":
         if value not in _MAX_TOKENS_PARAMS:
             return f"must be one of {list(_MAX_TOKENS_PARAMS)}"
+    elif name == "provider_routing":
+        return provider_routing_problem(value)
     elif not isinstance(value, str) or not value.strip():  # binary, path
         return "must be a non-empty string"
     return None
@@ -178,7 +190,7 @@ def make_provider(spec: ModelSpec) -> Provider:
     if kind == "openai_compatible":
         options: dict[str, Any] = {
             name: extra[name]
-            for name in ("reasoning_effort_param", "max_tokens_param")
+            for name in ("reasoning_effort_param", "max_tokens_param", "provider_routing")
             if name in extra
         }
         return OpenAICompatProvider(

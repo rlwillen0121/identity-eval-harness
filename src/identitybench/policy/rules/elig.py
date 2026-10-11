@@ -7,7 +7,9 @@ once valid (an assignment's entitlement, or every entitlement in a membership's 
 depth), even if the item has expired or hasn't started yet. Each item conferring an ineligible
 entitlement is revoked, and its claim sets start with the conferral (role path or
 ``assignment.entitlement_id``) of that entitlement; each entitlement and each role path to it is
-an alternative.
+an alternative. ELIG-001 and ELIG-002 compare an attribute with fixed values, which need no
+citing; ELIG-003 and ELIG-005 compare an identity attribute with another record's field, and cite
+both sides.
 
 Input contract: the identity's attributes the rule names, and the entitlement and its
 application. In a request those are the beneficiary and the requested entitlement, which the
@@ -186,9 +188,11 @@ class NotRequestable(RequestRule):
 class IneligibleEmploymentType(EligibilityRule):
     """ELIG-005: the identity's employment type must be one of the entitlement's eligible types.
 
-    Claims: ``identity.employment_type``. The eligible list itself can't certify an absence, so
-    the identity's type is the citable fact. Reads the identity's ``employment_type`` and the
-    entitlement's ``eligible_employment_types``.
+    Claims: both sides of the comparison (the shared recipe in ``rules/base.py``):
+    ``identity.employment_type`` and every element of the entitlement's
+    ``eligible_employment_types``, since only the whole list shows the type is missing from it.
+    An empty list has no element to cite, so the identity's type is then the only claim. Reads
+    exactly those two fields.
     """
 
     id = "ELIG-005"
@@ -202,6 +206,13 @@ class IneligibleEmploymentType(EligibilityRule):
         self, ctx: Context, identity: Identity, entitlement: Entitlement, app: Application
     ) -> ClaimSet | None:
         del app
-        if identity.employment_type in entitlement.eligible_employment_types:
+        eligible = entitlement.eligible_employment_types
+        if identity.employment_type in eligible:
             return None
-        return (ctx.claim(identity.id, "employment_type"),)
+        return (
+            ctx.claim(identity.id, "employment_type"),
+            *(
+                ctx.claim(entitlement.id, "eligible_employment_types", value)
+                for value in sorted({t.value for t in eligible})
+            ),
+        )

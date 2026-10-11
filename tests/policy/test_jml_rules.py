@@ -37,8 +37,11 @@ from identitybench.world.entities import (
     IdentityStatus,
     Membership,
     MembershipSource,
+    MitigatingControl,
     PolicyPack,
+    Role,
     RoleKind,
+    SodRuleSides,
     SuspensionReason,
     TerminationType,
 )
@@ -64,6 +67,7 @@ from tests.policy.jml_fixtures import (
     property_settings,
     role,
     service_account,
+    switched_on_by_mover_grants,
 )
 
 JML_IDS = [f"JML-00{i}" for i in range(1, 8)]
@@ -109,7 +113,15 @@ PRIVILEGED_LEDGER_OPS = (
     claim("ent_ledger_admin", "privileged", True),
 )
 """``rm_ledger_ops`` confers the privileged ``ent_ledger_admin`` through a child role."""
+FINANCE_MATCH = (
+    claim("role_br_finance", "kind", "birthright"),
+    claim("role_br_finance", "attribute_rule.departments", "Finance"),
+    claim(EVENT_ID, "after.department", "Finance"),
+)
+"""Why ``role_br_finance`` is new birthright: it is a birthright role, and both sides of its one
+attribute comparison."""
 FINANCE_POSTS = (
+    *FINANCE_MATCH,
     claim("role_br_finance", "child_roles", "role_gl_close"),
     claim("role_gl_close", "entitlements", "ent_gl_je_post"),
 )
@@ -458,6 +470,7 @@ def test_mover_follows_every_clause() -> None:
         ((day(-100), day(100)), False),  # valid on the move date: mitigated, the source stays
         ((day(-100), MOVE), False),  # expires on the move date: still valid that day
         ((day(-100), MOVE - timedelta(days=1)), True),  # expired the day before the move
+        ((MOVE, day(100)), False),  # granted on the move date: valid that day
         ((MOVE + timedelta(days=1), day(100)), True),  # not yet granted on the move date
     ],
 )
@@ -474,6 +487,25 @@ def test_mover_sod_removal_respects_controls_valid_on_the_move_date(
     assert (*lead, *GL_APPROVE_VS_FINANCE, control_date(window, MOVE)) in claim_sets(gold)
 
 
+def test_mover_control_granted_on_the_move_date_is_valid_that_day() -> None:
+    """The control-date boundary, spelled out without ``control_date``: a control granted on the
+    move date is valid on it (``granted_on <= move``), so it mitigates the crossing and is cited
+    by the expiry that bounds it; one granted the day after isn't, and its start date is cited."""
+    lead = event_claims(HrEventType.mover, MOVE)
+    on_move = plan_jml(mover_case((MOVE, day(100))))
+    assert ("REVOKE", "as_gl_approve", MOVE_ISO) not in plan_rows(on_move)
+    assert on_move.exceptions == (mit("SOD-002", applies=True),)
+    expiry = claim("mc_0", "expires_on", day(100).isoformat())
+    assert (*lead, *GL_APPROVE_VS_FINANCE, expiry) in claim_sets(on_move)
+
+    next_day = MOVE + timedelta(days=1)
+    day_after = plan_jml(mover_case((next_day, day(100))))
+    assert ("REVOKE", "as_gl_approve", MOVE_ISO) in plan_rows(day_after)
+    assert day_after.exceptions == (mit("SOD-002", applies=False),)
+    start = claim("mc_0", "granted_on", next_day.isoformat())
+    assert (*lead, *GL_APPROVE_VS_FINANCE, start) in claim_sets(day_after)
+
+
 PAST_MOVE = day(-5)
 
 
@@ -483,13 +515,15 @@ PAST_MOVE = day(-5)
         ((day(-100), day(-2)), False),  # valid on the move date, expired since: still mitigated
         ((day(-100), PAST_MOVE), False),  # expires on the move date: still valid that day
         ((day(-100), PAST_MOVE - timedelta(days=1)), True),  # expired the day before the move
+        ((PAST_MOVE, day(100)), False),  # granted on the move date: valid that day
         ((day(-3), day(100)), True),  # granted after the move date: the move was unmitigated
     ],
 )
 def test_past_mover_judges_controls_on_the_move_date_and_removes_now(
     window: tuple[date, date], removed: bool
 ) -> None:
-    """A late plan removes what an on-time plan would have removed; overdue means IMMEDIATE."""
+    """For a source on file before the move, a late plan removes what an on-time plan would have
+    removed; overdue means IMMEDIATE."""
     gold = plan_jml(mover_case(window, move=PAST_MOVE))
     assert (("REVOKE", "as_gl_approve", "IMMEDIATE") in plan_rows(gold)) is removed
     assert gold.exceptions == (mit("SOD-002", applies=not removed),)
@@ -617,6 +651,7 @@ def late_starter_view(*controls_: tuple[date, date]) -> CaseView:
         ((day(-10), MOVE + timedelta(days=1)), False),  # valid on the move date, lapses before
         ((day(-10), MOVE), False),  # expires on the move date: still valid that day
         ((day(-10), MOVE - timedelta(days=1)), True),  # expired the day before the move
+        ((MOVE, day(100)), False),  # granted on the move date: valid that day
         ((MOVE + timedelta(days=1), day(100)), True),  # granted after the move, before the start
         ((LATE_START, day(100)), True),  # granted the day the source starts
     ],
@@ -709,11 +744,100 @@ def test_mover_judges_every_crossing_of_a_rule_against_one_control_on_the_move_d
     }
 
 
+def gl_approver_moving_to(*extra_roles: Role, region: str = "NA") -> CaseView:
+    """A Sales employee holding the SOD-002 side-B ``as_gl_approve`` who moves to Finance in
+    ``region``, over the catalog plus ``extra_roles``."""
+    return make_view(
+        hr_event(
+            HrEventType.mover,
+            MOVE,
+            before=attrs("Sales", region=region),
+            after=attrs("Finance", region=region),
+        ),
+        person(department="Finance", region=region),
+        memberships=[membership("rm_emp", "role_br_employee")],
+        accounts=[account("acct_ledger", "app_ledger")],
+        assignments=[assignment("as_gl_approve", "acct_ledger", "ent_gl_je_approve")],
+        extra_roles=extra_roles,
+    )
+
+
+def test_mover_crossing_cites_both_sides_of_each_new_birthright_match() -> None:
+    """A role is new birthright because it is a birthright role (its ``kind``, a fixed value)
+    whose attribute rule matches the event's ``after`` attributes, a comparison between two
+    records. So a crossing cites the kind, and both sides of the comparison as HYG-005 does when
+    the match fails: per dimension the rule constrains, the matching element of the allowed
+    values (never the others) and the event's attribute. Each new birthright role that confers
+    the other side is its own alternative."""
+    staff = role(
+        "role_br_fin_eu_staff",
+        RoleKind.birthright,
+        ("ent_gl_je_post",),
+        rule=AttributeRule(
+            departments=("AP", "Finance"),
+            employment_types=(CONTRACTOR, EMPLOYEE),
+            regions=("EU",),
+        ),
+    )
+    gold = plan_jml(gl_approver_moving_to(staff, region="EU"))
+    assert ("REVOKE", "as_gl_approve", MOVE_ISO) in plan_rows(gold)
+    lead = (*event_claims(HrEventType.mover, MOVE), GL_APPROVE_VS_FINANCE[0])
+    assert claim_sets(gold) == {
+        (*lead, *FINANCE_POSTS),
+        (
+            *lead,
+            claim("role_br_fin_eu_staff", "kind", "birthright"),
+            claim("role_br_fin_eu_staff", "attribute_rule.departments", "Finance"),
+            claim(EVENT_ID, "after.department", "Finance"),
+            claim("role_br_fin_eu_staff", "attribute_rule.employment_types", "employee"),
+            claim(EVENT_ID, "after.employment_type", "employee"),
+            claim("role_br_fin_eu_staff", "attribute_rule.regions", "EU"),
+            claim(EVENT_ID, "after.location.region", "EU"),
+            claim("role_br_fin_eu_staff", "entitlements", "ent_gl_je_post"),
+        ),
+    }
+
+
+def test_mover_crossing_through_nested_birthright_roles_keeps_each_roles_set() -> None:
+    """A rule that constrains no dimension matches everyone, an absence with nothing to cite, so
+    the role's ``kind`` alone shows it is in the new birthright. Nested inside another new
+    birthright role, such a role confers the other side along two paths: its own (its kind, then
+    its ``entitlements``) and the wrapper's (the wrapper's kind and match, its hop to the nested
+    role, then the same ``entitlements``). Each set cites the kind of the role it goes through,
+    so neither contains the other and both stay as minimal alternatives
+    (``normalize_claim_sets``)."""
+    everyone = role(
+        "role_br_everyone", RoleKind.birthright, ("ent_gl_je_post",), rule=AttributeRule()
+    )
+    wrapper = role(
+        "role_br_fin_wrap",
+        RoleKind.birthright,
+        child_roles=("role_br_everyone",),
+        rule=AttributeRule(departments=("Finance",)),
+    )
+    view = gl_approver_moving_to(everyone, wrapper)
+    gold = plan_jml(view)
+    lead = (*event_claims(HrEventType.mover, MOVE), GL_APPROVE_VS_FINANCE[0])
+    posts = claim("role_br_everyone", "entitlements", "ent_gl_je_post")
+    direct = (*lead, claim("role_br_everyone", "kind", "birthright"), posts)
+    wrapped = (
+        *lead,
+        claim("role_br_fin_wrap", "kind", "birthright"),
+        claim("role_br_fin_wrap", "attribute_rule.departments", "Finance"),
+        claim(EVENT_ID, "after.department", "Finance"),
+        claim("role_br_fin_wrap", "child_roles", "role_br_everyone"),
+        posts,
+    )
+    assert claim_sets(gold) == {(*lead, *FINANCE_POSTS), direct, wrapped}
+    index = index_view(view)
+    assert all(check_claim(index, c.id, c.field, c.value) for s in claim_sets(gold) for c in s)
+
+
 def test_mover_findings_list_each_judged_sod_rule_in_policy_order() -> None:
     """SPEC §9.1: the event's rule, then every SoD rule whose crossing with the new birthright
     the plan judged, mitigated or not, each with MIT-001's evaluation. as_idp_admin goes for
-    being privileged even though its SOD-004 crossing is mitigated; that crossing was still
-    judged, so SOD-004 is a finding."""
+    being privileged even though its SOD-004 crossing is mitigated. The lenient reading
+    (``Mover._judge``) still counts that crossing as judged, so SOD-004 is a finding."""
     fin_eu = role(
         "role_br_fin_eu",
         RoleKind.birthright,
@@ -789,6 +913,851 @@ def test_mover_crossings_on_sources_it_doesnt_judge_are_not_findings(
     gold = plan_jml(view)
     assert plan_rows(gold) == []
     assert gold.findings == (finding("JML-002"),) and gold.exceptions == ()
+
+
+LATE_GRANT = day(-3)
+"""When ``late_grant_view``'s records were granted: after ``PAST_MOVE``, so they aren't judged."""
+GRANT_FINANCE_NOW = ("GRANT_ROLE", SUBJECT, "role_br_finance", "IMMEDIATE")
+LEDGER_DISABLED = account("acct_ledger", "app_ledger", status=DISABLED)
+
+
+def late_grant_view(
+    accounts: Iterable[Account],
+    assignments: Iterable[Assignment] = (),
+    memberships: Iterable[Membership] = (),
+    *,
+    finance_held: bool = False,
+    controls: Iterable[MitigatingControl] = (),
+    extra_roles: Iterable[Role] = (),
+) -> CaseView:
+    """A Sales to Finance move five days ago, with records granted since. Gold grants the Finance
+    birthright now (it reaches only the ledger, and posts journal entries through
+    ``role_gl_close``) unless ``finance_held``; the employee birthright is held, with an active
+    HR account."""
+    held = [membership("rm_fin", "role_br_finance")] if finance_held else []
+    return make_view(
+        hr_event(HrEventType.mover, PAST_MOVE, before=attrs("Sales"), after=attrs("Finance")),
+        person(department="Finance"),
+        memberships=[membership("rm_emp", "role_br_employee"), *held, *memberships],
+        accounts=[account("acct_hr", "app_hr"), *accounts],
+        assignments=assignments,
+        controls=controls,
+        extra_roles=extra_roles,
+    )
+
+
+def into_treasury(
+    memberships: Iterable[Membership] = (),
+    assignments: Iterable[Assignment] = (),
+    *,
+    move: date = PAST_MOVE,
+    before: str = "Sales",
+    controls: Iterable[MitigatingControl] = (),
+    extra_roles: Iterable[Role] = (),
+) -> CaseView:
+    """A move from ``before`` into Treasury, whose birthright reaches the ledger with neither
+    SOD-002 side, so gold's grant of ``role_br_treasury`` reactivates the disabled ledger account
+    and any SOD-002 conflict it switches on is completed by another of the mover's sources."""
+    return make_view(
+        hr_event(HrEventType.mover, move, before=attrs(before), after=attrs("Treasury")),
+        person(department="Treasury"),
+        memberships=[membership("rm_emp", "role_br_employee"), *memberships],
+        accounts=[account("acct_hr", "app_hr"), LEDGER_DISABLED],
+        assignments=assignments,
+        controls=controls,
+        extra_roles=extra_roles,
+    )
+
+
+GRANT_TREASURY_NOW = ("GRANT_ROLE", SUBJECT, "role_br_treasury", "IMMEDIATE")
+CLOSE_AND_CRM_ADMIN = role(
+    "role_close_and_crm_admin", RoleKind.business, ("ent_gl_je_post", "ent_crm_admin")
+)
+"""A business role that posts journal entries and confers the privileged ``ent_crm_admin``."""
+
+
+def _late(account_id: str, entitlement_id: str, expires_on: date | None = None) -> Assignment:
+    return assignment(
+        "as_late", account_id, entitlement_id, granted_on=LATE_GRANT, expires_on=expires_on
+    )
+
+
+@pytest.mark.parametrize(
+    ("view", "late"),
+    [
+        pytest.param(
+            late_grant_view(
+                [account("acct_ledger", "app_ledger", status=DISABLED)],
+                [_late("acct_ledger", "ent_ledger_admin")],
+            ),
+            "as_late",
+            id="privileged-assignment-on-a-disabled-account-the-grant-reactivates",
+        ),
+        pytest.param(
+            late_grant_view(
+                [], memberships=[membership("rm_late", "role_ledger_ops", granted_on=LATE_GRANT)]
+            ),
+            "rm_late",
+            id="membership-in-an-app-where-the-grant-creates-the-account",
+        ),
+        pytest.param(
+            late_grant_view(
+                [
+                    account("acct_ledger", "app_ledger", status=DISABLED),
+                    account("acct_ledger_2", "app_ledger", status=DISABLED),
+                ],
+                [_late("acct_ledger_2", "ent_ledger_admin")],
+            ),
+            "as_late",
+            id="assignment-on-either-of-two-disabled-accounts",
+        ),
+    ],
+)
+def test_mover_whose_grants_would_switch_on_unjudged_privileged_access_is_rejected(
+    view: CaseView, late: str
+) -> None:
+    """A grant made after a past move isn't judged, so JML-002 leaves it alone. But gold's own
+    GRANT_ROLE creates or reactivates the account in each application the new birthright
+    reaches, which would switch on the late grant's privileged ent_ledger_admin, which the new
+    birthright doesn't confer: the view contradicts "privileged access never survives a move", as
+    a joiner's live access contradicts "Nothing else", and is rejected. SPEC §7.5 doesn't say
+    which of two disabled accounts a grant reactivates, so an assignment on either one counts."""
+    with pytest.raises(OracleInputError, match=f"doesn't judge .*: {late}$"):
+        plan_jml(view)
+
+
+LATE_APPROVE = _late("acct_ledger", "ent_gl_je_approve")
+"""SOD-002 side B, granted after ``PAST_MOVE`` on the ledger account, so it isn't judged."""
+
+
+@pytest.mark.parametrize(
+    ("view", "late"),
+    [
+        pytest.param(
+            late_grant_view([LEDGER_DISABLED], [LATE_APPROVE]),
+            "as_late",
+            id="reviewer-repro-the-new-birthright-posts",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_DISABLED],
+                [LATE_APPROVE],
+                controls=[control("mc_gl", "SOD-002", granted_on=day(-4), expires_on=day(100))],
+            ),
+            "as_late",
+            id="control-valid-today-but-granted-after-the-move",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_DISABLED],
+                [LATE_APPROVE],
+                controls=[control("mc_gl", "SOD-002", granted_on=day(-100), expires_on=day(-6))],
+            ),
+            "as_late",
+            id="control-expired-the-day-before-the-move",
+        ),
+        pytest.param(
+            into_treasury([membership("rm_close", "role_gl_close")], [LATE_APPROVE]),
+            "as_late",
+            id="a-kept-judged-source-posts",
+        ),
+        pytest.param(
+            into_treasury(
+                [membership("rm_fin", "role_br_finance")], [LATE_APPROVE], before="Finance"
+            ),
+            "as_late",
+            id="old-birthright-posts-until-its-grace-period-ends",
+        ),
+        pytest.param(
+            into_treasury(
+                [membership("rm_late_close", "role_gl_close", granted_on=LATE_GRANT)],
+                [LATE_APPROVE],
+            ),
+            "as_late, rm_late_close",
+            id="two-unjudged-sources-switched-on-together",
+        ),
+    ],
+)
+def test_mover_whose_grants_would_switch_on_an_unmitigated_conflict_is_rejected(
+    view: CaseView, late: str
+) -> None:
+    """Gold must never create a toxic combination itself (A27, widened). A grant made after a
+    past move isn't judged, but gold's GRANT_ROLE reactivates the disabled ledger account and
+    would switch the late ent_gl_je_approve on next to ent_gl_je_post the mover holds once the
+    plan is applied: from the new Finance birthright (the reviewer's repro), from a source the
+    plan keeps, from old birthright before its grace-period removal, or from another unjudged
+    source the grant switches on too (both are named). With no control for SOD-002 valid on the
+    move date, which is JML-002's test for the sources it judges, the view is rejected; a
+    control valid today but not on the move date doesn't help."""
+    with pytest.raises(OracleInputError, match=f"doesn't judge .*: {late}$"):
+        plan_jml(view)
+
+
+@pytest.mark.parametrize(
+    ("view", "rows"),
+    [
+        pytest.param(
+            late_grant_view(
+                [account("acct_ledger", "app_ledger")], [_late("acct_ledger", "ent_ledger_admin")]
+            ),
+            [GRANT_FINANCE_NOW],
+            id="account-already-active",
+        ),
+        pytest.param(
+            late_grant_view(
+                [account("acct_ledger", "app_ledger", status=SUSPENDED, reason=LEAVE)],
+                [_late("acct_ledger", "ent_ledger_admin")],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="suspended-account-stays-suspended",
+        ),
+        pytest.param(
+            late_grant_view(
+                [account("acct_ledger", "app_ledger", status=DISABLED)],
+                [_late("acct_ledger", "ent_ledger_admin")],
+                finance_held=True,
+            ),
+            [],
+            id="no-grant-new-birthright-already-held",
+        ),
+        pytest.param(
+            late_grant_view(
+                [account("acct_crm", "app_crm", status=DISABLED)],
+                [_late("acct_crm", "ent_crm_admin")],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="app-the-grant-doesnt-reach",
+        ),
+        pytest.param(
+            late_grant_view(
+                [account("acct_ledger", "app_ledger", status=DISABLED)],
+                [_late("acct_ledger", "ent_ledger_admin", expires_on=day(-1))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="expired-before-the-grant",
+        ),
+    ],
+)
+def test_mover_leaves_unjudged_privileged_access_the_grants_dont_switch_on(
+    view: CaseView, rows: list[tuple[str, ...]]
+) -> None:
+    """The late privileged grant stays on file and as effective, or as ineffective, as it was:
+    the grants leave its account alone, aren't made, or come after it expired."""
+    gold = plan_jml(view)
+    assert plan_rows(gold) == rows
+    assert gold.findings == (finding("JML-002"),) and gold.exceptions == ()
+    timeline = simulate(view, gold.operations, gold.horizon_end)
+    baseline = simulate(view, (), gold.horizon_end)
+    pair = (SUBJECT, view.assignments["as_late"].entitlement_id)
+    for state, untouched in zip(timeline.days, baseline.days, strict=True):
+        assert "as_late" in state.sources
+        assert (pair in state.effective) is (pair in untouched.effective)
+    RequiredState(view, timeline).check()
+
+
+FINANCE_WITH_LEDGER_ADMIN = role(
+    "role_br_finance",
+    RoleKind.birthright,
+    ("ent_gl_view", "ent_ledger_admin"),
+    ("role_gl_close",),
+    rule=AttributeRule(departments=("Finance",)),
+)
+"""A Finance birthright that confers the privileged ``ent_ledger_admin`` itself."""
+
+
+@pytest.mark.parametrize(
+    ("view", "rows"),
+    [
+        pytest.param(
+            late_grant_view([LEDGER_DISABLED], [_late("acct_ledger", "ent_gl_view")]),
+            [GRANT_FINANCE_NOW],
+            id="ordinary-access",
+        ),
+        pytest.param(
+            make_view(
+                hr_event(
+                    HrEventType.mover, PAST_MOVE, before=attrs("Sales"), after=attrs("Finance")
+                ),
+                person(department="Finance"),
+                memberships=[membership("rm_emp", "role_br_employee")],
+                accounts=[account("acct_hr", "app_hr"), LEDGER_DISABLED],
+                assignments=[_late("acct_ledger", "ent_ledger_admin")],
+                extra_roles=[FINANCE_WITH_LEDGER_ADMIN],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="privileged-access-the-new-birthright-confers",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_DISABLED],
+                [LATE_APPROVE],
+                controls=[control("mc_gl", "SOD-002", granted_on=day(-100), expires_on=day(100))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="conflict-mitigated-by-a-control-valid-on-the-move-date",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_DISABLED],
+                [LATE_APPROVE],
+                controls=[control("mc_gl", "SOD-002", granted_on=day(-100), expires_on=PAST_MOVE)],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="control-valid-on-the-move-date-lapsed-since",
+        ),
+        pytest.param(
+            into_treasury(
+                [membership("rm_close", "role_gl_close", expires_on=day(-1))], [LATE_APPROVE]
+            ),
+            [GRANT_TREASURY_NOW],
+            id="the-other-side-lapsed-before-the-grant",
+        ),
+        pytest.param(
+            into_treasury(
+                [
+                    membership(
+                        "rm_close_admin",
+                        "role_close_and_crm_admin",
+                        source=MembershipSource.request,
+                    )
+                ],
+                [LATE_APPROVE],
+                extra_roles=[CLOSE_AND_CRM_ADMIN],
+            ),
+            [("REVOKE_ROLE", "rm_close_admin", "IMMEDIATE"), GRANT_TREASURY_NOW],
+            id="the-other-side-removed-on-the-move-date-before-the-grant",
+        ),
+        pytest.param(
+            into_treasury(
+                [membership("rm_fin", "role_br_finance")],
+                [LATE_APPROVE],
+                move=day(-20),
+                before="Finance",
+            ),
+            [("REVOKE_ROLE", "rm_fin", "IMMEDIATE"), GRANT_TREASURY_NOW],
+            id="old-birthright-grace-period-already-over",
+        ),
+    ],
+)
+def test_mover_grants_may_switch_on_unjudged_access_that_doesnt_contradict_the_move(
+    view: CaseView, rows: list[tuple[str, ...]]
+) -> None:
+    """Of what the reactivated account switches on, only access beyond the new birthright that is
+    privileged, or that completes an SoD conflict on a day the mover holds the other side once
+    the plan is applied with no control valid on the move date, contradicts JML-002. Anything
+    else is §7.5's provisioning at work: ordinary access, privileged access the new birthright
+    confers anyway, a conflict a control valid on the move date mitigates (even one that has
+    lapsed since, as JML-002 reads "mitigated"), and an approval right whose other side is gone
+    before the grant takes effect (lapsed, removed on the move date for privilege, or old
+    birthright whose grace period is over). The late grant stays on file, untouched by the plan,
+    and is exercised once its account is active again. The plan judged no crossing, so it records
+    no SoD finding and no MIT-001 evaluation."""
+    gold = plan_jml(view)
+    assert plan_rows(gold) == rows
+    assert gold.findings == (finding("JML-002"),) and gold.exceptions == ()
+    timeline = simulate(view, gold.operations, gold.horizon_end)
+    assert all("as_late" in state.sources for state in timeline.days)
+    assert status_of(state_on(timeline, AS_OF), "acct_ledger") == (ACTIVE, None)
+    late_access = (SUBJECT, view.assignments["as_late"].entitlement_id)
+    assert late_access in state_on(timeline, AS_OF).effective
+    RequiredState(view, timeline).check()
+
+
+LEDGER_ACTIVE = account("acct_ledger", "app_ledger")
+FINANCE_CLOSE_BIRTHRIGHT = role(
+    "role_br_finance_close",
+    RoleKind.birthright,
+    child_roles=("role_gl_close",),
+    rule=AttributeRule(departments=("Finance",)),
+)
+"""A second Finance birthright role that posts journal entries, as ``role_br_finance`` does."""
+ACCOUNTING_BIRTHRIGHT = role(
+    "role_br_accounting",
+    RoleKind.birthright,
+    child_roles=("role_gl_close",),
+    rule=AttributeRule(departments=("Accounting",)),
+)
+"""An old birthright that posts journal entries for a move from Accounting into Finance: JML-002
+keeps it for the grace period, since it doesn't cross the Finance birthright, which posts too."""
+
+
+def _finance_close_held(
+    assignments: Iterable[Assignment], *, until: date | None = None
+) -> CaseView:
+    """``late_grant_view`` with an active ledger account, plus a membership in
+    ``role_br_finance_close`` since before the move: the new birthright already posts, and gold
+    still grants ``role_br_finance``. With ``until`` the membership is time-bound, so gold grants
+    ``role_br_finance_close`` too (it isn't held as standing access) and leaves the time-bound
+    membership on file."""
+    return make_view(
+        hr_event(HrEventType.mover, PAST_MOVE, before=attrs("Sales"), after=attrs("Finance")),
+        person(department="Finance"),
+        memberships=[
+            membership("rm_emp", "role_br_employee"),
+            membership(
+                "rm_fin_close",
+                "role_br_finance_close",
+                source=MembershipSource.birthright,
+                granted_on=day(-100),
+                expires_on=until,
+            ),
+        ],
+        accounts=[account("acct_hr", "app_hr"), LEDGER_ACTIVE],
+        assignments=assignments,
+        extra_roles=[FINANCE_CLOSE_BIRTHRIGHT],
+    )
+
+
+def _accounting_to_finance(assignments: Iterable[Assignment]) -> CaseView:
+    """An Accounting to Finance move five days ago with an active ledger account: the old
+    Accounting birthright posts journal entries, doesn't cross the Finance birthright (which posts
+    too) and isn't privileged, so gold keeps it until its grace-period removal on move date + 14,
+    and grants the Finance birthright now."""
+    return make_view(
+        hr_event(HrEventType.mover, PAST_MOVE, before=attrs("Accounting"), after=attrs("Finance")),
+        person(department="Finance"),
+        memberships=[
+            membership("rm_emp", "role_br_employee"),
+            membership(
+                "rm_acct",
+                "role_br_accounting",
+                source=MembershipSource.birthright,
+                granted_on=day(-200),
+            ),
+        ],
+        accounts=[account("acct_hr", "app_hr"), LEDGER_ACTIVE],
+        assignments=assignments,
+        extra_roles=[ACCOUNTING_BIRTHRIGHT],
+    )
+
+
+GRACE_LAST_DAY = PAST_MOVE + timedelta(days=MOVE_GRACE_DAYS - 1)
+"""The last day old birthright is held after ``PAST_MOVE``: gold removes it on move date + 14."""
+REMOVE_ACCOUNTING_AFTER_GRACE = (
+    "REVOKE_ROLE",
+    "rm_acct",
+    (PAST_MOVE + timedelta(days=MOVE_GRACE_DAYS)).isoformat(),
+)
+TOXIC_ROLE = role("role_toxic", RoleKind.business, ("ent_gl_je_post", "ent_gl_je_approve"))
+"""A business role that holds both SOD-002 sides by itself."""
+
+
+def _late_from(start: date, entitlement_id: str = "ent_gl_je_approve") -> Assignment:
+    """``as_late`` on the active ledger account, granted on ``start`` (after ``PAST_MOVE``)."""
+    return assignment("as_late", "acct_ledger", entitlement_id, granted_on=start)
+
+
+@pytest.mark.parametrize(
+    ("view", "late"),
+    [
+        pytest.param(
+            late_grant_view([LEDGER_ACTIVE], [LATE_APPROVE]),
+            "as_late",
+            id="reviewer-repro-account-already-active",
+        ),
+        pytest.param(
+            late_grant_view(
+                [account("acct_ledger", "app_ledger", status=SUSPENDED, reason=LEAVE)],
+                [LATE_APPROVE],
+            ),
+            "as_late",
+            id="suspended-account-the-conflict-is-held-all-the-same",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                memberships=[membership("rm_late", "role_gl_approvers", granted_on=LATE_GRANT)],
+            ),
+            "rm_late",
+            id="membership-on-an-active-account",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                controls=[control("mc_gl", "SOD-002", granted_on=day(-4), expires_on=day(100))],
+            ),
+            "as_late",
+            id="control-valid-today-but-granted-after-the-move",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                memberships=[
+                    membership(
+                        "rm_close", "role_gl_close", granted_on=day(-200), expires_on=day(30)
+                    )
+                ],
+            ),
+            "as_late",
+            id="a-kept-judged-source-posts-only-until-it-expires",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=day(5))],
+            ),
+            "as_late",
+            id="an-unjudged-source-posts-only-from-next-week",
+        ),
+        pytest.param(
+            _accounting_to_finance([LATE_APPROVE]),
+            "as_late",
+            id="old-birthright-posts-only-until-its-grace-period-ends",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [_late("acct_ledger", "ent_gl_je_approve", expires_on=day(10))],
+                memberships=[
+                    membership("rm_close", "role_gl_close", granted_on=day(-200), expires_on=day(9))
+                ],
+            ),
+            "as_late",
+            id="a-kept-judged-source-stops-posting-the-day-before-the-late-grant-ends",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [_late_from(day(5))],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=day(6))],
+            ),
+            "as_late",
+            id="an-unjudged-source-starts-posting-the-day-after-the-late-grant-starts",
+        ),
+        pytest.param(
+            _accounting_to_finance(
+                [
+                    _late(
+                        "acct_ledger",
+                        "ent_gl_je_approve",
+                        expires_on=GRACE_LAST_DAY + timedelta(days=1),
+                    )
+                ]
+            ),
+            "as_late",
+            id="old-birthright-goes-on-the-late-grant-s-last-day",
+        ),
+        pytest.param(
+            _finance_close_held([LATE_APPROVE], until=day(30)),
+            "as_late",
+            id="a-time-bound-new-birthright-membership-lapses-before-the-late-grant",
+        ),
+    ],
+)
+def test_mover_whose_grant_would_complete_an_unmitigated_conflict_is_rejected(
+    view: CaseView, late: str
+) -> None:
+    """Gold must never create a toxic combination itself, whichever side it supplies. The late
+    ent_gl_je_approve isn't judged and its account needs no reactivation, but gold's GRANT_ROLE
+    of the Finance birthright confers ent_gl_je_post: from the grant day the mover would hold both
+    SOD-002 sides, a conflict the plan itself completes and that no control valid on the move
+    date mitigates. The conflict is in what the mover holds, as JML-002's own crossings are, so
+    a suspended account that keeps both sides from being exercised doesn't help. Another source
+    that posts for only part of the late grant's validity doesn't make the conflict pre-existing:
+    the grant alone posts after a kept source expires, after old birthright's grace-period
+    removal or a time-bound new birthright membership lapses, or before a later source starts,
+    even when the gap is one day at either end."""
+    with pytest.raises(OracleInputError, match=f"doesn't judge .*: {late}$"):
+        plan_jml(view)
+
+
+@pytest.mark.parametrize(
+    ("view", "rows"),
+    [
+        pytest.param(
+            late_grant_view([LEDGER_ACTIVE], [LATE_APPROVE], finance_held=True),
+            [],
+            id="no-grant-new-birthright-already-held",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                controls=[control("mc_gl", "SOD-002", granted_on=day(-100), expires_on=day(100))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="conflict-mitigated-by-a-control-valid-on-the-move-date",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                controls=[control("mc_gl", "SOD-002", granted_on=day(-100), expires_on=PAST_MOVE)],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="control-valid-on-the-move-date-lapsed-since",
+        ),
+        pytest.param(
+            _finance_close_held([LATE_APPROVE]),
+            [GRANT_FINANCE_NOW],
+            id="standing-new-birthright-already-holds-the-other-side",
+        ),
+        pytest.param(
+            late_grant_view([LEDGER_ACTIVE], [_late("acct_ledger", "ent_gl_je_approve", day(-1))]),
+            [GRANT_FINANCE_NOW],
+            id="expired-before-the-grant",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                memberships=[membership("rm_close", "role_gl_close", granted_on=day(-200))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="reviewer-repro-a-kept-judged-source-posts-for-good",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=day(-4))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="an-unjudged-source-posts-for-good",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [_late("acct_ledger", "ent_gl_je_approve", expires_on=day(10))],
+                memberships=[
+                    membership(
+                        "rm_close", "role_gl_close", granted_on=day(-200), expires_on=day(30)
+                    )
+                ],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="repro-a-kept-judged-source-outlasts-the-late-grant",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [_late("acct_ledger", "ent_gl_je_approve", expires_on=day(10))],
+                memberships=[
+                    membership(
+                        "rm_close", "role_gl_close", granted_on=day(-200), expires_on=day(10)
+                    )
+                ],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="a-kept-judged-source-posts-until-the-late-grant-s-last-day",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [_late_from(day(5))],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=day(3))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="repro-b-an-unjudged-source-starts-before-the-late-grant",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [_late_from(day(5))],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=day(5))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="an-unjudged-source-posts-from-the-day-the-late-grant-starts",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                memberships=[
+                    membership(
+                        "rm_toxic",
+                        "role_toxic",
+                        source=MembershipSource.request,
+                        granted_on=LATE_GRANT,
+                        expires_on=day(30),
+                    )
+                ],
+                extra_roles=[TOXIC_ROLE],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="repro-c-a-time-bound-role-holds-both-sides-itself",
+        ),
+        pytest.param(
+            _accounting_to_finance(
+                [_late("acct_ledger", "ent_gl_je_approve", expires_on=GRACE_LAST_DAY)]
+            ),
+            [GRANT_FINANCE_NOW, REMOVE_ACCOUNTING_AFTER_GRACE],
+            id="old-birthright-posts-until-the-late-grant-s-last-day",
+        ),
+        pytest.param(
+            _finance_close_held(
+                [_late("acct_ledger", "ent_gl_je_approve", expires_on=day(30))], until=day(30)
+            ),
+            [GRANT_FINANCE_NOW, ("GRANT_ROLE", SUBJECT, "role_br_finance_close", "IMMEDIATE")],
+            id="a-time-bound-new-birthright-membership-posts-while-the-late-grant-is-valid",
+        ),
+    ],
+)
+def test_mover_grant_may_sit_beside_unjudged_access_it_doesnt_make_toxic(
+    view: CaseView, rows: list[tuple[str, ...]]
+) -> None:
+    """The grant completes no unmitigated conflict: no Finance grant is made, a control valid on
+    the move date mitigates SOD-002 (even one that has lapsed since, as JML-002 reads
+    "mitigated"), the late grant lapsed before the plan's grant, or the mover posts without the
+    grant on every day the late grant is valid from the grant day on. That last conflict exists
+    on every day it can whatever the plan does, so access reviews own it. One source the plan
+    keeps must post over that whole window, from the later of the grant day and the late grant's
+    start through its end: a standing Finance birthright role, a judged business role the plan
+    keeps (it neither crosses the new birthright nor is privileged), for good or until the late
+    grant's last day, another unjudged grant that starts by the late grant's first day, old
+    birthright before its grace-period removal, a time-bound membership in a new birthright role,
+    or the late grant itself, when one role holds both sides (its own conflict, which the grant
+    only repeats). The Finance grant only adds a second path to a side already held. Every grant
+    made after the move stays on file, untouched, and the plan judged no crossing: no SoD finding
+    and no MIT-001 evaluation."""
+    gold = plan_jml(view)
+    assert plan_rows(gold) == rows
+    assert gold.findings == (finding("JML-002"),) and gold.exceptions == ()
+    timeline = simulate(view, gold.operations, gold.horizon_end)
+    assert timeline.counters == SimCounters()
+    late = {
+        r.id
+        for r in [*view.memberships.values(), *view.assignments.values()]
+        if r.granted_on > PAST_MOVE
+    }
+    assert late and all(late <= state.sources for state in timeline.days)
+    RequiredState(view, timeline).check()
+
+
+CROSS_APP_PACK = POLICY_PACK.model_copy(
+    update={
+        "sod": (
+            SodRuleSides(
+                rule_id="SOD-002",
+                title="Post journal entries ⟂ approve journal entries or work CRM accounts",
+                side_a=("ent_gl_je_post",),
+                side_b=("ent_gl_je_approve", "ent_crm_user"),
+            ),
+            *POLICY_PACK.sod[1:],
+        )
+    }
+)
+"""SOD-002 with a side in two applications (the ledger and the CRM), as most SoD rules span
+applications in generated worlds; the fixture pack keeps both sides of each rule in one."""
+CRM_ACTIVE = account("acct_crm", "app_crm")
+
+
+def _cross_app_into_treasury(
+    memberships: Iterable[Membership],
+    assignments: Iterable[Assignment],
+    extra_roles: Iterable[Role] = (),
+) -> CaseView:
+    """``into_treasury`` under ``CROSS_APP_PACK``, with an active CRM account next to the
+    disabled ledger account that the Treasury grant reactivates."""
+    view = make_view(
+        hr_event(HrEventType.mover, PAST_MOVE, before=attrs("Sales"), after=attrs("Treasury")),
+        person(department="Treasury"),
+        memberships=[membership("rm_emp", "role_br_employee"), *memberships],
+        accounts=[account("acct_hr", "app_hr"), LEDGER_DISABLED, CRM_ACTIVE],
+        assignments=assignments,
+        extra_roles=extra_roles,
+    )
+    return view.model_copy(update={"policy_pack": CROSS_APP_PACK})
+
+
+def test_mover_grant_may_switch_on_a_judged_side_beside_an_unjudged_one() -> None:
+    """The refusal covers what a grant switches on from an unjudged source and what the granted
+    roles confer, not what it switches on from a judged one. The Treasury grant reactivates the
+    ledger account, switching on the posting right of a business role JML-002 judged and kept (it
+    neither crosses the new birthright nor is privileged), next to an approval-side CRM right
+    granted after the move and already effective in the CRM. Both sides are now exercised, but
+    JML-002 reads a judged source's conflicts against the new birthright only, and one with
+    another of the mover's sources is left to access reviews, judged or not; in held terms both
+    sides were there before the plan. The view is decided, with no SoD finding.
+
+    The policy fixture's SoD rules keep both sides in one application, where this shape can't
+    arise: a grant reactivates an application only when all of the mover's accounts there are
+    disabled, so an unjudged side there is switched on with the judged one, and checked."""
+    view = _cross_app_into_treasury(
+        [membership("rm_close", "role_gl_close", granted_on=day(-200))],
+        [assignment("as_late", "acct_crm", "ent_crm_user", granted_on=LATE_GRANT)],
+    )
+    gold = plan_jml(view)
+    assert plan_rows(gold) == [GRANT_TREASURY_NOW]
+    assert gold.findings == (finding("JML-002"),) and gold.exceptions == ()
+    timeline = simulate(view, gold.operations, gold.horizon_end)
+    assert timeline.counters == SimCounters()
+    effective = state_on(timeline, AS_OF).effective
+    assert {(SUBJECT, "ent_gl_je_post"), (SUBJECT, "ent_crm_user")} <= effective
+    RequiredState(view, timeline).check()
+
+
+def test_mover_grant_switching_on_an_unjudged_side_in_one_app_beside_another_is_rejected() -> None:
+    """The mirror image is refused: the Treasury grant reactivates the ledger account and switches
+    on a posting right granted after the move, next to an approval-side CRM right JML-002 judged
+    and kept, already effective in the CRM. What the grant switches on from the unjudged source
+    completes SOD-002 with access the mover holds once the plan is applied, and no control valid
+    on the move date mitigates it."""
+    view = _cross_app_into_treasury(
+        [],
+        [
+            assignment("as_crm", "acct_crm", "ent_crm_user", granted_on=day(-200)),
+            assignment("as_late", "acct_ledger", "ent_gl_je_post", granted_on=LATE_GRANT),
+        ],
+    )
+    with pytest.raises(OracleInputError, match=r"doesn't judge .*: as_late$"):
+        plan_jml(view)
+
+
+POST_AND_CRM_ROLE = role("role_post_and_crm", RoleKind.business, ("ent_gl_je_post", "ent_crm_user"))
+"""Under ``CROSS_APP_PACK``, a business role holding both SOD-002 sides, in two applications."""
+
+
+@pytest.mark.parametrize(
+    "view",
+    [
+        pytest.param(
+            into_treasury(
+                [
+                    membership(
+                        "rm_late",
+                        "role_toxic",
+                        source=MembershipSource.request,
+                        granted_on=LATE_GRANT,
+                    )
+                ],
+                extra_roles=[TOXIC_ROLE],
+            ),
+            id="both-sides-on-the-reactivated-account",
+        ),
+        pytest.param(
+            _cross_app_into_treasury(
+                [
+                    membership(
+                        "rm_late",
+                        "role_post_and_crm",
+                        source=MembershipSource.request,
+                        granted_on=LATE_GRANT,
+                    )
+                ],
+                [],
+                extra_roles=[POST_AND_CRM_ROLE],
+            ),
+            id="one-side-reactivated-the-other-already-effective-in-another-app",
+        ),
+    ],
+)
+def test_mover_grant_switching_on_an_unjudged_source_s_own_conflict_is_rejected(
+    view: CaseView,
+) -> None:
+    """The other side of a switched-on conflict can come from the unjudged source itself. A
+    business role granted after the move holds both SOD-002 sides, and gold's Treasury grant
+    reactivates the ledger account: both sides become effective there together, or the posting
+    right does next to the role's own CRM right, already effective in the CRM. The role's own
+    side counts as held once the plan is applied, as every source the plan keeps does, so the
+    plan would make the toxic combination effective itself, with no control valid on the move
+    date: the view is rejected, naming the membership. On an active ledger account the grant
+    switches nothing on, and the role's own conflict predates the plan (repro C in
+    ``test_mover_grant_may_sit_beside_unjudged_access_it_doesnt_make_toxic``)."""
+    with pytest.raises(OracleInputError, match=r"doesn't judge .*: rm_late$"):
+        plan_jml(view)
 
 
 @pytest.mark.parametrize(
@@ -1709,6 +2678,17 @@ def test_two_controls_for_one_sod_rule_are_contradictory() -> None:
         plan_jml(view)
 
 
+def test_two_controls_are_contradictory_even_for_an_event_that_never_reads_them() -> None:
+    """The check is view-wide (SPEC §9.2): a joiner's plan judges no SoD crossing, yet two SOD-004
+    controls for the joiner still make the view contradictory."""
+    joiner = hr_event(HrEventType.joiner, day(7), after=attrs("Sales"))
+    controls = [control("mc_1", "SOD-004"), control("mc_2", "SOD-004", expires_on=day(30))]
+    with pytest.raises(OracleInputError, match=f"{SUBJECT} has several controls for SOD-004"):
+        plan_jml(make_view(joiner, person(), controls=controls))
+    one_control = plan_jml(make_view(joiner, person(), controls=controls[:1]))
+    assert one_control.findings == (finding("JML-001"),)
+
+
 def test_leaver_never_transfers_to_themselves_as_the_app_owner() -> None:
     view = leaver_case(TerminationType.voluntary, managers=())
     own_app = view.applications["app_ledger"].model_copy(update={"owner_id": SUBJECT})
@@ -1976,17 +2956,70 @@ class RequiredState:
         return roles, set[str]().union(*(_expand(self.view, r) for r in roles))
 
     @cached_property
+    def baseline(self) -> Timeline:
+        """The view simulated with no plan at all: everything left as it is."""
+        return simulate(self.view, (), self.timeline.horizon_end)
+
+    def exercised(self, state: DayState, source_id: str) -> set[str]:
+        """What a subject's source confers through an active account on the day (SPEC §7.5's
+        effective access, source by source): an assignment through its own account, a membership
+        through any active human account of the subject in each entitlement's application."""
+        if not is_valid_on(*self.window(source_id), state.day):
+            return set()
+        active = {
+            a for a in self.logins if a in state.accounts and state.accounts[a].status is ACTIVE
+        }
+        if source_id in self.timeline.assignments:
+            in_use = self.timeline.assignments[source_id].account_id in active
+            return self.conferred(source_id) if in_use else set()
+        apps = {self.timeline.accounts[a].app_id for a in active}
+        return {e for e in self.conferred(source_id) if self.view.entitlements[e].app_id in apps}
+
+    def in_new_birthright(self, source_id: str) -> bool:
+        """A membership in a role the new attributes match: the new birthright itself."""
+        record = self.timeline.memberships.get(source_id)
+        return record is not None and record.role_id in self.new_birthright[0]
+
+    @cached_property
     def removed_early(self) -> set[str]:
         """The subject's starting sources JML-002 removes on the move date."""
         return {s for s in self.own_initial if self.removed_on_move_date(s)}
+
+    @cached_property
+    def removed_on(self) -> dict[str, date]:
+        """The first simulated day each removed starting source of the subject is off file. One
+        still on file at the horizon is kept for good: every gold operation falls within it."""
+        gone: dict[str, date] = {}
+        for state in self.timeline.days:
+            for source_id in self.own_initial - state.sources:
+                gone.setdefault(source_id, state.day)
+        return gone
+
+    def held_anyway(self, source_id: str) -> set[str]:
+        """What the subject holds without the event's grants on every day ``source_id`` is valid
+        from the start on, through one of its starting sources (``source_id`` itself included):
+        one that has begun by the first of those days and stays valid and on file at least until
+        the last (a standing new birthright role, or a source the plan keeps, for long enough). A
+        conflict with a side held this way exists on every day it can, whatever the plan does."""
+        granted_on, end = self.window(source_id)
+        first = max(granted_on, self.start)
+        held: set[str] = set()
+        for other_id in self.own_initial:
+            other_granted_on, expires_on = self.window(other_id)
+            removed = self.removed_on.get(other_id)
+            last_on_file = None if removed is None else removed - timedelta(days=1)
+            ends = [d for d in (expires_on, last_on_file) if d is not None]
+            last = min(ends) if ends else None
+            if other_granted_on <= first and (last is None or (end is not None and last >= end)):
+                held |= self.conferred(other_id)
+        return held
 
     def judged_by_mover(self, source_id: str) -> bool:
         """JML-002 judges "every source on file before the move takes effect that is live on or
         after the move date, including records that only start after a future move. A grant made
         after a past move isn't judged." Memberships in a new birthright role are the new
         birthright itself, not one of the "other" sources."""
-        record = self.timeline.memberships.get(source_id)
-        if record is not None and record.role_id in self.new_birthright[0]:
+        if self.in_new_birthright(source_id):
             return False
         move = self.event.effective_on
         granted_on, expires_on = self.window(source_id)
@@ -2045,6 +3078,35 @@ class RequiredState:
         # after a past move, or expired by the move date) is left alone.
         held = self.held(state, among=lambda s: s not in self.initial or self.judged_by_mover(s))
         assert self.privileged(held) <= new_access, "privileged access survived the move"
+        # The plan's own grants never make a source it doesn't judge harmful. Compared with no
+        # plan at all, no such source exercises more privileged access than the new birthright
+        # confers, or access completing an SoD conflict with what the subject holds that day;
+        # and what the grants add that day never holds the other side of an SoD rule from what
+        # such a source holds, unless the subject holds that side without them on every day the
+        # source is valid from the start on (``held_anyway``). Either conflict is allowed only
+        # under a control valid on the move date (plan_jml rejects a view where the grants would
+        # create one).
+        untouched = state_on(self.baseline, state.day)
+        held_today = self.held(state)
+        added = self.held(state, among=lambda s: s not in self.initial)
+        for source_id in self.own_initial & state.sources:
+            if not (self.judged_by_mover(source_id) or self.in_new_birthright(source_id)):
+                switched_on = self.exercised(state, source_id) - self.exercised(
+                    untouched, source_id
+                )
+                beyond = switched_on - new_access
+                assert not self.privileged(beyond), source_id
+                valid = is_valid_on(*self.window(source_id), state.day)
+                own = self.conferred(source_id) if valid else set[str]()
+                anyway = self.held_anyway(source_id) if own else set[str]()
+                for sod in self.view.policy_pack.sod:
+                    a, b = set(sod.side_a), set(sod.side_b)
+                    completes = (beyond & a and held_today & b) or (beyond & b and held_today & a)
+                    completes = completes or any(
+                        own & mine and added & theirs and not anyway & theirs
+                        for mine, theirs in ((a, b), (b, a))
+                    )
+                    assert not completes or self.mitigated(sod.rule_id), (source_id, sod.rule_id)
         # The grace-period removal is part of the same "for every other source" clause, so it
         # covers judged old birthright only; check_grants keeps every other source on file.
         old_birthright = {
@@ -2122,6 +3184,49 @@ def test_simulating_the_gold_plan_reaches_the_required_state(view: CaseView) -> 
     # Every gold operation applies and changes state: no failures, conflicts or no-ops.
     assert timeline.counters == SimCounters()
     RequiredState(view, timeline).check()
+
+
+def assert_rejection_matches_the_spec_text(view: CaseView) -> None:
+    """``plan_jml`` rejects exactly the mover views in which its grants would make a source
+    JML-002 doesn't judge harmful (switching on privileged access the new birthright doesn't
+    confer or an SoD conflict, or completing a conflict with what the granted roles confer, none
+    mitigated by a control valid on the move date), naming those sources, as
+    ``switched_on_by_mover_grants`` computes them from the §7.5 text and the A27 decision."""
+    assert view.event is not None and view.event.after is not None
+    expected = switched_on_by_mover_grants(
+        view.event.effective_on,
+        view.event.after,
+        [m for m in view.memberships.values() if m.identity_id == SUBJECT],
+        view.assignments.values(),
+        view.accounts.values(),
+        view.mitigating_controls.values(),
+    )
+    if not expected:
+        plan_jml(view)
+        return
+    with pytest.raises(OracleInputError, match="doesn't judge") as rejection:
+        plan_jml(view)
+    assert set(str(rejection.value).rsplit(": ", 1)[1].split(", ")) == expected
+
+
+@given(jml_views(event_types=(HrEventType.mover,), keep_contradictions=True))
+@property_settings(300)
+def test_mover_rejection_matches_the_spec_text(view: CaseView) -> None:
+    assert_rejection_matches_the_spec_text(view)
+
+
+@given(
+    jml_views(event_types=(HrEventType.mover,), keep_contradictions=True, destination="Treasury")
+)
+@property_settings(150)
+def test_mover_rejection_matches_the_spec_text_when_another_source_holds_the_other_side(
+    view: CaseView,
+) -> None:
+    """Treasury's birthright reaches the ledger without either SOD-002 side, so when its grant
+    switches on an unjudged side, the other side can only come from the mover's other sources:
+    kept ones, unjudged ones, or old birthright in its grace period. Whether their validity
+    overlaps the switched-on access then decides the rejection."""
+    assert_rejection_matches_the_spec_text(view)
 
 
 @given(jml_views(event_types=(HrEventType.mover,)))

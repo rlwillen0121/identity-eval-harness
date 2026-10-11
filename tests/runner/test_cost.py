@@ -354,6 +354,7 @@ def test_default_cost_mode_self_hosted_needs_namespace_and_own_endpoint() -> Non
         ("openai_compatible", None, True),
         ("openai_compatible", "OPENAI_BASE_URL", True),
         ("openai_compatible", "LOCAL_LLM_BASE_URL", False),
+        ("openai_compatible", "OPENROUTER_BASE_URL", True),
         ("anthropic_compatible", "LOCAL_LLM_BASE_URL", False),
         ("claude_cli", None, False),
         ("replay", None, False),
@@ -450,3 +451,66 @@ def test_cost_summary_from_tracker() -> None:
         "metered_api_usd": None,
         "reported_usd": 0.25,
     }
+
+
+def test_openrouter_defaults_to_its_reported_cost() -> None:
+    """OpenRouter states each call's USD, so it is costed from that, and a namespace (which
+    makes other custom endpoints self-hosted) never makes it free."""
+    env = "OPENROUTER_BASE_URL"
+    assert default_cost_mode("openai_compatible", base_url_env=env) == "reported"
+    assert default_cost_mode("openai_compatible", cache_namespace="v2", base_url_env=env) == (
+        "reported"
+    )
+    # Other kinds and endpoints keep their defaults.
+    assert default_cost_mode("anthropic_compatible", base_url_env=env) == "unmetered"
+    assert default_cost_mode("openai_compatible", base_url_env="LOCAL_LLM_BASE_URL") == "metered"
+
+
+@pytest.mark.parametrize(
+    ("kind", "env", "reports"),
+    [
+        ("openai_compatible", "OPENROUTER_BASE_URL", True),
+        # cost_mode: reported on another gateway is taken at its word until a call says otherwise.
+        ("openai_compatible", "GATEWAY_BASE_URL", True),
+        # OpenAI's own API never states a per-call cost.
+        ("openai_compatible", None, False),
+        ("openai_compatible", "OPENAI_BASE_URL", False),
+        ("anthropic", None, False),
+        ("anthropic_compatible", "LOCAL_LLM_BASE_URL", False),
+        ("claude_cli", None, True),
+        ("codex_cli", None, False),
+    ],
+)
+def test_which_endpoints_report_cost(kind: str, env: str | None, reports: bool) -> None:
+    assert reports_cost(kind, env) is reports
+
+
+def test_an_openrouter_budget_counts_reported_spend_and_unknown_cost_is_not_free() -> None:
+    cfg = ExperimentConfig.model_validate(
+        {
+            "name": "x",
+            "dataset": "d",
+            "tasks": ["access_request"],
+            "budget_usd": 0.01,
+            "models": [
+                {
+                    "provider": "openai_compatible",
+                    "model": "mistralai/mistral-large-4-0",
+                    "base_url_env": "OPENROUTER_BASE_URL",
+                }
+            ],
+        }
+    )
+    (entry,) = cfg.models
+    (cid,) = cfg.config_ids()
+    assert entry.resolved_cost_mode == "reported" and entry.reports_cost
+    guard = BudgetGuard(cfg.budget_usd)
+    tracker = guard.track(cid, entry.model, entry.resolved_cost_mode, reports_cost=True)
+    assert guard.unenforceable() == []
+    tracker.add(Usage(input_tokens=10 * M, output_tokens=M), reported_cost_usd=0.004)
+    assert guard.spend_usd == pytest.approx(0.004)  # the reported USD, never pricing.yaml
+    assert guard.would_exceed(0.0061) and not guard.would_exceed(0.006)
+    tracker.add(Usage(input_tokens=10))  # a call that came back without a cost
+    assert tracker.unreported_calls == 1 and guard.unenforceable() == [cid]
+    assert guard.spend_usd == pytest.approx(0.004)
+    assert tracker.metered_api_usd is None and tracker.reported_usd == pytest.approx(0.004)

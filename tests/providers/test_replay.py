@@ -7,8 +7,10 @@ import pytest
 from identitybench.providers.base import ModelResponse, Provider, ToolCall, Usage
 from identitybench.providers.replay import (
     CACHE_KEY_PARAM,
+    RecordedCost,
     ReplayProvider,
     load_responses_jsonl,
+    recorded_cost_from,
     response_from_dict,
     response_to_dict,
 )
@@ -119,3 +121,62 @@ def test_identity_depends_on_model_and_recorded_keys() -> None:
 def test_capabilities_never_constrain_the_runner() -> None:
     caps = ReplayProvider({}).capabilities()
     assert caps.native_structured_output and caps.native_tools and caps.supports_temperature
+
+
+async def test_has_tells_a_miss_from_a_recorded_error() -> None:
+    """Both come back from ``complete`` as error responses; only ``has`` tells them apart."""
+    failed = ModelResponse(error="replay: no recorded response for key k1")  # a miss's words
+    replay = ReplayProvider({"k1": failed, "k2": RECORDED})
+    assert replay.has("k1") and replay.has("k2") and not replay.has("k3")
+    assert (await replay.complete(keyed("k1"))).error == failed.error
+    assert (await replay.complete(keyed("k3"))).error == "replay: no recorded response for key k3"
+
+
+def record(key: str, **fields: object) -> str:
+    return json.dumps({"key": key, "response": response_to_dict(RECORDED), **fields})
+
+
+def test_recorded_costs_come_from_the_recording(tmp_path) -> None:
+    """The cost an answer had when it was recorded; the last record of a key wins, including
+    one that records no cost."""
+    path = tmp_path / "responses.jsonl"
+    lines = [
+        record("k1", cost_usd=0.5, cost_source="metered", config_id="c", fresh=True),
+        record("k2", cost_usd=0.01, cost_source="reported"),
+        record("k2", cost_usd=None, cost_source="unknown"),
+        record("k3", cost_usd=0.2, cost_source="metered"),
+        record("k3"),
+        record("k4", cost_usd=0, cost_source="unmetered"),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    replay = ReplayProvider(path)
+    assert replay.recorded_cost("k1") == RecordedCost(0.5, "metered")
+    assert replay.recorded_cost("k2") == RecordedCost(None, "unknown")
+    assert replay.recorded_cost("k3") is None
+    assert replay.recorded_cost("k4") == RecordedCost(0.0, "unmetered")
+    assert replay.recorded_cost("nope") is None
+    assert ReplayProvider({"k1": RECORDED}).recorded_cost("k1") is None
+    assert load_responses_jsonl(path)["k1"] == RECORDED
+
+
+@pytest.mark.parametrize(
+    ("fields", "reason"),
+    [
+        ({"cost_usd": 0.1}, "needs"),
+        ({"cost_source": "metered"}, "needs"),
+        ({"cost_usd": -1, "cost_source": "metered"}, "non-negative"),
+        ({"cost_usd": True, "cost_source": "metered"}, "non-negative"),
+        ({"cost_usd": "0.1", "cost_source": "metered"}, "non-negative"),
+        ({"cost_usd": float("nan"), "cost_source": "metered"}, "non-negative"),
+        ({"cost_usd": 0.1, "cost_source": "free"}, "cost_source"),
+    ],
+)
+def test_malformed_recorded_costs_fail_loudly(
+    tmp_path, fields: dict[str, object], reason: str
+) -> None:
+    with pytest.raises(ValueError, match=reason):
+        recorded_cost_from(fields)
+    path = tmp_path / "responses.jsonl"
+    path.write_text(record("k", **fields) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"responses.jsonl:1: not a replay record"):
+        ReplayProvider(path)

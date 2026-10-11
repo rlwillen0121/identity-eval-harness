@@ -27,3 +27,6 @@ audit/scratch/
 .DS_Store
 .idea/
 .vscode/
+
+# Local experiment configs that name private endpoints or served-model names
+experiments/local/

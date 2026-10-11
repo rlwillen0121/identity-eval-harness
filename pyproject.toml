@@ -45,6 +45,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/identitybench"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# Prompt variants live at the repo root for review; installed wheels carry them as package data.
+"prompts" = "identitybench/_prompts"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

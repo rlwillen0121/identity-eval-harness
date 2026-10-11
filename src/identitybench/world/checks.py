@@ -361,10 +361,12 @@ def _access_problems(world: World) -> list[str]:
 def _request_problems(
     world: World, s: Assignment, ent: Entitlement, holder_id: str | None
 ) -> list[str]:
-    """A request ID claims an approved request, so the grant must be one a request could
-    produce (SPEC §7.4): the entitlement is requestable (ELIG-004), and the grant ends within
-    the entitlement's maximum duration (TEMP-002), within 7 days if it is privileged
-    (TEMP-001), and on or before a contractor holder's contract end (LIFE-004)."""
+    """A request ID claims an approved request, so the grant must satisfy the per-grant
+    request rules (SPEC §7.4): the entitlement is requestable (ELIG-004), and the grant ends
+    within the entitlement's maximum duration (TEMP-002), within 7 days if it is privileged
+    (TEMP-001), and on or before a contractor holder's contract end (LIFE-004). Tenure and
+    eligibility are checked by the world tests; SoD rules, which judge combinations, are
+    deliberately not enforced on request-sourced grants (``provisioning`` explains why)."""
     problems: list[str] = []
     if not ent.requestable:
         problems.append(f"{s.id}: request-sourced but {ent.id} isn't requestable")

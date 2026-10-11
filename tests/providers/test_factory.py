@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from identitybench.providers.anthropic_api import AnthropicProvider
-from identitybench.providers.base import GenerationParams, Provider
+from identitybench.providers.base import GenerationParams, Message, ModelRequest, Provider, Role
 from identitybench.providers.claude_cli import ClaudeCliProvider
 from identitybench.providers.codex_cli import CodexCliProvider
 from identitybench.providers.cursor_cli import CursorCliProvider
@@ -15,6 +15,7 @@ from identitybench.providers.factory import PROVIDER_KINDS, ModelSpec, make_prov
 from identitybench.providers.grok_cli import GrokCliProvider
 from identitybench.providers.openai_compat import OpenAICompatProvider
 from identitybench.providers.replay import ReplayProvider
+from identitybench.runner.cache import key_for_request
 
 
 @pytest.fixture
@@ -102,6 +103,23 @@ def test_spec_from_experiment_yaml_shape() -> None:
         ({"provider": "claude_cli", "model": "m", "extra": {"binary": " "}}, "non-empty string"),
         ({"provider": "replay", "model": "m", "extra": {"path": None}}, "non-empty string"),
         ({"provider": "anthropic", "model": "m", "concurrency": 0}, "concurrency"),
+        (
+            {"provider": "openai_compatible", "model": "m", "extra": {"provider_routing": []}},
+            "provider_routing must be a non-empty mapping",
+        ),
+        (
+            {
+                "provider": "openai_compatible",
+                "model": "m",
+                "extra": {"provider_routing": {"allow_fallbacks": "false"}},
+            },
+            "provider_routing allow_fallbacks must be true or false",
+        ),
+        # Routing is OpenRouter's request field; no other kind sends it.
+        (
+            {"provider": "anthropic", "model": "m", "extra": {"provider_routing": {"order": []}}},
+            "unknown extra options",
+        ),
     ],
 )
 def test_invalid_specs_are_rejected(data: dict[str, Any], message: str) -> None:
@@ -157,6 +175,39 @@ def test_make_openai_provider(monkeypatch) -> None:
     assert isinstance(default, OpenAICompatProvider)
     assert default._api_key_env == "OPENAI_API_KEY"
     assert default._base_url_env == "OPENAI_BASE_URL"
+
+
+ROUTING: dict[str, Any] = {
+    "order": ["Baidu", "Alibaba"],
+    "allow_fallbacks": False,
+    "require_parameters": True,
+}
+
+
+def openrouter_spec(**extra: Any) -> ModelSpec:
+    return ModelSpec(
+        provider="openai_compatible",
+        model="deepseek/deepseek-v4-pro-0813",
+        base_url_env="OPENROUTER_BASE_URL",
+        extra=extra,
+    )
+
+
+def test_routing_preference_reaches_the_request_and_the_cache_key(monkeypatch) -> None:
+    """A different routing can change which host answers, so it must change the cache key."""
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    routed = make_provider(openrouter_spec(provider_routing=ROUTING))
+    plain = make_provider(openrouter_spec())
+    assert isinstance(routed, OpenAICompatProvider) and isinstance(plain, OpenAICompatProvider)
+    request = ModelRequest(system="s", messages=(Message(Role.user, "u"),))
+    assert routed.request_params(request)["extra_body"] == {"provider": ROUTING}
+    assert "extra_body" not in plain.request_params(request)
+
+    def key(p: Provider) -> str:
+        return key_for_request(p.kind, p.model, p.endpoint_identity(), request, 0)
+
+    assert routed.endpoint_identity() != plain.endpoint_identity()
+    assert key(routed) != key(plain)
 
 
 SPEC_16_MODELS: list[dict[str, Any]] = [

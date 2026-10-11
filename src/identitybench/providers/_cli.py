@@ -81,6 +81,12 @@ SYSTEM_POINTER = (
 """Short system prompt used when the real one is too large for argv and moves into the prompt."""
 
 NEUTRAL_SYSTEM = "You are a helpful assistant."
+
+ACTION_SCHEMA_NAME = "tool_action"
+"""The schema name of a turn of the JSON action protocol (``render.tools.ACTION_SCHEMA_NAME``;
+a test pins the two together, since providers don't import the renderer). A CLI may send such
+a turn differently from a plain structured answer (``claude_cli`` withholds ``--json-schema``),
+so ``setup_revision`` builds one as a template too."""
 """System prompt sent in place of an empty one by CLIs that replace their own system prompt.
 
 An empty value doesn't mean "no system prompt" to these CLIs: grok treats
@@ -416,12 +422,13 @@ class CliProvider(ABC):
 
         It is derived from the setup itself rather than a hand-bumped constant, so no change can
         be forgotten: the argv, stdin and input files ``_build`` produces for two template
-        requests (an empty system prompt, no schema and no effort; then a system prompt, a
-        multi-turn transcript, a schema and an effort), the environment and files ``_isolate``
-        sets up in a private home (login links excluded: whether the user is logged in is not
-        setup), the environment rules, and the large-system-prompt fallback. Temporary paths,
-        the binary's location and the model name are replaced by placeholders, so the revision
-        is the same on every machine and for every model of the provider.
+        requests (an empty system prompt, no schema and no effort; a system prompt, a multi-turn
+        transcript, a schema and an effort; and the same as a JSON action protocol turn), the
+        environment and files ``_isolate`` sets up in a private home (login links excluded:
+        whether the user is logged in is not setup), the environment rules, and the
+        large-system-prompt fallback. Temporary paths, the binary's location and the model name
+        are replaced by placeholders, so the revision is the same on every machine and for every
+        model of the provider.
 
         An ``OSError`` while setting up the scratch home propagates: a machine that can't do that
         can't run a call either.
@@ -450,6 +457,15 @@ class CliProvider(ABC):
                     output_schema={"type": "object", "properties": {}},
                 ),
                 "<effort>" if self.SUPPORTS_EFFORT else None,
+            ),
+            (
+                ModelRequest(
+                    system="<system>",
+                    messages=transcript,
+                    output_schema={"type": "object", "properties": {}},
+                    schema_name=ACTION_SCHEMA_NAME,
+                ),
+                None,
             ),
         )
         with tempfile.TemporaryDirectory(

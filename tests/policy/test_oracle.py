@@ -328,6 +328,21 @@ def test_contradictory_controls_and_packs_are_rejected(req: CaseBuilder) -> None
         decide_request(req.request())
 
 
+def test_two_controls_for_one_rule_are_rejected_without_a_conflict(req: CaseBuilder) -> None:
+    """SPEC §6.2, §9.2: the contradiction is the view's, so it is rejected before any rule runs,
+    even when no conflict would ever look the controls up (nobody here holds a SOD-001 side, and
+    the controls belong to a peer outside the request)."""
+    req.identity("u_peer")
+    req.control("mc_1", "SOD-001", "u_peer")
+    req.control("mc_2", "SOD-001", "u_peer", expires_on=day(10))
+    with pytest.raises(OracleInputError, match="u_peer has several controls for SOD-001"):
+        decide_request(req.request())
+    with pytest.raises(OracleInputError, match="u_peer has several controls for SOD-001"):
+        decide_review(req.campaign())
+    req.drop("mc_2")
+    assert decide_checked(req.request()).decision == "APPROVE"
+
+
 def test_json_round_trip_gives_the_same_gold(req: CaseBuilder) -> None:
     """SPEC §9.2: the oracle re-run on the serialized-then-parsed view must agree."""
     req.entitlement("ent_post")

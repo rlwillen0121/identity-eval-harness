@@ -8,12 +8,16 @@ model's ``CostMode`` says which one it is:
   enforced for it.
 - ``unmetered``: self-hosted servers and replay. Nothing is metered, so the API cost is a real
   $0 (SPEC §11.4: self-hosted models show $0 API cost).
-- ``reported``: subscription CLIs. They aren't API-metered, so ``pricing.yaml`` is never
-  applied even when the model name has a row; whatever cost the CLI reports per call
-  (``ModelResponse.reported_cost_usd``) is recorded and counts toward the budget. That figure
-  is the CLI's own (often notional, on a subscription) estimate. ``claude_cli`` and
-  ``grok_cli`` report one (``total_cost_usd``); ``codex_cli`` and ``cursor_cli`` don't, so a
-  budget can't be enforced for them (``reports_cost``).
+- ``reported``: the access path states each call's cost, and ``pricing.yaml`` is never applied
+  even when the model name has a row; that cost (``ModelResponse.reported_cost_usd``) is
+  recorded and counts toward the budget. Subscription CLIs: the figure is the CLI's own (often
+  notional) estimate; ``claude_cli`` and ``grok_cli`` report one (``total_cost_usd``),
+  ``codex_cli`` and ``cursor_cli`` don't, so a budget can't be enforced for them
+  (``reports_cost``). Billing gateways: an ``openai_compatible`` entry on OpenRouter
+  (``OPENROUTER_BASE_URL``, the default there) gets the USD OpenRouter charged for the call
+  (``usage.cost``), which makes ``budget_usd`` enforceable for models no ``pricing.yaml`` row
+  covers. A call that comes back without a cost is an unknown cost, never a free one: the
+  prediction records it as unknown and the budget stops paid calls (``CostTracker``).
 
 ``budget_usd`` is experiment-wide, so ``BudgetGuard`` sums spend over every config's tracker
 and lets concurrent calls reserve their estimated cost before they start.
@@ -36,6 +40,9 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from identitybench.providers.base import Usage
 from identitybench.providers.openai_compat import (
     DEFAULT_BASE_URL_ENV as OPENAI_DEFAULT_BASE_URL_ENV,
+)
+from identitybench.providers.openai_compat import (
+    OPENROUTER_BASE_URL_ENV,
 )
 
 PRICING_ENV = "IDENTITYBENCH_PRICING"
@@ -67,6 +74,9 @@ _DEFAULT_COST_MODE: dict[str, CostMode] = {
 _REPORTS_COST = frozenset({"claude_cli", "grok_cli"})
 """CLI kinds whose provider fills ``ModelResponse.reported_cost_usd``."""
 
+_OPENAI_VENDOR_ENVS: frozenset[str | None] = frozenset({None, OPENAI_DEFAULT_BASE_URL_ENV})
+"""``base_url_env`` values that mean OpenAI's own API for an ``openai_compatible`` entry."""
+
 
 def default_cost_mode(
     provider_kind: str,
@@ -76,15 +86,19 @@ def default_cost_mode(
 ) -> CostMode:
     """The usual cost mode for a provider kind.
 
-    ``openai_compatible`` covers OpenAI itself, so it defaults to ``metered``. It counts as
-    self-hosted (a real $0) only when the entry sets a ``cache_namespace`` *and* names its own
-    endpoint (``base_url_env`` other than OpenAI's default): SPEC §11.4 makes the namespace
-    optional for any model, so a paid entry may set one too (to force fresh inferences), and a
-    namespace alone must never make a metered API free. Any other self-hosted server should say
-    ``cost_mode: unmetered``; otherwise its cost stays *unknown* (the safe direction: the
-    budget guard flags it rather than counting it as free). ``anthropic_compatible`` exists for
-    self-hosted Messages-API servers (SPEC §11.1). Unknown kinds (e.g. baselines) cost nothing.
+    ``openai_compatible`` covers OpenAI itself, so it defaults to ``metered``. On OpenRouter
+    (``base_url_env: OPENROUTER_BASE_URL``) it is ``reported``: OpenRouter states every call's
+    cost, which covers models ``pricing.yaml`` has no row for. It counts as self-hosted (a real
+    $0) only when the entry sets a ``cache_namespace`` *and* names its own endpoint, neither
+    OpenAI's nor OpenRouter's: SPEC §11.4 makes the namespace optional for any model, so a paid
+    entry may set one too (to force fresh inferences), and a namespace alone must never make a
+    metered API free. Any other self-hosted server should say ``cost_mode: unmetered``;
+    otherwise its cost stays *unknown* (the safe direction: the budget guard flags it rather
+    than counting it as free). ``anthropic_compatible`` exists for self-hosted Messages-API
+    servers (SPEC §11.1). Unknown kinds (e.g. baselines) cost nothing.
     """
+    if provider_kind == "openai_compatible" and base_url_env == OPENROUTER_BASE_URL_ENV:
+        return "reported"
     if (
         provider_kind == "openai_compatible"
         and cache_namespace is not None
@@ -96,21 +110,31 @@ def default_cost_mode(
 
 def points_at_metered_vendor(provider_kind: str, base_url_env: str | None = None) -> bool:
     """Whether an entry talks to a commercial per-token API: the ``anthropic`` kind, or
-    ``openai_compatible`` on OpenAI's default endpoint (no ``base_url_env``, or OpenAI's own).
+    ``openai_compatible`` on OpenAI's default endpoint (no ``base_url_env``, or OpenAI's own)
+    or on OpenRouter.
 
     An entry like that resolving to ``unmetered`` would show $0 for paid calls and escape the
     budget stop, so the config warns about it.
     """
     if provider_kind == "anthropic":
         return True
-    return provider_kind == "openai_compatible" and base_url_env in (
-        None,
-        OPENAI_DEFAULT_BASE_URL_ENV,
+    return provider_kind == "openai_compatible" and (
+        base_url_env in _OPENAI_VENDOR_ENVS or base_url_env == OPENROUTER_BASE_URL_ENV
     )
 
 
-def reports_cost(provider_kind: str) -> bool:
-    """Whether a ``reported``-mode kind's provider reports a per-call cost at all."""
+def reports_cost(provider_kind: str, base_url_env: str | None = None) -> bool:
+    """Whether a ``reported``-mode entry's provider reports a per-call cost at all.
+
+    ``claude_cli`` and ``grok_cli`` do. ``openai_compatible`` does wherever the server puts the
+    call's cost in ``usage.cost`` (OpenRouter), which the harness can't see from a variable
+    name, so ``cost_mode: reported`` on a custom endpoint is taken at its word: the first call
+    that comes back without a cost makes the spend unknown and stops a budgeted run
+    (``CostTracker.budget_enforceable``). OpenAI's own API never reports one, so a budget is
+    refused there up front.
+    """
+    if provider_kind == "openai_compatible":
+        return base_url_env not in _OPENAI_VENDOR_ENVS
     return provider_kind in _REPORTS_COST
 
 
@@ -298,6 +322,12 @@ class CostTracker:
     def price(self) -> ModelPrice | None:
         """The ``pricing.yaml`` row this config's calls are billed from, if any."""
         return self._price
+
+    @property
+    def cache_ttl(self) -> CacheTtl:
+        """The cache lifetime cache-write tokens are billed at, so a pre-call estimate prices
+        them like ``add`` will."""
+        return self._cache_ttl
 
     @property
     def priced(self) -> bool:

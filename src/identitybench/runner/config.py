@@ -11,7 +11,11 @@ file is loaded, not halfway through a run.
 
 ``ModelEntry`` carries one field beyond the brief's ``ModelSpec`` list: ``cost_mode``, because
 the manifest must tell a self-hosted model's real $0 from an unpriced API's unknown cost
-(SPEC §11.4) and the provider kind alone can't (``openai_compatible`` covers both).
+(SPEC §11.4) and the provider kind alone can't (``openai_compatible`` covers both). Its
+``extra`` takes one key the runner reads itself and never passes to the provider
+(``RUNNER_EXTRA_KEYS``): ``tool_protocol``, which forces tool-use mode's protocol for a model
+whose provider's capabilities say otherwise (a self-hosted OpenAI-compatible server started
+without tool-call parsing reports native tools it can't serve).
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ from __future__ import annotations
 import itertools
 import re
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast, get_args
 
 import yaml
 from pydantic import (
@@ -35,9 +39,6 @@ from pydantic import (
 
 from identitybench.providers.base import GenerationParams
 from identitybench.providers.factory import PROVIDER_KINDS, ModelSpec, ProviderKind
-from identitybench.providers.openai_compat import (
-    DEFAULT_BASE_URL_ENV as OPENAI_DEFAULT_BASE_URL_ENV,
-)
 from identitybench.runner.cost import (
     CostMode,
     default_cost_mode,
@@ -50,6 +51,8 @@ from identitybench.schemas.enums import Split, Suite
 __all__ = [
     "BASELINES",
     "PROVIDER_KINDS",
+    "RUNNER_EXTRA_KEYS",
+    "TOOL_PROTOCOLS",
     "ConfigError",
     "Effort",
     "ExperimentConfig",
@@ -59,6 +62,7 @@ __all__ = [
     "ProviderKind",
     "Repeats",
     "StrictFloat",
+    "ToolProtocolName",
     "load_config",
     "make_config_id",
     "slug",
@@ -67,6 +71,15 @@ __all__ = [
 Mode = Literal["context", "tools"]
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 """The reasoning-effort values ``GenerationParams.effort`` documents."""
+
+ToolProtocolName = Literal["native", "action"]
+"""Tool-use mode's protocols (``render.tools.ToolProtocol``, which this module doesn't import:
+that would pull prompt rendering and the world generator into config loading)."""
+TOOL_PROTOCOLS: tuple[str, ...] = get_args(ToolProtocolName)
+
+RUNNER_EXTRA_KEYS = frozenset({"tool_protocol"})
+"""``ModelEntry.extra`` keys the runner reads itself; they are kept out of the provider's
+``ModelSpec`` (whose ``extra`` takes constructor options only)."""
 
 StrictInt = Annotated[int, Strict()]
 """YAML ``true`` would otherwise coerce to 1 for a seed, count or limit."""
@@ -234,7 +247,13 @@ class ModelEntry(_Strict):
     ``max_output_tokens`` left out or null falls back too. ``extra`` holds provider
     *constructor* options (``binary``, ``max_retries``, replay ``path``, ...) exactly as
     ``ModelSpec`` defines them; they never reach the request params, so they don't change
-    cache keys.
+    cache keys. The exception is ``openai_compatible``'s ``provider_routing`` (OpenRouter's
+    ``provider`` preference, e.g. ``{order: [Baidu, Alibaba], allow_fallbacks: false}``): it is
+    sent with every request and is part of the provider's endpoint identity, hence of every
+    cache key, and the factory checks its shape when the file is loaded. ``extra`` may also
+    hold ``tool_protocol`` (``RUNNER_EXTRA_KEYS``): ``native`` or ``action``, the protocol
+    tool-use mode speaks with this model, before its provider's capabilities are consulted
+    (null: no override). That one does change requests (and so cache keys).
     """
 
     provider: ProviderKind
@@ -255,7 +274,9 @@ class ModelEntry(_Strict):
     """How this model's spend is known (see ``cost.CostMode``). None picks the provider kind's
     default (``cost.default_cost_mode``): an ``openai_compatible`` entry counts as self-hosted,
     so ``unmetered``, only when it sets a ``cache_namespace`` and names its own endpoint with
-    ``base_url_env``; OpenAI itself stays ``metered`` with or without a namespace."""
+    ``base_url_env``; OpenAI itself stays ``metered`` with or without a namespace, and an
+    OpenRouter entry (``base_url_env: OPENROUTER_BASE_URL``) is ``reported``, costed from the
+    USD OpenRouter states for each call."""
     extra: dict[str, Any] = Field(default_factory=dict)
     """Provider constructor options, as ``ModelSpec.extra`` (recorded in the manifest)."""
 
@@ -273,12 +294,23 @@ class ModelEntry(_Strict):
     @classmethod
     def _extra_has_no_urls(cls, value: dict[str, Any]) -> dict[str, Any]:
         _check_no_urls(value, "extra")
+        protocol = value.get("tool_protocol")
+        if protocol is not None and protocol not in TOOL_PROTOCOLS:
+            raise ValueError(
+                f"extra.tool_protocol must be one of {list(TOOL_PROTOCOLS)} (got {protocol!r})"
+            )
         return value
 
     @model_validator(mode="after")
     def _factory_accepts(self) -> ModelEntry:
         self.to_spec()
         return self
+
+    @property
+    def tool_protocol(self) -> ToolProtocolName | None:
+        """The ``extra.tool_protocol`` override (tool-use mode), or None to let the provider's
+        capabilities decide."""
+        return cast(ToolProtocolName | None, self.extra.get("tool_protocol"))
 
     @property
     def resolved_cost_mode(self) -> CostMode:
@@ -288,8 +320,10 @@ class ModelEntry(_Strict):
 
     @property
     def reports_cost(self) -> bool:
-        """For ``reported`` mode: whether this kind's provider reports a per-call cost."""
-        return reports_cost(self.provider)
+        """For ``reported`` mode: whether this entry's provider reports a per-call cost
+        (``cost.reports_cost``: an ``openai_compatible`` endpoint other than OpenAI's own is
+        trusted to, until a call comes back without one)."""
+        return reports_cost(self.provider, self.base_url_env)
 
     def _effort_param_off(self) -> bool:
         """An ``openai_compatible`` server configured not to send ``reasoning_effort``: the
@@ -331,7 +365,7 @@ class ModelEntry(_Strict):
                 max_output_tokens=self.max_output_tokens or d.max_output_tokens,
                 timeout_s=self.timeout_s,
                 concurrency=self.concurrency,
-                extra=dict(self.extra),
+                extra={k: v for k, v in self.extra.items() if k not in RUNNER_EXTRA_KEYS},
             )
         except ValidationError as exc:
             reasons = "; ".join(str(err["msg"]) for err in exc.errors())
@@ -465,6 +499,11 @@ class ExperimentConfig(_Strict):
         ids = self.config_ids()
         if len(set(ids)) != len(ids):
             raise ValueError(f"config ids are not unique: {sorted(ids)}")
+        # Like the factory's rule for options that can't apply: a setting that would be ignored
+        # is a mistake about what runs, not a harmless extra.
+        pinned = [m.label for m in self.models if m.tool_protocol is not None]
+        if pinned and self.mode != "tools":
+            raise ValueError(f"extra.tool_protocol applies to mode 'tools' only: {pinned}")
         for entry in self.models:
             entry.to_spec(self.params)
         return self
@@ -513,9 +552,12 @@ class ExperimentConfig(_Strict):
         """Valid but probably unintended settings, for the CLI to print before a run."""
         out: list[str] = []
         for entry in self.models:
-            if entry.resolved_cost_mode == "metered" and entry.base_url_env not in (
-                None,
-                OPENAI_DEFAULT_BASE_URL_ENV,
+            # OpenRouter is a paid API too, so a metered entry there (priced from a row) is no
+            # sign of a mislabelled self-hosted server.
+            if (
+                entry.resolved_cost_mode == "metered"
+                and entry.base_url_env is not None
+                and not points_at_metered_vendor(entry.provider, entry.base_url_env)
             ):
                 out.append(
                     f"model {entry.label!r} uses a custom base URL ({entry.base_url_env}) and "

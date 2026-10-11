@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 import tomllib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from identitybench.providers._cli import (
+    ACTION_SCHEMA_NAME,
     MAX_ARG_BYTES,
     NEUTRAL_SYSTEM,
     SYSTEM_BEGIN,
@@ -107,6 +109,17 @@ async def test_schema_and_reasoning_effort_flags_are_attached() -> None:
     assert "--reasoning-effort" not in argv
     assert response.raw is not None
     assert response.raw["effort"] == "high"  # the provider default applied, so it is recorded
+
+
+async def test_an_action_protocol_turn_is_sent_without_the_schema() -> None:
+    """As in ``claude_cli``: the structured-output turn would invite native calls of the listed
+    lookups, which here would also use up ``--max-turns 2``."""
+    runner = FakeRunner(ok(VERIFIED))
+    action = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
+    response = await provider(runner).complete(action)
+    assert not any(arg.startswith("--json-schema") for arg in runner.command.argv)
+    assert response.raw is not None
+    assert response.raw["json_schema"] == "withheld (JSON action protocol turn)"
 
 
 TAKES_A_VALUE = frozenset(

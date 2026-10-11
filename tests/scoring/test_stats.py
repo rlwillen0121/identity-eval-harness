@@ -3,6 +3,8 @@ simulation sanity checks (kept small so the whole file runs in a few seconds).""
 
 from __future__ import annotations
 
+import itertools
+import math
 import time
 
 import numpy as np
@@ -13,10 +15,12 @@ from scipy.stats import binom, norm
 from sklearn.metrics import cohen_kappa_score
 
 from identitybench.scoring.stats import (
+    DEFAULT_ALPHA,
     DEFAULT_N_BOOT,
     Discordance,
     HolmResult,
     Interval,
+    SignFlipTest,
     binomial_ci,
     clopper_pearson,
     clopper_pearson_upper,
@@ -27,8 +31,11 @@ from identitybench.scoring.stats import (
     mean_ci,
     minimum_detectable_difference,
     paired_bootstrap_diff,
+    paired_signflip_test,
     quadratic_weighted_kappa,
     ratio_ci,
+    sign_test_p,
+    signflip_p,
 )
 
 # --------------------------------------------------------------------------------------------
@@ -561,6 +568,245 @@ def test_paired_rejects_misaligned_units() -> None:
         paired_bootstrap_diff([1, 0], [1, 1], [1, 0], [1, 1], ["a", "b", "c"])
     with pytest.raises(ValueError, match="den_b"):
         paired_bootstrap_diff([1, 0], [1, 1], [1, 0], [1, -1], None)
+
+
+# --------------------------------------------------------------------------------------------
+# Exact sign test
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("positive", "negative", "p"),
+    [
+        (0, 0, 1.0),  # nothing differs: no evidence
+        (1, 0, 1.0),
+        (4, 0, 0.125),  # 2 / 2^4
+        (5, 0, 0.0625),
+        (6, 0, 0.03125),  # the fewest one-way units that can reach alpha 0.05
+        (7, 0, 0.015625),
+        (1, 4, 0.375),  # 2 · (1 + 4) / 32
+        (3, 3, 1.0),  # an even split caps at 1
+        (20, 0, 2 / 2**20),
+    ],
+)
+def test_sign_test_textbook_values(positive: int, negative: int, p: float) -> None:
+    assert sign_test_p(positive, negative) == pytest.approx(p, rel=1e-12)
+    assert sign_test_p(negative, positive) == sign_test_p(positive, negative)
+
+
+@given(st.integers(0, 60), st.integers(0, 60))
+@settings(max_examples=100, deadline=None)
+def test_sign_test_matches_the_binomial_reference(positive: int, negative: int) -> None:
+    d = positive + negative
+    expected = 1.0 if d == 0 else min(1.0, 2 * float(binom.cdf(min(positive, negative), d, 0.5)))
+    assert sign_test_p(positive, negative) == pytest.approx(expected, rel=1e-9, abs=1e-300)
+
+
+def test_sign_test_never_underflows_to_zero() -> None:
+    # 2 / 2^1100 is below the smallest positive float; plain division would round it to 0.
+    assert sign_test_p(1100, 0) == math.ulp(0.0)
+    assert sign_test_p(1000, 0) == pytest.approx(2 / 2**1000, rel=1e-12)
+
+
+def test_sign_test_rejects_negative_counts() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        sign_test_p(-1, 3)
+
+
+# --------------------------------------------------------------------------------------------
+# Paired sign-flip test
+# --------------------------------------------------------------------------------------------
+
+
+def _enumerated_signflip_p(differences: list[float]) -> float:
+    """Reference: the share of all 2^d sign assignments whose signed sum is at least as far from
+    0 as the observed one (with a little slack for float rounding)."""
+    observed = abs(sum(differences))
+    sizes = [abs(x) for x in differences]
+    hits = sum(
+        abs(sum(sign * size for sign, size in zip(signs, sizes, strict=True))) >= observed - 1e-9
+        for signs in itertools.product((-1, 1), repeat=len(sizes))
+    )
+    return hits / 2 ** len(sizes)
+
+
+_COSTS = (0.5, 1.0, 1.5, 2.0, 2.5, 5.0, 10.0, 20.0, 40.0, 1.7, 0.3)
+"""Differences of default loss-matrix costs at every risk weight, plus custom-matrix decimals."""
+
+
+@given(st.lists(st.tuples(st.sampled_from(_COSTS), st.booleans()), min_size=1, max_size=12))
+@settings(max_examples=150, deadline=None)
+def test_signflip_matches_full_enumeration(units: list[tuple[float, bool]]) -> None:
+    differences = [size if up else -size for size, up in units]
+    assert signflip_p(differences) == pytest.approx(_enumerated_signflip_p(differences), rel=1e-12)
+
+
+@given(st.integers(0, 60), st.integers(0, 60), st.sampled_from((1.0, 2.5, 40.0)))
+@settings(max_examples=100, deadline=None)
+def test_signflip_of_one_size_is_the_exact_sign_test(
+    positive: int, negative: int, size: float
+) -> None:
+    """Every 0/1 outcome on independent units differs by ±1, and any one size gives the same
+    test: the exact two-sided sign test, to the last bit."""
+    differences = [size] * positive + [-size] * negative
+    assert signflip_p(differences) == sign_test_p(positive, negative)
+
+
+def test_signflip_weighs_each_unit_by_its_difference() -> None:
+    # Four catastrophic differences against twenty cheap ones going the other way: the test
+    # rests on the four (2/2^4), where a sign test would count twenty against four.
+    assert signflip_p([-40.0] * 4 + [1.0] * 20) == pytest.approx(0.125, rel=1e-12)
+    assert sign_test_p(20, 4) == pytest.approx(0.0015, abs=1e-4)
+    assert signflip_p([-40.0] * 6 + [1.0] * 20) == pytest.approx(2 / 2**6, rel=1e-12)
+    # A real trade-off with many costly units still gets a tiny p-value: 30 against 100.
+    assert signflip_p([-40.0] * 30 + [1.0] * 100) == pytest.approx(5.6759e-8, rel=1e-4)
+    # And size cuts the other way too: six costly units against four cheap ones, which a sign
+    # test (6 against 4) would call no evidence at all.
+    assert signflip_p([10.0] * 6 + [-1.0] * 4) == pytest.approx(2 / 2**6, rel=1e-12)
+    assert sign_test_p(6, 4) > 0.75
+
+
+def test_signflip_drops_ties_and_puts_rounding_noise_on_the_lattice() -> None:
+    assert signflip_p([]) == 1.0
+    assert signflip_p([0.0, 1e-12, -1e-12]) == 1.0
+    assert signflip_p([0.0, 1.0, 1.0, 1.0, 1.0]) == sign_test_p(4, 0)
+    # 0.1 + 0.2 is 0.3 plus rounding. Every assignment of three 0.3s reaches |0.3|, but summed
+    # in floats one of them falls just short of the observed sum; on the lattice none does.
+    noisy = 0.1 + 0.2
+    assert abs(-noisy + 0.3 + 0.3) < abs(noisy - 0.3 + 0.3)
+    assert signflip_p([noisy, -0.3, 0.3]) == 1.0
+
+
+def test_signflip_falls_back_to_a_seeded_monte_carlo() -> None:
+    """Past the exact budget, or with sizes on no common lattice, the p-value is estimated as
+    (k + 1) / (B + 1): close to the exact value, reproducible, and never below 1/(B + 1)."""
+    differences = [-40.0] * 4 + [1.0] * 20
+    estimate = signflip_p(differences, n_draws=20_000, max_exact_work=0)
+    assert estimate == pytest.approx(0.125, abs=0.01)
+    assert estimate == signflip_p(differences, n_draws=20_000, max_exact_work=0)
+    assert estimate != signflip_p(differences, n_draws=20_000, max_exact_work=0, seed=1)
+    assert signflip_p([5.0] * 20 + [7.0] * 20, n_draws=99, max_exact_work=0) == 1 / 100
+    incommensurate = [math.pi, math.e, -math.sqrt(2.0)]
+    reference = _enumerated_signflip_p(incommensurate)
+    assert signflip_p(incommensurate, n_draws=20_000) == pytest.approx(reference, abs=0.02)
+    # One size needs no budget: it is always the exact sign test.
+    assert signflip_p([2.5] * 7, max_exact_work=0) == sign_test_p(7, 0)
+
+
+def test_signflip_never_exceeds_one() -> None:
+    """When the observed sum is the smallest reachable one, the exact test sums its whole null
+    distribution; past about 53 units those float64 terms round and the total can land a hair
+    above 1, which Holm refuses. The value is capped."""
+    assert signflip_p([-5.0] * 15 + [1.0] * 9 + [2.0] * 33) == 1.0
+    assert signflip_p([1.5] * 200 + [-0.5] * 600) == 1.0
+
+
+@given(st.lists(st.tuples(st.sampled_from(_COSTS), st.booleans()), min_size=50, max_size=120))
+@settings(max_examples=40, deadline=None)
+def test_signflip_is_a_probability_at_larger_sizes(units: list[tuple[float, bool]]) -> None:
+    differences = [size if up else -size for size, up in units]
+    assert 0.0 < signflip_p(differences) <= 1.0
+
+
+def test_one_size_off_any_small_lattice_is_still_the_exact_sign_test() -> None:
+    # 0.50000003 is no fraction with a denominator up to 10^6, but one size needs no lattice.
+    assert signflip_p([0.50000003] * 7) == sign_test_p(7, 0)
+    assert signflip_p([1.000000021] * 5 + [-1.000000021] * 2) == sign_test_p(5, 2)
+
+
+def test_signflip_rejects_bad_arguments() -> None:
+    with pytest.raises(ValueError, match="n_draws"):
+        signflip_p([1.0], n_draws=0)
+    with pytest.raises(ValueError, match="max_exact_work"):
+        signflip_p([1.0], max_exact_work=-1)
+    with pytest.raises(ValueError, match="non-finite"):
+        signflip_p([1.0, math.inf])
+
+
+def test_signflip_never_underflows_to_zero() -> None:
+    # 1,100 one-way units of two sizes: the exact value 2/2^1100 is below the smallest float.
+    assert signflip_p([1.0] * 550 + [2.0] * 550) == math.ulp(0.0)
+
+
+def test_paired_signflip_test_counts_per_unit_differences() -> None:
+    # Units 0-3 in the denominator; unit 4 outside it (a gold-APPROVE case for WAR).
+    num_a = [1, 0, 1, 1, 0]
+    num_b = [0, 0, 1, 0, 0]
+    den = [1, 1, 1, 1, 0]
+    result = paired_signflip_test(num_a, den, num_b, den, None)
+    assert result == SignFlipTest(n_units=4, a_higher=2, b_higher=0, p_value=0.5, exact=True)
+    assert result.n_discordant == 2 and result.rate == pytest.approx(0.5)
+
+
+def test_paired_signflip_test_works_on_cluster_totals() -> None:
+    """Review items are tested by campaign: within-campaign differences net out, so a campaign
+    where a is worse on one item and better on another is a tie, and a campaign's difference
+    counts by its size."""
+    num_a = [1, 0, 1, 1, 0, 0, 1, 0]
+    num_b = [0, 1, 0, 0, 0, 0, 0, 0]
+    den = [1] * 8
+    clusters = ["c1", "c1", "c2", "c2", "c3", "c3", "c4", "c4"]
+    result = paired_signflip_test(num_a, den, num_b, den, clusters)
+    assert (result.n_units, result.a_higher, result.b_higher) == (4, 2, 0)  # c1 and c3 tie
+    # c2 differs by 2 and c4 by 1: only the observed assignment and its mirror reach |3|.
+    assert result.p_value == pytest.approx(0.5)
+
+
+def test_paired_signflip_test_treats_rounding_noise_as_a_tie() -> None:
+    """Equal cluster totals summed in a different order differ only by float rounding: the
+    same 0.3 of cost as 0.1 + 0.2 on one side and 0.3 + 0 on the other is a tie."""
+    num_a = [0.1, 0.2, 1.0]
+    num_b = [0.3, 0.0, 1.0]
+    den = [1.0, 1.0, 1.0]
+    assert 0.1 + 0.2 != 0.3  # the float totals really differ
+    result = paired_signflip_test(num_a, den, num_b, den, ["c1", "c1", "c2"])
+    assert result.n_units == 2 and result.n_discordant == 0 and result.p_value == 1.0
+
+
+def test_paired_signflip_test_needs_a_shared_denominator() -> None:
+    with pytest.raises(ValueError, match="shared denominator"):
+        paired_signflip_test([1, 0], [1, 1], [0, 0], [1, 0], None)
+    with pytest.raises(ValueError, match="num_b"):
+        paired_signflip_test([1, 0], [1, 1], [1], [1, 1], None)
+    empty = paired_signflip_test([], [], [], [], None)
+    assert empty == SignFlipTest(n_units=0, a_higher=0, b_higher=0, p_value=1.0, exact=True)
+    assert empty.rate is None
+
+
+def test_paired_signflip_test_reports_a_monte_carlo_estimate_as_inexact() -> None:
+    num_a = [40.0] * 4 + [0.0] * 20
+    num_b = [0.0] * 4 + [1.0] * 20
+    den = [1.0] * 24
+    exact = paired_signflip_test(num_a, den, num_b, den, None)
+    assert exact.exact and exact.p_value == pytest.approx(0.125)
+    estimate = paired_signflip_test(num_a, den, num_b, den, None, max_exact_work=0, seed=3)
+    assert not estimate.exact and estimate.p_value == pytest.approx(0.125, abs=0.03)
+    assert (estimate.a_higher, estimate.b_higher) == (exact.a_higher, exact.b_higher) == (4, 20)
+
+
+def test_bootstrap_is_anti_conservative_where_the_signflip_test_is_exact() -> None:
+    """The motivating measurement: 40 independent units, d of them discordant, all one way.
+    The bootstrap's p-value falls like e^-d; the exact test's is 2/2^d."""
+    for d, exact in ((4, 0.125), (5, 0.0625), (7, 0.015625)):
+        num_a = [1.0] * d + [0.0] * (40 - d)
+        num_b = [0.0] * 40
+        den = [1.0] * 40
+        bootstrap = paired_bootstrap_diff(num_a, den, num_b, den, None, n_boot=DEFAULT_N_BOOT)
+        signflip = paired_signflip_test(num_a, den, num_b, den, None)
+        assert signflip.p_value == exact
+        assert bootstrap.p_value is not None and bootstrap.p_value < exact / 2
+
+
+def test_bootstrap_is_anti_conservative_on_a_cost_trade_off() -> None:
+    """The same failure on a cost: four units of 40 against twenty of 1 the other way. The
+    bootstrap sees a clear difference; the four units allow no better than 0.125."""
+    num_a = [0.0] * 4 + [1.0] * 20 + [0.0] * 16
+    num_b = [40.0] * 4 + [0.0] * 36
+    den = [1.0] * 40
+    bootstrap = paired_bootstrap_diff(num_a, den, num_b, den, None, n_boot=DEFAULT_N_BOOT)
+    signflip = paired_signflip_test(num_a, den, num_b, den, None)
+    assert bootstrap.p_value is not None and bootstrap.p_value < DEFAULT_ALPHA
+    assert signflip.p_value == pytest.approx(0.125)
 
 
 # --------------------------------------------------------------------------------------------

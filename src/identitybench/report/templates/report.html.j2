@@ -1,0 +1,207 @@
+{#- The static HTML report (SPEC §15, M7). Rendered by report.html with autoescaping on: every
+    string is escaped except the inline SVG charts and the Vega-Lite specs, which report.html
+    builds itself and passes through svg_markup and spec_json. -#}
+{%- macro block(b, depth) -%}
+{%- set k = kind(b) -%}
+{%- if k == "text" -%}
+<p class="text tone-{{ b.tone }}">{% if b.tone == "warning" %}<strong>Warning:</strong> {% endif %}{{ b.text }}</p>
+{%- elif k == "table" -%}
+<div class="table-wrap" tabindex="0">
+<table>
+{%- if b.caption %}<caption>{{ b.caption }}</caption>{% endif %}
+<thead><tr>{% for c in b.columns %}<th scope="col"{% if b.is_numeric(loop.index0) %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
+<tbody>
+{%- for row in b.rows %}
+<tr>{% for cell in row %}<td{% if b.is_numeric(loop.index0) %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+{%- endfor %}
+</tbody>
+</table>
+</div>
+{%- elif k == "facts" -%}
+<dl class="facts">
+{%- for label, value in b.items %}
+<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+{%- endfor %}
+</dl>
+{%- elif k == "verbatim" -%}
+<div class="verbatim"><p class="verbatim-label">{{ b.label }}</p><pre>{{ b.text }}</pre></div>
+{%- elif k == "figure" -%}
+<figure class="chart" id="fig-{{ b.key }}"{% if b.vega %} data-vega-spec="spec-{{ b.key }}"{% endif %}>
+{%- if b.vega %}
+<div class="vega-target"></div>
+<script type="application/json" id="spec-{{ b.key }}">{{ spec_json(b) }}</script>
+{%- endif %}
+<div class="fallback">{{ svg_markup(b) }}</div>
+<figcaption>{{ b.description }}</figcaption>
+</figure>
+{%- else -%}
+<section class="group">
+<h{{ [depth, 6] | min }}>{{ b.title }}</h{{ [depth, 6] | min }}>
+{%- for child in b.blocks %}
+{{ block(child, depth + 1) }}
+{%- endfor %}
+</section>
+{%- endif -%}
+{%- endmacro -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ document.title }}</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --warning-bg: #fdf3dc;
+  --warning-ink: #6b4a00;
+  --note-bg: #eef4fc;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --warning-bg: #3a2c08;
+    --warning-ink: #f5d58a;
+    --note-bg: #152234;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #f0efec;
+  --ink2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.10);
+  --accent: #3987e5;
+  --warning-bg: #3a2c08;
+  --warning-ink: #f5d58a;
+  --note-bg: #152234;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.page { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 8px 0 16px; }
+h2 { font-size: 21px; margin: 40px 0 12px; padding-top: 8px; border-top: 1px solid var(--grid); }
+h3 { font-size: 17px; margin: 24px 0 8px; }
+h4, h5, h6 { font-size: 15px; margin: 16px 0 6px; }
+a { color: var(--accent); }
+.badge {
+  display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; vertical-align: middle;
+  border: 1px solid var(--border); color: var(--ink2);
+}
+.text { margin: 8px 0; max-width: 80ch; }
+.tone-note { background: var(--note-bg); padding: 8px 12px; border-radius: 6px; }
+.tone-warning {
+  background: var(--warning-bg); color: var(--warning-ink); padding: 8px 12px; border-radius: 6px;
+}
+.table-wrap {
+  overflow-x: auto; margin: 8px 0 16px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+caption { text-align: left; padding: 8px 10px; color: var(--ink2); }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--ink2); white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* A number with its interval and bound is one value: kept on one line, the table scrolls. */
+td.num { white-space: nowrap; }
+tbody tr:last-child td { border-bottom: none; }
+.facts { margin: 8px 0; display: grid; gap: 2px; }
+.facts div { display: grid; grid-template-columns: minmax(120px, 220px) 1fr; gap: 12px; }
+.facts dt { color: var(--ink2); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.verbatim-label { margin: 8px 0 4px; color: var(--ink2); font-size: 13px; }
+pre {
+  margin: 0 0 8px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px;
+}
+.chart {
+  margin: 12px 0 20px; padding: 8px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; overflow-x: auto;
+}
+.chart svg { max-width: 100%; height: auto; display: block; }
+.chart figcaption { color: var(--ink2); font-size: 13px; padding: 4px 8px 0; }
+.vega-target:empty { display: none; }
+.chart.vega-ready .fallback { display: none; }
+nav ol { columns: 2 260px; padding-left: 20px; }
+.group { margin-left: 0; }
+</style>
+{% for src in scripts %}
+<script src="{{ src }}" defer></script>
+{% endfor %}
+</head>
+<body>
+<div class="page">
+<header>
+<h1>{{ document.title }}</h1>
+{% for b in document.intro %}
+{{ block(b, 3) }}
+{% endfor %}
+</header>
+<nav aria-label="Contents">
+<h2>Contents</h2>
+<ol>
+{% for s in document.sections %}
+<li><a href="#{{ s.key }}">{{ s.title }}</a></li>
+{% endfor %}
+</ol>
+</nav>
+<main>
+{% for s in document.sections %}
+<section id="{{ s.key }}" aria-labelledby="{{ s.key }}-heading">
+<h2 id="{{ s.key }}-heading">{{ s.title }}{% if s.label %}<span class="badge">{{ labels[s.label] }}</span>{% endif %}</h2>
+{% for b in s.blocks %}
+{{ block(b, 3) }}
+{% endfor %}
+</section>
+{% endfor %}
+</main>
+</div>
+<script>
+/* Progressive enhancement: render each Vega-Lite spec in place of its inline SVG. Without the
+   CDN scripts (offline, blocked) the SVG simply stays. */
+document.addEventListener("DOMContentLoaded", function () {
+  if (typeof window.vegaEmbed !== "function") { return; }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  var theme = document.documentElement.getAttribute("data-theme");
+  var options = { actions: false, renderer: "svg" };
+  if (theme === "dark" || (dark && theme !== "light")) { options.theme = "dark"; }
+  document.querySelectorAll("figure[data-vega-spec]").forEach(function (figure) {
+    var source = document.getElementById(figure.getAttribute("data-vega-spec"));
+    var target = figure.querySelector(".vega-target");
+    if (!source || !target) { return; }
+    var spec;
+    try { spec = JSON.parse(source.textContent); } catch (error) { return; }
+    window.vegaEmbed(target, spec, options).then(function () {
+      figure.classList.add("vega-ready");
+    }).catch(function () {
+      target.innerHTML = "";
+    });
+  });
+});
+</script>
+</body>
+</html>

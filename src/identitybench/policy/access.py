@@ -19,14 +19,15 @@ rejected rather than filled in with defaults.
 
 ``RecordIndex`` groups a view's records the way the rules look them up, so the oracle builds
 each table once per case; the module-level functions answer one-off questions through a
-throwaway index. Its view-wide checks reject an incomplete view (SPEC §9.2): an assignment whose
-account is missing (whose access is it?), a membership whose role is missing or whose source
-doesn't match its role's kind, and a provisioned (account, entitlement) pair without a usage
-record.
+throwaway index. Its view-wide checks reject an incomplete or contradictory view (SPEC §9.2): an
+assignment whose account is missing (whose access is it?), a membership whose role is missing or
+whose source doesn't match its role's kind, a provisioned (account, entitlement) pair without a
+usage record, and two controls for one (identity, SoD rule).
 """
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -250,8 +251,9 @@ class RecordIndex:
     account's assignments, a usage record, a control). Scanning the whole view for each answer
     would make a large campaign quadratic, so the oracle builds one index per case.
 
-    Three gaps make a view incomplete, so the view is rejected (SPEC §9.2) rather than the gap
-    being ignored or filled in with a default, whether or not a rule would read it:
+    Three gaps make a view incomplete and one kind of duplicate makes it contradictory. Either way
+    the view is rejected (SPEC §9.2) rather than the problem being ignored or filled in with a
+    default, whether or not a rule would read it:
 
     - An assignment belongs to whoever owns its account, so an assignment whose account isn't in
       the view makes every identity's held access unknowable. Dropping it instead would let the
@@ -263,22 +265,57 @@ class RecordIndex:
     - Every provisioned (account, entitlement) pair has a usage record. Unknown usage is a
       record with telemetry ``unavailable``, so a missing record is a gap, not "unknown"
       (``check_usage_records``).
+    - There is at most one control per (identity, SoD rule) (SPEC §6.2). With two, MIT-001 has
+      no single answer, and rejecting the view only once a rule found a conflict that needs the
+      control would let the same contradiction pass or fail depending on the rest of the view
+      (``check_controls``).
 
-    The oracle's contexts run all three up front for every case (``check_complete``), and the
-    assignment, membership and usage tables run theirs before they are first used, so the
-    module-level lookups are covered too.
+    The oracle's contexts run all four up front for every case (``check_complete``), and each
+    table runs its own check before it is first used, so the module-level lookups are covered
+    too. Each check runs once per index: one that has passed isn't repeated (``_runs_once``), so
+    the tables' guards cost nothing after ``check_complete``. The index assumes its view doesn't
+    change while in use, as its cached tables already do.
     """
 
     def __init__(self, view: CaseView) -> None:
         self.view = view
+        self._checks_passed: set[str] = set()
+
+    @staticmethod
+    def _runs_once(check: Callable[[RecordIndex], None]) -> Callable[[RecordIndex], None]:
+        """Make a view-wide check a no-op once it has passed on that index.
+
+        A check that raises isn't recorded, so calling it again raises again. Without this, the
+        oracle's up-front ``check_complete`` and each table's guard would run the same check
+        twice per case, and the usage check expands every membership's role to do it.
+        """
+
+        @functools.wraps(check)
+        def run(index: RecordIndex) -> None:
+            if check.__name__ not in index._checks_passed:
+                check(index)
+                index._checks_passed.add(check.__name__)
+
+        return run
+
+    @property
+    def checks_passed(self) -> frozenset[str]:
+        """Names of the view-wide checks that have passed on this index.
+
+        Read-only, so no caller can mark a check passed without running it.
+        """
+        return frozenset(self._checks_passed)
 
     def check_complete(self) -> None:
         """Run every view-wide check, raising ``OracleInputError`` at the first that fails:
-        ``check_assignment_accounts``, ``check_memberships``, then ``check_usage_records``."""
+        ``check_assignment_accounts``, ``check_memberships``, ``check_usage_records``, then
+        ``check_controls``."""
         self.check_assignment_accounts()
         self.check_memberships()
         self.check_usage_records()
+        self.check_controls()
 
+    @_runs_once
     def check_assignment_accounts(self) -> None:
         """Raise ``OracleInputError`` if any assignment's account is missing from the view."""
         dangling = sorted(
@@ -291,6 +328,7 @@ class RecordIndex:
                 f"assignments on accounts that aren't in the view: {', '.join(dangling)}"
             )
 
+    @_runs_once
     def check_memberships(self) -> None:
         """Raise ``OracleInputError`` unless every membership's role is in the view and the
         membership's source is the one its role's kind admits (``SOURCE_FOR_ROLE_KIND``)."""
@@ -334,6 +372,7 @@ class RecordIndex:
                     )
         return frozenset(pairs)
 
+    @_runs_once
     def check_usage_records(self) -> None:
         """Raise ``OracleInputError`` unless every provisioned pair (``provisioned_pairs``) has a
         usage record."""
@@ -345,6 +384,17 @@ class RecordIndex:
                 f"incomplete view: no usage record for {pairs} (unknown usage is a record with "
                 "telemetry 'unavailable', not a missing one)"
             )
+
+    @_runs_once
+    def check_controls(self) -> None:
+        """Raise ``OracleInputError`` if an identity has several controls for one SoD rule."""
+        repeated = sorted(
+            f"{identity_id} has several controls for {rule_id}: {', '.join(c.id for c in found)}"
+            for (identity_id, rule_id), found in self._controls_by_pair.items()
+            if len(found) > 1
+        )
+        if repeated:
+            raise OracleInputError("contradictory view: " + "; ".join(repeated))
 
     @cached_property
     def _accounts_by_identity(self) -> dict[str, tuple[Account, ...]]:
@@ -411,13 +461,12 @@ class RecordIndex:
     def control_for(self, identity_id: str, rule_id: str) -> MitigatingControl | None:
         """The identity's mitigating control for a SoD rule, whatever its dates.
 
-        There is at most one control per (identity, rule) (SPEC §6.2); a view with two is
-        contradictory and is rejected.
+        There is at most one control per (identity, rule) (SPEC §6.2). A view with two for any
+        pair is rejected by ``check_controls``, which ``check_complete`` runs up front and every
+        lookup runs otherwise.
         """
+        self.check_controls()
         found = self._controls_by_pair.get((identity_id, rule_id), ())
-        if len(found) > 1:
-            ids = ", ".join(c.id for c in found)
-            raise OracleInputError(f"{identity_id} has several controls for {rule_id}: {ids}")
         return found[0] if found else None
 
 

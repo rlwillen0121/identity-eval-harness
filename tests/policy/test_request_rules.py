@@ -186,11 +186,27 @@ def test_elig_005_employment_type_not_eligible(req: CaseBuilder) -> None:
     gold = decide(req.request())
     assert gold.decision == "DENY"
     assert finding_rules(gold) == ["ELIG-005"]
+    # Both sides: the identity's type and every eligible type, since only the whole list shows
+    # the type is missing from it.
     assert claim_triples(certificate(gold, "ELIG-005")) == [
-        [("u_ben", "employment_type", "vendor")]
+        [
+            ("u_ben", "employment_type", "vendor"),
+            ("ent_req", "eligible_employment_types", "contractor"),
+            ("ent_req", "eligible_employment_types", "employee"),
+        ]
     ]
     req.set("ent_req", eligible_employment_types=("vendor",))
     assert decide(req.request()).decision == "APPROVE"
+
+
+def test_elig_005_with_no_eligible_type_cites_the_identity_alone(req: CaseBuilder) -> None:
+    """An empty eligible list has no element to cite: the identity's type is all that's left."""
+    req.set("ent_req", eligible_employment_types=())
+    gold = decide(req.request())
+    assert gold.decision == "DENY"
+    assert claim_triples(certificate(gold, "ELIG-005")) == [
+        [("u_ben", "employment_type", "employee")]
+    ]
 
 
 # ---- APPR ---------------------------------------------------------------------------------------

@@ -20,6 +20,7 @@ from identitybench.runner.dataset import (
     write_sha256sums,
 )
 from identitybench.runner.manifest import (
+    ConfigDiagnostics,
     ConfigManifest,
     CostSummary,
     Counts,
@@ -283,6 +284,17 @@ def test_dataset_info_never_records_absolute_paths(
     assert dataset_info(Path("datasets/identitybench-v1")).path == "datasets/identitybench-v1"
 
 
+def test_manifest_diagnostics_round_trip_and_default_to_none_recorded(tmp_path: Path) -> None:
+    """A manifest written before diagnostics existed still loads (with none), and recorded
+    ones survive a save."""
+    old = _manifest().model_dump(mode="json")
+    del old["diagnostics"]
+    assert RunManifest.model_validate(old).diagnostics == {}
+    diagnostics = {"cfg": ConfigDiagnostics(responses=3, cli_extra_turns=1, unknown_review_items=2)}
+    manifest = _manifest().model_copy(update={"diagnostics": diagnostics})
+    assert RunManifest.load(manifest.save(tmp_path / "m.json")).diagnostics == diagnostics
+
+
 def test_manifest_records_refresh(tmp_path: Path) -> None:
     assert _manifest().refresh is False
     manifest = _manifest().model_copy(update={"refresh": True})
@@ -331,3 +343,44 @@ def test_git_info(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert dirty is False
     (repo / "f.txt").write_text("2", encoding="utf-8")
     assert git_info(repo) == (sha, True)
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_git_info_excludes_a_runs_own_outputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Untracked run directories and the response cache aren't code edits, wherever the
+    checkout root is; anything else still is, and paths outside the checkout are ignored."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_TEMPLATE_DIR", "")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    top = tmp_path / "repo"
+    root = top / "bench"  # the benchmark lives in a subdirectory of the checkout
+    root.mkdir(parents=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(top), "-c", "commit.gpgsign=false", "-c", "core.hooksPath=", *args],
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (root / "f.txt").write_text("1", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "init")
+    outputs = [root / "results:*odd", ".cache/responses"]
+    (root / "results:*odd" / "run1").mkdir(parents=True)
+    (root / "results:*odd" / "run1" / "manifest.json").write_text("{}", encoding="utf-8")
+    (root / ".cache" / "responses" / "ab").mkdir(parents=True)
+    (root / ".cache" / "responses" / "ab" / "k.json").write_text("{}", encoding="utf-8")
+    sha, dirty = git_info(root)
+    assert sha is not None and dirty is True
+    assert git_info(root, exclude=outputs) == (sha, False)
+    assert git_info(root, exclude=[*outputs, tmp_path / "elsewhere", root]) == (sha, False)
+    (top / "notes.txt").write_text("outside bench/, still the checkout", encoding="utf-8")
+    assert git_info(root, exclude=outputs) == (sha, True)

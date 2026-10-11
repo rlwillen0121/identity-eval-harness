@@ -15,6 +15,8 @@ from identitybench.runner.config import (
     _NO_EFFORT_KINDS,  # pyright: ignore[reportPrivateUsage]
     BASELINES,
     PROVIDER_KINDS,
+    RUNNER_EXTRA_KEYS,
+    TOOL_PROTOCOLS,
     ConfigError,
     ExperimentConfig,
     ModelEntry,
@@ -734,3 +736,120 @@ def test_load_config_errors(tmp_path: Path) -> None:
         load_config(_write(tmp_path, "- just\n- a list\n"))
     with pytest.raises(ConfigError, match="invalid YAML"):
         load_config(_write(tmp_path, "name: [unclosed\n"))
+
+
+@pytest.mark.parametrize("protocol", ["native", "action"])
+def test_a_tool_protocol_override_is_kept_from_the_provider(protocol: str) -> None:
+    """``extra.tool_protocol`` is the runner's, not a constructor option: the entry exposes
+    it, the manifest's resolved config records it, and the provider's spec never sees it."""
+    entry = {
+        "provider": "openai_compatible",
+        "model": "served",
+        "base_url_env": "LOCAL_LLM_BASE_URL",
+        "cache_namespace": "deploy-1",
+        "extra": {"tool_protocol": protocol, "max_retries": 2},
+    }
+    cfg = ExperimentConfig.model_validate(_base(mode="tools", models=[entry]))
+    (model,) = cfg.models
+    assert model.tool_protocol == protocol
+    assert model.to_spec().extra == {"max_retries": 2}
+    recorded = cfg.resolved_dict()["models"][0]["extra"]
+    assert recorded == {"tool_protocol": protocol, "max_retries": 2}
+    plain = ExperimentConfig.model_validate(_base(mode="tools"))
+    assert plain.models[0].tool_protocol is None
+    unset = {"provider": "claude_cli", "model": "sonnet", "extra": {"tool_protocol": None}}
+    nulled = ExperimentConfig.model_validate(_base(models=[unset]))  # no override: any mode
+    assert nulled.models[0].tool_protocol is None and nulled.models[0].to_spec().extra == {}
+
+
+@pytest.mark.parametrize("value", ["json", "NATIVE", ["native"], 1])
+def test_a_tool_protocol_override_must_name_a_protocol(value: object) -> None:
+    entry = {"provider": "claude_cli", "model": "sonnet", "extra": {"tool_protocol": value}}
+    with pytest.raises(ValidationError, match=r"extra\.tool_protocol must be one of"):
+        ExperimentConfig.model_validate(_base(mode="tools", models=[entry]))
+
+
+def test_a_tool_protocol_override_needs_tool_use_mode() -> None:
+    entry = {"provider": "claude_cli", "model": "sonnet", "extra": {"tool_protocol": "action"}}
+    with pytest.raises(ValidationError, match="applies to mode 'tools' only"):
+        ExperimentConfig.model_validate(_base(models=[entry]))
+
+
+def test_tool_protocols_match_the_renderers() -> None:
+    from typing import get_args
+
+    from identitybench.render.tools import ToolProtocol
+
+    assert get_args(ToolProtocol) == TOOL_PROTOCOLS
+    assert frozenset({"tool_protocol"}) == RUNNER_EXTRA_KEYS
+
+
+OPENROUTER_ENTRY: dict[str, object] = {
+    "provider": "openai_compatible",
+    "model": "deepseek/deepseek-v4-pro-0813",
+    "label": "deepseek-v4-pro",
+    "base_url_env": "OPENROUTER_BASE_URL",
+}
+
+
+def test_an_openrouter_entry_is_costed_from_reported_cost_under_a_budget() -> None:
+    cfg = ExperimentConfig.model_validate(_base(models=[OPENROUTER_ENTRY], budget_usd=2))
+    (entry,) = cfg.models
+    assert entry.resolved_cost_mode == "reported" and entry.reports_cost
+    assert cfg.resolved_dict()["models"][0]["cost_mode"] == "reported"
+    assert cfg.warnings() == []
+
+
+def test_a_routing_preference_is_validated_passed_on_and_recorded(tmp_path: Path) -> None:
+    text = """\
+name: t
+dataset: datasets/x
+tasks: [requests]
+models:
+  - provider: openai_compatible
+    model: deepseek/deepseek-v4-pro-0813
+    base_url_env: OPENROUTER_BASE_URL
+    extra:
+      provider_routing: {order: [Baidu, Alibaba], allow_fallbacks: false, require_parameters: true}
+"""
+    cfg = load_config(_write(tmp_path, text))
+    routing = {"order": ["Baidu", "Alibaba"], "allow_fallbacks": False, "require_parameters": True}
+    assert cfg.models[0].to_spec(cfg.params).extra == {"provider_routing": routing}
+    assert cfg.resolved_dict()["models"][0]["extra"] == {"provider_routing": routing}
+
+
+@pytest.mark.parametrize(
+    ("routing", "message"),
+    [
+        ("Baidu", "provider_routing must be a non-empty mapping"),
+        ("{allow_fallbacks: 'false'}", "provider_routing allow_fallbacks must be true or false"),
+        ("{order: Baidu}", "provider_routing order must be a list of host names"),
+        ("{order: ['http://evil.example']}", "contains a URL"),
+    ],
+)
+def test_a_bad_routing_preference_fails_at_load(tmp_path: Path, routing: str, message: str) -> None:
+    text = (
+        "name: t\ndataset: d\ntasks: [requests]\nmodels:\n"
+        "  - {provider: openai_compatible, model: m, base_url_env: OPENROUTER_BASE_URL,\n"
+        f"     extra: {{provider_routing: {routing}}}}}\n"
+    )
+    with pytest.raises(ValidationError, match=message):
+        load_config(_write(tmp_path, text))
+
+
+def test_reported_cost_on_openai_itself_warns_under_a_budget() -> None:
+    """OpenAI's API states no per-call cost, so ``cost_mode: reported`` can't be budgeted."""
+    entry = {"provider": "openai_compatible", "model": "gpt-5", "cost_mode": "reported"}
+    cfg = ExperimentConfig.model_validate(_base(models=[entry], budget_usd=5))
+    (warning,) = cfg.warnings()
+    assert "reports no cost" in warning
+    gateway = {**entry, "label": "gw", "base_url_env": "GATEWAY_BASE_URL"}
+    assert ExperimentConfig.model_validate(_base(models=[gateway], budget_usd=5)).warnings() == []
+
+
+def test_openrouter_marked_unmetered_warns_and_metered_is_not_called_self_hosted() -> None:
+    unmetered = {**OPENROUTER_ENTRY, "cost_mode": "unmetered"}
+    (warning,) = ExperimentConfig.model_validate(_base(models=[unmetered])).warnings()
+    assert "calls a metered API" in warning
+    metered = {**OPENROUTER_ENTRY, "cost_mode": "metered"}
+    assert ExperimentConfig.model_validate(_base(models=[metered])).warnings() == []

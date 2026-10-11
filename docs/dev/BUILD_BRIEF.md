@@ -131,3 +131,35 @@ Cases are found through the manifest's dataset path and split. Responses are cac
 | `runner/run.py`, `runner/parse.py` (runner-orchestration) | `parse_response(case, response, *, schema_keys) -> ParseResult`; `async run_experiment(config, *, repo_root, runs_dir, resume=None, refresh=False, now=...) -> RunResult` |
 | `providers/baselines.py`, `probe/` (baselines) | `make_baseline(name, **kw) -> CaseAwareProvider`, `BASELINE_NAMES`; `probe.features`, `probe.shortcut.train_probe/evaluate_probe` |
 | `judge/`, `prompts/judge_rubric.md` (judge) | judge request builder, `judge_predictions(...)`, `validate_judge(...)` (kappa gate), labeling-sheet export/ingest |
+
+## Wave 3 (current)
+
+Wave 2 added case infrastructure (`tasks/common.py`, `view_builder.py`, `tiers.py`), prompt
+rendering (`render/`, `prompts/`, `tasks/ideal.py`), scoring (`scoring/*`), the run
+orchestrator (`runner/run.py`, `runner/parse.py`), baselines and the shortcut probe
+(`providers/baselines.py`, `probe/`) and the judge (`judge/`). The request, review, JML and
+variant builders (`tasks/requests.py`, `reviews.py`, `jml.py`, `adversarial.py`, `twins.py`) may
+still be finishing in another workflow: code against the signatures in the wave 2 table, import
+them lazily, and re-run integration tests before you report.
+
+### Decisions
+
+- **Worlds are not stored.** A world is fully determined by its ID, `<profile>-<seed>-<anchor
+  ISO date>` (`world.generator`), so datasets record `worlds.json` (world ID -> profile, seed,
+  anchor, sha256 of the world JSON) and anything that needs a world (tool-use mode, validate)
+  rebuilds it with `build_world` and checks the fingerprint.
+- **Private endpoints stay local.** `experiments/local/` is gitignored; committed experiment
+  files never name private hosts or private served-model names (use placeholders and env vars).
+- **Tool-use mode** (SPEC §8.6) serves facts from the rebuilt world overlaid by the case view:
+  view entities win, and for identities in the view their access records come only from the
+  view, so twins' edits and deletions hold. Native tools for providers that have them; a JSON
+  action protocol for CLI providers. 25 tool calls, then `over_budget` (INVALID).
+
+### Wave 3 module interfaces
+
+| Module (owner) | Must provide |
+|---|---|
+| `render/tools.py`, `runner/tooluse.py`, `scoring/tooluse.py` (toolmode) | `TOOL_SPECS`, `ToolEnvironment(case, world)`, `WorldStore`, `build_tool_request(...)`; `async run_tool_case(...) -> (ModelResponse, ToolTrace)`; tool metrics in `ConfigScores` |
+| `report/*` (report) | `write_markdown_report(runs, out_dir)`, `write_html_report(runs, out_dir)`, `svg` chart functions, `leaderboard_table(runs)`, `update_readme(path, table)` |
+| `cli.py`, `envfile.py`, `audit.py`, `experiments/` (cli) | the `identitybench` commands of SPEC §16; `.env` loading; blind audit sheets |
+| `tasks/generate.py`, `tasks/validate.py`, `tasks/release.py` (dataset) | `DatasetSpec`, `generate_dataset(spec, out_dir, *, builders=None) -> DatasetInfo`, `validate_dataset(dataset_dir, *, probe=True, double_build=False) -> ValidationReport` |

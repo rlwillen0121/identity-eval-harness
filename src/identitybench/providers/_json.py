@@ -9,7 +9,7 @@ wrote (bare, inside a Markdown code fence, or surrounded by prose) and never edi
 make it parse. Anything that doesn't contain a complete, valid object yields ``None`` and is
 scored INVALID.
 
-Four rules decide *which* object when a reply holds several:
+Five rules decide *which* object when a reply holds several:
 
 - **Reasoning is not output.** ``<think>``/``<thinking>`` spans are removed first (open-weight
   reasoning models served without a reasoning parser put them in the content, sometimes with
@@ -26,6 +26,14 @@ Four rules decide *which* object when a reply holds several:
   ``required``), the last object holding all of them wins, so a small object a model adds after
   its answer (``Note: see {"rule": "LIFE-001"}``) doesn't turn a valid answer INVALID. Without
   such an object the last object wins as before.
+- **A later answer attempt is never passed over** (schema-aware extraction). Given
+  ``schema_keys`` (the schema's top-level property names), the last object that shares at
+  least one of them wins, whether or not it is complete; objects sharing none, like the aside
+  above, are skipped. The last complete object shares them too, so this keeps the previous
+  rule's rescue of an answer followed by an aside, but an incomplete answer-like object after
+  a complete one (a final answer that lost its ``decision``, a schema echo after a draft) is
+  chosen and fails validation (INVALID) instead of letting the earlier draft or example be
+  scored as the model's decision. With no object sharing a key, the last object wins.
 """
 
 from __future__ import annotations
@@ -165,7 +173,10 @@ def _blank_code_fences(text: str) -> str:
 
 
 def extract_json_object(
-    text: str | None, required_keys: Collection[str] | None = None
+    text: str | None,
+    required_keys: Collection[str] | None = None,
+    *,
+    schema_keys: Collection[str] | None = None,
 ) -> dict[str, Any] | None:
     """Return the JSON object in ``text``, or ``None`` if there isn't a valid one.
 
@@ -177,14 +188,16 @@ def extract_json_object(
     2. the same, after removing reasoning spans (``strip_reasoning``), which also applies to
        the last step;
     3. among the complete top-level objects anywhere in the text outside code blocks in other
-       languages (bare, in prose or in a ``json``/untagged fence), the last one that has every
-       key in ``required_keys``, or the last one if none does (or no keys are given).
+       languages (bare, in prose or in a ``json``/untagged fence): with ``schema_keys``, the
+       last one sharing at least one of them or ``required_keys``; otherwise the last one that
+       has every key in ``required_keys``; in both cases the last object when none qualifies
+       (or no keys are given).
 
     Arrays and scalars are never returned: every task schema's root is an object. Nesting too
     deep to decode makes the reply unscorable (``None``).
     """
-    if isinstance(required_keys, str):
-        raise TypeError("required_keys must be a collection of key names, not one string")
+    if isinstance(required_keys, str) or isinstance(schema_keys, str):
+        raise TypeError("key arguments must be collections of key names, not one string")
     if not text:
         return None
     stripped = text.strip().lstrip("﻿").strip()
@@ -205,7 +218,12 @@ def extract_json_object(
         return None
     if not objects:
         return None
-    if required_keys:
+    if schema_keys is not None:
+        answer_like = frozenset(schema_keys) | frozenset(required_keys or ())
+        for value in reversed(objects):
+            if answer_like & value.keys():
+                return value
+    elif required_keys:
         required = frozenset(required_keys)
         for value in reversed(objects):
             if required <= value.keys():

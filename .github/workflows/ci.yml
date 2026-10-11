@@ -1,0 +1,73 @@
+# Lint, type-check and test on every push and pull request (SPEC §17.3). No secrets and no
+# network calls in tests: the live provider tests skip unless IDENTITYBENCH_LIVE=1, and the
+# end-to-end run (tests/e2e) goes through baselines and the replay provider only.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IDENTITYBENCH_LIVE: "0"
+  UV_FROZEN: "1"
+
+jobs:
+  test:
+    name: ruff, pyright, pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check
+
+      - name: Ruff format
+        run: uv run ruff format --check
+
+      - name: Pyright
+        run: uv run pyright
+
+      - name: Pytest
+        run: uv run pytest -p no:cacheprovider -q
+
+  dataset:
+    name: validate committed dataset
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # Schemas, input contracts, oracle re-run, checksums, balance and the shortcut probe,
+      # plus a rebuild from the recorded spec that must match byte for byte (SPEC §9.3).
+      # Skipped until the dataset is committed.
+      - name: Validate and double-build
+        run: |
+          if [ -d datasets/identitybench-v1 ]; then
+            uv run identitybench validate datasets/identitybench-v1 --double-build
+          else
+            echo "datasets/identitybench-v1 is not committed yet; nothing to validate"
+          fi

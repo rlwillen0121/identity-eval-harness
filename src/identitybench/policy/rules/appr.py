@@ -149,10 +149,15 @@ class InvalidBreakGlass(RequestRule):
 class BreakGlassCap(RequestRule):
     """APPR-004: a valid break-glass grant lasts at most 1 day.
 
-    Cap: 1 day. Claims: everything that makes the request valid break-glass, with both sides of
-    each comparison: ``request.is_break_glass``, ``request.ticket_ref``, the ticket's ``type`` and
-    ``status``, its ``assignee_id`` with ``request.beneficiary_id``, and the ``related_app_ids``
-    element naming the entitlement's application with ``entitlement.app_id``.
+    Cap: 1 day. Claims: everything that makes the request valid break-glass:
+    ``request.is_break_glass``, ``request.ticket_ref``, the ticket's ``type`` and ``status``, its
+    ``assignee_id``, and the ``related_app_ids`` element naming the entitlement's application.
+    Two of those are comparisons with the request, so the certificate cites both sides of each
+    (the shared recipe in ``rules/base.py``, as APPR-003 does for a failed check):
+    ``request.beneficiary_id`` beside the ticket's ``assignee_id``, and ``entitlement.app_id``
+    beside the matching ``related_app_ids`` element. The ticket's side alone would show whom and
+    which application the incident covers, but not that they are this request's beneficiary
+    and application.
 
     Input contract: the same facts as APPR-003, which decides validity.
     """
