@@ -67,7 +67,7 @@ RULES: dict[str, Rule] = {}
 """Registered rule instances, keyed by ID."""
 
 
-def register[R: type[Rule]](cls: R) -> R:
+def register[R: Rule](cls: type[R]) -> type[R]:
     """Class decorator: instantiate and register a rule. Rejects unknown or duplicate IDs."""
     if cls.id not in ALL_RULE_IDS:
         raise ValueError(f"unknown rule id {cls.id!r}")
