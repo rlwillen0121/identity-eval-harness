@@ -338,8 +338,9 @@ def test_probe_passes_when_labels_follow_a_rule_input_only() -> None:
 def test_probe_passes_when_labels_follow_role_kind_only() -> None:
     """Labels set by HYG-001 alone through role kind (dormant business memberships revoked,
     birthright ones exempt) are policy too. Business and birthright roles differ in expansion
-    size, usage records and description length, as in generated worlds, so a feature reaching
-    through the role would find the label; membership items read none of it."""
+    size and usage records, as in generated worlds, and in description length as a worst case,
+    so a feature reaching through the role would find the label; membership items read none of
+    it."""
     probe = train_probe(role_kind_campaigns("dev", 16, Split.dev))
     report = evaluate_probe(probe, role_kind_campaigns("t", 6, Split.test))[Task.access_review]
     assert report.n == 60

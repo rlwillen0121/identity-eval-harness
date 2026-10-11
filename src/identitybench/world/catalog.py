@@ -11,12 +11,19 @@ entities sized for a profile:
   profile's entitlement target. Regional and UAT copies leave out the base app's SoD-function
   entitlements, so every SoD side stays one to three explicit entitlements without leaving
   lookalike copies (a SOX-scoped regional "Payroll Run Approver") off the rule's side.
+- **Descriptions.** Worded per world by ``descriptions`` from the catalog's hand-written
+  sentences and module phrases, with a length drawn independently of every attribute, so
+  catalog text neither tracks policy nor names an entitlement across worlds (SPEC §9.4). The
+  wording draws from its own stream, seeded once from the world's, after the apps and
+  entitlements are drawn.
 - **Roles.** Hand-written roles for the profile's tier, a few sampled module view entitlements
   in department birthright roles, derived contractor/intern and vendor variants of department
   birthright roles, and (enterprise) regional birthright roles and per-app business roles.
+  Sampled birthright access is never critical: critical access is always requested.
 
 The result is checked before it is returned: SoD sides are non-empty and small, role nesting
-is acyclic and at most three deep, and no birthright combination is ineligible or SoD-conflicted.
+is acyclic and at most three deep, and no birthright combination is ineligible, SoD-conflicted
+or critical.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from identitybench.world.checks import (
     sod_problems,
 )
 from identitybench.world.departments import DEPARTMENTS, Department
+from identitybench.world.descriptions import Wording, describe_catalog
 from identitybench.world.eligibility import ineligibility
 from identitybench.world.entities import (
     RISK_ORDER,
@@ -82,11 +90,11 @@ _CLASS_ORDER: dict[DataClassification, int] = {
 }
 _RISKS: tuple[RiskTier, ...] = (RiskTier.low, RiskTier.medium, RiskTier.high, RiskTier.critical)
 
-_ACTIONS: dict[str, tuple[Privilege, str, str]] = {
-    "view": (Privilege.read, "Viewer", "Read-only access to {phrase} in {app}."),
-    "edit": (Privilege.write, "Editor", "Create, update and delete {phrase} in {app}."),
-    "approve": (Privilege.write, "Approver", "Approve pending changes to {phrase} in {app}."),
-    "export": (Privilege.read, "Exporter", "Export {phrase} from {app} to CSV files."),
+_ACTIONS: dict[str, tuple[Privilege, str]] = {
+    "view": (Privilege.read, "Viewer"),
+    "edit": (Privilege.write, "Editor"),
+    "approve": (Privilege.write, "Approver"),
+    "export": (Privilege.read, "Exporter"),
 }
 _SMALL_WORDS = frozenset({"of", "and", "to", "for", "the", "a", "in", "on"})
 
@@ -160,7 +168,11 @@ def profile_departments(profile: OrgProfile) -> tuple[Department, ...]:
 def build_catalog(profile: OrgProfile, rng: random.Random) -> Catalog:
     """Build and validate the app, entitlement and role catalog for ``profile``."""
     departments = profile_departments(profile)
-    apps, entitlements = _build_apps(profile, rng)
+    apps, entitlements, wordings = _build_apps(profile, rng)
+    app_names = {app_id: app.name for app_id, app in apps.items()}
+    entitlements = describe_catalog(
+        entitlements, wordings, app_names, random.Random(rng.getrandbits(64))
+    )
     sod = resolve_sod(entitlements)
     roles, audiences = _build_roles(profile, rng, departments, apps, entitlements)
     problems = [
@@ -208,7 +220,9 @@ def resolve_sod(entitlements: dict[str, Entitlement]) -> tuple[SodRuleSides, ...
 
 def _build_apps(
     profile: OrgProfile, rng: random.Random
-) -> tuple[dict[str, AppDef], dict[str, Entitlement]]:
+) -> tuple[dict[str, AppDef], dict[str, Entitlement], dict[str, Wording]]:
+    """The profile's apps and entitlements (descriptions still blank) and what each
+    entitlement does, for ``descriptions`` to word."""
     base_specs = [spec for spec in APP_SPECS if spec.tier <= profile.tier]
     variants = [(spec, variant) for spec in base_specs for variant in spec.variants]
     extra = profile.apps - len(base_specs)
@@ -224,25 +238,30 @@ def _build_apps(
 
     apps: dict[str, AppDef] = {}
     entitlements: dict[str, Entitlement] = {}
+    wordings: dict[str, Wording] = {}
     base_ents: dict[str, list[Entitlement]] = {}
     for spec in base_specs:
         app = _base_app(spec)
-        ents = [
-            _core_entitlement(e, spec, app.id)
-            for e in spec.entitlements
-            if e.min_tier <= profile.tier
-        ]
+        core = [e for e in spec.entitlements if e.min_tier <= profile.tier]
+        ents = [_core_entitlement(e, spec, app.id) for e in core]
+        wordings.update({e.id: Wording(detail=e.description) for e in core})
         picked = sorted(rng.sample(range(len(spec.modules)), module_counts[spec.key]))
-        ents += _module_entitlements(spec, app, picked, profile.module_actions)
+        modules = _module_entitlements(spec, app, picked, profile.module_actions)
+        for ent, wording in modules:
+            ents.append(ent)
+            wordings[ent.id] = wording
         apps[app.id] = app
         base_ents[spec.key] = ents
         _add_all(entitlements, ents)
     for spec, variant in chosen_variants:
         app = _variant_app(spec, variant)
         apps[app.id] = app
-        copied = [e for e in base_ents[spec.key] if not _on_sod_side(e)]
-        _add_all(entitlements, [_variant_ent(e, variant, app.id) for e in copied])
-    return apps, entitlements
+        for base in base_ents[spec.key]:
+            if not _on_sod_side(base):
+                copy = _variant_ent(base, variant, app.id)
+                _add_all(entitlements, [copy])
+                wordings[copy.id] = wordings[base.id]
+    return apps, entitlements, wordings
 
 
 def _on_sod_side(ent: Entitlement | EntSpec) -> bool:
@@ -320,7 +339,7 @@ def _core_entitlement(spec: EntSpec, app: AppSpec, app_id: str) -> Entitlement:
         id=spec.id,
         app_id=app_id,
         name=spec.name,
-        description=spec.description,
+        description="",
         privilege=spec.privilege,
         privileged=spec.privileged,
         risk_tier=spec.risk or app.risk,
@@ -347,13 +366,14 @@ def _title_case(phrase: str) -> str:
 
 def _module_entitlements(
     spec: AppSpec, app: AppDef, picked: list[int], actions: tuple[str, ...]
-) -> list[Entitlement]:
-    """Generated entitlements for the picked modules: one per (module, action)."""
-    result: list[Entitlement] = []
+) -> list[tuple[Entitlement, Wording]]:
+    """Generated entitlements for the picked modules, one per (module, action), each with the
+    action and module noun phrase its description is worded from."""
+    result: list[tuple[Entitlement, Wording]] = []
     for index in picked:
         slug, phrase = spec.modules[index]
         for action in actions:
-            privilege, label, template = _ACTIONS[action]
+            privilege, label = _ACTIONS[action]
             risk = spec.risk
             eligible = spec.eligible
             max_days: int | None = None
@@ -365,22 +385,21 @@ def _module_entitlements(
                 risk = max_risk([risk, RiskTier.high if sensitive else RiskTier.medium])
                 eligible = tuple(t for t in spec.eligible if t in EMP_CON)
                 max_days = 30
-            result.append(
-                Entitlement(
-                    id=f"ent_{spec.prefix}_{slug}_{action}",
-                    app_id=app.id,
-                    name=f"{_title_case(phrase)} {label}",
-                    description=template.format(phrase=phrase, app=spec.name),
-                    privilege=privilege,
-                    privileged=action == "edit" and spec.privileged_writes,
-                    risk_tier=risk,
-                    data_classification=spec.classification,
-                    requestable=True,
-                    eligible_employment_types=eligible,
-                    max_duration_days=max_days,
-                    functions=(f"{spec.prefix}.{slug}.{action}",),
-                )
+            ent = Entitlement(
+                id=f"ent_{spec.prefix}_{slug}_{action}",
+                app_id=app.id,
+                name=f"{_title_case(phrase)} {label}",
+                description="",
+                privilege=privilege,
+                privileged=action == "edit" and spec.privileged_writes,
+                risk_tier=risk,
+                data_classification=spec.classification,
+                requestable=True,
+                eligible_employment_types=eligible,
+                max_duration_days=max_days,
+                functions=(f"{spec.prefix}.{slug}.{action}",),
             )
+            result.append((ent, Wording(action=action, object=phrase)))
     return result
 
 
@@ -434,7 +453,6 @@ def _variant_ent(ent: Entitlement, variant: str, app_id: str) -> Entitlement:
                 "id": f"{ent.id}_uat",
                 "app_id": app_id,
                 "name": f"{ent.name} (UAT)",
-                "description": f"{ent.description} Scope: UAT (non-production) environment.",
                 "risk_tier": _lower_risk(ent.risk_tier),
                 "data_classification": _cap_classification(ent.data_classification),
             }
@@ -445,7 +463,6 @@ def _variant_ent(ent: Entitlement, variant: str, app_id: str) -> Entitlement:
             "id": f"{ent.id}_{variant}",
             "app_id": app_id,
             "name": f"{ent.name} ({region})",
-            "description": f"{ent.description} Scope: {region} regional instance.",
         }
     )
 
@@ -539,6 +556,12 @@ def _bundleable(ent: Entitlement, privilege: Privilege) -> bool:
     )
 
 
+def _birthright_grade(ent: Entitlement) -> bool:
+    """Read access fit for a generated birthright role: bundleable and not critical (a critical
+    application's module views are requested, never conferred by HR attributes)."""
+    return _bundleable(ent, Privilege.read) and ent.risk_tier is not RiskTier.critical
+
+
 def _add_birthright_extras(
     roles: dict[str, Role],
     specs: list[RoleSpec],
@@ -557,7 +580,7 @@ def _add_birthright_extras(
         candidates = sorted(
             e.id
             for e in entitlements.values()
-            if _bundleable(e, Privilege.read)
+            if _birthright_grade(e)
             and apps[e.app_id].region_restriction is None
             and any(apps[e.app_id].used_by(d) for d in s.departments)
             and EVERYONE not in apps[e.app_id].user_depts
@@ -642,7 +665,7 @@ def _add_regional_roles(
                 for app in apps.values()
                 if app.region_restriction == region and app.used_by(dept.name)
                 for ent in by_app[app.id]
-                if _bundleable(ent, Privilege.read) and _clean_for(ent, app, EMP, (region,))
+                if _birthright_grade(ent) and _clean_for(ent, app, EMP, (region,))
             )
             if not candidates:
                 continue

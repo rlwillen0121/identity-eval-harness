@@ -106,11 +106,11 @@ class ChainCase:
         return chain_world().identities[identity_id].title
 
 
-def chain_trace(case: Case, world: World, *, base: Case | None = None) -> ToolTrace:
+def chain_trace(case: Case, world: World) -> ToolTrace:
     """The trace of one ``get_manager_chain`` call on the request's beneficiary."""
     request = case.view.request
     assert request is not None
-    env = ToolEnvironment(case, world, base=base)
+    env = ToolEnvironment(case, world)
     env.call("get_manager_chain", {"identity_id": request.beneficiary_id})
     return ToolTrace(
         calls=1,

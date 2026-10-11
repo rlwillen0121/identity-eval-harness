@@ -162,8 +162,11 @@ def selective_spec(
     ``war`` and ``correct_automation``. The WAR target is a rule labeled at its right end with
     the SVG fallback's text (``svg.war_target_label``), so the line reads without its tooltip,
     and the operating point a larger orange mark; ``operating`` also carries ``label`` (drawn
-    beside it: certified or empirical), ``status`` (in its tooltip) and ``bound`` (the exact
-    WAR upper bound, drawn as a dashed rule up from the point, or None)."""
+    beside it: certified or empirical), ``status`` (in its tooltip), ``bound`` (the exact
+    WAR upper bound, drawn as a dashed rule up from the point, or None) and ``bound_text`` (that
+    bound as the status prints it against the target, for the rule's tooltip: a d3 format
+    can't, since the precision that keeps a 2.004% bound from reading as a 2.0% target depends
+    on both numbers)."""
     tooltip = [
         {"field": "threshold", "title": "Threshold", "format": ".3f"},
         {"field": "coverage", "title": "Coverage", "format": ".1%"},
@@ -229,7 +232,7 @@ def selective_spec(
                         "y": y,
                         "y2": {"field": "bound"},
                         "tooltip": [
-                            {"field": "bound", "title": "Exact WAR upper bound", "format": ".1%"},
+                            {"field": "bound_text", "title": "Exact WAR upper bound"},
                             status,
                         ],
                     },

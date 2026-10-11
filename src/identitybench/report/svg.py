@@ -757,7 +757,7 @@ def selective_risk_svg(
         WIDTH,
         height,
         title,
-        f"Selective-risk curve: WAR against coverage at {len(defined)} thresholds"
+        f"Selective-risk curve: WAR against coverage at {fmt.units(len(defined), 'threshold')}"
         + (f"; {war_target_label(target)}" if target is not None else "")
         + described_point
         + ". "

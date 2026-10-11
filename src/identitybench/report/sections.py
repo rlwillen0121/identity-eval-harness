@@ -1560,12 +1560,15 @@ def _judge_population(judge: JudgeSummary, names: Mapping[str, str]) -> list[Blo
         )
     ]
     if selection.n_excluded_baselines:
+        # The headline already states the count (it is the only judge text an unvalidated run
+        # shows), so the note only explains it. It names no table: baselines do get rows in
+        # the per-configuration table below, and a campaign of baselines alone has no score
+        # tables at all.
         blocks.append(
             Text(
-                f"{fmt.units(selection.n_excluded_baselines, 'baseline rationale')} left out of "
-                "judging: SPEC §14 baselines answer with templates, not model explanations, so "
-                "their leaderboard rows have no judge scores. They are not counted among the "
-                "judgeable rationales above.",
+                "SPEC §14 baselines answer with templates, not model explanations, so the "
+                "baseline rationales the headline counts as left out have no judge scores and "
+                "are not among the judgeable rationales above.",
                 "note",
             )
         )
@@ -1705,7 +1708,11 @@ def _judge_blocks(run: ReportRun, refs: Sequence[ConfigRef]) -> list[Block]:
             "panel); withheld, those left out of the means.",
         )
 
-    if gate.leaderboard:
+    if not judge.by_correctness:
+        # Header-only tables with an "interval (level not recorded)" caption would read as a
+        # broken report; a campaign that judged nothing (baselines alone) says so instead.
+        blocks.append(Text("No rationale has a judge score, so there are no means to report."))
+    if gate.leaderboard and judge.by_correctness:
         blocks.append(
             table(
                 gate.leaderboard,
@@ -1713,7 +1720,7 @@ def _judge_blocks(run: ReportRun, refs: Sequence[ConfigRef]) -> list[Block]:
                 "correct and incorrect decisions reported separately (SPEC §13.2).",
             )
         )
-    if gate.experimental:
+    if gate.experimental and judge.by_correctness:
         blocks.append(
             table(
                 gate.experimental,

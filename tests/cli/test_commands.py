@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import errno
 import json
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -266,7 +267,13 @@ def test_validate_passes_flags_and_prints_the_report(
     result = cli("validate", "ok", "--no-probe", "--double-build", "--json", "out/report.json")
     assert result.exit_code == 0, result.output
     assert validations == [
-        {"dataset": Path("ok"), "probe": False, "double_build": True, "held_out": None}
+        {
+            "dataset": Path("ok"),
+            "probe": False,
+            "double_build": True,
+            "held_out": None,
+            "probe_file": True,
+        }
     ]
     assert "0 errors, 0 warnings" in result.stdout
     assert json.loads((repo / "out" / "report.json").read_text())["dataset"] == "toy"
@@ -295,25 +302,41 @@ def test_validate_takes_a_fresh_releases_held_out_file(
 def test_validate_writes_the_probe_file_only_for_a_passing_dataset(
     cli: Invoke, repo: Path, validations: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    written: list[Path] = []
+    written: list[tuple[Path, bool]] = []
+    current: set[Path] = set()
 
-    def write(dataset_dir: Path, report: ValidationReport) -> Path:
-        written.append(Path(dataset_dir))
+    def write(dataset_dir: Path, report: ValidationReport, *, replace: bool = False) -> Path:
+        written.append((Path(dataset_dir), replace))
         return Path(dataset_dir) / "PROBE.json"
 
     monkeypatch.setattr("identitybench.tasks.validate.write_probe_file", write)
+    monkeypatch.setattr(
+        "identitybench.tasks.validate.probe_file_current",
+        lambda dataset_dir, report: Path(dataset_dir) in current,
+    )
     for name in ("ok", "warn", "error"):
         (repo / name).mkdir()
     ok = cli("validate", "ok", "--write-probe")
     assert ok.exit_code == 0, ok.output
-    assert written == [Path("ok")] and "wrote ok/PROBE.json and re-sealed SHA256SUMS" in ok.stderr
+    assert written == [(Path("ok"), False)]
+    assert "wrote ok/PROBE.json and re-sealed SHA256SUMS" in ok.stderr
+    # PROBE.json is about to be written, so its absence mustn't block the write under --strict.
+    assert validations[-1]["probe_file"] is False
+    forced = cli("validate", "ok", "--write-probe", "--force")
+    assert forced.exit_code == 0, forced.output
+    assert written[-1] == (Path("ok"), True)
+    current.add(Path("ok"))
+    again = cli("validate", "ok", "--write-probe")
+    assert again.exit_code == 0, again.output
+    assert "ok/PROBE.json is current; nothing written" in again.stderr
     failed = cli("validate", "error", "--write-probe")
     assert failed.exit_code == ExitCode.FAILED
     assert "PROBE.json not written" in failed.stderr
     strict = cli("validate", "warn", "--write-probe", "--strict")
     assert strict.exit_code == ExitCode.FAILED
-    assert written == [Path("ok")]
+    assert len(written) == 2
     assert cli("validate", "ok", "--write-probe", "--no-probe").exit_code == ExitCode.USAGE
+    assert cli("validate", "ok", "--force").exit_code == ExitCode.USAGE
 
 
 def test_validate_runs_on_the_toy_dataset(cli: Invoke, repo: Path) -> None:
@@ -350,6 +373,7 @@ def run_result(**overrides: Any) -> SimpleNamespace:
     fields: dict[str, Any] = {
         "run_id": "20261010T000000Z-e",
         "run_dir": Path("runs/20261010T000000Z-e"),
+        "manifest": None,  # the faked run fills in its sample (see ``runs``)
         "written": 3,
         "resumed": 0,
         "skipped": (),
@@ -381,7 +405,9 @@ def prediction(config_id: str, case_id: str, reason: str | None = None) -> Predi
 @pytest.fixture
 def runs(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Replace ``run_experiment``; set ``runs["result"]`` or ``runs["raise"]`` to steer it, and
-    ``runs["predictions"]`` for what the run directory's ``predictions.jsonl`` holds."""
+    ``runs["predictions"]`` for what the run directory's ``predictions.jsonl`` holds. A result
+    without a manifest gets one whose sample is the run's, as the runner picks it: the
+    ``--sample`` given, else the config's."""
     state: dict[str, Any] = {"result": run_result(), "predictions": []}
 
     async def fake_run(config: Any, **kwargs: Any) -> SimpleNamespace:
@@ -396,7 +422,13 @@ def runs(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         run_dir.mkdir(parents=True, exist_ok=True)
         lines = (p.model_dump_json() + "\n" for p in state["predictions"])
         (run_dir / "predictions.jsonl").write_text("".join(lines), encoding="utf-8")
-        return state["result"]
+        result = SimpleNamespace(**vars(state["result"]))
+        if result.manifest is None:
+            override = kwargs["sample_override"]
+            result.manifest = SimpleNamespace(
+                sample=override if override is not None else config.sample
+            )
+        return result
 
     monkeypatch.setattr("identitybench.runner.run.run_experiment", fake_run)
     return state
@@ -468,7 +500,13 @@ def test_run_budget_stop_exits_incomplete_with_a_resume_hint(
     assert result.exit_code == ExitCode.INCOMPLETE
     assert result.stdout.strip() == "20261010T000000Z-e"
     assert "left 3 cells unanswered" in result.stderr
-    assert "--resume 20261010T000000Z-e" in result.stderr
+    assert f"resume with: identitybench run {experiment} --resume 20261010T000000Z-e\n" in (
+        result.stderr
+    )
+    # The advice names the runs directory given, without which the resume wouldn't find the run.
+    elsewhere = cli("run", experiment, "--runs-dir", "my runs")
+    assert elsewhere.exit_code == ExitCode.INCOMPLETE
+    assert "--resume 20261010T000000Z-e --runs-dir 'my runs'\n" in elsewhere.stderr
 
 
 def test_run_warns_about_failed_calls_and_fails_a_config_that_never_answered(
@@ -491,14 +529,191 @@ def test_run_warns_about_failed_calls_and_fails_a_config_that_never_answered(
     assert lines[0] == "warning: cli: 1 of 2 calls failed: binary not found"
     assert lines[1] == f"warning: local: 4 of 4 calls failed: {unset}; timed out after 600 s"
     assert lines[2].startswith("error: every call of local failed (see the warnings above)")
+    # "local" is no model of the experiment, so nothing says its endpoint isn't set up.
     assert lines[2].endswith(
-        f"fix the provider and resume with: identitybench run {experiment} --resume "
-        "20261010T000000Z-e (a resume retries every failed call and keeps every answer); if "
-        "the fix changes the endpoint itself (setting an unset base-URL variable, installing a "
-        "missing CLI), the resume is refused: start a new run instead, which replays every "
-        "cached answer at no cost"
+        f"; fix the provider, then resume with: identitybench run {experiment} --resume "
+        f"20261010T000000Z-e {RESUME_NOTE}"
     )
     assert len(lines) == 3
+
+
+RESUME_NOTE = (
+    "(a resume retries every failed call and keeps every answer; a fix that edits the "
+    "experiment or changes a CLI's version needs a new run instead)"
+)
+CACHE_NOTE = "(the response cache replays every call already answered, at no cost)"
+
+
+CLI_EXPERIMENT = """\
+name: e
+dataset: datasets/identitybench-v1
+tasks: [requests]
+prompts: [baseline, checklist]
+models:
+  - provider: claude_cli
+    model: m
+    label: cli
+    extra: {{binary: {binary}}}
+"""
+
+
+@pytest.mark.parametrize("installed", [False, True])
+def test_a_dead_cli_provider_calls_for_a_new_run_only_when_its_cli_is_missing(
+    cli: Invoke, repo: Path, runs: dict[str, Any], installed: bool
+) -> None:
+    """A missing CLI is part of the endpoint identity (its version probe answers
+    ``not-installed``), so installing it makes a resume impossible; a CLI that is there but
+    fails (not logged in, say) leaves the identity alone. No binary is run either way."""
+    binary = sys.executable if installed else "ib-test-no-such-cli"
+    experiment = repo / "cli.yaml"
+    experiment.write_text(CLI_EXPERIMENT.format(binary=json.dumps(binary)), encoding="utf-8")
+    dead = ("cli__baseline__context", "cli__checklist__context")
+    runs["predictions"] = [prediction(config_id, "c1", "failed") for config_id in dead]
+    result = cli("--quiet", "run", experiment, "--sample", "0.5", "--runs-dir", "elsewhere")
+    assert result.exit_code == ExitCode.INPUT
+    [message] = [line for line in result.stderr.splitlines() if line.startswith("error: ")]
+    assert message.startswith(f"error: every call of {', '.join(dead)} failed")
+    if installed:
+        assert message.endswith(
+            f"fix the provider, then resume with: identitybench run {experiment} --resume "
+            f"20261010T000000Z-e --runs-dir elsewhere {RESUME_NOTE}"
+        )
+        return
+    gap = "its CLI 'ib-test-no-such-cli' isn't installed (not found on PATH)"
+    assert f"an endpoint isn't set up ({dead[0]}: {gap}; {dead[1]}: {gap})" in message
+    # A new run repeats the sample (a resume would keep the run's own) and the runs directory.
+    assert message.endswith(
+        f"start a new run with: identitybench run {experiment} --sample 0.5 --runs-dir "
+        f"elsewhere {CACHE_NOTE}"
+    )
+
+
+@pytest.mark.parametrize("present", [True, False])
+@pytest.mark.parametrize("form", ["repo-relative", "home"])
+def test_a_cli_binary_path_is_checked_where_the_runner_runs_it(
+    cli: Invoke,
+    repo: Path,
+    runs: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    form: str,
+    present: bool,
+) -> None:
+    """A binary with a directory part is resolved as the runner resolves it: ``~`` expanded,
+    a relative path against the repo root, not the working directory (here a subdirectory,
+    where ``tools/cli`` doesn't exist). One that is there is set up, so a resume finishes the
+    run; one that isn't calls for a new run, worded as a path rather than a PATH lookup."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    binary, where = (
+        ("tools/cli", repo / "tools")
+        if form == "repo-relative"
+        else (
+            "~/bin/cli",
+            home / "bin",
+        )
+    )
+    if present:
+        where.mkdir(parents=True)
+        (where / "cli").write_text("#!/bin/sh\n", encoding="utf-8")
+        (where / "cli").chmod(0o755)
+    experiment = repo / "cli.yaml"
+    experiment.write_text(CLI_EXPERIMENT.format(binary=json.dumps(binary)), encoding="utf-8")
+    sub = repo / "sub"
+    sub.mkdir()
+    monkeypatch.chdir(sub)
+    dead = ("cli__baseline__context", "cli__checklist__context")
+    runs["predictions"] = [prediction(config_id, "c1", "failed") for config_id in dead]
+    result = cli("--quiet", "run", experiment)
+    assert result.exit_code == ExitCode.INPUT
+    [message] = [line for line in result.stderr.splitlines() if line.startswith("error: ")]
+    if present:
+        assert message.endswith(
+            f"resume with: identitybench run {experiment} --resume 20261010T000000Z-e {RESUME_NOTE}"
+        )
+        return
+    gap = f"its CLI {str(where / 'cli')!r} doesn't exist or isn't executable"
+    assert f"an endpoint isn't set up ({dead[0]}: {gap}; {dead[1]}: {gap})" in message
+    assert message.endswith(f"start a new run with: identitybench run {experiment} {CACHE_NOTE}")
+
+
+def test_a_cli_binary_that_isnt_executable_calls_for_a_new_run(
+    cli: Invoke, repo: Path, runs: dict[str, Any]
+) -> None:
+    """Its version probe answers ``unknown``, so making it executable changes the identity."""
+    (repo / "tools").mkdir()
+    (repo / "tools" / "cli").write_text("#!/bin/sh\n", encoding="utf-8")
+    (repo / "tools" / "cli").chmod(0o644)
+    experiment = repo / "cli.yaml"
+    experiment.write_text(CLI_EXPERIMENT.format(binary='"tools/cli"'), encoding="utf-8")
+    runs["predictions"] = [prediction("cli__baseline__context", "c1", "failed")]
+    result = cli("--quiet", "run", experiment)
+    assert result.exit_code == ExitCode.INPUT
+    assert "doesn't exist or isn't executable" in result.stderr
+    assert "start a new run with" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("run_sample", "configured", "expected"),
+    [
+        (0.25, None, " --sample 0.25"),
+        (30, None, " --sample 30"),
+        (1.0, 1, " --sample 1.0"),  # every case, where the file names one family
+        (1, 1.0, " --sample 1"),
+        (0.5, 0.5, ""),  # the file's own sample
+        (None, None, ""),
+    ],
+)
+def test_a_resume_that_needs_a_new_run_advises_the_runs_own_sample(
+    cli: Invoke,
+    repo: Path,
+    runs: dict[str, Any],
+    run_sample: float | None,
+    configured: float | None,
+    expected: str,
+) -> None:
+    """A plain ``--resume`` passes no ``--sample`` yet keeps the run's: the new run it is told
+    to start covers the run's cases again, from the manifest, and repeats the sample only
+    when the config file's own differs (``1`` and ``1.0`` do)."""
+    experiment = repo / "cli.yaml"
+    text = CLI_EXPERIMENT.format(binary='"ib-test-no-such-cli"')
+    if configured is not None:
+        text += f"sample: {configured!r}\n"
+    experiment.write_text(text, encoding="utf-8")
+    runs["result"] = run_result(manifest=SimpleNamespace(sample=run_sample))
+    runs["predictions"] = [prediction("cli__baseline__context", "c1", "failed")]
+    result = cli("--quiet", "run", experiment, "--resume", "20261010T000000Z-e")
+    assert result.exit_code == ExitCode.INPUT
+    assert result.stderr.rstrip().endswith(
+        f"start a new run with: identitybench run {experiment}{expected} {CACHE_NOTE}"
+    )
+
+
+def test_a_budget_stop_with_a_dead_provider_that_isnt_set_up_calls_for_a_new_run(
+    cli: Invoke, repo: Path, runs: dict[str, Any]
+) -> None:
+    """A resume would spend a session that can't fix the dead config, so the exit-4 message
+    says so and gives the new run (still exit 4: the run is incomplete)."""
+    experiment = repo / "cli.yaml"
+    experiment.write_text(CLI_EXPERIMENT.format(binary='"ib-test-no-such-cli"'), encoding="utf-8")
+    runs["result"] = run_result(skipped=("cell",) * 2, complete=False)
+    runs["predictions"] = [
+        prediction("cli__baseline__context", "c1", "failed"),
+        prediction("cli__checklist__context", "c1"),  # answered (invalid): not dead
+    ]
+    result = cli("--quiet", "run", experiment, "--sample", "0.5", "--runs-dir", "elsewhere")
+    assert result.exit_code == ExitCode.INCOMPLETE
+    [message] = [line for line in result.stderr.splitlines() if line.startswith("error: ")]
+    gap = "its CLI 'ib-test-no-such-cli' isn't installed (not found on PATH)"
+    assert message == (
+        "error: the budget stop left 2 cells unanswered, every call of cli__baseline__context "
+        f"failed, and an endpoint isn't set up (cli__baseline__context: {gap}). Setting it up "
+        "changes the endpoint identity run 20261010T000000Z-e recorded, which a resume must "
+        "match, so the run can't be resumed: set it up, raise budget_usd, then start a new "
+        f"run with: identitybench run {experiment} --sample 0.5 --runs-dir elsewhere "
+        f"{CACHE_NOTE}"
+    )
+    assert "--resume" not in message
 
 
 def test_run_with_some_failed_calls_still_succeeds(
@@ -553,6 +768,10 @@ def test_run_errors_and_interrupts(cli: Invoke, experiment: Path, runs: dict[str
     result = cli("run", experiment)
     assert result.exit_code == ExitCode.INTERRUPTED
     assert "--resume RUN_ID" in result.stderr
+    # The advice names the runs directory given, without which the resume wouldn't find the run.
+    elsewhere = cli("run", experiment, "--runs-dir", "my runs")
+    assert elsewhere.exit_code == ExitCode.INTERRUPTED
+    assert "--resume RUN_ID --runs-dir 'my runs' (the newest directory under " in (elsewhere.stderr)
 
 
 def test_run_unexpected_errors_keep_their_traceback(

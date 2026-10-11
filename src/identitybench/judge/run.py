@@ -665,8 +665,8 @@ async def judge_predictions(
     ``ValueError``.
 
     ``served`` supplies the records tool-use answers' tools returned, shown beside the view
-    (module docstring): for a tool-use run, ``scoring.served.WorldServedIndex(dataset_dir,
-    cases)`` over the run's dataset. Without it, a tool-use answer whose tools returned
+    (module docstring): for a tool-use run, ``scoring.served.WorldServedIndex(dataset_dir)``
+    over the run's dataset. Without it, a tool-use answer whose tools returned
     records outside the view raises ``ServedIndexError`` before any call.
 
     Returns per-(prediction, item, judge) scores, cross-judge averages (never from the output's

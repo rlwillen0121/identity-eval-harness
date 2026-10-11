@@ -19,9 +19,11 @@ environment.
 - **Reported cost.** A gateway that bills per call and says so in the response (OpenRouter puts
   the call's USD in ``usage.cost``) gets it recorded as ``reported_cost_usd``, so a
   ``cost_mode: reported`` entry is costed, and budgeted, from what the call actually cost. A
-  missing or non-numeric cost stays None (unknown), never 0. The upstream host that served the
-  call (OpenRouter's top-level ``provider``) goes to ``raw["upstream_provider"]``, since one
-  model name can be served by hosts that answer differently.
+  missing or non-numeric cost stays None (unknown), never 0. With BYOK (``usage.is_byok``) the
+  cost is OpenRouter's fee plus ``cost_details.upstream_inference_cost``, and ``raw["is_byok"]``
+  is set. The upstream host that served the call (OpenRouter's top-level ``provider``) goes to
+  ``raw["upstream_provider"]``, since one model name can be served by hosts that answer
+  differently and charge differently.
 - **Routing preferences** (``provider_routing``, OpenRouter's ``provider`` request object: host
   ``order``, ``allow_fallbacks``, ``require_parameters``...) go in the request body. Routing can
   change which host answers, so it is part of the endpoint identity and therefore of every
@@ -112,24 +114,65 @@ def _usage(completion: ChatCompletion) -> Usage:
     )
 
 
+def _usd(value: object) -> float | None:
+    """``value`` as a USD amount if it is a finite, non-negative number, else None.
+
+    An absent, null, string or boolean value is an unknown cost, which the budget treats as
+    such rather than as a free call. So is an integer too large for a float: the server is
+    untrusted, and a strange value must make a failed figure, not a crashed run.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    try:
+        usd = float(value)
+    except OverflowError:
+        return None
+    return usd if math.isfinite(usd) and usd >= 0 else None
+
+
+def _usage_extra(completion: ChatCompletion) -> dict[str, Any]:
+    """The non-OpenAI fields of ``usage`` (where OpenRouter puts cost and BYOK details)."""
+    usage = completion.usage
+    return (usage.model_extra if usage is not None else None) or {}
+
+
+def _is_byok(completion: ChatCompletion) -> bool:
+    """Whether the call ran on the user's own upstream key (OpenRouter's ``usage.is_byok``)."""
+    return _usage_extra(completion).get("is_byok") is True
+
+
 def _reported_cost(completion: ChatCompletion) -> float | None:
     """USD the endpoint reports for this call (OpenRouter's ``usage.cost``), or None.
 
-    Only a finite, non-negative number counts: an absent, null, string or boolean value is an
-    unknown cost, which the budget treats as such rather than as a free call.
+    With BYOK, ``cost`` is only OpenRouter's fee; the upstream host bills the user's own key
+    ``cost_details.upstream_inference_cost``, so the call's cost is the sum of the two, and
+    unknown when the upstream part is missing (counting the fee alone would let a budget
+    under-count real spend many times over).
     """
-    usage = completion.usage
-    extra = (usage.model_extra if usage is not None else None) or {}
-    cost = extra.get("cost")
-    if isinstance(cost, bool) or not isinstance(cost, int | float):
-        return None
-    return float(cost) if math.isfinite(cost) and cost >= 0 else None
+    extra = _usage_extra(completion)
+    cost = _usd(extra.get("cost"))
+    if cost is None or not _is_byok(completion):
+        return cost
+    details = extra.get("cost_details")
+    upstream = (
+        _usd(cast(dict[str, object], details).get("upstream_inference_cost"))
+        if isinstance(details, dict)
+        else None
+    )
+    return cost + upstream if upstream is not None else None
 
 
-def _upstream_provider(completion: ChatCompletion) -> str | None:
-    """The host a gateway routed the call to (OpenRouter's top-level ``provider``), if named."""
+def _gateway_raw(completion: ChatCompletion) -> dict[str, Any]:
+    """What a gateway says about how it served the call, for ``ModelResponse.raw``: the host it
+    routed to (OpenRouter's top-level ``provider``; one model name can be served by hosts that
+    answer differently) and whether the call ran on the user's own key (``is_byok``)."""
+    raw: dict[str, Any] = {}
     upstream = (completion.model_extra or {}).get("provider")
-    return upstream if isinstance(upstream, str) and upstream else None
+    if isinstance(upstream, str) and upstream:
+        raw["upstream_provider"] = upstream
+    if _is_byok(completion):
+        raw["is_byok"] = True
+    return raw
 
 
 def provider_routing_problem(value: object) -> str | None:
@@ -146,7 +189,10 @@ def provider_routing_problem(value: object) -> str | None:
     if not all(isinstance(key, str) and key for key in routing):
         return "keys must be non-empty strings"
     try:
-        json.dumps(routing, allow_nan=False)
+        # Exactly the serialisation ``OpenAICompatProvider`` hashes, so a value that passes
+        # here (say a nested mapping mixing int and str keys, which can't be sorted) can't
+        # fail later when the provider is built.
+        json.dumps(routing, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError):
         return "values must be JSON (strings, numbers, booleans, lists, mappings)"
     order = routing.get("order")
@@ -415,9 +461,9 @@ class OpenAICompatProvider:
             response.usage = _usage(completion)
         with contextlib.suppress(AttributeError, TypeError, ValueError):
             response.reported_cost_usd = _reported_cost(completion)
-            upstream = _upstream_provider(completion)
-            if upstream is not None:
-                response.raw = {**(response.raw or {}), "upstream_provider": upstream}
+            gateway = _gateway_raw(completion)
+            if gateway:
+                response.raw = {**(response.raw or {}), **gateway}
 
     def _to_response(self, completion: ChatCompletion, request: ModelRequest) -> ModelResponse:
         response = ModelResponse(
@@ -429,9 +475,8 @@ class OpenAICompatProvider:
         fingerprint = getattr(completion, "system_fingerprint", None)
         if fingerprint and response.raw is not None:
             response.raw["system_fingerprint"] = fingerprint
-        upstream = _upstream_provider(completion)
-        if upstream is not None and response.raw is not None:
-            response.raw["upstream_provider"] = upstream
+        if response.raw is not None:
+            response.raw.update(_gateway_raw(completion))
         if not completion.choices:
             response.error = redact(f"{self.kind}: response has no choices")
             return response

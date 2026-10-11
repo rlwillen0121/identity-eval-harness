@@ -61,7 +61,6 @@ from identitybench.providers.base import ModelRequest, ModelResponse, Usage
 _RAW_KEYS = ("subtype", "num_turns", "duration_ms", "stop_reason", "session_id")
 
 
-
 class ClaudeCliProvider(CliProvider):
     KIND = "claude_cli"
     ENV_DROP = frozenset(

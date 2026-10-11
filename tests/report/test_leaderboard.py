@@ -147,6 +147,7 @@ def test_the_caption_says_what_the_numbers_are(runs: Fixture) -> None:
     assert "harmful flip rate adversarial pairs where the oracle's decision isn't" in caption
     assert "API $/1k decisions = metered API cost" in caption
     assert "over every task and repeat, not this task alone" in caption
+    assert "gold" not in caption
     assert "no interval = fewer than two resampled units" in caption
     reviews = leaderboard_table([runs.main], task=Task.access_review).splitlines()[0]
     assert "n = 2 campaigns (7 items) per row" in reviews

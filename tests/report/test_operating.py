@@ -8,8 +8,13 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from identitybench.report import build_document, load_report_runs
-from identitybench.report.charts import operating_label
-from identitybench.report.common import operating_bound, operating_bound_note, operating_status
+from identitybench.report.charts import operating_label, selective_figure
+from identitybench.report.common import (
+    config_refs,
+    operating_bound,
+    operating_bound_note,
+    operating_status,
+)
 from identitybench.report.document import Figure, Group, Table
 from identitybench.schemas.enums import Task
 from identitybench.scoring.operating import OperatingPoint
@@ -169,6 +174,34 @@ def test_a_certified_operating_point_reads_certified_end_to_end(
     point = next(layer for layer in figure.vega["layer"] if layer["mark"]["type"] == "point")
     (datum,) = point["data"]["values"]
     assert datum["label"] == label and datum["status"] == expected
+    rule = next(layer for layer in figure.vega["layer"] if "y2" in layer["encoding"])
+    assert rule["data"]["values"][0]["bound_text"] == "1.98%"
+
+
+def test_the_vega_bound_tooltip_prints_the_bound_against_the_target(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The dashed rule's tooltip prints the bound as the status beside it does: at one decimal
+    a 2.004% bound would read 2.0% next to "bound above the 2.0% target"."""
+    run_dir, _ = build_certified_fixture(tmp_path_factory.mktemp("near-target"))
+    (run,) = load_report_runs([run_dir], context=False)
+    requests = run.scores.configs["model_c"].requests
+    assert requests is not None and requests.calibration is not None
+    calibration = requests.calibration
+    op = calibration.operating_point
+    assert op is not None
+    near = op.model_copy(update={"certification": certification(0, 148, 0.02004)})
+    edited = calibration.model_copy(update={"operating_point": near})
+    ref = next(r for r in config_refs([run]) if r.config_id == "model_c")
+    figure = selective_figure(ref, Task.access_request, edited, op.target_war)
+    assert figure is not None and figure.vega is not None
+    rule = next(layer for layer in figure.vega["layer"] if "y2" in layer["encoding"])
+    (datum,) = rule["data"]["values"]
+    assert datum["bound_text"] == "2.004%"
+    assert datum["status"] == "empirical: bound above the 2.0% target (CP95 ≤ 2.004%, 0/148)"
+    tooltip = rule["encoding"]["tooltip"]
+    assert {"field": "bound_text", "title": "Exact WAR upper bound"} in tooltip
+    assert not [t for t in tooltip if t["field"] == "bound"]
 
 
 def test_a_certifications_bound_note_names_its_estimand() -> None:

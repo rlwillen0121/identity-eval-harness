@@ -37,12 +37,18 @@ def usage_text(stderr: str) -> str:
 
 
 def finished_run(run_dir: Path, run_id: str = "r1") -> SimpleNamespace:
-    """What a faked ``run_experiment`` returns: a finished run whose directory exists, with an
-    empty ``predictions.jsonl`` (which ``run`` reads to report failed calls)."""
+    """What a faked ``run_experiment`` returns: a finished run over every case whose directory
+    exists, with an empty ``predictions.jsonl`` (which ``run`` reads to report failed calls)."""
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "predictions.jsonl").write_text("", encoding="utf-8")
     return SimpleNamespace(
-        run_id=run_id, run_dir=run_dir, written=0, resumed=0, skipped=(), complete=True
+        run_id=run_id,
+        run_dir=run_dir,
+        manifest=SimpleNamespace(sample=None),
+        written=0,
+        resumed=0,
+        skipped=(),
+        complete=True,
     )
 
 

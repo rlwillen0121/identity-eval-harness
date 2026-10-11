@@ -919,12 +919,15 @@ def test_an_invariance_twin_identical_to_its_base_is_an_error(dataset: Path) -> 
 
 
 def test_an_invariance_twin_that_changes_gold_is_an_error(dataset: Path) -> None:
-    twin = next(
-        c
-        for c in _cases(dataset, "twins.test.jsonl")
-        if c.variant.startswith("invariance:") and _decision(c) != "DENY"
+    """Terminating the beneficiary changes gold unless it already holds LIFE-001's DENY; which
+    twin that leaves depends on the worlds, so the first one, in either split, is edited."""
+    name, twin = next(
+        (name, c)
+        for name in ("twins.test.jsonl", "twins.dev.jsonl")
+        for c in _cases(dataset, name)
+        if c.variant.startswith("invariance:") and decide(_terminated(c), c.task) != c.gold
     )
-    _put_case(dataset, "twins.test.jsonl", _rejudged(twin, _terminated(twin)))
+    _put_case(dataset, name, _rejudged(twin, _terminated(twin)))
     report = _validate(dataset)
     assert _checks(report) == {"links"}
     assert "invariance twin's gold differs" in report.errors[0].message
@@ -1266,11 +1269,20 @@ def test_a_probe_file_is_never_replaced_silently(dataset: Path) -> None:
 def test_a_probe_file_measured_under_other_releases_stands(dataset: Path) -> None:
     """A record published under another harness or scikit-learn release that states the same
     result and frozen probe is current: an upgrade must not make ``--write-probe`` refuse (or
-    re-seal) a dataset already published. Any other difference still counts."""
+    re-seal) a dataset already published. A real older record names the old scikit-learn twice,
+    at the top level and in the frozen probe (``ProbeSpec.sklearn_version``). Any other
+    difference still counts, in the frozen probe too."""
     report = validate_dataset(dataset)
     path = write_probe_file(dataset, report)
     record = json.loads(path.read_text(encoding="utf-8"))
-    older = {**record, "identitybench_version": "0.0.1", "sklearn_version": "0.0"}
+    frozen = record[PROBE_SPEC_KEY]
+    assert frozen["sklearn_version"] == record["sklearn_version"]
+    older = {
+        **record,
+        "identitybench_version": "0.0.1",
+        "sklearn_version": "0.0",
+        PROBE_SPEC_KEY: {**frozen, "sklearn_version": "0.0"},
+    }
     path.write_text(json.dumps(older, indent=2), encoding="utf-8")
     write_sha256sums(dataset)
     published, sealed = path.read_bytes(), (dataset / SHA256SUMS).read_bytes()
@@ -1282,6 +1294,18 @@ def test_a_probe_file_measured_under_other_releases_stands(dataset: Path) -> Non
     other_gate = {**older, "max_delta_points": 4}
     path.write_text(json.dumps(other_gate), encoding="utf-8")
     assert not probe_file_current(dataset, again)
+    [first, *rest] = older[PROBE_SPEC_KEY]["tasks"]
+    other_trees = {
+        **older,
+        PROBE_SPEC_KEY: {
+            **older[PROBE_SPEC_KEY],
+            "tasks": [{**first, "model_fingerprint": "0" * 64}, *rest],
+        },
+    }
+    path.write_text(json.dumps(other_trees), encoding="utf-8")
+    assert not probe_file_current(dataset, again)
+    with pytest.raises(ProbeFileError, match="exists and would change"):
+        write_probe_file(dataset, again)
     path.write_text("[]", encoding="utf-8")  # not a record at all
     assert not probe_file_current(dataset, again)
 

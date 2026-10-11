@@ -297,6 +297,17 @@ def test_a_two_decimal_target_reads_exactly_on_the_chart() -> None:
     assert svg.war_target_label(0.02) == "WAR target 2%"
 
 
+def test_the_selective_description_counts_thresholds_in_words() -> None:
+    def desc(points: list[svg.CurvePoint]) -> str:
+        node = _parse(svg.selective_risk_svg(points, key="count", title="t")).find(f"{NS}desc")
+        assert node is not None
+        return node.text or ""
+
+    assert "WAR against coverage at 1 threshold." in desc([svg.CurvePoint(0.5, 0.1)])
+    two = desc([svg.CurvePoint(0.9, 0.2), svg.CurvePoint(0.5, 0.1)])
+    assert "WAR against coverage at 2 thresholds." in two
+
+
 def test_dense_curves_drop_their_markers() -> None:
     points = [svg.CurvePoint(i / 40, i / 400) for i in range(40)]
     root = _parse(svg.selective_risk_svg(points, key="dense", title="t"))

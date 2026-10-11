@@ -1577,15 +1577,38 @@ def _probe_record_text(root: Path, report: ValidationReport) -> str:
 
 _MEASURED_UNDER = frozenset({"identitybench_version", "sklearn_version"})
 """The ``PROBE.json`` fields naming the releases that measured the result. A published record
-that differs from a new one only there still states this dataset's probe result, as measured
-when it was published, so it stands (``probe_file_current``): replacing it would move the
-dataset fingerprint without recording any new fact, and every harness or scikit-learn upgrade
-would otherwise make ``write_probe_file`` refuse a dataset already published."""
+that differs from a new one only there (and in ``_SPEC_MEASURED_UNDER``) still states this
+dataset's probe result, as measured when it was published, so it stands
+(``probe_file_current``): replacing it would move the dataset fingerprint without recording any
+new fact, and every harness or scikit-learn upgrade would otherwise make ``write_probe_file``
+refuse a dataset already published."""
+
+_SPEC_MEASURED_UNDER = frozenset({"sklearn_version"})
+"""The fields of the frozen probe (``PROBE_SPEC_KEY``) naming a release: the scikit-learn
+release it was fitted under, ``probe.shortcut.ProbeSpec.sklearn_version``, which the spec keeps
+as information only (``Probe.from_json`` checks the refit trees against each task's
+``model_fingerprint``, not the release). ``Probe.to_json`` writes it, so a record published under
+an older scikit-learn holds the old release here as well as at the top level, and the
+comparison leaves out both copies. Everything else in the frozen probe still counts: features,
+seed, training digests and tree fingerprints."""
+
+
+def _without_releases(record: Mapping[str, Any]) -> dict[str, Any]:
+    """``record`` (a ``PROBE.json`` object) without the fields naming the releases that measured
+    it, at the top level (``_MEASURED_UNDER``) and in the frozen probe
+    (``_SPEC_MEASURED_UNDER``)."""
+    kept = {k: v for k, v in record.items() if k not in _MEASURED_UNDER}
+    frozen: object = kept.get(PROBE_SPEC_KEY)
+    if isinstance(frozen, dict):
+        kept[PROBE_SPEC_KEY] = {
+            k: v for k, v in cast(dict[str, Any], frozen).items() if k not in _SPEC_MEASURED_UNDER
+        }
+    return kept
 
 
 def _states_record(path: Path, text: str) -> bool:
     """Whether the ``PROBE.json`` at ``path`` holds the record ``text`` holds, but for the
-    releases that measured it (``_MEASURED_UNDER``)."""
+    releases that measured it (``_without_releases``)."""
     try:
         published: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -1594,15 +1617,13 @@ def _states_record(path: Path, text: str) -> bool:
         return False
     new = cast(dict[str, Any], json.loads(text))
     old = cast(dict[str, Any], published)
-    return {k: v for k, v in old.items() if k not in _MEASURED_UNDER} == {
-        k: v for k, v in new.items() if k not in _MEASURED_UNDER
-    }
+    return _without_releases(old) == _without_releases(new)
 
 
 def probe_file_current(dataset_dir: Path | str, report: ValidationReport) -> bool:
     """Whether the dataset's ``PROBE.json`` already states the record ``write_probe_file``
     would write for ``report``, but perhaps for the releases that measured it
-    (``_MEASURED_UNDER``); ``write_probe_file`` then writes and re-seals nothing. A caller can
+    (``_without_releases``); ``write_probe_file`` then writes and re-seals nothing. A caller can
     say so instead of claiming a write that didn't happen. Raises ``ValueError`` as
     ``write_probe_file`` does."""
     root = Path(dataset_dir)

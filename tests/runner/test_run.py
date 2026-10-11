@@ -13,7 +13,7 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -1178,34 +1178,144 @@ OPENROUTER_ENTRY: dict[str, Any] = {
 """An OpenRouter entry: ``reported`` by default, with no ``pricing.yaml`` row needed."""
 
 
+GATEWAY_MAX_OUTPUT = 200
+
+
+def gateway_config(**overrides: Any) -> ExperimentConfig:
+    """The OpenRouter entry with replies capped at ``GATEWAY_MAX_OUTPUT`` tokens."""
+    defaults: dict[str, Any] = {
+        "models": [OPENROUTER_ENTRY],
+        "params": {"max_output_tokens": GATEWAY_MAX_OUTPUT},
+    }
+    return experiment(**(defaults | overrides))
+
+
+def gateway(
+    rates: Mapping[str, tuple[float, float]],
+    *,
+    host_of: Callable[[str], str] = lambda _case: "Mistral",
+    output_of: Callable[[str], int] = lambda _case: GATEWAY_MAX_OUTPUT,
+    failures: dict[str, ModelResponse] | None = None,
+) -> FakeProvider:
+    """A per-call-billed gateway: the case's host charges its (input, output) USD per token,
+    and reports that cost and its name as OpenRouter does. Prompts use a quarter of
+    ``prompt_token_bound`` (about what prose tokenizes to), replies ``output_of(case)``
+    tokens."""
+    table = failures or {}
+
+    def script(request: ModelRequest) -> ModelResponse:
+        case = case_of(request)
+        if case in table:
+            return table[case]
+        host = host_of(case)
+        input_rate, output_rate = rates[host]
+        usage = Usage(input_tokens=prompt_token_bound(request) // 4, output_tokens=output_of(case))
+        cost = input_rate * usage.input_tokens + output_rate * usage.output_tokens
+        return answer(usage=usage, reported_cost_usd=cost, raw={"upstream_provider": host})
+
+    return FakeProvider(script=script, delay=lambda _r: 0.01)
+
+
 async def test_a_budget_stops_an_openrouter_model_before_the_cap(tmp_path: Path) -> None:
     write_dataset(tmp_path, request_cases(10))
-    provider = reporting(0.01)
-    config = experiment(models=[OPENROUTER_ENTRY], budget_usd=0.045, concurrency=4)
+    provider = gateway({"Mistral": (2e-6, 6e-6)})
+    config = gateway_config(budget_usd=0.03, concurrency=4)
     result = await run(tmp_path, config, {"gateway": provider})
     spent = sum(p.usage.cost_usd or 0.0 for p in predictions(result))
-    assert spent == pytest.approx(0.04) and result.spent_usd <= 0.045
+    assert spent == pytest.approx(result.spent_usd) and 0 < result.spent_usd <= 0.03
     assert all(p.usage.cost_source == "reported" for p in predictions(result))
-    assert len(provider.calls) == 4 and len(result.skipped) == 6
-    assert all("budget_usd 0.045 reached" in s.reason for s in result.skipped)
+    assert 2 <= len(provider.calls) < 10 and len(result.skipped) == 10 - len(provider.calls)
+    assert all("budget_usd 0.03 reached" in s.reason for s in result.skipped)
     cost = result.manifest.cost["gateway__baseline__context"]
-    assert cost.cost_mode == "reported" and cost.reported_usd == pytest.approx(0.04)
+    assert cost.cost_mode == "reported" and cost.reported_usd == pytest.approx(spent)
     # The routing preference is part of what the manifest says ran.
     (model,) = result.manifest.experiment["models"]
     assert model["extra"]["provider_routing"] == {"order": ["Mistral"], "allow_fallbacks": False}
+
+
+@pytest.mark.parametrize("concurrency", [1, 4])
+@pytest.mark.parametrize("budget", [0.01, 0.03, 0.1, 0.25])
+async def test_an_openrouter_call_dearer_than_any_before_cant_pass_the_cap(
+    tmp_path: Path, budget: float, concurrency: int
+) -> None:
+    """A cheap first call (a 5-token reply) mustn't set the reservation for the full-length
+    replies after it, which cost ten times as much: each call reserves the most its prompt
+    and ``max_output_tokens`` can cost at the per-token rates the host's costs imply."""
+    write_dataset(tmp_path, request_cases(12))
+    provider = gateway(
+        {"Mistral": (1e-5, 2e-4)}, output_of=lambda case: 5 if case == "c1" else GATEWAY_MAX_OUTPUT
+    )
+    config = gateway_config(budget_usd=budget, concurrency=concurrency)
+    result = await run(tmp_path, config, {"gateway": provider})
+    assert 0 < result.spent_usd <= budget
+    assert len(provider.calls) + len(result.skipped) == 12
+    assert all("reached" in s.reason for s in result.skipped)
+
+
+@pytest.mark.parametrize("budget", [0.06, 0.1, 0.2, 0.4])
+async def test_an_openrouter_budget_reserves_for_the_dearest_host_seen(
+    tmp_path: Path, budget: float
+) -> None:
+    """Rates are learned per upstream host, and a call reserves the dearest host's bound: a
+    gateway alternating with a host twenty times dearer must not be reserved for at the
+    cheap host's rates."""
+    write_dataset(tmp_path, request_cases(12))
+
+    def host_of(case: str) -> str:
+        return "Dear" if int(case.removeprefix("c")) % 2 == 0 else "Cheap"
+
+    provider = gateway({"Cheap": (1e-6, 1e-5), "Dear": (2e-5, 2e-4)}, host_of=host_of)
+    config = gateway_config(budget_usd=budget, concurrency=1)
+    result = await run(tmp_path, config, {"gateway": provider})
+    assert 0 < result.spent_usd <= budget
+    assert {host_of(case) for case in provider.called_cases()} == {"Cheap", "Dear"}
 
 
 async def test_an_openrouter_call_without_a_cost_is_unknown_and_stops_the_budget(
     tmp_path: Path,
 ) -> None:
     write_dataset(tmp_path, request_cases(4))
-    provider = FakeProvider(script=scripted({"c1": answer(reported_cost_usd=0.01), "c2": answer()}))
-    config = experiment(models=[OPENROUTER_ENTRY], budget_usd=1.0, concurrency=1)
-    result = await run(tmp_path, config, {"gateway": provider})
+    provider = gateway({"Mistral": (2e-6, 6e-6)}, failures={"c2": answer()})
+    result = await run(
+        tmp_path, gateway_config(budget_usd=1.0, concurrency=1), {"gateway": provider}
+    )
     by_case = {p.case_id: p for p in predictions(result)}
     assert by_case["c2"].usage.cost_usd is None and by_case["c2"].usage.cost_source == "unknown"
     assert [s.case_id for s in result.skipped] == ["c3", "c4"]
     assert all("can't be enforced" in s.reason for s in result.skipped)
+
+
+async def test_a_failed_openrouter_call_that_used_tokens_without_a_cost_stops_the_budget(
+    tmp_path: Path,
+) -> None:
+    """A failed call that used tokens may have been billed, so it isn't counted as free."""
+    write_dataset(tmp_path, request_cases(4))
+    failed = ModelResponse(error="response has no choices", usage=Usage(input_tokens=1000))
+    provider = gateway({"Mistral": (2e-6, 6e-6)}, failures={"c2": failed})
+    result = await run(
+        tmp_path, gateway_config(budget_usd=1.0, concurrency=1), {"gateway": provider}
+    )
+    assert [s.case_id for s in result.skipped] == ["c3", "c4"]
+    assert all("can't be enforced" in s.reason for s in result.skipped)
+
+
+async def test_a_failed_openrouter_call_teaches_no_rates(tmp_path: Path) -> None:
+    """A failed call's cost needn't match its usage (here it was billed $0 for 1,000 prompt
+    tokens), so it gives no estimate: the next call still runs alone, and the calls after
+    it overlap at the rates that one implies."""
+    write_dataset(tmp_path, request_cases(5))
+    failed = ModelResponse(
+        error="upstream error",
+        usage=Usage(input_tokens=1000, output_tokens=1),
+        reported_cost_usd=0.0,
+    )
+    provider = gateway({"Mistral": (2e-6, 6e-6)}, failures={"c1": failed})
+    result = await run(
+        tmp_path, gateway_config(budget_usd=1.0, concurrency=4), {"gateway": provider}
+    )
+    assert provider.called_cases() == ["c1", "c2", "c3", "c4", "c5"]
+    assert provider.others_in_flight == [0, 0, 0, 1, 2]
+    assert result.spent_usd > 0
 
 
 async def test_a_resume_charges_calls_whose_cell_was_skipped(tmp_path: Path) -> None:

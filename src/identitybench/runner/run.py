@@ -136,6 +136,7 @@ from identitybench.runner.cost import (
     CostTracker,
     ModelPrice,
     PricingTable,
+    cache_write_multiplier,
     load_pricing,
 )
 from identitybench.runner.dataset import (
@@ -991,6 +992,76 @@ def _metered_estimate(
     )
 
 
+@dataclass
+class _TokenRates:
+    """Upper bounds on one upstream host's per-token prices, learned from the costs it reported.
+
+    A host that bills fixed per-token rates charges a call at least its input rate on each
+    uncached prompt token (cache writes cost at least as much), and at least its output rate
+    on each output token, so a reported cost divided by either count bounds that rate from
+    above, and the smallest such quotient is the tightest bound. The minimum, not the maximum,
+    because a quotient blows up when the other part of the call dominates (a 5-token refusal
+    after a 5,000-token prompt gives a huge "output rate"), and one such call must not inflate
+    every later reservation into a budget stop. By the same fixed-rate reading, a host that
+    charged $0 for a successful call is free (OpenRouter's ``:free`` variants).
+    """
+
+    prompt: float | None = None
+    """USD per uncached prompt token, at least the host's input rate; None until a call with
+    uncached prompt tokens reported a cost."""
+    output: float | None = None
+    """USD per output token, at least the host's output rate; None until a call with output
+    tokens reported a cost."""
+
+    def learn(self, cost_usd: float, usage: Usage) -> None:
+        prompt = usage.input_tokens + usage.cache_write_tokens
+        if prompt:
+            rate = cost_usd / prompt
+            self.prompt = rate if self.prompt is None else min(self.prompt, rate)
+        if usage.output_tokens:
+            rate = cost_usd / usage.output_tokens
+            self.output = rate if self.output is None else min(self.output, rate)
+
+    def bound(self, prompt_tokens: int, output_tokens: int, ttl: CacheTtl) -> float | None:
+        """The most a call of at most these token counts can cost this host, or None while a
+        rate is still unknown. Every prompt token is priced as a cache write at ``ttl``'s
+        default multiple of the input rate (cache reads cost less), as ``_metered_estimate``
+        prices the dearer of the two."""
+        if self.prompt is None or self.output is None:
+            return None
+        return (
+            self.prompt * cache_write_multiplier(ttl) * prompt_tokens + self.output * output_tokens
+        )
+
+
+def _reported_estimate(
+    hosts: Mapping[str | None, _TokenRates],
+    request: ModelRequest,
+    *,
+    ttl: CacheTtl,
+    resent_tokens: int = 0,
+) -> float | None:
+    """The most one call can cost on a gateway that reports per-call costs: the dearest bound
+    over every upstream host seen so far (``_TokenRates``) for ``prompt_token_bound`` prompt
+    tokens plus ``resent_tokens`` and a full ``max_output_tokens`` reply, so a call dearer than
+    every earlier one is still covered. None (no estimate: the call runs alone, see
+    ``_Execution._call``) until each host seen has both rates bounded.
+
+    The bound holds while hosts bill fixed per-token rates, the endpoint enforces
+    ``max_output_tokens``, and calls go to hosts already seen. A gateway falling back to a new,
+    dearer host can still pass it once; pinning hosts (``provider_routing`` with
+    ``allow_fallbacks: false``) rules that out.
+    """
+    if not hosts:
+        return None
+    prompt = prompt_token_bound(request) + resent_tokens
+    bounds = [
+        rates.bound(prompt, request.params.max_output_tokens, ttl) for rates in hosts.values()
+    ]
+    known = [bound for bound in bounds if bound is not None]
+    return max(known) if len(known) == len(bounds) else None
+
+
 def _call_cost(
     mode: CostMode, price: ModelPrice | None, response: ModelResponse, ttl: CacheTtl
 ) -> tuple[float | None, CostSource]:
@@ -1174,7 +1245,10 @@ class _Execution:
         self._skipped: list[tuple[int, SkippedWork]] = []
         self._stop_reason: str | None = None
         self._max_reported: dict[str, float] = {}
-        """Highest cost each reported-cost config has reported: its per-call estimate."""
+        """Highest cost each reported-cost config has reported: a CLI's per-call estimate."""
+        self._token_rates: dict[str, dict[str | None, _TokenRates]] = {}
+        """Per reported-cost config, per upstream host, the per-token price bounds its
+        successful calls imply: an OpenAI-compatible gateway's per-call estimate."""
         self._calibration = asyncio.Lock()
         """Held by a budgeted call that has no cost estimate yet (see ``_call``)."""
         self._reserving = 0
@@ -1439,10 +1513,13 @@ class _Execution:
 
         A priced model reserves the most the call can cost (``_metered_estimate``, with the
         ``resent_tokens`` its provider adds to the request), so concurrent calls can't jointly
-        overshoot ``budget_usd``. A reported-cost CLI reserves the most it has reported for one
-        call so far, and has no estimate (None) before its first report while a budget is set.
-        Anything else reserves nothing: there is no budget to enforce (``_build_configs``
-        refuses a budget it can't).
+        overshoot ``budget_usd``. A reported-cost gateway (``openai_compatible`` on OpenRouter)
+        reserves the same kind of bound at the per-token rates its reported costs imply
+        (``_reported_estimate``). A reported-cost CLI reserves the most it has reported for one
+        call so far: its token counts don't bound a call (an agent loop's turns aren't capped
+        by ``max_output_tokens``). Either has no estimate (None) while a budget is set and
+        nothing has been learned yet. Anything else reserves nothing: there is no budget to
+        enforce (``_build_configs`` refuses a budget it can't).
         """
         if cfg.price is not None:
             return _metered_estimate(
@@ -1450,6 +1527,13 @@ class _Execution:
             )
         if cfg.cost_mode != "reported" or self._guard.budget_usd is None:
             return 0.0
+        if cfg.entry.provider == "openai_compatible":
+            return _reported_estimate(
+                self._token_rates.get(cfg.config_id, {}),
+                request,
+                ttl=cfg.tracker.cache_ttl,
+                resent_tokens=resent_tokens,
+            )
         return self._max_reported.get(cfg.config_id)
 
     async def _call(
@@ -1459,7 +1543,7 @@ class _Execution:
 
         The estimate is reserved before the call and released after the actual cost is
         recorded, so concurrent calls can't jointly overshoot ``budget_usd``. A call with no
-        estimate (a reported-cost CLI that hasn't reported a cost yet) would reserve nothing,
+        estimate (a reported-cost config that hasn't reported a cost yet) would reserve nothing,
         so it starts only while some budget is left, and only while no other such call is in
         flight: the run never has more than one call of unknown cost outstanding, and the
         calls queued behind it reserve the cost it reports. Once the budget stops the run, no
@@ -1506,9 +1590,9 @@ class _Execution:
         them: a reservation is pessimistic (for a priced model ``_metered_estimate``'s bound:
         the request's prompt token bound plus, in a tool loop with a provider that re-sends turn
         state, the earlier turns' output, all at the dearer of the input and cache-write rates,
-        plus a full ``max_output_tokens`` reply;
-        for a CLI its dearest call so far) and mostly comes back, and stopping on it would end
-        a concurrent run with most of its budget unspent.
+        plus a full ``max_output_tokens`` reply; for a reported-cost gateway the same bound at
+        its learned per-token rates; for a CLI its dearest call so far) and mostly comes back,
+        and stopping on it would end a concurrent run with most of its budget unspent.
         """
         guard = self._guard
         while True:
@@ -1541,15 +1625,24 @@ class _Execution:
     def _charge(self, config_id: str, response: ModelResponse) -> None:
         """Add one fresh call to its config's spend, and learn the config's per-call cost.
 
-        A failed call that reports no cost is taken as free rather than as an unknown cost:
-        otherwise one CLI timeout would make the budget unenforceable and stop the run.
+        A failed call that reports no cost and used no tokens (a timeout, a refused
+        connection) is taken as free: otherwise one CLI timeout would make the budget
+        unenforceable and stop the run. One that did use tokens may have been billed, so its
+        cost is unknown, which stops a budgeted run. Per-token rates are learned from
+        successful calls only: a failed call's cost needn't match its usage (a gateway may
+        not bill it), and a too-low rate would let reservations under-count.
         """
         reported = response.reported_cost_usd
         if reported is not None:
             self._max_reported[config_id] = max(
                 reported, self._max_reported.get(config_id, reported)
             )
-        elif response.error is not None:
+            if response.error is None:
+                upstream = (response.raw or {}).get("upstream_provider")
+                host = upstream if isinstance(upstream, str) else None
+                hosts = self._token_rates.setdefault(config_id, {})
+                hosts.setdefault(host, _TokenRates()).learn(reported, response.usage)
+        elif response.error is not None and response.usage == Usage():
             reported = 0.0
         self._guard.trackers[config_id].add(response.usage, reported)
 

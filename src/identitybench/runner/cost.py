@@ -16,8 +16,10 @@ model's ``CostMode`` says which one it is:
   (``reports_cost``). Billing gateways: an ``openai_compatible`` entry on OpenRouter
   (``OPENROUTER_BASE_URL``, the default there) gets the USD OpenRouter charged for the call
   (``usage.cost``), which makes ``budget_usd`` enforceable for models no ``pricing.yaml`` row
-  covers. A call that comes back without a cost is an unknown cost, never a free one: the
-  prediction records it as unknown and the budget stops paid calls (``CostTracker``).
+  covers. A call that used tokens and comes back without a cost is an unknown cost, never a
+  free one: the prediction records it as unknown and the budget stops paid calls
+  (``CostTracker``). Only a failed call with no usage at all (a timeout, a refused
+  connection) is taken as free.
 
 ``budget_usd`` is experiment-wide, so ``BudgetGuard`` sums spend over every config's tracker
 and lets concurrent calls reserve their estimated cost before they start.
@@ -126,16 +128,19 @@ def points_at_metered_vendor(provider_kind: str, base_url_env: str | None = None
 def reports_cost(provider_kind: str, base_url_env: str | None = None) -> bool:
     """Whether a ``reported``-mode entry's provider reports a per-call cost at all.
 
-    ``claude_cli`` and ``grok_cli`` do. ``openai_compatible`` does wherever the server puts the
-    call's cost in ``usage.cost`` (OpenRouter), which the harness can't see from a variable
-    name, so ``cost_mode: reported`` on a custom endpoint is taken at its word: the first call
-    that comes back without a cost makes the spend unknown and stops a budgeted run
-    (``CostTracker.budget_enforceable``). OpenAI's own API never reports one, so a budget is
-    refused there up front.
+    ``claude_cli`` and ``grok_cli`` do. ``openai_compatible`` does on OpenRouter
+    (``OPENROUTER_BASE_URL``), which puts each call's USD in ``usage.cost``. Any other
+    endpoint is assumed not to: a budget there is refused up front, as for a CLI that reports
+    nothing, rather than spending a call of unknown cost to find out.
     """
     if provider_kind == "openai_compatible":
-        return base_url_env not in _OPENAI_VENDOR_ENVS
+        return base_url_env == OPENROUTER_BASE_URL_ENV
     return provider_kind in _REPORTS_COST
+
+
+def cache_write_multiplier(ttl: CacheTtl) -> float:
+    """Default cache-write rate as a multiple of the input rate for a cache lifetime."""
+    return CACHE_WRITE_1H_MULTIPLIER if ttl == "1h" else CACHE_WRITE_5M_MULTIPLIER
 
 
 class _Strict(BaseModel):
@@ -158,11 +163,8 @@ class Rates(_Strict):
         return self.input * CACHE_READ_MULTIPLIER
 
     def cache_write_rate(self, ttl: CacheTtl) -> float:
-        if ttl == "1h":
-            explicit, mult = self.cache_write_1h, CACHE_WRITE_1H_MULTIPLIER
-        else:
-            explicit, mult = self.cache_write_5m, CACHE_WRITE_5M_MULTIPLIER
-        return explicit if explicit is not None else self.input * mult
+        explicit = self.cache_write_1h if ttl == "1h" else self.cache_write_5m
+        return explicit if explicit is not None else self.input * cache_write_multiplier(ttl)
 
     def cost(self, usage: Usage, ttl: CacheTtl = "5m") -> float:
         """USD for one call. Reasoning tokens are already inside ``output_tokens``."""

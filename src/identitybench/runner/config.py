@@ -321,8 +321,7 @@ class ModelEntry(_Strict):
     @property
     def reports_cost(self) -> bool:
         """For ``reported`` mode: whether this entry's provider reports a per-call cost
-        (``cost.reports_cost``: an ``openai_compatible`` endpoint other than OpenAI's own is
-        trusted to, until a call comes back without one)."""
+        (``cost.reports_cost``: among ``openai_compatible`` endpoints, only OpenRouter)."""
         return reports_cost(self.provider, self.base_url_env)
 
     def _effort_param_off(self) -> bool:

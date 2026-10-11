@@ -1497,7 +1497,7 @@ def score_run(
             # The dev run's own setting, whatever allow_incomplete was: a complete run can be
             # scored with a partial dev run without accepting a partial run.
             _require_complete(dev, dev_completeness, option="allow_incomplete_dev=True")
-    served = WorldServedIndex(run.dataset_dir, run.cases)
+    served = WorldServedIndex(run.dataset_dir)
     scored: dict[str, ScoredConfig] = {}
     unscored: list[str] = []
     for config in sorted(run.manifest.configs, key=lambda c: c.config_id):

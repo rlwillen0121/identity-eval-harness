@@ -9,6 +9,12 @@ The SPEC §9.2 completeness conditions are world invariants too, so every case s
 them: every provisioned (account, entitlement) pair has a usage record, and every membership's
 source matches its role's kind (``birthright`` memberships in birthright roles, ``request``
 memberships in business roles). A view breaking either is incomplete and the oracle rejects it.
+
+``world_problems`` also runs on case views (``tasks.twins`` checks a twin raises nothing its
+base doesn't), so it holds only what every slice of a world keeps. Guarantees about the whole
+directory, which a slice needn't show, are separate: ``critical_administrator_problems`` (every
+critical application has an active administrator, APPR-005 material) runs on generated worlds
+only.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from identitybench.world.entities import (
 )
 from identitybench.world.ids import TICKET_PREFIXES
 from identitybench.world.names import REGIONS
+from identitybench.world.query import held_access
 from identitybench.world.rolegraph import MAX_ROLE_DEPTH, RoleCycleError, RoleGraph, SodIndex
 from identitybench.world.specs import SOD_DEFINITIONS
 
@@ -137,7 +144,10 @@ def birthright_problems(
     (a) for every (department, employment type, region), the union of the matching birthright
         roles' expanded entitlements contains no SoD conflict;
     (b) a birthright role never confers an entitlement that any identity it matches is
-        ineligible for (ELIG-001/002/003/005).
+        ineligible for (ELIG-001/002/003/005);
+    (c) a birthright role never confers a ``critical`` entitlement. HR attributes alone never
+        hand out critical access: it is requested, and every base and department birthright
+        membership weighs at most ``high`` in the risk cost (SPEC §12.1).
 
     Callers run ``role_problems`` first; a cyclic role graph is reported there.
     """
@@ -165,6 +175,8 @@ def birthright_problems(
             }
             if reasons:
                 problems.append(f"{role_id} confers {ent_id} ({', '.join(sorted(reasons))})")
+            if ent.risk_tier is RiskTier.critical:
+                problems.append(f"birthright role {role_id} confers critical {ent_id}")
 
     index = SodIndex(PolicyPack(org_name="", sod=sod))
     for dept in sorted(set(departments)):
@@ -229,6 +241,38 @@ def world_problems(world: World) -> list[str]:
     problems.extend(_control_problems(world))
     problems.extend(_ticket_problems(world))
     return problems
+
+
+def critical_administrator_problems(world: World) -> list[str]:
+    """Every critical application has an active identity holding one of its privileged
+    entitlements on the anchor date outside any live SoD conflict (APPR-005 material, SPEC
+    §6.1, §7.4).
+
+    ``provisioning`` grants such an administrator when chance leaves none; this reports when it
+    can't (no eligible, settled employee in any department it tries), so the gap fails the
+    build instead of passing silently. Callers run ``world_problems`` first: held access
+    assumes every assignment's account exists.
+    """
+    graph = RoleGraph(world.roles)
+    sod = SodIndex(world.policy_pack)
+    held = held_access(
+        world.memberships, world.accounts, world.assignments, graph, world.anchor_date
+    )
+    administered: set[str] = set()
+    for identity_id, ents in held.items():
+        if world.identities[identity_id].status is not IdentityStatus.active:
+            continue
+        conflicted = {e for rule in sod.conflicts(ents) for side in sod.sides[rule] for e in side}
+        administered |= {
+            world.entitlements[e].app_id
+            for e in ents - conflicted
+            if world.entitlements[e].privileged
+        }
+    return [
+        f"critical application {app_id} has no active administrator outside an SoD conflict"
+        for app_id, app in world.applications.items()
+        if app.risk_tier is RiskTier.critical and app_id not in administered
+    ]
 
 
 def _identity_problems(world: World) -> list[str]:
@@ -362,10 +406,11 @@ def _request_problems(
     world: World, s: Assignment, ent: Entitlement, holder_id: str | None
 ) -> list[str]:
     """A request ID claims an approved request, so the grant must satisfy the per-grant
-    request rules (SPEC §7.4): the entitlement is requestable (ELIG-004), and the grant ends
-    within the entitlement's maximum duration (TEMP-002), within 7 days if it is privileged
-    (TEMP-001), and on or before a contractor holder's contract end (LIFE-004). Tenure and
-    eligibility are checked by the world tests; SoD rules, which judge combinations, are
+    request rules (SPEC §7.4): the entitlement is requestable (ELIG-004) and eligible for a
+    human holder (ELIG-001, -002, -003, -005), and the grant ends within the entitlement's
+    maximum duration (TEMP-002), within 7 days if it is privileged (TEMP-001), and on or
+    before a contractor holder's contract end (LIFE-004). Tenure on the grant date (LIFE-001,
+    LIFE-003) is checked by the world tests; SoD rules, which judge combinations, are
     deliberately not enforced on request-sourced grants (``provisioning`` explains why)."""
     problems: list[str] = []
     if not ent.requestable:
@@ -379,6 +424,13 @@ def _request_problems(
             f"{s.id}: request-sourced privileged grant longer than {PRIVILEGED_CAP_DAYS} days"
         )
     holder = world.identities.get(holder_id) if holder_id is not None else None
+    app = world.applications.get(ent.app_id)
+    if holder is not None and app is not None:
+        reason = ineligibility(ent, app, holder.employment_type, holder.location.region)
+        if reason is not None:
+            problems.append(
+                f"{s.id}: request-sourced grant the holder is ineligible for ({reason})"
+            )
     contract_end = holder.contract_end_date if holder is not None else None
     if contract_end is not None and (s.expires_on is None or s.expires_on > contract_end):
         problems.append(f"{s.id}: request-sourced grant runs past the contract end {contract_end}")

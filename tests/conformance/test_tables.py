@@ -549,7 +549,7 @@ def test_past_moves_are_decided_next_to_the_a27_refusal() -> None:
     are pinned beside decided past moves, so an oracle that refuses or removes too much fails:
 
     - a post-move privileged grant left alone (its account active, or disabled in an application
-      the plan's grants don't reach);
+      the plan's grants don't reach at all);
     - a post-move grant the plan's grant switches on: ordinary access; one side of a conflict
       completed by the new birthright or a kept source on a day it is switched on, which a
       control valid on the move date mitigates; one whose other side, held by a kept source,
@@ -635,7 +635,13 @@ def test_past_moves_are_decided_next_to_the_a27_refusal() -> None:
                 if privileged and not disabled:
                     covered.add("post-move privileged grant left alone (active account)")
                 elif privileged and not switched_on:
-                    covered.add("post-move privileged grant left alone (account the grant skips)")
+                    # Only when no account behind it is in an application the grants reach: one
+                    # disabled beside an active sibling there isn't switched on either, but it
+                    # isn't the shape this label names.
+                    if not {a.app_id for a in accounts} & granted_apps:
+                        covered.add(
+                            "post-move privileged grant left alone (account the grant skips)"
+                        )
                 elif switched_on and not privileged and not opposite:
                     covered.add("post-move grant switched on (ordinary access)")
                 elif switched_on and not privileged:

@@ -1,19 +1,20 @@
 """The base application catalog (SPEC §6.1, §6.2).
 
-60 base applications: 12 make up the startup profile (tier 0), 45 the midmarket profile
+62 base applications: 13 make up the startup profile (tier 0), 47 the midmarket profile
 (tiers 0-1), and the enterprise profile adds the tier-2 apps plus regional and UAT variants.
 
 **Critical applications are few** (risk tier ``critical``; APPR-005 escalates every item
-conferring one of their privileged entitlements): the identity provider in every profile, the
-production secrets vault from midmarket up, and privileged access management in an enterprise,
-whose regional vault copy is critical too (a UAT copy is one tier lower). So a startup has one
-critical application, a midmarket org two and an enterprise three or four. Each has privileged
+conferring one of their privileged entitlements): the identity provider's admin console in
+every profile, the production secrets vault from midmarket up, and privileged access management
+in an enterprise, whose regional vault copy is critical too. So a startup has one critical
+application, a midmarket org two and an enterprise three or four. Each has privileged
 entitlements people actually hold: IdP administrators through ``role_idp_admin`` (and SOD-004's
-side A), platform engineers' time-boxed vault grants, PAM session operators through
+side A), platform engineers' production vault grants, PAM session operators through
 ``role_pam_operator``. An entitlement is never less risky than its application (SPEC §6.2), so
-everything on a critical application is critical, its read-only and birthright entitlements
-(SSO sign-in, non-production secrets) included. Both of the smaller orgs' critical apps were
-``high`` before, so request-side APPR-001 escalates exactly what it did.
+everything on a critical application is critical. That is why the administrative plane is its
+own application: everyday sign-in and helpdesk resets stay on the ``high`` identity provider,
+and reading development and staging secrets on the ``high`` non-production vault, so no
+birthright role confers a critical entitlement (``checks.birthright_problems`` enforces it).
 
 Every separation-of-duties function lives on hand-written entitlements here, one to three per
 side, so each rule's sides are small, explicit and stable across profiles. Every entitlement
@@ -22,6 +23,12 @@ approves vendor payments, edits payroll) carries the side's function, so names n
 contradict the rule sides. Generated module entitlements never carry SoD functions, and
 module nouns that would read like an SoD capability (vendor records, pay runs, journal
 entries, production deployments) are deliberately left out.
+
+An ``EntSpec.description`` here is the hand-written statement of what the access does. Worlds
+don't show it verbatim: ``descriptions`` words each entitlement afresh per world, using this
+sentence (or a shortened form of it) as one of its options. So it says what the access does
+and nothing a structured field already carries (eligibility, classification, duration, SOX
+scope).
 """
 
 from __future__ import annotations
@@ -80,7 +87,7 @@ APP_SPECS: tuple[AppSpec, ...] = (
                     "Send and receive email and manage a personal calendar.", W,
                     requestable=False, eligible=STAFF),
             EntSpec("ent_mail_vendor_mailbox", "Guest Mailbox",
-                    "Limited mailbox for vendor staff; external forwarding disabled.", W,
+                    "Limited mailbox with external forwarding disabled.", W,
                     requestable=False, eligible=VENDOR_ONLY),
             EntSpec("ent_mail_shared_finance", "Shared Mailbox: Accounts Payable Inbox",
                     "Read and send from the shared accounts-payable inbox used for vendor "
@@ -128,8 +135,11 @@ APP_SPECS: tuple[AppSpec, ...] = (
             ("huddle_recordings", "huddle recordings"),
         ),
     ),
+    # The identity provider is two catalog applications, as governance catalogs usually model
+    # it: everyday sign-in and delegated helpdesk work on the tenant, and the admin console,
+    # where the administrator roles (SOD-004's side A among them) live.
     AppSpec(
-        "idp", "Identity Provider (SSO)", "idp", CRIT, INT, True, PROD, "IT",
+        "idp", "Identity Provider (SSO)", "idp", HIGH, INT, True, PROD, "IT",
         ("IT", "Security"), tier=STARTUP_TIER, eligible=ALL_TYPES, service_accounts=True,
         variants=("uat",),
         entitlements=(
@@ -141,30 +151,38 @@ APP_SPECS: tuple[AppSpec, ...] = (
             EntSpec("ent_idp_helpdesk", "Helpdesk Password and MFA Reset",
                     "Reset passwords and MFA factors for non-administrator users.", W,
                     eligible=EMP_CON),
+        ),
+        modules=(
+            ("app_tiles", "end-user application dashboard tiles"),
+            ("app_catalog", "application catalog entries"),
+            ("audit_logs", "system audit logs"),
+            ("directory_sync", "directory sync jobs"),
+            ("attribute_mappings", "profile attribute mappings"),
+        ),
+    ),
+    AppSpec(
+        "idp_admin", "Identity Provider Admin Console", "idp", CRIT, INT, True, PROD, "IT",
+        ("IT", "Security"), tier=STARTUP_TIER, eligible=EMP_CON, service_accounts=True,
+        entitlements=(
             EntSpec("ent_idp_user_admin", "IdP User Administrator",
                     "Create, modify and deactivate user accounts and their group memberships "
-                    "in the identity provider.", A, privileged=True, risk=CRIT,
-                    eligible=EMP_CON, functions=("idp.admin",)),
+                    "in the identity provider.", A, privileged=True,
+                    functions=("idp.admin",)),
             EntSpec("ent_idp_super_admin", "IdP Super Administrator",
                     "Unrestricted administration of the identity provider, including all user "
                     "accounts, administrators and security policies.", A, privileged=True,
-                    risk=CRIT, requestable=False, eligible=EMP, functions=("idp.admin",)),
+                    requestable=False, eligible=EMP, functions=("idp.admin",)),
             EntSpec("ent_idp_app_admin", "IdP Application Integration Administrator",
                     "Configure SSO and provisioning settings for application integrations. "
                     "Cannot manage user accounts.", A, privileged=True, eligible=EMP,
                     min_tier=MIDMARKET_TIER),
         ),
         modules=(
-            ("app_tiles", "end-user application dashboard tiles"),
             ("mfa_policies", "MFA policies"),
             ("sign_on_policies", "sign-on policies"),
-            ("app_catalog", "application catalog entries"),
-            ("audit_logs", "system audit logs"),
             ("device_trust", "device trust rules"),
-            ("directory_sync", "directory sync jobs"),
             ("network_zones", "network zones"),
             ("password_policies", "password policies"),
-            ("attribute_mappings", "profile attribute mappings"),
         ),
     ),
     AppSpec(
@@ -235,8 +253,8 @@ APP_SPECS: tuple[AppSpec, ...] = (
             EntSpec("ent_relpipe_deploy_nonprod", "Deploy to Staging",
                     "Promote builds to development and staging environments.", W),
             EntSpec("ent_relpipe_deploy_sox_prod", "Deploy to Production (SOX services)",
-                    "Promote releases to production for SOX-scoped services: ledger, "
-                    "payables, billing and payroll integrations.", W, privileged=True,
+                    "Promote releases to production for the ledger, payables, billing and "
+                    "payroll integrations.", W, privileged=True,
                     risk=CRIT, eligible=EMP_CON, functions=("deploy.prod.sox",)),
             _admin("ent_relpipe_admin", "Release Pipeline"),
         ),
@@ -268,8 +286,8 @@ APP_SPECS: tuple[AppSpec, ...] = (
             # workflows on this non-SOX app, so the SOD-003 near miss rests on the
             # structured sox_in_scope field rather than on free text.
             EntSpec("ent_code_deploy_prod", "Production Environment Deployer (non-SOX)",
-                    "Run repository deployment workflows that release services outside SOX "
-                    "scope, such as the marketing site and internal tools, to production.", W,
+                    "Run repository deployment workflows that release services such as the "
+                    "marketing site and internal tools to production.", W,
                     privileged=True, risk=HIGH, eligible=EMP_CON),
             _admin("ent_code_org_admin", "Source Code Organization"),
         ),
@@ -704,7 +722,7 @@ APP_SPECS: tuple[AppSpec, ...] = (
             EntSpec("ent_cloudprod_billing_view", "Cloud Billing Viewer",
                     "View cloud spend and cost allocation reports.", R),
             EntSpec("ent_cloudprod_breakglass", "Emergency Administrator (Break-Glass)",
-                    "Time-boxed full administrator access for active incident response.", A,
+                    "Full administrator access for active incident response.", A,
                     privileged=True, risk=CRIT, eligible=EMP, max_duration_days=1),
             _admin("ent_cloudprod_admin", "Production Cloud"),
         ),
@@ -796,14 +814,14 @@ APP_SPECS: tuple[AppSpec, ...] = (
             ("autoscalers", "autoscaling policies"),
         ),
     ),
+    # Production and non-production secrets live in separate vault clusters: only the
+    # production one is critical, so Engineering's birthright read of development and staging
+    # secrets stays an ordinary high-risk item.
     AppSpec(
         "vault", "Secrets Vault", "vault", CRIT, RESTR, True, PROD, "Security",
         ("Engineering", "Security", "IT"), eligible=EMP_CON, service_accounts=True,
         variants=("eu",),
         entitlements=(
-            EntSpec("ent_vault_nonprod_read", "Non-Production Secrets Reader",
-                    "Read secrets for development and staging environments.", R,
-                    classification=CONF),
             EntSpec("ent_vault_prod_read", "Production Secrets Reader",
                     "Read production database and API credentials.", R, privileged=True,
                     max_duration_days=30),
@@ -821,6 +839,23 @@ APP_SPECS: tuple[AppSpec, ...] = (
             ("ssh_ca", "SSH certificate roles"),
             ("vault_namespaces", "vault namespaces"),
             ("kv_engines", "key-value secret engines"),
+        ),
+    ),
+    AppSpec(
+        "vault_nonprod", "Non-Production Secrets Vault", "vault", HIGH, CONF, False, NONPROD,
+        "Security", ("Engineering", "Security", "IT"), eligible=EMP_CON, service_accounts=True,
+        entitlements=(
+            EntSpec("ent_vault_nonprod_read", "Non-Production Secrets Reader",
+                    "Read secrets for development and staging environments.", R),
+            EntSpec("ent_vault_nonprod_write", "Non-Production Secrets Writer",
+                    "Create and rotate secrets for development and staging environments.", W),
+            _admin("ent_vault_nonprod_admin", "Non-Production Secrets Vault", HIGH),
+        ),
+        modules=(
+            ("sandbox_namespaces", "sandbox namespaces"),
+            ("staging_db_credentials", "staging database credential roles"),
+            ("test_certificates", "test certificates"),
+            ("dev_kv_engines", "development key-value secret engines"),
         ),
     ),
     AppSpec(
@@ -878,7 +913,7 @@ APP_SPECS: tuple[AppSpec, ...] = (
             EntSpec("ent_vpn_user", "VPN User", "Connect to the corporate network remotely.", R,
                     requestable=False, eligible=STAFF),
             EntSpec("ent_vpn_vendor", "Vendor VPN Access",
-                    "Restricted remote access to vendor-facing network segments.", R,
+                    "Remote access limited to vendor-facing network segments.", R,
                     requestable=False, eligible=VENDOR_ONLY),
             EntSpec("ent_vpn_split_tunnel", "Split Tunnel Exception",
                     "Exempt your device from full-tunnel routing.", W, eligible=STAFF),
@@ -947,7 +982,7 @@ APP_SPECS: tuple[AppSpec, ...] = (
                     "View scan results and vulnerability findings.", R),
             EntSpec("ent_vuln_scan_run", "Scan Operator", "Launch and schedule scans.", W),
             EntSpec("ent_vuln_exceptions", "Risk Acceptance Approver",
-                    "Approve time-boxed risk acceptances for unpatched findings.", W,
+                    "Approve risk acceptances for unpatched findings.", W,
                     risk=HIGH, eligible=EMP),
             _admin("ent_vuln_admin", "Vulnerability Scanner", HIGH),
         ),
@@ -1558,7 +1593,8 @@ APP_SPECS: tuple[AppSpec, ...] = (
         ),
     ),
     # Enterprises broker production server and database access through a PAM vault: the third
-    # critical application, beside the identity provider and the secrets vault.
+    # critical application, beside the identity provider's admin console and the production
+    # secrets vault.
     AppSpec(
         "pam", "Privileged Access Management", "pam", CRIT, RESTR, True, PROD, "Security",
         ("IT", "Security", "Engineering"), tier=ENTERPRISE_TIER, eligible=EMP_CON,
@@ -1576,7 +1612,7 @@ APP_SPECS: tuple[AppSpec, ...] = (
                     "Manage the members and rotation schedules of credential safes your team "
                     "owns.", W, privileged=True, eligible=EMP),
             EntSpec("ent_pam_session_audit", "Session Recording Auditor",
-                    "Review recorded privileged sessions and keystroke logs.", R),
+                    "Review recorded administrator sessions and keystroke logs.", R),
             _admin("ent_pam_admin", "Privileged Access Management"),
         ),
         modules=(

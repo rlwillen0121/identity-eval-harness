@@ -837,14 +837,23 @@ def test_a_bad_routing_preference_fails_at_load(tmp_path: Path, routing: str, me
         load_config(_write(tmp_path, text))
 
 
-def test_reported_cost_on_openai_itself_warns_under_a_budget() -> None:
-    """OpenAI's API states no per-call cost, so ``cost_mode: reported`` can't be budgeted."""
-    entry = {"provider": "openai_compatible", "model": "gpt-5", "cost_mode": "reported"}
+@pytest.mark.parametrize("base_url_env", [None, "GATEWAY_BASE_URL"])
+def test_reported_cost_off_openrouter_warns_under_a_budget(base_url_env: str | None) -> None:
+    """Only OpenRouter states a per-call cost among OpenAI-compatible endpoints, so
+    ``cost_mode: reported`` on OpenAI itself or another gateway can't be budgeted."""
+    entry = {
+        "provider": "openai_compatible",
+        "model": "gpt-5",
+        "cost_mode": "reported",
+        "base_url_env": base_url_env,
+    }
     cfg = ExperimentConfig.model_validate(_base(models=[entry], budget_usd=5))
     (warning,) = cfg.warnings()
     assert "reports no cost" in warning
-    gateway = {**entry, "label": "gw", "base_url_env": "GATEWAY_BASE_URL"}
-    assert ExperimentConfig.model_validate(_base(models=[gateway], budget_usd=5)).warnings() == []
+    openrouter = {**entry, "base_url_env": "OPENROUTER_BASE_URL"}
+    assert (
+        ExperimentConfig.model_validate(_base(models=[openrouter], budget_usd=5)).warnings() == []
+    )
 
 
 def test_openrouter_marked_unmetered_warns_and_metered_is_not_called_self_hosted() -> None:

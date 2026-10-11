@@ -1403,6 +1403,15 @@ def _late_from(start: date, entitlement_id: str = "ent_gl_je_approve") -> Assign
             id="an-unjudged-source-posts-only-from-next-week",
         ),
         pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=day(1))],
+            ),
+            "as_late",
+            id="an-unjudged-source-starts-posting-the-day-after-the-grant-day",
+        ),
+        pytest.param(
             _accounting_to_finance([LATE_APPROVE]),
             "as_late",
             id="old-birthright-posts-only-until-its-grace-period-ends",
@@ -1565,6 +1574,24 @@ def test_mover_whose_grant_would_complete_an_unmitigated_conflict_is_rejected(
         pytest.param(
             late_grant_view(
                 [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=day(-1))],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="an-unjudged-source-starts-after-the-late-grant-but-before-the-grant-day",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
+                [LATE_APPROVE],
+                memberships=[membership("rm_late_close", "role_gl_close", granted_on=AS_OF)],
+            ),
+            [GRANT_FINANCE_NOW],
+            id="an-unjudged-source-starts-on-the-grant-day",
+        ),
+        pytest.param(
+            late_grant_view(
+                [LEDGER_ACTIVE],
                 memberships=[
                     membership(
                         "rm_toxic",
@@ -1606,12 +1633,13 @@ def test_mover_grant_may_sit_beside_unjudged_access_it_doesnt_make_toxic(
     keeps must post over that whole window, from the later of the grant day and the late grant's
     start through its end: a standing Finance birthright role, a judged business role the plan
     keeps (it neither crosses the new birthright nor is privileged), for good or until the late
-    grant's last day, another unjudged grant that starts by the late grant's first day, old
-    birthright before its grace-period removal, a time-bound membership in a new birthright role,
-    or the late grant itself, when one role holds both sides (its own conflict, which the grant
-    only repeats). The Finance grant only adds a second path to a side already held. Every grant
-    made after the move stays on file, untouched, and the plan judged no crossing: no SoD finding
-    and no MIT-001 evaluation."""
+    grant's last day, another unjudged grant that starts by the later of the grant day and the
+    late grant's first day (so one granted after the late grant but by the grant day counts),
+    old birthright before its grace-period removal, a time-bound membership in a new birthright
+    role, or the late grant itself, when one role holds both sides (its own conflict, which the
+    grant only repeats). The Finance grant only adds a second path to a side already held.
+    Every grant made after the move stays on file, untouched, and the plan judged no crossing:
+    no SoD finding and no MIT-001 evaluation."""
     gold = plan_jml(view)
     assert plan_rows(gold) == rows
     assert gold.findings == (finding("JML-002"),) and gold.exceptions == ()
@@ -3227,6 +3255,29 @@ def test_mover_rejection_matches_the_spec_text_when_another_source_holds_the_oth
     kept ones, unjudged ones, or old birthright in its grace period. Whether their validity
     overlaps the switched-on access then decides the rejection."""
     assert_rejection_matches_the_spec_text(view)
+
+
+@pytest.mark.parametrize("destination", ["AP", "Finance"])
+def test_mover_rejection_matches_the_spec_text_when_the_new_birthright_holds_a_side(
+    destination: str,
+) -> None:
+    """AP's birthright approves journal entries and Finance's posts them, so a grant of either
+    holds one SOD-002 side for good. Whether an unjudged source's other side completes a
+    conflict then turns on whether some kept source already holds the granted side over that
+    source's whole window, from the later of the grant day and its start through its end: the
+    windowed exemption. Views where it decides the verdict are rare (a few in a thousand), so
+    this runs more examples than the other mover properties."""
+
+    @given(
+        jml_views(
+            event_types=(HrEventType.mover,), keep_contradictions=True, destination=destination
+        )
+    )
+    @property_settings(1500)
+    def check(view: CaseView) -> None:
+        assert_rejection_matches_the_spec_text(view)
+
+    check()
 
 
 @given(jml_views(event_types=(HrEventType.mover,)))

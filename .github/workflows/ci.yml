@@ -68,6 +68,12 @@ jobs:
         run: |
           if [ -d datasets/identitybench-v1 ]; then
             uv run identitybench validate datasets/identitybench-v1 --double-build
+            # validate only warns without PROBE.json (a dataset is validated many times before
+            # the release step publishes it); a committed release must carry it (SPEC §9.4).
+            if [ ! -f datasets/identitybench-v1/PROBE.json ]; then
+              echo "datasets/identitybench-v1 lacks PROBE.json (identitybench validate --write-probe)"
+              exit 1
+            fi
           else
             echo "datasets/identitybench-v1 is not committed yet; nothing to validate"
           fi

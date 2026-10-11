@@ -17,7 +17,8 @@ The goal is a directory that looks lived-in rather than tidy:
   its fallback departments when the org has none of them) and, where one fits, through a
   business role their department typically requests.
 - Every critical application has at least one active administrator whose access sits outside
-  any SoD conflict (APPR-005 material), granted when chance left it none.
+  any SoD conflict (APPR-005 material), granted when chance leaves it none (and checked:
+  ``checks.critical_administrator_problems``).
 - Accounts exist wherever someone holds anything; leavers' accounts are disabled with a
   realistic lag (an exact number of leavers, at least one, still have an active account), people
   on leave are suspended, and a fixed share of people (at least one) have an account on
@@ -774,19 +775,22 @@ class _Provisioner:
     def _critical_administrators(self) -> None:
         """Make sure every critical application has an active administrator (APPR-005).
 
-        Nobody runs an identity provider or a secrets vault without administrators, yet in a
-        small org chance alone sometimes leaves no active person holding one of a critical
-        application's privileged entitlements outside an SoD conflict (about 7% of startups had
-        none for the IdP, and some midmarket orgs none for the vault). For each such
-        application, one active employee of its owning department gets that access, or else
-        of a department that uses it, or else of the executive office (in a startup whose only
-        IT employee is new or away, a founder holds the IdP super-administrator seat). It is
-        a business role their department requests when one reaches it, otherwise a standing
-        direct grant, preferring entitlements without a maximum duration (an administrator
-        seat). The grant is eligible, introduces no SoD conflict and falls after the person
-        joined their current department. Runs after conflict injection, so no later grant can
-        turn this administrator into a conflict, and draws nothing when the application
-        already has one, which leaves most worlds as they were.
+        Nobody runs an identity provider or a secrets vault without administrators, yet chance
+        alone sometimes leaves no active person holding one of a critical application's
+        privileged entitlements outside an SoD conflict: the IdP admin console in about 6% of
+        startups, the production vault in about one midmarket org in ten (its privileged
+        grants are mostly short requests), a regional vault copy in some enterprises. For
+        each such application, one active employee of its owning department gets that access,
+        or else of a department that uses it, or else of the executive office (in a startup
+        whose only IT employee is new or away, a founder holds the IdP super-administrator
+        seat). It is a business role their department requests when one reaches it, otherwise
+        a standing direct grant, preferring entitlements without a maximum duration (an
+        administrator seat). The grant is eligible, introduces no SoD conflict and falls after
+        the person joined their current department. Runs after conflict injection, so no later
+        grant can turn this administrator into a conflict, and draws nothing when the
+        application already has one, so most worlds never reach it. When no department yields
+        anyone, nothing is granted and ``checks.critical_administrator_problems`` fails the
+        build.
         """
         anchor = self.anchor
         for app_id, app in sorted(self.catalog.apps.items()):

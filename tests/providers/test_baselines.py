@@ -729,7 +729,8 @@ def test_the_complete_mover_is_oracle_valid() -> None:
 @pytest.mark.parametrize("index", range(len(_floor_incomplete_cases())))
 def test_birthright_only_plan_refuses_views_the_oracle_rejects_at_entry(index: int) -> None:
     """The floor runs the oracle's JML entry checks, so a view they reject is an error response
-    carrying the oracle's own complaint, though the floor's grants never read the record."""
+    carrying the oracle's own complaint, though the floor's grants don't depend on the broken
+    record."""
     case, message = _floor_incomplete_cases()[index]
     with pytest.raises(OracleInputError) as refused:
         oracle_decide(case.view, Task.jml)
@@ -742,11 +743,13 @@ def test_birthright_only_plan_refuses_views_the_oracle_rejects_at_entry(index: i
 def _floor_rule_check_cases() -> list[tuple[Case, str]]:
     """Views the oracle refuses past its entry checks, on a fact the floor's own part of the
     plan can check with one public ``PlanContext`` call, with a fragment of the oracle's
-    complaint. None of them breaks the floor's grants, so a floor that skipped the call would
-    answer: a joiner or rehire already holding live access the grants would switch on
+    complaint. The first four don't break the floor's grants, so a floor that skipped the call
+    would answer: a joiner or rehire already holding live access the grants would switch on
     (``reject_prior_access``), a conversion without ``before`` attributes (``before``) and a
     mover whose held new birthright role doesn't expand (``expansion_of``; the floor doesn't
-    grant ``br_all``, which the mover holds)."""
+    grant ``br_all``, which the mover holds). The last, a conversion with neither ``before`` nor
+    ``after``, pins the order: gold reads ``before`` first, so a floor that read ``after`` first
+    would refuse it with a different message."""
     prior = [membership("m_fin", "u_j", "br_fin", source="birthright")]
     prior_access = [
         (
@@ -777,6 +780,10 @@ def _floor_rule_check_cases() -> list[tuple[Case, str]]:
         *prior_access,
         (conversion, "conversion event hr_1 has no before attributes"),
         (_without(mover, "entitlements", "ent_all"), "entitlement 'ent_all' is referenced"),
+        (
+            jml_case("j", HrEventType.conversion, employment_type="contractor"),
+            "conversion event hr_1 has no before attributes",
+        ),
     ]
 
 

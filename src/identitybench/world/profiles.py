@@ -16,6 +16,9 @@ class OrgProfile:
     """Fictional organization names; one is picked per seed so worlds don't all share a name."""
     identities: int
     apps: int
+    """Application count. A startup or midmarket org has exactly its tiers' base apps (13 and
+    47: the identity provider and its admin console are two applications, as are the production
+    and non-production secrets vaults); an enterprise adds regional and UAT copies up to this."""
     entitlements: int
     """Target entitlement count; the catalog lands within a few percent of it."""
     roles: int
@@ -64,7 +67,7 @@ PROFILES: dict[str, OrgProfile] = {
         name="startup",
         org_names=("Quillfeather Labs", "Tessaline Software", "Orbweave Labs"),
         identities=150,
-        apps=12,
+        apps=13,
         entitlements=120,
         roles=10,
         tier=STARTUP_TIER,
@@ -90,7 +93,7 @@ PROFILES: dict[str, OrgProfile] = {
             "Vantorra Freight Systems",
         ),
         identities=2000,
-        apps=45,
+        apps=47,
         entitlements=900,
         roles=60,
         tier=MIDMARKET_TIER,

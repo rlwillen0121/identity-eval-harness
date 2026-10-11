@@ -562,7 +562,9 @@ async def test_a_missing_cost_is_unknown_not_zero() -> None:
     assert response.reported_cost_usd is None
 
 
-@pytest.mark.parametrize("cost", [None, "0.01", True, -0.5, float("nan"), float("inf"), [0.01]])
+@pytest.mark.parametrize(
+    "cost", [None, "0.01", True, -0.5, float("nan"), float("inf"), [0.01], 10**400]
+)
 async def test_a_cost_that_is_not_a_usable_number_is_unknown(cost: object) -> None:
     usage = {**OPENROUTER_USAGE, "cost": cost}
     response = await provider(completion(usage=usage)).complete(make_request())
@@ -574,6 +576,31 @@ async def test_a_zero_cost_is_a_real_zero() -> None:
     usage = {**OPENROUTER_USAGE, "cost": 0}
     response = await provider(completion(usage=usage)).complete(make_request())
     assert response.reported_cost_usd == 0.0
+
+
+async def test_a_byok_call_costs_the_fee_plus_the_upstream_charge() -> None:
+    """With BYOK, ``cost`` is only OpenRouter's fee; the host bills the user's own key the
+    rest, which a budget must count too."""
+    usage = {**OPENROUTER_USAGE, "cost": 0.0001, "is_byok": True}
+    usage["cost_details"] = {"upstream_inference_cost": 0.002}
+    response = await provider(completion(usage=usage)).complete(make_request())
+    assert response.reported_cost_usd == pytest.approx(0.0021)
+    assert response.raw is not None and response.raw["is_byok"] is True
+
+
+@pytest.mark.parametrize("details", [None, {}, {"upstream_inference_cost": None}, "0.002"])
+async def test_a_byok_call_without_its_upstream_charge_has_an_unknown_cost(
+    details: object,
+) -> None:
+    usage = {**OPENROUTER_USAGE, "is_byok": True, "cost_details": details}
+    response = await provider(completion(usage=usage)).complete(make_request())
+    assert response.reported_cost_usd is None
+    assert response.raw is not None and response.raw["is_byok"] is True
+
+
+async def test_a_call_on_openrouters_key_is_not_marked_byok() -> None:
+    response = await provider(completion(usage=OPENROUTER_USAGE)).complete(make_request())
+    assert "is_byok" not in (response.raw or {})
 
 
 @pytest.mark.parametrize("upstream", ["", 7, None])
@@ -664,6 +691,8 @@ async def test_routing_is_copied_so_later_edits_change_nothing() -> None:
         ({"": "x"}, "keys must be non-empty strings"),
         ({"order": {"Baidu"}}, "values must be JSON"),
         ({"max_price": {"prompt": float("nan")}}, "values must be JSON"),
+        # Passes a plain dump, but can't be key-sorted for the endpoint identity.
+        ({"order": ["Baidu"], "x": {1: "a", "b": "c"}}, "values must be JSON"),
         ({"order": "Baidu"}, "order must be a list of host names"),
         ({"order": ["Baidu", ""]}, "order must be a list of host names"),
         ({"allow_fallbacks": "false"}, "allow_fallbacks must be true or false"),

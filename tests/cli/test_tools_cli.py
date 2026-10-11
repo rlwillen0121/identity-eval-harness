@@ -13,12 +13,16 @@ from pathlib import Path
 import pytest
 
 from identitybench.cli import ExitCode
-from identitybench.judge.labels import KEY_FILE, SHEET_CSV_COLUMNS
+from identitybench.judge.labels import KEY_FILE, SHEET_CSV_COLUMNS, ProbeKind
 from identitybench.judge.rubric import DIMENSIONS
 from identitybench.judge.run import Judge
+from identitybench.judge.targets import build_targets
 from identitybench.render.tools import WorldStore, WorldUnavailableError
+from identitybench.runner.manifest import dataset_fingerprint
 from identitybench.runner.run import PREDICTIONS_FILE, load_predictions
 from identitybench.schemas.case import Case
+from identitybench.scoring.served import WorldServedIndex
+from identitybench.scoring.summary import load_run, score_run
 from tests.cli.conftest import Invoke, make_invoker
 from tests.cli.sheets import read_csv, write_csv
 from tests.cli.tools_run import (
@@ -193,21 +197,114 @@ def test_a_label_export_short_of_model_rationales_names_the_flag(
     )
 
 
+def agent_rationales(run_dir: Path) -> int:
+    """How many rationales the agent gave in ``run_dir``: the rows a label export can draw
+    when baselines are left out (one per request and plan, one per review item)."""
+    loaded = load_run(run_dir)
+    served = WorldServedIndex(loaded.dataset_dir)
+    agent = list(loaded.predictions[AGENT_CONFIG])
+    return len(
+        build_targets(list(loaded.cases), agent, {AGENT_CONFIG: AGENT_FAMILY}, served=served)
+    )
+
+
 def test_label_export_refusals_name_the_flags_never_the_library_keywords(
     cli: Invoke, run_dir: Path
 ) -> None:
-    # 35 rows, three of them probes: every one of the 32 agent rationales is a real row, so
-    # each probe's source would be one too.
-    base = ("audit", "export", "--judge-labels", "--run", run_dir, *FAMILY, "--n", "35")
+    # One probe of each kind on top of every agent rationale as a real row: each probe's
+    # source would then be a held-out row too.
+    real = agent_rationales(run_dir)
+    rows = str(real + len(ProbeKind))
+    base = ("audit", "export", "--judge-labels", "--run", run_dir, *FAMILY, "--n", rows)
     reused = cli("--quiet", *base, "--n-dev", "4", "--probes", "1")
     assert reused.exit_code == ExitCode.INPUT, reused.output
     [line] = reused.stderr.splitlines()
     assert "would reuse held-out rationales as sources" in line
     assert line.endswith("lower the probe counts, or pass --allow-reused-sources")
-    dev = cli("--quiet", *base, "--n-dev", "33", "--probes", "1", "--allow-reused-sources")
+    over = str(real + 1)
+    dev = cli("--quiet", *base, "--n-dev", over, "--probes", "1", "--allow-reused-sources")
     assert dev.exit_code == ExitCode.INPUT, dev.output
     [line] = dev.stderr.splitlines()
-    assert line == "error: --n-dev 33 must be between 0 and the 32 real rows"
+    assert line == f"error: --n-dev {over} must be between 0 and the {real} real rows"
+
+
+def copy_run(run_dir: Path, run_id: str, *, dataset: Path | None = None) -> Path:
+    """A copy of ``run_dir`` under ``run_id``, beside it; with ``dataset``, made on that
+    dataset instead (the manifest's path and fingerprint point at it)."""
+    target = run_dir.parent / run_id
+    shutil.copytree(run_dir, target)
+    shutil.rmtree(target / "scores", ignore_errors=True)
+    manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    manifest["run_id"] = run_id
+    if dataset is not None:
+        manifest["dataset"] |= {"path": dataset.as_posix(), "sha256": dataset_fingerprint(dataset)}
+    (target / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    path = target / PREDICTIONS_FILE
+    lines = path.read_text(encoding="utf-8").splitlines()
+    path.write_text(
+        "".join(json.dumps(json.loads(line) | {"run_id": run_id}) + "\n" for line in lines),
+        encoding="utf-8",
+    )
+    return target
+
+
+def test_a_label_export_refuses_runs_on_two_versions_of_a_dataset_sharing_case_ids(
+    cli: Invoke, tools_repo: Path, run_dir: Path
+) -> None:
+    """An erratum release keeps its case IDs: one ID would row the earlier run's answers
+    against the later run's case, gold and worlds, so the runs must be exported apart. Runs
+    on one dataset share their cases and are exported together."""
+    erratum = Path("datasets") / "tools-v1.1"
+    shutil.copytree(tools_repo / TOOLS_DATASET, tools_repo / erratum)
+    (tools_repo / erratum / "ERRATA.md").write_text("A corrected record.\n", encoding="utf-8")
+    later = copy_run(run_dir, "run-on-erratum", dataset=erratum)
+    args = ("audit", "export", "--judge-labels", *FAMILY, "--n", "12", "--n-dev", "4")
+    refused = cli("--quiet", *args, "--run", run_dir, "--run", later)
+    assert refused.exit_code == ExitCode.INPUT, refused.output
+    [line] = refused.stderr.splitlines()
+    assert line.startswith(f"error: runs {run_dir.name} and run-on-erratum were made on different")
+    assert line.endswith("export labels for each dataset's runs separately")
+    # Both datasets carry one name and version here; their fingerprints tell them apart.
+    for data in (TOOLS_DATASET, erratum):
+        assert f"sha256 {dataset_fingerprint(tools_repo / data)[:12]}" in line
+    assert not (tools_repo / "audit").exists()
+
+    rerun = copy_run(run_dir, "rerun")
+    both = cli("--quiet", *args, "--probes", "0", "--run", run_dir, "--run", rerun)
+    assert both.exit_code == 0, both.output
+
+
+def test_compare_scores_each_side_exactly_as_score_does(cli: Invoke, run_dir: Path) -> None:
+    """``compare`` scores a side as ``score`` scores it in its run: here a tool-use model,
+    which gets its tool metrics, and a baseline, which is scored in context mode."""
+    from identitybench.cli import _score_side  # pyright: ignore[reportPrivateUsage]
+
+    scored = score_run(run_dir, n_boot=50, seed=3)
+    loaded = load_run(run_dir)
+    served = WorldServedIndex(loaded.dataset_dir)
+    assert scored.configs[AGENT_CONFIG].tools is not None
+    assert scored.configs[BASELINE].tools is None
+    for config_id, expected in scored.configs.items():
+        side = _score_side(loaded, config_id, served=served, seed=3, n_boot=50)
+        assert side.scores.model_dump() == expected.model_dump(), config_id
+
+
+def test_a_compare_across_runs_on_one_dataset_rebuilds_its_worlds_once(
+    cli: Invoke, run_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built: list[Path] = []
+
+    class Counted(WorldServedIndex):
+        def __init__(self, dataset_dir: Path) -> None:
+            built.append(Path(dataset_dir))
+            super().__init__(dataset_dir)
+
+    monkeypatch.setattr("identitybench.scoring.served.WorldServedIndex", Counted)
+    rerun = copy_run(run_dir, "rerun")
+    a, b = f"{run_dir}:{AGENT_CONFIG}", f"{rerun}:{AGENT_CONFIG}"
+    result = cli("compare", a, b, "--n-boot", "50")
+    assert result.exit_code == 0, result.output
+    assert len(built) == 1
 
 
 def test_judge_validation_on_a_tools_run_serves_the_records_and_writes_beside_the_key(

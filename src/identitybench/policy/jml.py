@@ -12,11 +12,12 @@ their rows say so. Birthright is standing access, so a role counts as held only 
 membership with no expiry date.
 
 **Joiners and rehires start from nothing.** JML-001 grants the birthright and "Nothing else";
-JML-004 shows the prior stint as history that "isn't restored". Their grants provision and
-reactivate accounts, so any other source on file that can still confer access once the grants
-take effect would be switched on by the gold plan itself. Such a view contradicts its event and
-is rejected. Memberships in the matching birthright roles are allowed: the plan grants those
-roles anyway, so they add nothing.
+JML-004 shows the prior stint as history that "isn't restored". So any other source on file
+that can still confer access once the grants take effect contradicts the event, whatever its
+application or account status: where the grants reach, they provision or reactivate the account
+and the gold plan itself would switch the source on, and elsewhere it is still access the event
+says the identity doesn't have. Such a view is rejected. Memberships in the matching birthright
+roles are allowed: the plan grants those roles anyway, so they add nothing.
 
 **Every other operation changes something.** Removals and account changes that would change
 nothing (disabling a disabled account) are left out, so every gold operation changes simulated
@@ -412,8 +413,10 @@ class PlanContext:
 
         Every source the identity holds that can still confer access on ``day`` (when the
         grants take effect) or later is a contradiction, except a membership in one of the
-        ``birthright`` roles being granted. Records that have expired by then can't be switched
-        back on, so they stay on file as history.
+        ``birthright`` roles being granted, whether or not a grant would switch it on: one in an
+        application the grants don't reach, or on an active account, is still access the event
+        says the identity doesn't have. Records that have expired by then can't confer anything
+        again, so they stay on file as history.
         """
         granted = set(birthright)
         held = [
@@ -458,9 +461,10 @@ class PlanContext:
         ``unjudged`` are the sources JML-002 doesn't judge, ``kept`` every source the plan leaves
         on file (the unjudged ones and memberships in the new birthright roles included),
         ``new_roles`` the new birthright and ``granted`` the roles of it that gold grants on
-        ``day``. An unjudged record that can be valid on ``day`` or later is harmful in either of
-        two ways, unless a control valid on the move date mitigates the conflict
-        (``_unmitigated_opposites``).
+        ``day``, the day the grants take effect: the move date, or the as-of date once the move
+        has passed and the grants are overdue. An unjudged record that can be valid on ``day``
+        or later is harmful in either of two ways, unless a control valid on the move date
+        mitigates the conflict (``_unmitigated_opposites``).
 
         - The grants switch it on in each application they provision: a membership's
           entitlements there become effective through the new or reactivated account, and so

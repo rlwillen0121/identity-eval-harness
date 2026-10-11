@@ -250,6 +250,7 @@ def selective_figure(
     op = calibration.operating_point
     measured = op.point if op is not None else None
     operating: svg.OperatingMark | None = None
+    bound_text: str | None = None
     if op is not None and measured is not None and measured.coverage is not None:
         cert = op.certification
         operating = svg.OperatingMark(
@@ -259,6 +260,10 @@ def selective_figure(
             status=operating_status(op, task, has_dev=ref.run.scores.dev_run_id is not None),
             bound=cert.upper if cert is not None else None,
         )
+        # Printed against the target as the status beside it is: a fixed ".1%" would show a
+        # 2.004% bound as 2.0% next to "bound above the 2.0% target".
+        if operating.bound is not None:
+            bound_text = fmt.pct_against(operating.bound, op.target_war)
     key = f"selective-{task.value}-{ref.key}"
     title = f"{TASK_TITLES[task]}: selective risk · {ref.name}"
 
@@ -292,6 +297,7 @@ def selective_figure(
                 "label": operating.label,
                 "status": operating.status,
                 "bound": operating.bound,
+                "bound_text": bound_text,
             },
         ),
     )

@@ -470,8 +470,8 @@ def test_openrouter_defaults_to_its_reported_cost() -> None:
     ("kind", "env", "reports"),
     [
         ("openai_compatible", "OPENROUTER_BASE_URL", True),
-        # cost_mode: reported on another gateway is taken at its word until a call says otherwise.
-        ("openai_compatible", "GATEWAY_BASE_URL", True),
+        # Another gateway isn't assumed to report a cost, so a budget there is refused up front.
+        ("openai_compatible", "GATEWAY_BASE_URL", False),
         # OpenAI's own API never states a per-call cost.
         ("openai_compatible", None, False),
         ("openai_compatible", "OPENAI_BASE_URL", False),

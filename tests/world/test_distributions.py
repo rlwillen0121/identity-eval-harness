@@ -4,8 +4,9 @@ Bounds are deliberately loose: they catch a broken knob (no terminated people, t
 everywhere, every grant dormant), not natural seed-to-seed variation. The startup sweep checks
 that small orgs don't lose a feature by chance: LIFE-003 material, security holds, telemetry
 gaps, both kinds of HYG-003 service account, HYG-005 leftovers, leavers with active accounts,
-expired memberships, open assigned incidents, APPR-005 material (an IdP administrator outside
-any SoD conflict) and live conflicts whose control has expired or is due for renewal.
+expired memberships, open assigned incidents, APPR-005 material (an administrator of the IdP
+admin console outside any SoD conflict) and live conflicts whose control has expired or is due
+for renewal.
 """
 
 from __future__ import annotations
@@ -332,10 +333,11 @@ def test_application_owners_are_active_leaders(midmarket_world: World) -> None:
 
 # ------------------------------------------------------------------------------ startup sweep
 
-STARTUP_SEEDS = (*range(300, 340), 14, 76, 114)
-"""Forty consecutive seeds plus three where, before the guarantee, no live conflict's control
-had expired (no seed in 300-339 needed that one; 319, 328 and 336 needed the IdP
-administrator)."""
+STARTUP_SEEDS = (*range(300, 340), 41, 61, 16)
+"""Forty consecutive seeds plus three more that need a guarantee. In 305, 336, 41 and 61 no
+chosen live conflict has room for an expired control until ``governance._with_room`` swaps one
+in; in 306 and 16 chance leaves the IdP admin console without an administrator until
+``provisioning._Provisioner._critical_administrators`` grants one."""
 
 
 @pytest.fixture(scope="module")
@@ -374,8 +376,8 @@ def test_startup_always_has_review_and_break_glass_material(startup_worlds: list
     - a terminated identity with an active account (LIFE-001, deprovisioning lag);
     - an expired membership still on file (HYG-004);
     - an open incident with an assignee (break-glass, APPR-003/004);
-    - an active identity holding a privileged entitlement on the critical identity provider
-      outside any SoD conflict (APPR-005 alone);
+    - an active identity holding a privileged entitlement on the critical IdP admin console
+      outside any SoD conflict (APPR-005 material);
     - live SoD conflicts whose control has expired (the MIT-001 lookalike) and whose control
       expires within 30 days (MIT-002)."""
     for world in startup_worlds:
@@ -497,9 +499,12 @@ def test_startup_purchase_order_conflicts_land_in_finance(startup_worlds: list[W
 
 def test_startup_control_approvers_vary(startup_worlds: list[World]) -> None:
     """Rule-specific approvers (Finance, IT, Engineering, HR leaders and the CEO), so a small
-    org's exceptions aren't all signed off by the same person."""
+    org's exceptions aren't all signed off by the same person. Each rule's pool is a department
+    head or two and the founders, so in about 3.5% of startups (14 of seeds 0-399) chance, or
+    heads hired after the conflicts began, leaves a founder signing every control; more than
+    three in 43 would be a broken knob."""
     varied = sum(
         len({c.approver_id for c in world.mitigating_controls.values()}) >= 2
         for world in startup_worlds
     )
-    assert varied >= len(startup_worlds) - 1
+    assert varied >= len(startup_worlds) - 3
