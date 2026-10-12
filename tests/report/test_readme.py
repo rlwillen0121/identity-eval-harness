@@ -1,7 +1,7 @@
-"""The README results block: status line, hero figure in both themes, the headline table with
-the best model value per column in bold and two reference rows, the significance note,
-per-task intervals, the baselines and the reading notes one click away; plus the hero SVG
-itself."""
+"""The README results block: the hero figure in both themes, the status line, the headline
+table with the best model value per column in bold and two reference rows, the cost and
+scorecard figures, the significance note, per-task intervals, the baselines and the reading
+notes one click away. The figures' own renderers are tested in ``test_readme_figures``."""
 
 from __future__ import annotations
 
@@ -22,10 +22,15 @@ from identitybench.report import (
     readme_leaderboard,
     update_readme,
 )
-from identitybench.report.hero import THEMES, HeroRow, hero_svg
 from identitybench.report.inputs import ReportRun
-from identitybench.report.readme import MODEL_NAMES, NOT_SCORED, README_CHARTS, model_name
-from identitybench.report.svg import _text_width  # pyright: ignore[reportPrivateUsage]
+from identitybench.report.readme import (
+    COST_FIGURE_MIN,
+    MODEL_NAMES,
+    NOT_SCORED,
+    README_CHARTS,
+    model_name,
+    model_vendor,
+)
 from identitybench.schemas.enums import Task
 from identitybench.scoring.metrics import Metric
 from identitybench.scoring.summary import Comparison, ConfigScores
@@ -33,6 +38,14 @@ from identitybench.scoring.usage import UsageScores
 from tests.report.builders import BASELINES, Fixture, with_request_robustness
 
 NS = "{http://www.w3.org/2000/svg}"
+CHART_FILES = sorted(name for themes in README_CHARTS.values() for name in themes.values())
+SHOWN_FILES = sorted(
+    name
+    for figure, themes in README_CHARTS.items()
+    if figure != "cost-quality"  # the fixture prices fewer than COST_FIGURE_MIN models
+    for name in themes.values()
+)
+HERO = README_CHARTS["results"]
 HEADLINE = (
     "Model",
     "Grounded accuracy ★ ↑",
@@ -148,6 +161,31 @@ def _usage(scores: ConfigScores, **changes: Any) -> ConfigScores:
     return scores.model_copy(update={"usage": usage})
 
 
+def _priced(run: ReportRun, count: int = COST_FIGURE_MIN) -> ReportRun:
+    """``run`` with ``count`` models on API prices: model_a and model_b metered, and copies of
+    model_b billed by a gateway at other prices and accuracies."""
+    a, b = run.scores.configs["model_a"], run.scores.configs["model_b"]
+    a = _with_grounding(a, 0.6, 0.5, 0.4)
+    b = _with_grounding(b, 0.9, 0.8, 0.7)
+    edited = _with_config(
+        run,
+        "model_a",
+        _usage(a, cost_basis="metered", api_usd_per_1k_decisions=2.0),
+        label="model-a",
+    )
+    edited = _with_config(
+        edited,
+        "model_b",
+        _usage(b, cost_basis="metered", api_usd_per_1k_decisions=6.0),
+        label="model-b",
+    )
+    for k in range(count - 2):
+        copy = _with_grounding(b, 0.85 - 0.1 * k, 0.75, 0.6)
+        copy = _usage(copy, cost_basis="billed", api_usd_per_1k_decisions=3.0 + 5.0 * k)
+        edited = _with_config(edited, f"model_p{k}", copy, label=f"model-p{k}")
+    return edited
+
+
 def _parse(svg: str) -> ET.Element:
     root = ET.fromstring(svg)
     assert root.tag == f"{NS}svg"
@@ -155,7 +193,11 @@ def _parse(svg: str) -> ET.Element:
 
 
 def _texts(root: ET.Element) -> list[str]:
-    return [t.text or "" for t in root.iter(f"{NS}text")]
+    """Every text in order, a label's ``<tspan>`` note as its own entry after it."""
+    out: list[str] = []
+    for t in root.iter(f"{NS}text"):
+        out += [t.text or "", *(span.text or "" for span in t.iter(f"{NS}tspan"))]
+    return out
 
 
 # --------------------------------------------------------------------------------------------
@@ -174,9 +216,21 @@ def test_the_block_leads_with_status_hero_and_headline_table(runs: Fixture) -> N
         f"n = 15 cases per model · run 2026-10-10 · dataset sha256 `{dataset.sha256[:12]}`"
     )
     assert "Interim" not in md
-    # Status, then the picture, then the headline table, then the collapsed blocks.
-    order = [md.index(s) for s in (status, "<picture>", "<table>", "<details>")]
+    # The hero, then the status, the headline table and its method note, the significance note
+    # that qualifies the table's order, the scorecard and the collapsed blocks. With fewer than
+    # COST_FIGURE_MIN priced models there is no cost figure, and no figure has a Markdown
+    # caption repeating it.
+    pictures = [m.start() for m in re.finditer("<picture>", md)]
+    assert len(pictures) == 2
+    method = md.index("<sub>Rates in %.")
+    tested = md.index("**Which differences are significant")
+    order = [pictures[0], md.index(status), md.index("<table>"), method, tested, pictures[1]]
+    order.append(md.index("<details>"))
     assert order == sorted(order)
+    for figure, start in zip(("results", "scorecard"), pictures, strict=True):
+        assert f"charts/readme-{figure}-dark.svg" in md[start : start + 200]
+    between = md[md.index("</picture>", pictures[1]) : md.index("<details>")]
+    assert "<sub>" not in between  # no caption under the scorecard
     assert md.startswith("<!-- Generated by `identitybench report --readme`")
     headline = _tables(md)[0]
     assert tuple(_header(headline)) == HEADLINE
@@ -184,7 +238,10 @@ def test_the_block_leads_with_status_hero_and_headline_table(runs: Fixture) -> N
     assert sorted(names) == ["model-a †", "model-b †"]
     assert "[Markdown](reports/v1/report.md) · [HTML](reports/v1/report.html)" in md
     assert "★ SPEC §12.8 primary metric" in md
-    assert "Sorted by NRC as displayed, ties broken by grounded accuracy." in md
+    assert (
+        "Sorted by NRC as displayed, ties broken by grounded accuracy (the figures sort by "
+        "grounded accuracy)." in md
+    )
     # Collapsed blocks: per-task results, baselines, then how to read the table.
     summaries = re.findall(r"<summary>(.*?)</summary>", md)
     assert summaries == [
@@ -196,11 +253,17 @@ def test_the_block_leads_with_status_hero_and_headline_table(runs: Fixture) -> N
 
 def test_the_hero_states_what_it_averages_and_how_it_was_run(runs: Fixture) -> None:
     block = readme_leaderboard([runs.main])
-    texts = _texts(_parse(block.charts[README_CHARTS["dark"]]))
-    assert (
-        "Mean over 8 access requests and 2 review campaigns · test split · context mode · "
-        "baseline prompt"
-    ) in texts
+    dataset = _loaded(runs).scores.dataset
+    root = _parse(block.charts[HERO["dark"]])
+    desc = root.find(f"{NS}desc")
+    assert desc is not None and desc.text is not None
+    assert "Both are means over 8 access requests and 2 review campaigns" in desc.text
+    source = (
+        f"Source: {dataset.name} {dataset.version} · test split · context mode · baseline prompt"
+        f" · run 2026-10-10 · dataset {dataset.sha256[:12]}"
+    )
+    assert source in desc.text
+    assert source in _texts(root)
 
 
 def test_the_hero_is_a_picture_with_light_and_dark_variants(runs: Fixture) -> None:
@@ -212,8 +275,8 @@ def test_the_hero_is_a_picture_with_light_and_dark_variants(runs: Fixture) -> No
         'srcset="reports/v1/charts/readme-results-dark.svg">'
     ) in picture.group(0)
     assert 'src="reports/v1/charts/readme-results-light.svg"' in picture.group(0)
-    assert re.search(r'<img alt="Bar chart of decision accuracy and grounded accuracy', picture[0])
-    assert set(block.charts) == set(README_CHARTS.values())
+    assert re.search(r'<img alt="[^"]+\. Dot plot of grounded accuracy and decision', picture[0])
+    assert sorted(block.charts) == SHOWN_FILES
 
 
 def test_report_dir_sets_every_link(runs: Fixture) -> None:
@@ -261,9 +324,11 @@ def test_the_best_model_value_per_column_is_bold(runs: Fixture) -> None:
     values = {name: float(_plain(cells[NRC])) for name, cells in rows.items()}
     best = min(values, key=values.__getitem__)
     assert values["model-b †"] < values["model-a †"]
+    oracle = float(_plain(_reference_rows(headline)[-1][1:][NRC]))
+    assert values[best] != oracle  # short of the oracle's floor: bold
     for name, cells in rows.items():
         assert bool(_bold_parts(cells[NRC])) is (name == best)
-    # WAR is bolded part by part: requests and reviews each have their own best.
+    # WAR is bolded part by part, and a best value of 0.0 is a perfect score: never bold.
     war = columns.index("WAR ★ ↓ req · rev")
     parts = {name: _plain(cells[war]).split(" · ") for name, cells in rows.items()}
     for k in range(2):
@@ -272,7 +337,8 @@ def test_the_best_model_value_per_column_is_bold(runs: Fixture) -> None:
         for name, cells in rows.items():
             part_html = cells[war].split("&nbsp;·&nbsp;")[k]
             bold = bool(_bold_parts(part_html))
-            assert bold is (shown[name] == lowest and len(set(shown.values())) > 1)
+            expected = shown[name] == lowest and len(set(shown.values())) > 1 and lowest != 0.0
+            assert bold is expected
 
 
 def test_baselines_and_the_ceiling_are_never_bold(runs: Fixture) -> None:
@@ -282,16 +348,41 @@ def test_baselines_and_the_ceiling_are_never_bold(runs: Fixture) -> None:
     assert "<b>" not in body
 
 
-def test_ties_are_all_bold_and_a_column_where_every_model_ties_is_plain(runs: Fixture) -> None:
+def test_ties_are_all_bold_however_many_share_the_best(runs: Fixture) -> None:
+    """Bold marks the best value short of perfect: tied leaders are all bold, however many
+    share it, and a column where every model reads the same is left plain."""
     run = _loaded(runs)
-    best = run.scores.configs["model_b"]
+    best, worst = run.scores.configs["model_b"], run.scores.configs["model_a"]
     tied = _with_config(run, "model_c", best, label="model-c")
+    tied = _with_config(tied, "model_d", worst, label="model-d")
     rows = {_plain(r[0]): r[1:] for r in _rows(_tables(readme_leaderboard([tied]).markdown)[0])}
+    assert _bold_parts(rows["model-b †"][NRC]) == _bold_parts(rows["model-c †"][NRC]) != []
+    assert _bold_parts(rows["model-a †"][NRC]) == _bold_parts(rows["model-d †"][NRC]) == []
+    most = _with_config(run, "model_c", best, label="model-c")  # two of three share the best
+    rows = {_plain(r[0]): r[1:] for r in _rows(_tables(readme_leaderboard([most]).markdown)[0])}
     assert _bold_parts(rows["model-b †"][NRC]) == _bold_parts(rows["model-c †"][NRC]) != []
     assert _bold_parts(rows["model-a †"][NRC]) == []
     same = _with_config(run, "model_a", best, label="model-a")
     headline = _tables(readme_leaderboard([same]).markdown)[0]
     assert "<b>" not in headline
+
+
+def test_a_perfect_score_is_never_bold(runs: Fixture) -> None:
+    """A model that matches the oracle's correct automation and NRC (their ceiling and floor)
+    has a perfect score there, which the scorecard shows; bold is left for the best value
+    still short of perfect, so neither column is bold."""
+    run = _loaded(runs)
+    perfect = _with_config(run, "model_c", run.scores.configs["oracle"], label="model-c")
+    md = readme_leaderboard([perfect]).markdown
+    headline = _tables(md)[0]
+    rows = {_plain(r[0]): r[1:] for r in _model_rows(headline)}
+    oracle = _reference_rows(headline)[-1][1:]
+    automation = HEADLINE[1:].index("Correct automation ★ ↑")
+    assert _plain(rows["model-c †"][NRC]) == _plain(oracle[NRC])
+    assert _plain(rows["model-c †"][automation]) == _plain(oracle[automation])
+    for cells in rows.values():
+        assert _bold_parts(cells[NRC]) == _bold_parts(cells[automation]) == []
+    assert "a perfect score (100 or 0, or the oracle's own correct automation and NRC)" in md
 
 
 def test_cost_is_bolded_only_among_api_charges(runs: Fixture) -> None:
@@ -443,8 +534,7 @@ def test_grounded_accuracy_is_the_mean_over_requests_and_reviews_only(runs: Fixt
     for block in blocks:
         rows = {_plain(r[0]): r[1:] for r in _rows(_tables(block.markdown)[0])}
         assert _plain(rows["model-b †"][GROUNDED]) == "80.0"
-        assert "model-b †: Decision accuracy" in block.charts[README_CHARTS["light"]]
-        assert "Grounded accuracy 80.0%" in block.charts[README_CHARTS["light"]]
+        assert "model-b †: grounded accuracy 80.0%" in block.charts[HERO["light"]]
     # Only the JML per-task table, inside the collapsed block, shows the difference.
     assert blocks[0].charts == blocks[1].charts
     head = [block.markdown.split("<details>", 1)[0] for block in blocks]
@@ -462,7 +552,7 @@ def test_harmful_flips_are_a_headline_column(runs: Fixture) -> None:
     md = readme_leaderboard([run]).markdown
     rows = {_plain(r[0]): r[1:] for r in _rows(_tables(md)[0])}
     assert rows["model-a †"][FLIPS] == "25.0"
-    assert rows["model-b †"][FLIPS] == "<b>0.0</b>"
+    assert rows["model-b †"][FLIPS] == "0.0"  # the best, but a perfect score: never bold
     robustness = _details(md, "<b>Per-task results</b>")
     assert "**Robustness** · requests: 1 adversarial and 2 twin pairs" in robustness
     table = _tables(robustness)[-1]
@@ -684,9 +774,15 @@ def test_a_quantized_label_keeps_its_disclosure() -> None:
 
 def test_write_charts_and_update_readme_are_idempotent(runs: Fixture, tmp_path: Path) -> None:
     block = readme_leaderboard([runs.main], planned_models=4)
+    charts = tmp_path / "report" / "charts"
+    charts.mkdir(parents=True)
+    stale = charts / README_CHARTS["cost-quality"]["light"]
+    stale.write_text("<svg/>", "utf-8")  # a figure the block no longer shows
+    (charts / "cost-per-1k.svg").write_text("<svg/>", "utf-8")  # the full report's: kept
     written = block.write_charts(tmp_path / "report")
-    assert sorted(p.name for p in written) == sorted(README_CHARTS.values())
-    assert all(p.parent == tmp_path / "report" / "charts" for p in written)
+    assert sorted(p.name for p in written) == SHOWN_FILES
+    assert all(p.parent == charts for p in written)
+    assert not stale.exists() and (charts / "cost-per-1k.svg").exists()
     readme = tmp_path / "README.md"
     readme.write_text(f"# T\n\nintro\n\n{README_START}\nold\n{README_END}\n\nafter\n", "utf-8")
     assert update_readme(readme, block.markdown)
@@ -705,78 +801,118 @@ def test_the_block_is_a_value(runs: Fixture) -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# The hero SVG
+# The figures, as the block builds them
 # --------------------------------------------------------------------------------------------
 
 
-def _hero(theme: str = "light", **overrides: Any) -> str:
-    options: dict[str, Any] = {
-        "theme": THEMES[theme],
-        "title": "IdentityBench v1",
-        "subtitle": "Mean over requests, reviews and JML plans · test split",
-        "series": ("Decision accuracy", "Grounded accuracy"),
-        "note": "Bars start at zero.",
-        "badge": "Interim · 2 of 4 models",
-        "reference": (1.0, "Oracle ceiling (100%)"),
-    }
-    options.update(overrides)
-    return hero_svg(
-        [HeroRow('model <a> & "b"', (0.995, 0.934)), HeroRow("undefined", (0.8, None))],
-        **options,
-    )
-
-
-def test_the_hero_is_accessible_and_states_every_value() -> None:
-    root = _parse(_hero())
-    assert root.get("role") == "img"
-    title, desc = root.find(f"{NS}title"), root.find(f"{NS}desc")
-    assert title is not None and title.text == "IdentityBench v1"
+def _desc(svg: str) -> str:
+    desc = _parse(svg).find(f"{NS}desc")
     assert desc is not None and desc.text is not None
-    assert 'model <a> & "b": Decision accuracy 99.5%, Grounded accuracy 93.4%' in desc.text
-    assert "undefined: Decision accuracy 80.0%, Grounded accuracy n/a" in desc.text
-    texts = _texts(root)
-    for text in ("99.5%", "93.4%", "80.0%", "n/a", "Oracle ceiling (100%)", "Decision accuracy"):
-        assert text in texts
-    assert root.get("aria-labelledby") == (
-        "identitybench-results-light-title identitybench-results-light-desc"
+    return desc.text
+
+
+def test_every_figure_prints_the_tables_numbers(runs: Fixture) -> None:
+    """The hero's grounded column and the scorecard's grounded cells are the headline table's
+    grounded accuracy, digit for digit, for every model."""
+    block = readme_leaderboard([_priced(_loaded(runs))])
+    rows = {_plain(r[0]): r[1:] for r in _model_rows(_tables(block.markdown)[0])}
+    hero = _desc(block.charts[HERO["light"]])
+    scorecard = _desc(block.charts[README_CHARTS["scorecard"]["light"]])
+    cost = _desc(block.charts[README_CHARTS["cost-quality"]["light"]])
+    for name, cells in rows.items():
+        grounded = _plain(cells[GROUNDED])
+        shown = "n/a" if grounded == "n/a" else f"{grounded}%"
+        assert f"{name}: grounded accuracy {shown}" in hero
+        assert f"{name}: grounded accuracy {shown}" in cost
+        assert re.search(
+            re.escape(name) + r": .*Grounded Req \+ rev " + re.escape(grounded), scorecard
+        )
+
+
+def test_the_figures_order_models_by_grounded_accuracy(runs: Fixture) -> None:
+    run = _loaded(runs)
+    b = run.scores.configs["model_b"]
+    low = _with_config(run, "model_b", _with_grounding(b, 0.2, 0.2, 0.2), label="model-b")
+    for r in (run, low):
+        block = readme_leaderboard([r])
+        hero = _desc(block.charts[HERO["light"]])
+        grounded = [float(v) for v in re.findall(r"grounded accuracy ([\d.]+)%", hero)]
+        assert grounded == sorted(grounded, reverse=True)
+
+
+def test_the_cost_figure_waits_for_enough_priced_models(runs: Fixture) -> None:
+    """With fewer than COST_FIGURE_MIN models on API prices there is no cost figure (the
+    table's cost column says as much); from COST_FIGURE_MIN on it follows the scorecard."""
+    run = _loaded(runs)
+    few = readme_leaderboard([_priced(run, COST_FIGURE_MIN - 1)])
+    assert "readme-cost-quality" not in few.markdown
+    assert not any("cost-quality" in name for name in few.charts)
+    enough = readme_leaderboard([_priced(run)])
+    md = enough.markdown
+    assert sorted(enough.charts) == CHART_FILES
+    scorecard = md.index("charts/readme-scorecard-dark.svg")
+    cost = md.index("charts/readme-cost-quality-dark.svg")
+    assert scorecard < cost < md.index("<details>")
+    svg = enough.charts[README_CHARTS["cost-quality"]["light"]]
+    assert len([c for c in _parse(svg).iter(f"{NS}circle") if c.get("data-point")]) == 4
+
+
+def test_the_cost_figure_never_places_an_estimate_on_the_axis(runs: Fixture) -> None:
+    run = _priced(_loaded(runs))
+    b = _with_grounding(run.scores.configs["model_b"], 0.9, 0.8, 0.5)
+    estimated = _usage(
+        b,
+        cost_basis="estimate",
+        api_usd_per_1k_decisions=None,
+        cli_estimate_usd_per_1k_decisions=0.5,
+    )
+    block = readme_leaderboard([_with_config(run, "model_e", estimated, label="model-e")])
+    svg = block.charts[README_CHARTS["cost-quality"]["light"]]
+    texts = _texts(_parse(svg))
+    assert "≈$0.50 CLI estimate" in texts and "No API price" in texts
+    assert "$0.50" not in [t for t in texts if t.startswith("$")]
+    # Four priced dots; the estimated model is listed, not plotted.
+    assert len([c for c in _parse(svg).iter(f"{NS}circle") if c.get("data-point")]) == 4
+    assert texts[texts.index("model-e †") + 2] == "≈$0.50 CLI estimate"
+
+
+def test_vendors_come_from_the_label() -> None:
+    assert model_vendor("claude_cli:claude-opus-5-5") == "Anthropic"
+    assert model_vendor("codex_cli:gpt-6.1-sol") == "OpenAI"
+    assert model_vendor("glm-5.3-flash") == "Z.ai"
+    assert model_vendor("qwen3.8-27b-4bit") == "Alibaba"
+    assert model_vendor("model-a") is None
+
+
+def test_figure_takeaways_are_stated_only_when_the_numbers_bear_them_out() -> None:
+    from identitybench.report.cost_quality import CostPoint
+    from identitybench.report.hero import HeroRow
+    from identitybench.report.readme import (
+        _cost_text,  # pyright: ignore[reportPrivateUsage]
+        _hero_text,  # pyright: ignore[reportPrivateUsage]
     )
 
+    gapped = [HeroRow("a", (1.0, 0.99)), HeroRow("b", (0.99, 0.90)), HeroRow("c", (0.97, 0.80))]
+    title, sub = _hero_text(gapped)
+    assert title == "Models decide right, but can't always show why"
+    assert sub.startswith("3 of 3 models score 95% or more on decision accuracy; only 1 does on")
+    level = [HeroRow("a", (0.9, 0.9)), HeroRow("b", (0.8, 0.79))]
+    title, sub = _hero_text(level)
+    assert title == "Decision accuracy and grounded accuracy"
+    assert sub.startswith("The line is the gap")
 
-def test_the_hero_themes_differ_only_in_color() -> None:
-    light, dark = _hero("light"), _hero("dark")
-    assert light == _hero("light")  # deterministic
-    strip = re.compile(r"#[0-9a-f]{6}|-(light|dark)-")
-    assert strip.sub("", light) == strip.sub("", dark)
-    for theme, svg in (("light", light), ("dark", dark)):
-        for color in THEMES[theme].series:
-            assert color in svg
-        assert f".h-page{{fill:{THEMES[theme].page}}}" in svg
-
-
-def test_hero_bars_start_at_zero_and_undefined_values_have_no_bar() -> None:
-    root = _parse(_hero())
-    paths = [p.get("d") or "" for p in root.iter(f"{NS}path")]
-    assert len(paths) == 3  # two bars for the first model, one for the second
-    starts = {re.match(r"M([\d.]+),", d).group(1) for d in paths}  # type: ignore[union-attr]
-    assert len(starts) == 1  # every bar grows from the same baseline
-
-
-def test_hero_without_badge_or_reference() -> None:
-    texts = _texts(_parse(_hero(badge=None, reference=None)))
-    assert not any("Interim" in t or "Oracle" in t for t in texts)
-
-
-def test_hero_wraps_long_notes() -> None:
-    note = " ".join(["word"] * 120)
-    lines = [t for t in _texts(_parse(_hero(note=note))) if t.startswith("word")]
-    assert len(lines) > 1
-    assert " ".join(lines) == note
-
-
-def test_hero_value_labels_leave_room_for_a_wider_fallback_font() -> None:
-    """A 100% label still fits with a font about 20% wider than the layout estimate."""
-    root = _parse(_hero())
-    width = float(root.get("width") or 0)
-    labels = [t for t in root.iter(f"{NS}text") if (t.text or "").endswith("%")]
-    widest = max(float(t.get("x") or 0) + _text_width(t.text or "", 13.0) * 1.2 for t in labels)
-    assert widest <= width - 4
+    unpriced = CostPoint("cli", 0.95, None, "≈$1.00 CLI estimate")
+    one = [CostPoint("cheap", 0.95, 2.0), CostPoint("dear", 0.90, 8.0), unpriced]
+    assert _cost_text(one) == (
+        "Of the 2 models with an API price, cheap ($2.00) has both the lowest price and the "
+        "highest grounded accuracy as a point estimate; 1 more has no API price and is listed "
+        "under the chart."
+    )
+    two = [CostPoint("cheap", 0.90, 2.0), CostPoint("dear", 0.95, 8.0)]
+    assert _cost_text(two) == (
+        "Along the frontier, dear's grounded accuracy is 5.0 points above cheap's (point "
+        "estimates) at 4.0× the price."
+    )
+    assert _cost_text([unpriced]).startswith("No model has an API price yet")
+    only = [CostPoint("only", 0.9, 1.0), unpriced]
+    assert _cost_text(only).startswith("Only only has an API price")

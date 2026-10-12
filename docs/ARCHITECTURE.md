@@ -242,6 +242,12 @@ See [Data contracts](#data-contracts).
 - `report.gallery` (costliest failures), `report.provenance` (what each run measured),
   `report.inputs` (scored runs and judge results read back from disk), `report.svg` and
   `report.vega` (charts).
+- `report.readme`: the README results block that `update_readme` writes, with its figures,
+  each in a light and a dark SVG: `report.hero` (decision against grounded accuracy),
+  `report.scorecard` (every headline metric by distance from perfect, safety failures ringed)
+  and, once at least four models have an API price, `report.cost_quality` (grounded accuracy
+  against API cost, crowded points numbered and keyed in a list), drawn with
+  `report.figure_kit`.
 
 ### Top-level modules
 

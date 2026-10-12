@@ -4,11 +4,13 @@
 - ``write_html_report(runs, out_dir)``: a self-contained ``report.html`` with Vega-Lite charts
   that fall back to inline SVG.
 - ``readme_leaderboard(runs, report_dir=..., planned_models=None)`` and
-  ``update_readme(path, block.markdown)``: the README results block (status line, a hero chart
-  in light and dark, the headline table with its reference rows, which differences are
-  significant (``report.significance``), and per-task results, baselines and reading notes in
-  collapsed blocks) between its ``<!-- leaderboard:start -->`` / ``<!-- leaderboard:end -->``
-  markers, with ``block.write_charts(report_dir)`` for the chart files (``report.readme``).
+  ``update_readme(path, block.markdown)``: the README results block (a hero dumbbell chart, the
+  status line, the headline table with its reference rows, which differences are significant
+  (``report.significance``), a scorecard heatmap and, once enough models have an API price, a
+  cost chart, each figure in light and dark, and per-task results, baselines and reading notes
+  in collapsed blocks) between its ``<!-- leaderboard:start -->`` /
+  ``<!-- leaderboard:end -->`` markers, with ``block.write_charts(report_dir)`` for the chart
+  files (``report.readme``).
 - ``leaderboard_table(runs, task=..., allow_mixed=False)``: one task's SPEC §15 table with
   every interval, as the full report shows it. Both refuse runs not measured on the same cases,
   or scored under a different loss matrix, interval level or small-n threshold
