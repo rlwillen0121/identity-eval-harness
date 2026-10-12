@@ -1,818 +1,453 @@
-"""The README's leaderboard, drawn as a table (SPEC §15: README charts are SVG exports).
+"""The README's thesis graphic: the leaderboard's finding as one picture (SPEC §15: README
+charts are SVG exports).
 
-GitHub can't style a Markdown table, so the README's headline table is this figure, with the
-same numbers as text in a collapsed table under it for copy and paste and screen readers. Built
-like a newspaper table rather than a spreadsheet:
+It is built like a chart that would hold its own on a data-visualization forum's front page:
+one idea, one chart form, the title stating the finding, the picture showing why.
 
-- **One row per model, in the order given** (the README sorts by risk cost), with its name and,
-  beneath it in small type, its vendor and any disclosure the name carries ("self-hosted").
-  Rows carry no rank number: the order is one of point estimates, and the rows at the top whose
-  sort key no test separates are bracketed in the left margin as a statistical tie. Hairlines
-  separate the rows; the reference rows (the all-human status quo and the oracle) follow the
-  models, set apart and muted, never ranked.
-- **A safety-bar column**: a check for a model that clears the bar; for one that misses it, a
-  cross and a strip of pips, one per criterion in the bar's order, filled for each criterion
-  missed, so the verdict never rests on color and the pattern reads down the column.
-- **Inline graphics on shared scales**: grounded accuracy as a bar on 0-100; wrongful approvals
-  and unsafe plans as chips colored by severity on the scorecard's binned sequential ramp
-  (``report.scorecard``), a printed 0.0 left unfilled so that only failures carry color, and
-  every value whose own check misses the safety bar outlined (the classes don't line up with
-  the bar's thresholds, and wrongful approvals are judged on their upper bound, not the point
-  printed); cost per 1,000 decisions as a mark on a neutral log track with a tick at each
-  decade, labelled once under the column, the mark's shape giving the cost's footing (a circle
-  for an API charge, a diamond for an API-equivalent). A cost that isn't a price
-  (``unmetered``, a CLI's ``≈`` estimate, ``n/a``) is one muted italic word in the price
-  column, with no mark, since it has no place on a price scale. One small key above the table
-  explains the chips, the safety pips and the marks.
-- **Plain headers**, at most two lines, numbers right-aligned in tabular figures under them, and
-  the better direction stated once, as a bracket over the columns where higher is better and
-  over those where lower is.
+- **A large, plain title that is the finding** ("Only 4 of 20 AI models cleared the safety
+  bar"), then a line under it that finishes the sentence, the model it names set in the accent
+  color. The title is at least 2.5 times the size of the row labels.
+- **One metric, one bar per model**: a horizontal bar on 0-100 (the README gives grounded
+  accuracy), its value printed at the bar's tip, inside the bar when it fits and just past it
+  when it doesn't. The first bar's value carries the metric's name ("grounded accuracy 99.7%"),
+  so no axis, tick, legend or header line is needed; when it can't, a small head over the bars
+  names it instead.
+- **Groups, each under a big label** ("Clear the bar", "Miss the bar"), drawn in the order
+  given. The group marked ``accent`` (the models that clear the safety bar) has its bars and
+  its label in the theme's one accent color; every other bar is charcoal (a mid gray in the dark
+  theme). The color is never the only cue: the label says which group a row is in.
+- **The accent group's range as a band** behind every group's rows, in a pale tint of the
+  accent, with a bracket and a caption under the rows (``band``: what the band is, and what it
+  shows, such as a model that misses the bar inside it). It is what makes the bars say
+  something the title doesn't: a model can be as accurate as those that clear the bar and still
+  miss it.
+- **A short gray note at each row's end**, in a column of its own whose head sits on the group
+  label's line: what the caller says about the row (the README gives the cost for the models
+  that clear the bar and the criterion each other model misses). A note marked ``strong`` is
+  set in the main ink (the cheapest model that clears the bar).
+- **Minimal chrome**: no grid, axis, box, stripe or badge; generous space between groups;
+  the source and method in a few lines of small print at the bottom.
 
-Every number is the text the README's tables print, given by the caller; the figure only
-places it. The ``<desc>`` states every row's values.
+Every value is the text the README's tables print, given by the caller; the figure only places
+it. The ``<desc>`` states every row's value and note. Text is laid out with
+``figure_kit.text_width``; the title, subtitle, caption and small print are kept to
+:data:`_FIT` of the width, so a wide fallback face (DejaVu Sans, Verdana) still fits the canvas.
 """
 
 from __future__ import annotations
 
-import itertools
-import math
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from typing import Literal
+from collections.abc import Sequence
+from dataclasses import dataclass
+from html import escape
 
-from identitybench.report.figure_kit import Canvas, Theme, text_width, truncate
-from identitybench.report.scorecard import BINS, shortfall_bin
+from identitybench.report.figure_kit import Canvas, Theme, balanced, text_width, truncate
 
-__all__ = [
-    "WIDTH",
-    "BoardColumn",
-    "BoardCost",
-    "BoardRow",
-    "BoardValue",
-    "cost_domain",
-    "leaderboard_svg",
-]
+__all__ = ["WIDTH", "ThesisGroup", "ThesisRow", "headline", "thesis_svg"]
 
 WIDTH = 820.0
 _PAD = 24.0
-_ROW = 34.0
-_NAME, _VENDOR, _VALUE, _CHIP, _HEAD, _KEY, _SMALL, _WORD = (
+_FIT = 0.88
+"""The share of the inner width the title, subtitle, caption and small print may fill: room for
+a fallback face up to about 25% wider than the Helvetica widths the estimate uses."""
+_TITLE, _SUBTITLE, _GROUP, _NAME, _DISCLOSE, _VALUE, _NOTE, _HEAD, _CAPTION, _SOURCE = (
+    46.0,
+    20.0,
+    26.0,
+    18.0,
     13.0,
-    11.0,
+    15.0,
+    15.0,
+    13.5,
+    14.5,
     13.0,
-    12.0,
-    11.5,
-    11.5,
-    11.0,
-    11.5,
 )
-"""Type sizes. Nothing is set below 11 px: GitHub scales the 820 px figure down to its README
-column (about 700-770 px), so 11 px renders near 10 px there."""
-_NAME_MAX = 160.0
-_NAME_MIN = 96.0
-_CHIP_H = 18.0
-_CHIP_GAP = 8.0
-_RING = 2.0
-"""How far a failing value's outline stands off its chip: on the page, so it shows on every
-fill (the scorecard's ring, squared to the chip)."""
-_BAR_H = 8.0
-_ICON = 6.5
-_PIP_R, _PIP_PITCH, _PIP_GAP = 2.6, 8.0, 7.0
-_GAP_MIN, _GAP_MAX = 8.0, 18.0
-_BAR_MIN, _BAR_MAX, _BAR_FLOOR = 44.0, 96.0, 32.0
-_TRACK_MIN, _TRACK_MAX, _TRACK_FLOOR = 40.0, 80.0, 32.0
-_BIN_LABELS = ("≤1", "≤2.5", "≤5", "≤10", "≤25", ">25")
-"""The legend's chips: the scorecard's classes past 0 (a printed 0.0 has no chip)."""
-
-ColumnKind = Literal["bar", "severity", "number", "cost"]
-CostKind = Literal["charge", "equivalent", "unmetered", "estimate", "none", "absent"]
-
-
-@dataclass(frozen=True, slots=True)
-class BoardValue:
-    """One printed value: its text as the tables print it (``93.3``, ``n/a``, ``—``) and the
-    number that text shows, in the column's unit (percentage points for a rate), or None."""
-
-    text: str
-    value: float | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class BoardCost:
-    """Cost per 1,000 decisions: the text the tables print without its footing mark
-    (``$1.25``, ``unmetered``, ``≈$0.31``, ``n/a``, ``—``), the footing, and the dollars a mark
-    is placed at (for an API charge or an API-equivalent only)."""
-
-    text: str
-    kind: CostKind
-    usd: float | None = None
-
-    @property
-    def placed(self) -> bool:
-        return self.kind in ("charge", "equivalent") and self.usd is not None and self.usd > 0
+"""Type sizes (px). The title is 2.5 times the row labels (and still well over GitHub's 16 px
+body text once GitHub scales the 820 px figure down to its README column, about 700-790 px);
+nothing is set below 13 px for the same reason."""
+_TITLE_LEAD, _SUBTITLE_LEAD, _CAPTION_LEAD, _SOURCE_LEAD = 52.0, 27.0, 20.0, 18.5
+"""Baseline to baseline within the title, the subtitle, the caption and the small print."""
+_SUBTITLE_GAP = 52.0
+"""From the title's last baseline to the subtitle's first."""
+_ROW = 34.0
+"""The row pitch: a bar and the air above and below it."""
+_TALL = 8.0
+"""The extra pitch of a row whose label has a disclosure on a second line ("self-hosted"),
+so two such rows in a row don't run together."""
+_BAR = 23.0
+_TIP = 4.0
+"""The rounded radius of a bar's data end (its baseline end is square)."""
+_NAME_GAP = 12.0
+"""Between a row's label and its bar."""
+_NOTE_GAP = 24.0
+"""Between the 0-100 scale's end and the note column."""
+_INSET = 8.0
+"""A value printed inside its bar: this far in from the tip, and the room it needs on its other
+side to go inside at all."""
+_NAME_MAX = 250.0
+_NOTE_MAX = 310.0
+_BAR_MIN = 230.0
+"""The widest a row's label and note may grow, and the shortest the 0-100 scale may shrink:
+together with the gaps they fit the canvas whatever the names and notes (a note is shortened
+before the scale is)."""
 
 
 @dataclass(frozen=True, slots=True)
-class BoardColumn:
-    """A metric column. ``head`` is its header, one or two lines; ``keys`` the values its cells
-    show (a severity column may show several side by side: requests and reviews), each named
-    in the description by ``spoken``; ``emphasis`` sets its numbers in bold (the sort key)."""
-
-    head: tuple[str, ...]
-    kind: ColumnKind
-    better: Literal["higher", "lower"]
-    keys: tuple[str, ...]
-    spoken: tuple[str, ...]
-    unit: str = "%"
-    emphasis: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class BoardRow:
-    """A model (or a reference): its values by key, its cost, its vendor, and its verdict
-    against the safety bar: True (clears), False (misses, with ``misses`` the criteria it
-    misses, in the bar's order, named as in ``leaderboard_svg``'s ``criteria``) or None (not
-    judged: a reference). ``failed`` holds the keys of the values whose own check misses the
-    bar (each is outlined)."""
+class ThesisRow:
+    """One model. ``value`` is the bar's length in percentage points (``93.3``), as ``text``
+    prints it, or None (no bar, ``text`` alone in muted ink); ``note`` the words at the row's
+    end; ``strong`` sets the note in the main ink."""
 
     name: str
-    values: Mapping[str, BoardValue] = field(default_factory=dict[str, BoardValue])
-    cost: BoardCost | None = None
-    vendor: str | None = None
-    clears: bool | None = None
-    misses: tuple[str, ...] = ()
-    failed: frozenset[str] = frozenset()
-    reference: bool = False
+    value: float | None
+    text: str
+    note: str = ""
+    strong: bool = False
 
 
-def cost_domain(costs: Sequence[float]) -> tuple[float, float]:
-    """The log track's ends: the powers of ten around the placed costs, at least a decade
-    apart."""
-    low = 10.0 ** math.floor(math.log10(min(costs)))
-    high = 10.0 ** math.ceil(math.log10(max(costs)))
-    return low, max(high, low * 10.0)
+@dataclass(frozen=True, slots=True)
+class ThesisGroup:
+    """Rows under one big ``label`` ("Clear the bar"), drawn in the order given, which
+    ``order`` states for the description ("by grounded accuracy"). ``accent`` draws the label
+    and the bars in the theme's accent (and gives the band its range); ``note_head`` heads the
+    note column on the label's line ("cost per 1,000 decisions"); ``verdict`` is what the label
+    says of each row, for the description."""
+
+    label: str
+    rows: tuple[ThesisRow, ...]
+    accent: bool = False
+    note_head: str = ""
+    order: str = ""
+    verdict: str = ""
 
 
-def _money(value: float) -> str:
-    return f"${value:g}" if value >= 1 else f"${value:.2f}"
+def headline(title: str, subtitle: str) -> str:
+    """The title and the line under it as one sentence (for the figure's accessible name and
+    alt text): joined by a space when the line continues the title ("on access decisions..."),
+    else as two sentences."""
+    if not subtitle:
+        return title
+    return f"{title} {subtitle}" if subtitle[:1].islower() else f"{title}. {subtitle}"
 
 
 def _split_name(name: str) -> tuple[str, str | None]:
     """A display name's model and its parenthetical disclosure: ("Qwen3.8-27B", "4-bit,
-    self-hosted")."""
+    self-hosted"); a trailing marker (``†``, ``‡``) stays on the model's name."""
     base, paren, rest = name.partition(" (")
-    if not paren or not rest.rstrip(" †‡").endswith(")"):
+    core = rest.rstrip(" †‡")
+    if not paren or not core.endswith(")"):
         return name, None
-    markers = rest[len(rest.rstrip(" †‡")) :]
-    return base + markers, rest.rstrip(" †‡")[:-1]
+    return base + rest[len(core) :], core[:-1]
 
 
-def _short_vendor(vendor: str) -> str:
-    """A vendor without its parenthetical: "Alibaba (Qwen)" -> "Alibaba"."""
-    return vendor.partition(" (")[0]
+def _label_width(row: ThesisRow) -> float:
+    """The width a row's label needs: its name, and any disclosure on the line under it."""
+    name, note = _split_name(row.name)
+    return max(text_width(name, _NAME), text_width(note, _DISCLOSE) if note else 0.0)
 
 
-def _second_lines(rows: Sequence[BoardRow], width: float) -> list[str | None]:
-    """Under each name: its vendor and any disclosure ("Alibaba (Qwen) · self-hosted"). When
-    a row's line doesn't fit ``width``, every row of that vendor names it in short ("Alibaba"),
-    so rows of one vendor never differ; neither part is ever dropped."""
-
-    def line(row: BoardRow, short: bool) -> str | None:
-        vendor = row.vendor
-        if vendor is not None and short:
-            vendor = _short_vendor(vendor)
-        parts = [p for p in (vendor, _split_name(row.name)[1]) if p]
-        return " · ".join(parts) if parts else None
-
-    tight = {
-        row.vendor
-        for row in rows
-        if row.vendor is not None
-        and text_width(line(row, False) or "", _VENDOR) > width
-        and _short_vendor(row.vendor) != row.vendor
-    }
-    out: list[str | None] = []
-    for row in rows:
-        text = line(row, row.vendor in tight)
-        out.append(None if text is None else truncate(text, width, _VENDOR))
-    return out
+def _pitch(row: ThesisRow) -> float:
+    return _ROW + (_TALL if _split_name(row.name)[1] else 0.0)
 
 
-@dataclass(slots=True)
-class _Slot:
-    """A column's place: its left edge and width, and for a value with a graphic (a bar or the
-    cost track), the width of the value and of the graphic after it."""
-
-    x: float
-    w: float
-    value_w: float = 0.0
-    graphic_w: float = 0.0
-    chip_w: float = 0.0
+def _words(text: str) -> list[str]:
+    """``text`` split at its spaces; a no-break space (U+00A0) holds its words together."""
+    return [w for w in text.split(" ") if w]
 
 
-def _head_width(lines: Sequence[str]) -> float:
-    return max((text_width(line, _HEAD, bold=True) for line in lines), default=0.0)
+def _tokens(text: str, keep: str) -> list[str]:
+    """``text`` split into words, ``keep`` (a phrase in it) as one token with any punctuation
+    that touches it, so a line never breaks inside it."""
+    if not keep or keep not in text:
+        return _words(text)
+    head, _, tail = text.partition(keep)
+    before, after = _words(head), _words(tail)
+    token = keep
+    if before and not head.endswith(" "):
+        token = before.pop() + token
+    if after and not tail.startswith(" "):
+        token += after.pop(0)
+    return [*before, token, *after]
 
 
-def _check(canvas: Canvas, cx: float, cy: float, *, key: bool = False) -> None:
-    canvas.circle(cx, cy, _ICON, fill="good", extra="" if key else ' class="clears"')
-    d = (
-        f"M{cx - 3.1:.1f},{cy + 0.1:.1f}L{cx - 0.9:.1f},{cy + 2.4:.1f}"
-        f"L{cx + 3.2:.1f},{cy - 2.5:.1f}"
-    )
-    canvas.path(d, stroke="page", width=1.8)
+def _greedy(tokens: Sequence[str], width: float, size: float) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for token in tokens:
+        candidate = f"{current} {token}" if current else token
+        if current and text_width(candidate, size) > width:
+            lines.append(current)
+            current = token
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
 
 
-def _cross(canvas: Canvas, cx: float, cy: float, *, key: bool = False) -> None:
-    canvas.circle(
-        cx,
-        cy,
-        _ICON - 0.75,
-        fill="none",
-        stroke="alarm",
-        width=1.5,
-        extra="" if key else ' class="misses"',
-    )
-    r = 2.4
-    d = (
-        f"M{cx - r:.1f},{cy - r:.1f}L{cx + r:.1f},{cy + r:.1f}"
-        f"M{cx + r:.1f},{cy - r:.1f}L{cx - r:.1f},{cy + r:.1f}"
-    )
-    canvas.path(d, stroke="alarm", width=1.5)
+def _lines(text: str, keep: str, width: float, size: float) -> list[str]:
+    """``text`` wrapped at ``width`` without breaking ``keep``, into as few lines as fit, as
+    even as they can be (so the last never holds an orphaned word or two)."""
+    tokens = _tokens(text, keep)
+    lines = _greedy(tokens, width, size)
+    trial = width - 8.0
+    while len(lines) > 1 and trial > width / 2:
+        narrower = _greedy(tokens, trial, size)
+        if len(narrower) > len(lines):
+            break
+        lines, trial = narrower, trial - 8.0
+    return lines
 
 
-def _pip(canvas: Canvas, cx: float, cy: float, filled: bool) -> None:
-    if filled:
-        canvas.circle(cx, cy, _PIP_R, fill="alarm", extra=' class="missed"')
-    else:
-        canvas.circle(cx, cy, _PIP_R - 0.5, fill="none", stroke="neutral", width=1.0)
+def _small_print(text: str, width: float) -> list[str]:
+    """A paragraph of small print in even lines; a source line (parts joined by `` · ``)
+    breaks only between its parts."""
+    if " · " not in text:
+        return balanced(text, width, _SOURCE)
+    lines: list[str] = []
+    for part in text.split(" · "):
+        candidate = f"{lines[-1]} · {part}" if lines else part
+        if lines and text_width(candidate, _SOURCE) <= width:
+            lines[-1] = candidate
+        else:
+            lines.append(part)
+    return lines
 
 
-def _pips_width(n: int) -> float:
-    return (n - 1) * _PIP_PITCH + 2 * _PIP_R if n else 0.0
-
-
-def _outline(canvas: Canvas, x: float, y: float, w: float, h: float, *, key: bool = False) -> None:
-    """A failing value's outline, ``_RING`` off the chip's box on every side."""
-    classed = "" if key else ' class="fails"'
-    canvas.rect(
-        x - _RING,
-        y - _RING,
-        w + 2 * _RING,
-        h + 2 * _RING,
-        fill="none",
-        rx=5.5,
-        extra=f' stroke="{canvas.theme.alarm}" stroke-width="1"{classed}',
+def _bar_path(x: float, y: float, w: float, h: float) -> str:
+    """A bar from ``x``, its data end rounded and its baseline end square."""
+    r = min(_TIP, w / 2, h / 2)
+    x1 = x + w
+    return (
+        f"M{x:.1f},{y:.1f}H{x1 - r:.1f}Q{x1:.1f},{y:.1f} {x1:.1f},{y + r:.1f}"
+        f"V{y + h - r:.1f}Q{x1:.1f},{y + h:.1f} {x1 - r:.1f},{y + h:.1f}H{x:.1f}Z"
     )
 
 
-def leaderboard_svg(
-    rows: Sequence[BoardRow],
-    columns: Sequence[BoardColumn],
+def thesis_svg(
+    groups: Sequence[ThesisGroup],
     *,
     theme: Theme,
     title: str,
     subtitle: str,
+    metric: str,
     source: Sequence[str],
-    badge: str | None = None,
-    criteria: Sequence[str] = (),
-    tie_rows: int = 0,
-    tie_labels: Sequence[str] = (),
+    highlight: str = "",
+    band: str = "",
     key: str = "identitybench-leaderboard",
 ) -> str:
-    """The table of ``rows`` (models, then references) by ``columns``, in their orders, with a
-    safety-bar column when any row has a verdict. ``subtitle`` is the takeaway, ``source`` the
-    small print, ``badge`` a short status top right. ``criteria`` names the safety bar's
-    criteria in order, one pip each. ``tie_rows`` (at least two) brackets that many models at
-    the top as a statistical tie, labelled with the first of ``tie_labels`` that fits."""
+    """The thesis graphic for ``groups`` (in their order; a group without rows is left out).
+    ``title`` is the finding, ``subtitle`` the line under it, ``highlight`` a phrase of the
+    subtitle set in the accent color, ``metric`` what the bars measure, in a few words
+    ("grounded accuracy", printed with the first bar's value), ``band`` the caption of the
+    accent group's range drawn behind the rows (no band without it), ``source`` the small print
+    (a paragraph each)."""
     canvas = Canvas(WIDTH, theme)
-    top = canvas.frame(title=title, subtitle=subtitle, badge=badge, pad=_PAD)
-    models = [r for r in rows if not r.reference]
-    references = [r for r in rows if r.reference]
-    judged = any(r.clears is not None for r in rows)
-    pips = len(criteria) if judged and any(r.misses for r in models) else 0
-    placed = [r.cost.usd for r in rows if r.cost is not None and r.cost.placed]
-    domain = cost_domain([u for u in placed if u is not None]) if placed else None
-    tie = tie_rows if 2 <= tie_rows <= len(models) else 0
-    outlined = any(r.failed for r in models)
-
-    # ---- Measure ----------------------------------------------------------------------------
     inner = WIDTH - 2 * _PAD
-    name_w = max(
-        [text_width(_split_name(r.name)[0], _NAME) for r in models]
-        + [text_width("Model", _HEAD, bold=True)]
-    )
-    vendor_w = max(
-        (
-            text_width(" · ".join(p for p in (r.vendor, _split_name(r.name)[1]) if p), _VENDOR)
-            for r in models
-        ),
-        default=0.0,
-    )
-    model_w = min(max(name_w, vendor_w), _NAME_MAX)
-    safety_w = 0.0
-    if judged:
-        icons = 2 * _ICON + (_PIP_GAP + _pips_width(pips) if pips else 0.0)
-        safety_w = max(icons, _head_width(("Safety", "bar")))
-    slots: list[_Slot] = []
-    for column in columns:
-        head_w = _head_width(column.head)
-        bold = column.emphasis
-        if column.kind == "severity":
-            texts = [r.values[k].text for r in rows for k in column.keys if k in r.values]
-            chip = max([text_width(t, _CHIP, bold=True) + 12 for t in texts] + [34.0])
-            cell = len(column.keys) * chip + (len(column.keys) - 1) * _CHIP_GAP
-            slots.append(_Slot(0, max(cell, head_w), chip_w=chip))
-        elif column.kind == "number":
-            texts = [r.values[k].text for r in rows for k in column.keys if k in r.values]
-            w = max([text_width(t, _VALUE, bold=bold) for t in texts] + [head_w])
-            slots.append(_Slot(0, w))
-        elif column.kind == "bar":
-            texts = [r.values[k].text for r in rows for k in column.keys if k in r.values]
-            value_w = max(text_width(t, _VALUE, bold=bold) for t in [*texts, "100.0"])
-            slots.append(_Slot(0, 0, value_w=value_w, graphic_w=_BAR_MIN))
-        else:
-            costs = [r.cost for r in rows if r.cost is not None]
-            value_w = max(
-                [text_width(c.text, _VALUE) for c in costs if c.placed or c.kind == "absent"]
-                + [text_width(c.text, _WORD) for c in costs if not c.placed and c.kind != "absent"]
-                + [text_width("$0.00", _VALUE)]
+    fit = inner * _FIT
+    shown = [g for g in groups if g.rows]
+    rows = [r for g in shown for r in g.rows]
+
+    # ---- Columns ------------------------------------------------------------------------
+    label_w = min(max([_label_width(r) for r in rows] + [0.0]), _NAME_MAX)
+    notes = [text_width(r.note, _NOTE, bold=r.strong) for r in rows if r.note]
+    heads = [text_width(g.note_head, _HEAD) for g in shown if g.note_head]
+    room = inner - label_w - _NAME_GAP - _BAR_MIN - _NOTE_GAP
+    note_w = min(max([*notes, *heads, 0.0]), _NOTE_MAX, room)
+    bar_x = _PAD + label_w + _NAME_GAP
+    bar_w = inner - label_w - _NAME_GAP - (_NOTE_GAP + note_w if note_w > 0 else 0.0)
+    note_x = bar_x + bar_w + _NOTE_GAP
+
+    def length(value: float) -> float:
+        return bar_w * min(max(value / 100.0, 0.0), 1.0)
+
+    # The first bar's value names the metric, inside the bar or just past it; when neither
+    # fits, a head over the bars does.
+    first = next((r for r in rows if r.value is not None), None)
+    named = f"{metric} " if metric else ""
+    placed = ""
+    if first is not None and first.value is not None and named:
+        w = length(first.value)
+        need = text_width(named, _VALUE) + text_width(f"{first.text}%", _VALUE, bold=True)
+        if w >= need + 2 * _INSET:
+            placed = "inside"
+        elif w + 5.0 + need <= bar_w + _NOTE_GAP - 8.0:
+            placed = "past"
+
+    # ---- Title and subtitle -------------------------------------------------------------
+    y = _PAD + _TITLE * 0.8
+    for line in balanced(title, fit, _TITLE, bold=True):
+        canvas.text(_PAD, y, line, size=_TITLE, weight=700, extra=' class="title"')
+        y += _TITLE_LEAD
+    y += _SUBTITLE_GAP - _TITLE_LEAD
+    accent = canvas.color("safe")
+    for line in _lines(subtitle, highlight, fit, _SUBTITLE) if subtitle else []:
+        if highlight and highlight in line:
+            head, _, tail = line.partition(highlight)
+            canvas.parts.append(
+                f'<text x="{_PAD:.1f}" y="{y:.1f}" font-size="{_SUBTITLE:g}" text-anchor="start" '
+                f'fill="{theme.ink2}">{escape(head)}<tspan font-weight="700" fill="{accent}">'
+                f"{escape(highlight)}</tspan>{escape(tail)}</text>"
             )
-            slots.append(
-                _Slot(0, 0, value_w=value_w, graphic_w=_TRACK_MIN if domain is not None else 0.0)
-            )
-
-    def graphic(column: BoardColumn) -> bool:
-        return column.kind == "bar" or (column.kind == "cost" and domain is not None)
-
-    def composite(slot: _Slot, column: BoardColumn) -> float:
-        drawn = slot.value_w + (6 + slot.graphic_w if graphic(column) else 0.0)
-        return max(drawn, _head_width(column.head))
-
-    def fixed() -> float:
-        return sum(
-            composite(s, c) if c.kind in ("bar", "cost") else s.w
-            for s, c in zip(slots, columns, strict=True)
-        )
-
-    n_gaps = len(columns) + (1 if judged else 0)
-
-    def spare() -> float:
-        return inner - model_w - safety_w - fixed() - n_gaps * _GAP_MIN
-
-    # Short of width, the graphics give way first, down to their floors, then a long name.
-    for slot, column in zip(slots, columns, strict=True):
-        if spare() >= 0:
-            break
-        if graphic(column):
-            floor = _BAR_FLOOR if column.kind == "bar" else _TRACK_FLOOR
-            slot.graphic_w = max(floor, slot.graphic_w + spare())
-    if spare() < 0:
-        model_w = max(model_w + spare(), _NAME_MIN)
-    # Grow the graphics toward their ideal widths, the cost track first (a log scale needs room
-    # to label its decades), then the gaps.
-    left = spare()
-    for slot, column in sorted(
-        zip(slots, columns, strict=True), key=lambda sc: sc[1].kind != "cost"
-    ):
-        if not graphic(column) or left <= 0:
-            continue
-        cap = _BAR_MAX if column.kind == "bar" else _TRACK_MAX
-        before = composite(slot, column)
-        slot.graphic_w = min(cap, slot.graphic_w + left)
-        left -= composite(slot, column) - before
-    gap = min(_GAP_MAX, _GAP_MIN + max(left, 0.0) / max(n_gaps, 1))
-
-    model_x = _PAD
-    cursor = model_x + model_w + gap
-    safety_x = cursor
-    if judged:
-        cursor += safety_w + gap
-    for slot, column in zip(slots, columns, strict=True):
-        slot.x = cursor
-        if column.kind in ("bar", "cost"):
-            slot.w = composite(slot, column)
-        cursor += slot.w + gap
-    # A reference has no safety cell, so its label may run across that column.
-    reference_w = (slots[0].x - gap if slots else WIDTH - _PAD) - model_x
-    seconds = _second_lines(models, model_w)
-
-    # ---- Key ----------------------------------------------------------------------------------
-    y = top + 12
-    items: list[list[tuple[str, str]]] = []
-    if any(c.kind == "severity" for c in columns):
-        group = [("label", "Failure rate, %"), *(("chip", b) for b in _BIN_LABELS)]
-        if outlined:
-            group.append(("outline", "misses the bar"))
-        items.append(group)
-    if judged:
-        group = [("label", "Safety bar"), ("check", "clears"), ("cross", "misses")]
-        if pips:
-            group.append(("pips", " · ".join(criteria) + ", filled if missed"))
-        items.append(group)
-    kinds = {r.cost.kind for r in rows if r.cost is not None}
-    words = {
-        "unmetered": "unmetered: no per-call price",
-        "estimate": "≈ CLI estimate, not a price",
-        "none": "n/a: no usable cost",
-    }
-    if domain is not None or kinds & set(words):
-        group = []
-        if domain is not None:
-            group.append(("label", f"Cost, log scale {_money(domain[0])}–{_money(domain[1])}"))
-            if "charge" in kinds:
-                group.append(("circle", "API charge"))
-            if "equivalent" in kinds:
-                group.append(("diamond", "API-equivalent"))
         else:
-            group.append(("label", "Cost"))
-        group += [("italic", text) for kind, text in words.items() if kind in kinds]
-        items.append(group)
+            canvas.text(_PAD, y, line, size=_SUBTITLE, fill="ink2")
+        y += _SUBTITLE_LEAD
+    y -= _SUBTITLE_LEAD
+    if named and not placed:  # the metric as a head over the bars
+        y += 34.0
+        canvas.text(bar_x, y, f"{metric} (%)", size=_HEAD, fill="muted", extra=' class="metric"')
 
-    def item_width(kind: str, text: str) -> float:
-        if kind == "chip":
-            return text_width(text, _SMALL) + 10
-        if kind in ("circle", "diamond", "check", "cross"):
-            return 16 + text_width(text, _KEY)
-        if kind == "outline":
-            return 26 + 6 + text_width(text, _KEY)
-        if kind == "pips":
-            return _pips_width(len(criteria)) + 6 + text_width(text, _KEY)
-        return text_width(text, _KEY, bold=kind == "label")
-
-    def spacing(kind: str) -> float:
-        return 3.0 if kind == "chip" else 12.0
-
-    def group_width(group: Sequence[tuple[str, str]]) -> float:
-        widths = [item_width(k, t) for k, t in group]
-        return sum(widths) + sum(spacing(k) for k, _ in group[1:])
-
-    # Groups share a line when they fit; a group wider than the figure breaks between its items,
-    # its later lines indented to its first item after the label.
-    lines: list[tuple[float, list[list[tuple[str, str]]]]] = []
-    for group in items:
-        if lines and sum(group_width(g) + 28 for g in lines[-1][1]) + group_width(group) <= inner:
-            lines[-1][1].append(group)
-            continue
-        indent = 0.0
-        chunk: list[tuple[str, str]] = []
-        for item in group:
-            if chunk and indent + group_width([*chunk, item]) > inner:
-                lines.append((indent, [chunk]))
-                indent = group_width(group[:1]) + spacing(group[1][0]) if len(group) > 1 else 0.0
-                chunk = []
-            chunk.append(item)
-        lines.append((indent, [chunk]))
-    severity_steps: dict[str, int] = dict(zip(_BIN_LABELS, range(1, len(BINS) + 1), strict=True))
-    for indent, line in lines:
-        x = _PAD + indent
-        baseline = y + 13
-        mid = baseline - 4.0
-        for group in line:
-            for i, (kind, text) in enumerate(group):
-                if i:
-                    x += spacing(kind)
-                if kind == "label":
-                    box = canvas.text(x, baseline, text, size=_KEY, fill="ink2", weight=600)
-                    x = box.x1
-                elif kind == "chip":
-                    w = item_width(kind, text)
-                    step = severity_steps[text]
-                    canvas.rect(x, baseline - 12, w, 16, fill=theme.heat[step], rx=3)
-                    canvas.text(
-                        x + w / 2,
-                        baseline,
-                        text,
-                        size=_SMALL,
-                        fill=theme.heat_ink[step],
-                        anchor="middle",
-                    )
-                    x += w
-                elif kind == "outline":
-                    canvas.rect(x + _RING, baseline - 10, 26 - 2 * _RING, 12, fill="grid", rx=3)
-                    _outline(canvas, x + _RING, baseline - 10, 26 - 2 * _RING, 12, key=True)
-                    box = canvas.text(x + 32, baseline, text, size=_KEY, fill="muted")
-                    x = box.x1
-                elif kind in ("check", "cross"):
-                    (_check if kind == "check" else _cross)(canvas, x + _ICON, mid, key=True)
-                    box = canvas.text(x + 16, baseline, text, size=_KEY, fill="muted")
-                    x = box.x1
-                elif kind == "pips":
-                    for p in range(len(criteria)):
-                        _pip(canvas, x + _PIP_R + p * _PIP_PITCH, mid, False)
-                    x += _pips_width(len(criteria)) + 6
-                    box = canvas.text(x, baseline, text, size=_KEY, fill="muted")
-                    x = box.x1
-                elif kind in ("circle", "diamond"):
-                    if kind == "circle":
-                        canvas.circle(x + 4.5, mid, 4.0, fill="ink2")
-                    else:
-                        canvas.diamond(x + 4.5, mid, 5.0, fill="ink2")
-                    box = canvas.text(x + 16, baseline, text, size=_KEY, fill="muted")
-                    x = box.x1
-                else:
-                    box = canvas.text(
-                        x, baseline, text, size=_KEY, fill="muted", extra=' font-style="italic"'
-                    )
-                    x = box.x1
-            x += 28
-        y += 22
-
-    # ---- Header -------------------------------------------------------------------------------
-    head_top = y + 10
-    bracket_y = head_top + 2
-    head_b = head_top + 46
-    runs: list[tuple[str, int, int]] = []
-    for j, column in enumerate(columns):
-        if runs and runs[-1][0] == column.better:
-            runs[-1] = (column.better, runs[-1][1], j)
-        else:
-            runs.append((column.better, j, j))
-    for better, first, last in runs:
-        x0, x1 = slots[first].x, slots[last].x + slots[last].w
-        label = f"{better} is better"
-        if text_width(label, _SMALL) + 16 > x1 - x0:
-            continue
-        canvas.line(x0, bracket_y + 4, x1, bracket_y + 4, stroke="axis")
-        canvas.line(x0, bracket_y + 4, x0, bracket_y + 8, stroke="axis")
-        canvas.line(x1, bracket_y + 4, x1, bracket_y + 8, stroke="axis")
-        mid = (x0 + x1) / 2
-        w = text_width(label, _SMALL) + 10
-        canvas.rect(mid - w / 2, bracket_y - 6, w, 14, fill="page")
-        canvas.text(
-            mid,
-            bracket_y + 7.5,
-            label,
-            size=_SMALL,
-            fill="muted",
-            anchor="middle",
-            extra=' font-style="italic"',
+    # ---- Rows ---------------------------------------------------------------------------
+    def value_text(row: ThesisRow, x: float, baseline: float, fill: str, anchor: str) -> None:
+        if row is not first or not placed:
+            canvas.text(x, baseline, row.text, size=_VALUE, fill=fill, anchor=anchor, weight=700)
+            return
+        canvas.parts.append(
+            f'<text x="{x:.1f}" y="{baseline:.1f}" font-size="{_VALUE:g}" font-weight="700" '
+            f'text-anchor="{anchor}" fill="{canvas.color(fill)}" class="named">'
+            f'<tspan font-weight="400">{escape(named)}</tspan>{escape(row.text)}%</text>'
         )
 
-    def head(x: float, lines_: Sequence[str], anchor: str, fill: str = "ink2") -> None:
-        for i, line in enumerate(lines_):
-            baseline = head_b - 14 * (len(lines_) - 1 - i)
-            canvas.text(x, baseline, line, size=_HEAD, fill=fill, anchor=anchor, weight=600)
-
-    head(model_x, ("Model",), "start")
-    if judged:
-        head(safety_x, ("Safety", "bar"), "start")
-    for slot, column in zip(slots, columns, strict=True):
-        fill = "ink" if column.emphasis else "ink2"
-        if column.kind in ("bar", "cost"):
-            head(slot.x, column.head, "start", fill)
-        else:
-            head(slot.x + slot.w, column.head, "end", fill)
-    rule_y = head_b + 9
-    canvas.line(_PAD, rule_y, WIDTH - _PAD, rule_y, stroke="axis")
-
-    # ---- Rows ---------------------------------------------------------------------------------
-    def track(slot: _Slot) -> tuple[float, float]:
-        """The cost track's ends, inset so a mark at either end stays on the track."""
-        tx = slot.x + slot.value_w + 6
-        return tx + 5, tx + slot.graphic_w - 5
-
-    def track_x(slot: _Slot, usd: float) -> float:
-        assert domain is not None
-        lo, hi = (math.log10(v) for v in domain)
-        t = (math.log10(usd) - lo) / (hi - lo)
-        start, end = track(slot)
-        return start + (end - start) * min(max(t, 0.0), 1.0)
-
-    decades: list[float] = []  # the track's inner decades (its ends are the domain's)
-    if domain is not None:
-        lo, hi = (round(math.log10(v)) for v in domain)
-        decades = [10.0**k for k in range(lo + 1, hi)]
-
-    def draw_row(row: BoardRow, ry: float, second: str | None) -> None:
-        cy = ry + _ROW / 2
-        muted = row.reference
-        name, _ = _split_name(row.name)
-        name_y = ry + 15.0 if second else cy + 4.5
-        ink = "ink2" if muted else "ink"
-        style = ' font-style="italic"' if muted else ""
-        canvas.text(
-            model_x,
-            name_y,
-            truncate(name, reference_w if muted else model_w, _NAME),
-            size=_NAME,
-            fill=ink,
-            weight=400 if muted else 500,
-            extra=style,
-        )
-        if second:
-            canvas.text(model_x, ry + 28.0, second, size=_VENDOR, fill="muted")
-        if judged and row.clears is not None:
-            if row.clears:
-                _check(canvas, safety_x + _ICON, cy)
-            else:
-                _cross(canvas, safety_x + _ICON, cy)
-                if pips:
-                    px = safety_x + 2 * _ICON + _PIP_GAP + _PIP_R
-                    for p, criterion in enumerate(criteria):
-                        _pip(canvas, px + p * _PIP_PITCH, cy, criterion in row.misses)
-        for slot, column in zip(slots, columns, strict=True):
-            weight = 600 if column.emphasis and not muted else 400
-            if column.kind == "number":
-                v = row.values.get(column.keys[0], BoardValue("—"))
-                canvas.text(
-                    slot.x + slot.w,
-                    cy + 4.5,
-                    v.text,
-                    size=_VALUE,
-                    fill=ink,
-                    anchor="end",
-                    weight=weight,
-                )
-            elif column.kind == "severity":
-                right = slot.x + slot.w
-                for k, value_key in enumerate(reversed(column.keys)):
-                    v = row.values.get(value_key, BoardValue("—"))
-                    cx1 = right - k * (slot.chip_w + _CHIP_GAP)
-                    cx0 = cx1 - slot.chip_w
-                    step = shortfall_bin(v.value) if v.value is not None else 0
-                    if value_key in row.failed and not muted:
-                        _outline(canvas, cx0, cy - _CHIP_H / 2, slot.chip_w, _CHIP_H)
-                    if step and not muted:
-                        canvas.rect(
-                            cx0,
-                            cy - _CHIP_H / 2,
-                            slot.chip_w,
-                            _CHIP_H,
-                            fill=theme.heat[step],
-                            rx=4,
-                        )
-                        canvas.text(
-                            (cx0 + cx1) / 2,
-                            cy + 4.2,
-                            v.text,
-                            size=_CHIP,
-                            fill=theme.heat_ink[step],
-                            anchor="middle",
-                            weight=600 if step >= 3 else 500,
-                        )
-                    else:
-                        canvas.text(
-                            (cx0 + cx1) / 2,
-                            cy + 4.2,
-                            v.text,
-                            size=_CHIP,
-                            fill="ink2" if v.value is not None else "muted",
-                            anchor="middle",
-                        )
-            elif column.kind == "bar":
-                v = row.values.get(column.keys[0], BoardValue("—"))
-                value_right = slot.x + slot.value_w
-                canvas.text(
-                    value_right,
-                    cy + 4.5,
-                    v.text,
-                    size=_VALUE,
-                    fill=ink,
-                    anchor="end",
-                    weight=weight,
-                )
-                bx = value_right + 6
-                if v.value is not None:
-                    canvas.rect(bx, cy - _BAR_H / 2, slot.graphic_w, _BAR_H, fill="grid", rx=2)
-                if v.value is not None and v.value > 0:
-                    share = min(max(v.value / 100.0, 0.0), 1.0)
-                    canvas.rect(
-                        bx,
-                        cy - _BAR_H / 2,
-                        max(slot.graphic_w * share, 2.0),
-                        _BAR_H,
-                        fill="neutral" if muted else "accent",
-                        rx=2,
-                    )
-            else:
-                cost = row.cost or BoardCost("—", "absent")
-                value_right = slot.x + slot.value_w
-                if cost.placed and domain is not None and cost.usd is not None:
-                    canvas.text(
-                        value_right, cy + 4.5, cost.text, size=_VALUE, fill=ink, anchor="end"
-                    )
-                    tx = value_right + 6
-                    canvas.line(tx, cy, tx + slot.graphic_w, cy, stroke="grid", width=2)
-                    for decade in decades:
-                        dx = track_x(slot, decade)
-                        canvas.line(dx, cy - 2.5, dx, cy + 2.5, stroke="axis")
-                    mx = track_x(slot, cost.usd)
-                    if cost.kind == "equivalent":
-                        canvas.diamond(mx, cy, 5.2, fill="ink2", extra=' data-cost="equivalent"')
-                    else:
-                        canvas.circle(mx, cy, 4.2, fill="ink2", extra=' data-cost="charge"')
-                elif cost.kind == "absent":
-                    canvas.text(
-                        value_right, cy + 4.5, cost.text, size=_VALUE, fill="muted", anchor="end"
-                    )
-                else:  # a cost that isn't a price: one word, in the price column, no mark
-                    canvas.text(
-                        value_right,
-                        cy + 4.5,
-                        cost.text,
-                        size=_WORD,
-                        fill="muted",
-                        anchor="end",
-                        extra=' font-style="italic"',
-                    )
-
-    ry = rule_y
-    for i, row in enumerate(models):
-        if i:
-            canvas.line(_PAD, ry, WIDTH - _PAD, ry, stroke="grid")
-        draw_row(row, ry, seconds[i])
-        ry += _ROW
-
-    # The cost track's inner decades, labelled once under the models' rows when they fit.
-    cost_slot = next(
-        (s for s, c in zip(slots, columns, strict=True) if c.kind == "cost" and graphic(c)), None
-    )
-    if cost_slot is not None and decades and models:
-        labels = [(track_x(cost_slot, d), _money(d)) for d in decades]
-
-        def fits(chosen: Sequence[tuple[float, str]]) -> bool:
-            edges = [
-                (x - text_width(t, _SMALL) / 2, x + text_width(t, _SMALL) / 2) for x, t in chosen
-            ]
-            apart = all(b[0] - a[1] >= 4 for a, b in itertools.pairwise(edges))
-            return apart and edges[-1][1] <= WIDTH - _PAD
-
-        if fits(labels):
-            for x, text in labels:
-                canvas.text(x, ry + 13, text, size=_SMALL, fill="muted", anchor="middle")
-            ry += 14
-    if references:
-        ry += 10
-        canvas.line(_PAD, ry, WIDTH - _PAD, ry, stroke="axis")
-        for i, row in enumerate(references):
-            if i:
-                canvas.line(_PAD, ry, WIDTH - _PAD, ry, stroke="grid")
-            draw_row(row, ry, None)
-            ry += _ROW
-    canvas.line(_PAD, ry, WIDTH - _PAD, ry, stroke="axis")
-
-    # The tie: a bracket in the left margin over the rows no test separates.
-    if tie:
-        y0, y1 = rule_y + 6, rule_y + tie * _ROW - 6
-        bx = _PAD - 6.0  # in the page's margin, so the names keep the title's left edge
-        canvas.path(
-            f"M{bx + 3:.1f},{y0:.1f}L{bx:.1f},{y0:.1f}L{bx:.1f},{y1:.1f}L{bx + 3:.1f},{y1:.1f}",
-            stroke="muted",
-            width=1.0,
-            extra=' class="tie"',
-        )
-        tie_text = next((t for t in tie_labels if text_width(t, _SMALL) <= y1 - y0 - 12), "")
-        if tie_text:
-            lx, ly = bx - 5.5, (y0 + y1) / 2
+    def draw_row(row: ThesisRow, top: float, accented: bool) -> None:
+        cy = top + _pitch(row) / 2
+        name, disclosure = _split_name(row.name)
+        right = bar_x - _NAME_GAP
+        if disclosure:  # the name and, on the line under it, its disclosure
+            canvas.text(right, cy - 2.0, truncate(name, label_w, _NAME), size=_NAME, anchor="end")
             canvas.text(
-                lx,
-                ly,
-                tie_text,
-                size=_SMALL,
+                right,
+                cy + 13.5,
+                truncate(disclosure, label_w, _DISCLOSE),
+                size=_DISCLOSE,
                 fill="muted",
-                anchor="middle",
-                extra=f' font-style="italic" transform="rotate(-90 {lx:.1f} {ly:.1f})"',
+                anchor="end",
             )
-    height = canvas.footer(ry + 24, source, _PAD)
+        else:
+            canvas.text(
+                right, cy + _NAME * 0.34, truncate(name, label_w, _NAME), size=_NAME, anchor="end"
+            )
+        baseline = cy + _VALUE * 0.35
+        if row.value is None:
+            canvas.text(bar_x, baseline, row.text, size=_VALUE, fill="muted")
+        else:
+            w = length(row.value)
+            fill = "safe" if accented else "bar"
+            if w > 0:
+                canvas.parts.append(
+                    f'<path d="{_bar_path(bar_x, cy - _BAR / 2, w, _BAR)}" '
+                    f'fill="{canvas.color(fill)}" class="bar"/>'
+                )
+            inside = (
+                placed == "inside"
+                if row is first and placed
+                else w >= text_width(row.text, _VALUE, bold=True) + 2 * _INSET
+            )
+            if inside:
+                value_text(row, bar_x + w - _INSET, baseline, f"{fill}_ink", "end")
+            else:
+                value_text(row, bar_x + w + 5.0, baseline, "ink", "start")
+        if row.note:
+            canvas.text(
+                note_x,
+                cy + _NOTE * 0.35,
+                truncate(row.note, note_w, _NOTE, bold=row.strong),
+                size=_NOTE,
+                fill="ink" if row.strong else "muted",
+                weight=600 if row.strong else 400,
+                extra=' class="note"',
+            )
 
-    def described(row: BoardRow) -> str:
-        parts: list[str] = []
-        if row.reference:
-            parts.append("reference, not ranked")
-        if row.clears is True:
-            parts.append("clears the safety bar")
-        elif row.clears is False:
-            parts.append(f"misses the safety bar on {', '.join(row.misses) or 'a criterion'}")
-        for column in columns:
-            if column.kind == "cost":
-                cost = row.cost or BoardCost("—", "absent")
-                footing = {
-                    "charge": " (API charge)",
-                    "equivalent": " (API-equivalent, not a charge)",
-                    "estimate": " (CLI estimate, not a price)",
-                }.get(cost.kind, "")
-                parts.append(f"cost per 1,000 decisions {cost.text}{footing}")
-                continue
-            for value_key, spoken in zip(column.keys, column.spoken, strict=True):
-                v = row.values.get(value_key, BoardValue("—"))
-                unit = column.unit if v.value is not None else ""
-                fails = " (misses the bar)" if value_key in row.failed else ""
-                parts.append(f"{spoken} {v.text}{unit}{fails}")
-        vendor = f" ({row.vendor})" if row.vendor else ""
-        return f"{row.name}{vendor}: " + ", ".join(parts)
+    spans: list[tuple[float, float]] = []
+    gap = 50.0
+    for group in shown:
+        y += gap
+        gap = 58.0
+        canvas.text(
+            bar_x,
+            y,
+            group.label,
+            size=_GROUP,
+            fill="safe" if group.accent else "ink",
+            weight=700,
+            extra=' class="group"',
+        )
+        if group.note_head:
+            canvas.text(
+                note_x, y, truncate(group.note_head, note_w, _HEAD), size=_HEAD, fill="muted"
+            )
+        y += 10.0
+        top = y
+        for row in group.rows:
+            draw_row(row, y, group.accent)
+            y += _pitch(row)
+        spans.append((top, y))
 
-    noun = "model" if len(models) == 1 else "models"
-    tied = (
-        f" The first {tie} rows are bracketed: {tie_labels[0] if tie_labels else 'a tie'}."
-        if tie
-        else ""
-    )
+    # ---- The band: the accent group's range, behind every group's rows ------------------
+    ranged = [r.value for g in shown if g.accent for r in g.rows if r.value is not None]
+    bracket = None
+    if band and ranged:
+        x0, x1 = bar_x + length(min(ranged)), bar_x + length(max(ranged))
+        if x1 - x0 < 3.0:  # one model, or one value: a narrow strip centered on it
+            x0, x1 = (x0 + x1) / 2 - 1.5, (x0 + x1) / 2 + 1.5
+        canvas.parts[:0] = [  # behind everything drawn so far
+            f'<rect x="{x0:.1f}" y="{a:.1f}" width="{x1 - x0:.1f}" height="{b - a:.1f}" '
+            f'fill="{theme.safe_band}" class="band"/>'
+            for a, b in spans
+        ]
+        bracket = (x0, x1)
+
+    if bracket is not None:
+        x0, x1 = bracket
+        y += 10.0
+        canvas.path(
+            f"M{x0:.1f},{y - 7.0:.1f}V{y:.1f}H{x1:.1f}V{y - 7.0:.1f}",
+            stroke="muted",
+            width=1.5,
+            extra=' class="bracket"',
+        )
+        end = x1 - _PAD >= 0.45 * inner
+        width = min(x1 - _PAD, fit) if end else min(WIDTH - _PAD - x0, fit)
+        y += 6.0
+        for line in balanced(band, width, _CAPTION):
+            y += _CAPTION_LEAD
+            canvas.text(
+                x1 if end else x0,
+                y,
+                line,
+                size=_CAPTION,
+                fill="ink2",
+                anchor="end" if end else "start",
+                extra=' class="caption"',
+            )
+
+    # ---- Source -------------------------------------------------------------------------
+    y += 36.0
+    for text in source:
+        for line in _small_print(text, fit):
+            canvas.text(_PAD, y, line, size=_SOURCE, fill="muted")
+            y += _SOURCE_LEAD
+    height = y - _SOURCE_LEAD + _PAD
+
+    def described(row: ThesisRow, group: ThesisGroup) -> str:
+        parts = [group.verdict] if group.verdict else []
+        parts.append(f"{metric} {row.text}" + ("%" if row.value is not None else ""))
+        if row.note:
+            parts.append(f"{group.note_head}: {row.note}" if group.note_head else row.note)
+        return f"{row.name}: " + ", ".join(parts)
+
+    noun = "model" if len(rows) == 1 else "models"
+    joined = headline(title, subtitle)
     desc = (
-        f"Leaderboard table of {len(models)} {noun}"
-        + (f" and {len(references)} reference rows" if references else "")
-        + f". {subtitle}{tied} "
-        + "; ".join(described(r) for r in [*models, *references])
-        + f". {' '.join(source)}"
+        f"Bar chart of {metric} for {len(rows)} {noun}, in {len(shown)} "
+        f"group{'s' if len(shown) != 1 else ''}. {joined.rstrip('.')}. "
+        + (f"{band} " if bracket is not None else "")
+        + " ".join(
+            f"{group.label}"
+            + (f" ({group.order})" if group.order else "")
+            + ": "
+            + "; ".join(described(r, group) for r in group.rows)
+            + "."
+            for group in shown
+        )
+        + f" {' '.join(source)}"
     )
-    return canvas.render(height, title=title, desc=desc, key=key)
+    return canvas.render(height, title=joined, desc=desc, key=key)

@@ -49,6 +49,7 @@ __all__ = [
     "plural",
     "pp",
     "seconds",
+    "spelled",
     "units",
     "usd",
     "words",
@@ -102,6 +103,14 @@ def pct_against(value: float, reference: float, digits: int = 1, max_digits: int
     ):
         places += 1
     return pct(value, places)
+
+
+_SPELLED = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+
+def spelled(n: int) -> str:
+    """A count in a sentence: spelled out below ten (``four``), else in figures (``1,870``)."""
+    return _SPELLED[n] if 0 <= n < len(_SPELLED) else f"{n:,}"
 
 
 def number(value: float | None, digits: int = 3) -> str:

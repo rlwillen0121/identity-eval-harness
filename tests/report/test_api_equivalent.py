@@ -21,6 +21,7 @@ from identitybench.report.api_equivalent import (
 )
 from identitybench.report.common import config_refs, decision_cost, equivalent_notes
 from identitybench.report.document import Table
+from identitybench.report.safety_bar import SafetyBar
 from identitybench.runner.cost import ModelPrice, PricingTable
 from identitybench.schemas.enums import Split
 from identitybench.schemas.predictions import PredictionUsage
@@ -240,9 +241,9 @@ def test_the_equivalent_is_labelled_and_never_bolded_or_mixed_into_api_cost(
 
     block = readme_leaderboard([run])
     md = block.markdown
-    # The headline table as text marks the equivalent with a footnote letter, never a glyph,
-    # and never in bold; the figure draws it as a diamond, keyed once.
-    text = re.search(r"<summary>Table as text</summary>.*?</details>", md, flags=re.S)
+    # The full table marks the equivalent with a footnote letter, never a glyph, and never in
+    # bold.
+    text = re.search(r"<summary>Full leaderboard table</summary>.*?</details>", md, flags=re.S)
     assert text is not None
     rows = [line for line in text.group(0).splitlines() if line.startswith("| model")]
     marked = [r for r in rows if "<sup>a</sup>" in r]
@@ -251,8 +252,14 @@ def test_the_equivalent_is_labelled_and_never_bolded_or_mixed_into_api_cost(
         "<sup>a</sup> API-equivalent: the model's list price × the tokens a subscription CLI "
         "recorded; a price, not a charge." in text.group(0)
     )
-    figure = block.charts["readme-leaderboard-light.svg"]
-    assert figure.count('data-cost="equivalent"') == 1 and ">API-equivalent<" in figure
+    # The thesis graphic gives a cost only to the models that clear the safety bar: with a bar
+    # both clear, the equivalent is marked as in the tables, beside the charge, and explained.
+    assert "API-equivalent" not in block.charts["readme-leaderboard-light.svg"]
+    loose = SafetyBar(war_bound=1.0, unsafe_plans=1.0, harmful_flips=1.0, invalid=1.0)
+    figure = readme_leaderboard([run], bar=loose).charts["readme-leaderboard-light.svg"]
+    for config_id in ("model_a_cli", "model_a_paid"):
+        assert f">{decision_cost(refs[config_id]).cell()}</text>" in figure
+    assert "◇ API-equivalent: list price × the tokens used, not a charge." in figure
     assert "◇ marks an API-equivalent: the tokens a subscription CLI recorded" in md
 
     usage = next(s for s in build_document([run]).sections if s.key == "usage")

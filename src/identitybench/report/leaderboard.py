@@ -1,8 +1,8 @@
 """The leaderboard: rows per task, one task's full table and the README update.
 
-The README's results block itself (status line, hero figure, headline table, legend,
-significance summary and the cheapest model that clears the safety bar, then collapsed detail)
-is built by ``report.readme`` and written with :func:`update_readme`; :func:`leaderboard_table`
+The README's results block itself (a lead and the thesis graphic, then the full leaderboard
+table, the other figures, the method and statistics and the rest of the detail collapsed) is
+built by ``report.readme`` and written with :func:`update_readme`; :func:`leaderboard_table`
 is one task's full table with every interval, for callers that want it as Markdown.
 
 **Rows.** One per scored configuration of every run, baselines included (SPEC §14: baselines

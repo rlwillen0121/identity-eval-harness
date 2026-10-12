@@ -1,9 +1,8 @@
-"""The README results block: the status line, the hero figure and the leaderboard figure in both
-themes (the headline table, with two reference rows, drawn), the same table as plain text one
-click away, the bounded significance summary and the cheapest model that clears the safety bar
-visible; the safety bar's detail, metric definitions, per-task intervals, the scorecard and cost
-figures and the baselines one click away. The figures' own renderers are tested in
-``test_readme_figures``."""
+"""The README results block: the lead (the scope and the caveat, in one sentence) and the
+thesis graphic in both themes visible; the full leaderboard table
+as text, the other figures, the method and statistics, the safety bar's detail, metric
+definitions, per-task intervals and the baselines one click away. The figures' own renderers
+are tested in ``test_readme_figures``."""
 
 from __future__ import annotations
 
@@ -33,6 +32,7 @@ from identitybench.report.readme import (
     model_name,
     model_vendor,
 )
+from identitybench.report.safety_bar import SafetyBar
 from identitybench.schemas.enums import Task
 from identitybench.scoring.metrics import Metric
 from identitybench.scoring.summary import Comparison, ConfigScores
@@ -51,7 +51,6 @@ HERO = README_CHARTS["results"]
 BOARD = README_CHARTS["leaderboard"]
 HEADLINE = (
     "Model",
-    "Safety bar",
     "Grounded accuracy",
     "Correct automation",
     "Wrongful approvals req / rev",
@@ -59,21 +58,21 @@ HEADLINE = (
     "Risk cost",
     "Cost per 1k",
 )
-"""The headline table as text: plain headers, no stars, arrows or marks."""
+"""The full leaderboard table: plain headers, no stars, arrows or marks."""
 NRC = HEADLINE[1:].index("Risk cost")
 GROUNDED = HEADLINE[1:].index("Grounded accuracy")
 AUTOMATION = HEADLINE[1:].index("Correct automation")
 COST = HEADLINE[1:].index("Cost per 1k")
 SUMMARIES = [
-    "Table as text",
-    "<b>Safety bar: criteria and every model</b>",
-    "<b>Decision accuracy and grounded accuracy</b>",
-    "<b>Metric definitions</b>",
-    "<b>Per-task results and 95% intervals</b>",
-    "<b>Safety and robustness scorecard</b>",
-    "<b>Baselines and oracle reference</b>",
+    "Full leaderboard table",
+    "More charts",
+    "Method and statistics",
+    "Safety bar: criteria and every model",
+    "Metric definitions",
+    "Per-task results and 95% intervals",
+    "Baselines and oracle reference",
 ]
-"""The collapsed sections, in order (the cost section only once enough models are priced)."""
+"""The collapsed sections, in order."""
 
 
 # --------------------------------------------------------------------------------------------
@@ -95,7 +94,7 @@ def _plain(html: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     text = text.replace("&nbsp;", " ").replace("&#8202;", " ").replace("&#8209;", "-")
     text = text.replace("&#8201;", " ").replace("&#8239;", " ").replace("&#8288;", "")
-    text = text.replace("&amp;", "&")
+    text = text.replace("&amp;", "&").replace("&shy;", "")
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -125,14 +124,21 @@ def _cells(line: str) -> list[str]:
 
 
 def _text_table(markdown: str) -> tuple[list[str], list[list[str]]]:
-    """The headline table as text: its plain header and its rows' raw cells (name first)."""
-    section = _details(markdown, "Table as text")
+    """The full leaderboard table: its plain header and its rows' raw cells (name first), a
+    group's bold label row ("**Clear the bar**") among them."""
+    section = _details(markdown, "Full leaderboard table")
     lines = [line for line in section.splitlines() if line.startswith("| ")]
     return [_plain(c) for c in _cells(lines[0])], [_cells(line) for line in lines[2:]]
 
 
+def _labels(markdown: str) -> list[str]:
+    """The full table's group labels, in order."""
+    return [row[0].strip("*") for row in _text_table(markdown)[1] if row[0].startswith("**")]
+
+
 def _headline_rows(markdown: str) -> list[list[str]]:
-    return _text_table(markdown)[1]
+    """The full table's rows of values: every row but the group labels."""
+    return [row for row in _text_table(markdown)[1] if not row[0].startswith("**")]
 
 
 def _headline_models(markdown: str) -> list[list[str]]:
@@ -238,65 +244,105 @@ def _texts(root: ET.Element) -> list[str]:
 # --------------------------------------------------------------------------------------------
 
 
-def test_the_block_leads_with_the_status_and_the_leaderboard(runs: Fixture) -> None:
+def test_the_block_leads_with_the_finding_and_the_thesis_graphic(runs: Fixture) -> None:
     run = _loaded(runs)
     block = readme_leaderboard([run])
     md = block.markdown
     dataset = run.scores.dataset
-    status = next(line for line in md.splitlines() if line.startswith("**"))
-    assert status == (
-        f"**{dataset.name} {dataset.version}**<br>Test split · context mode · baseline prompt · "
-        "15 cases per model · run 2026-10-10"
+    # The lead, one sentence: what the results are, and that the bar is a screen set after
+    # them. The finding is the graphic's.
+    lead = md.splitlines()[2]
+    assert lead == (
+        f"Results for 2 models on the {dataset.name} {dataset.version} test split (15 synthetic "
+        "cases per model, context mode, baseline prompt); the safety bar was set after the "
+        "results were in, so clearing it is a screen, not evidence that a model is safe to "
+        "deploy."
     )
     assert "Interim" not in md
-    # The status, the leaderboard figure (the headline table, drawn: GitHub can't style a
-    # Markdown table) with the sentence that its order is not a tested ranking, the links, the
-    # significance summary that qualifies the order and the cheapest model that clears the
-    # safety bar are visible; the same table as text, the accuracy chart and everything else
-    # are collapsed. With fewer than COST_FIGURE_MIN priced models there is no cost figure,
-    # and no figure has a Markdown caption repeating it.
+    # Visible: the lead, the thesis graphic and the warnings; everything else is collapsed, the
+    # full table first. No figure has a Markdown caption repeating it.
     visible = _visible(md)
     assert visible.count("<picture>") == 1 and "<table>" not in visible and "| " not in visible
     assert "charts/readme-leaderboard-dark.svg" in visible
     assert "charts/readme-results-dark.svg" not in visible
     order = [
-        md.index(status),
+        md.index(lead),
         md.index("charts/readme-leaderboard-dark.svg"),
-        md.index(
-            "Rows are ordered by displayed risk cost, then grounded accuracy. Ordering reflects "
-            "point estimates, not a statistically established ranking."
-        ),
-        md.index("<details>\n<summary>Table as text</summary>"),
-        md.index("[Full report](reports/v1/report.md)"),
-        md.index("**Statistical comparisons.**"),
-        md.index("**Cheapest model that clears the safety bar"),
-        md.index("**Bar:**"),
-        md.index("<summary><b>Safety bar: criteria"),
+        md.index("<details>\n<summary>Full leaderboard table</summary>"),
+        md.index("<summary>More charts</summary>"),
         md.index("charts/readme-results-dark.svg"),
+        md.index("charts/readme-scorecard-dark.svg"),
+        md.index("<summary>Method and statistics</summary>"),
+        md.index("**Safety bar:**"),
+        md.index("**Statistical comparisons.**"),
+        md.index("<summary>Safety bar: criteria and every model</summary>"),
+        md.index("**Cheapest model that clears the safety bar"),
+        md.index("[Full report](reports/v1/report.md)"),
     ]
     assert order == sorted(order)
-    hero = _details(md, "<b>Decision accuracy and grounded accuracy</b>")
-    assert "charts/readme-results-dark.svg" in hero
     assert md.startswith("<!-- Generated by `identitybench report --readme`")
     header, rows = _text_table(md)
     assert tuple(header) == HEADLINE
     names = [_plain(row[0]) for row in _headline_models(md)]
     assert sorted(names) == ["model-a †", "model-b †"]
+    assert _labels(md) == ["Miss the bar", "References"]
     assert "[Full report](reports/v1/report.md) · [HTML](reports/v1/report.html)" in visible
-    assert visible.count("reports/v1/report.md#comparisons-between-configurations") == 1
+    assert md.count("reports/v1/report.md#comparisons-between-configurations") == 1
     # No glyph clutter: plain headers and words, footnote letters for the cost marks.
-    text = _details(md, "Table as text")
+    text = _details(md, "Full leaderboard table")
     assert not any(mark in text for mark in ("★", "↑", "↓", "◇", "≈"))
     assert (
-        "Rows are ranked by risk cost, then grounded accuracy: point estimates, not a tested "
-        "ranking." in text
+        "Rows: the models that miss the bar, by grounded accuracy; an order of point estimates, "
+        "not a tested ranking." in text
     )
     assert len({len(row) for row in rows} | {len(header)}) == 1
     summaries = re.findall(r"<summary>(.*?)</summary>", md)
     assert summaries == SUMMARIES
-    # The scorecard is collapsed, with no caption beside it.
-    scorecard = _details(md, "<b>Safety and robustness scorecard</b>")
-    assert "charts/readme-scorecard-dark.svg" in scorecard and "<sub>" not in scorecard
+    # The other figures are collapsed together, with no caption beside them.
+    more = _details(md, "More charts")
+    assert "charts/readme-scorecard-dark.svg" in more and "<sub>" not in more
+
+
+def test_the_graphic_shows_accuracy_is_not_safety_only_when_the_numbers_show_it(
+    runs: Fixture,
+) -> None:
+    """The thesis graphic shades the range of grounded accuracy of the models that clear the
+    safety bar, and its caption says when a model that misses the bar scores inside it or above
+    it: a range of observed point estimates, never "higher than" (no difference is tested). The
+    lead stays the scope and the caveat."""
+    run = _loaded(runs)
+    a, b = run.scores.configs["model_a"], run.scores.configs["model_b"]
+    # model_a writes unsafe plans (100% of its JML events here); model_b clears this bar.
+    bar = SafetyBar(war_bound=1.0, unsafe_plans=0.5, harmful_flips=1.0, invalid=1.0)
+
+    def board(grounded_a: float, grounded_b: float) -> tuple[str, str]:
+        edited = _with_config(
+            run, "model_a", _with_grounding(a, grounded_a, 0.8, 0.5), label="model-a"
+        )
+        edited = _with_config(
+            edited, "model_b", _with_grounding(b, grounded_b, 0.8, 0.5), label="model-b"
+        )
+        block = readme_leaderboard([edited], bar=bar)
+        root = _parse(block.charts[BOARD["light"]])
+        desc = root.find(f"{NS}desc")
+        assert desc is not None and desc.text is not None
+        return block.markdown.splitlines()[2], desc.text
+
+    lead, desc = board(0.9, 0.6)
+    assert (
+        "Shaded: the score of the model that clears the bar. model-a is above it, yet misses "
+        "the bar." in desc
+    )
+    assert lead == (
+        "Results for 2 models on the toy v1 test split (15 synthetic cases per model, context "
+        "mode, baseline prompt); the safety bar was set for this report (the default bar was "
+        "set after the v1 results were in), so clearing it is a screen, not evidence that a "
+        "model is safe to deploy."
+    )
+    assert "higher" not in lead and "Accuracy is not safety" not in lead
+    _, desc = board(0.6, 0.9)
+    assert "Shaded: the score of the model that clears the bar. Clear" in desc
+    assert "yet misses" not in desc
 
 
 def test_the_hero_states_both_denominators_and_how_it_was_run(runs: Fixture) -> None:
@@ -331,7 +377,7 @@ def test_the_hero_states_both_denominators_and_how_it_was_run(runs: Fixture) -> 
 
 def test_the_hero_is_a_picture_with_light_and_dark_variants(runs: Fixture) -> None:
     block = readme_leaderboard([runs.main])
-    hero = _details(block.markdown, "<b>Decision accuracy and grounded accuracy</b>")
+    hero = _details(block.markdown, "More charts")
     picture = re.search(r"<picture>.*?</picture>", hero, re.S)
     assert picture is not None
     assert (
@@ -367,14 +413,18 @@ def test_html_blocks_survive_markdown(runs: Fixture) -> None:
 
 def test_the_interim_status_comes_from_planned_models(runs: Fixture) -> None:
     block = readme_leaderboard([runs.main], planned_models=4)
-    status = next(line for line in block.markdown.splitlines() if "Interim" in line)
-    assert status.startswith("**toy v1 · Interim leaderboard: 2 of 4 planned models**<br>")
-    assert "running" not in status  # never says the missing models are under way
-    for svg in block.charts.values():
-        assert "Interim · 2/4 models" in _texts(_parse(svg))
+    lead = block.markdown.splitlines()[2]
+    assert lead.startswith("Interim results for 2 of 4 planned models on the toy v1 test split")
+    assert "running" not in lead  # never says the missing models are under way
+    for name, svg in block.charts.items():
+        texts = _texts(_parse(svg))
+        if name in BOARD.values():  # the thesis graphic says it in its source line
+            assert any("interim, 2 of 4 planned models" in t for t in texts)
+        else:
+            assert "Interim · 2/4 models" in texts
     complete = readme_leaderboard([runs.main], planned_models=2)
     assert "Interim" not in complete.markdown
-    assert all("Interim" not in svg for svg in complete.charts.values())
+    assert all("nterim" not in svg for svg in complete.charts.values())
     with pytest.raises(ValueError, match="planned_models is 1, but 2 model configurations"):
         readme_leaderboard([runs.main], planned_models=1)
 
@@ -400,18 +450,23 @@ def test_no_table_cell_is_bold(runs: Fixture) -> None:
             assert "<b>" not in body
 
 
-def test_rows_are_ordered_by_displayed_risk_cost(runs: Fixture) -> None:
-    block = readme_leaderboard([runs.main])
-    rows = _headline_models(block.markdown)
-    values = [float(_plain(cells[1:][NRC])) for cells in rows]
-    assert values == sorted(values)
-    # The figure lists them in the same order, unnumbered (the order is one of point
-    # estimates), its sort key in bold.
+def test_rows_are_grouped_by_the_safety_bar_in_the_graphics_order(runs: Fixture) -> None:
+    """The full table follows the thesis graphic: the models that clear the bar, then those
+    that miss it, each by grounded accuracy (the bars' order), each group under its label."""
+    run = _priced(_loaded(runs))
+    block = readme_leaderboard([run])
+    md = block.markdown
+    rows = _headline_models(md)
+    labels = _labels(md)
+    assert labels[-1] == "References" and set(labels[:-1]) <= {"Clear the bar", "Miss the bar"}
+    grounded = [float(_plain(cells[1:][GROUNDED])) for cells in rows]
+    assert grounded == sorted(grounded, reverse=True)  # none clears the bar in the fixture
+    # The graphic lists them in the same order, unnumbered (the order is one of point
+    # estimates), each with its value.
     desc = _desc(block.charts[BOARD["light"]])
     places = [desc.index(f"{_plain(cells[0])}: ") for cells in rows]
     assert places == sorted(places)
-    assert "rank 1" not in desc
-    assert "Leaderboard, ranked by risk cost" in _texts(_parse(block.charts[BOARD["light"]]))
+    assert "rank" not in desc
 
 
 def test_cost_cells_show_their_footing(runs: Fixture) -> None:
@@ -448,26 +503,21 @@ def test_cost_cells_show_their_footing(runs: Fixture) -> None:
     assert cells["model-a †"] == "$0.50<sup>a</sup>"  # a CLI's estimate, footnoted
     assert cells["model-b †"] == "$6.75"
     assert cells["model-c †"] == "$3.00"
-    # $0 that isn't a price: a word, not a figure, set small (it is the column's widest cell).
-    assert cells["model-d †"] == "<sub>unmetered</sub>"
+    # $0 that isn't a price: a word, not a figure, at the cells' size.
+    assert cells["model-d †"] == "unmetered"
     assert cells["Human-review reference †"] == cells["Oracle reference †"] == NOT_SCORED
     # The notes explain each footing shown, and that unmetered is not free.
-    text = _details(md, "Table as text")
+    text = _details(md, "Full leaderboard table")
     assert "<sup>a</sup> A CLI's own cost estimate, not a charge." in text
     assert "Unmetered: the endpoint charged nothing per call" in text
     assert "it does not mean inference is free" in text
     assert "API-equivalent" not in text  # none shown, so none explained
-    # The figure places only prices on its log track, each a circle (an API charge), and
-    # writes the rest as a word in the price column; its key explains what is shown.
-    figure = block.charts[BOARD["light"]]
-    assert figure.count('data-cost="charge"') == 2 and 'data-cost="equivalent"' not in figure
-    texts = _texts(_parse(figure))
-    for shown in ("≈$0.50", "unmetered", "API charge", "unmetered: no per-call price"):
-        assert shown in texts
-    assert "API-equivalent" not in texts
+    # The thesis graphic gives a cost only to the models that clear the safety bar (none does
+    # here), so it shows none, and no footing to explain.
+    texts = " ".join(_texts(_parse(block.charts[BOARD["light"]])))
+    assert "$" not in texts and "nmetered" not in texts and "API-equivalent" not in texts
     plain = readme_leaderboard([run])
-    assert "nmetered" not in _details(plain.markdown, "Table as text")
-    assert "unmetered" not in _texts(_parse(plain.charts[BOARD["light"]]))
+    assert "nmetered" not in _details(plain.markdown, "Full leaderboard table")
 
 
 def test_an_unpriced_model_says_why_its_cost_is_na(runs: Fixture) -> None:
@@ -477,11 +527,11 @@ def test_an_unpriced_model_says_why_its_cost_is_na(runs: Fixture) -> None:
     )
     md = readme_leaderboard([_with_config(run, "model_b", unknown, label="model-b")]).markdown
     cells = {_plain(r[0]): r[1:][COST] for r in _headline_rows(md)}
-    assert cells["model-b †"] == "<sub>n/a</sub>"
-    assert "n/a: no usable cost was recorded" in _details(md, "Table as text")
-    notes = _details(md, "<b>Metric definitions</b>")
+    assert cells["model-b †"] == "n/a"
+    assert "n/a: no usable cost was recorded" in _details(md, "Full leaderboard table")
+    notes = _details(md, "Metric definitions")
     assert "`n/a`: the provider reported no cost for these calls" in notes
-    assert "`n/a`" not in _details(readme_leaderboard([run]).markdown, "<b>Metric definitions")
+    assert "`n/a`" not in _details(readme_leaderboard([run]).markdown, "Metric definitions")
 
 
 # --------------------------------------------------------------------------------------------
@@ -491,7 +541,7 @@ def test_an_unpriced_model_says_why_its_cost_is_na(runs: Fixture) -> None:
 
 def test_baselines_and_the_oracle_reference_are_in_a_collapsed_block(runs: Fixture) -> None:
     md = readme_leaderboard([runs.main]).markdown
-    block = _details(md, "<b>Baselines and oracle reference</b>")
+    block = _details(md, "Baselines and oracle reference")
     assert block.startswith("<details>\n")  # collapsed while models are shown
     names = [_bare(_plain(row[0])) for row in _rows(_tables(block)[0])]
     assert sorted(n.removesuffix(" (reference)") for n in names) == sorted(BASELINES)
@@ -500,7 +550,7 @@ def test_baselines_and_the_oracle_reference_are_in_a_collapsed_block(runs: Fixtu
     assert "Baseline results are point estimates." in block
     assert "The oracle supplies reference answers and is not ranked." in block
     assert "Baselines make no model calls" in block
-    headline = _details(md, "Table as text")
+    headline = _details(md, "Full leaderboard table")
     assert not any(b in headline for b in BASELINES)
     assert md.index(block) > md.index(headline)
 
@@ -508,7 +558,7 @@ def test_baselines_and_the_oracle_reference_are_in_a_collapsed_block(runs: Fixtu
 def test_baseline_cells_name_each_task(runs: Fixture) -> None:
     """Baselines answer only some tasks, so accuracy is per task there, with ``—`` for a task
     a baseline wasn't scored on, never a mean that hides it."""
-    block = _details(readme_leaderboard([runs.main]).markdown, "<b>Baselines and oracle")
+    block = _details(readme_leaderboard([runs.main]).markdown, "Baselines and oracle")
     table = _tables(block)[0]
     header = _header(table)
     assert header[1] == "Accuracy ↑ req · rev · JML"
@@ -521,7 +571,7 @@ def test_baseline_cells_name_each_task(runs: Fixture) -> None:
 
 def test_per_task_tables_carry_intervals_and_exact_bounds(runs: Fixture) -> None:
     md = readme_leaderboard([runs.main]).markdown
-    block = _details(md, "<b>Per-task results and 95% intervals</b>")
+    block = _details(md, "Per-task results and 95% intervals")
     assert "**Access requests** · 8 cases" in block
     assert "**Access reviews** · 2 campaigns (7 items)" in block
     assert "**JML plans** · 2 events" in block
@@ -553,7 +603,7 @@ def test_per_task_tables_carry_intervals_and_exact_bounds(runs: Fixture) -> None
 
 def test_metric_definitions_define_every_metric_once_with_its_denominator(runs: Fixture) -> None:
     md = readme_leaderboard([runs.main]).markdown
-    notes = _details(md, "<b>Metric definitions</b>")
+    notes = _details(md, "Metric definitions")
     for term in (
         "**What each model answered:**",
         "**Decision accuracy**",
@@ -599,7 +649,9 @@ def test_grounded_accuracy_is_the_mean_over_requests_and_reviews_only(runs: Fixt
         rows = {_plain(r[0]): r[1:] for r in _headline_rows(block.markdown)}
         assert _plain(rows["model-b †"][GROUNDED]) == "80.0"
         assert "model-b †: grounded accuracy 80.0%" in block.charts[HERO["light"]]
-        assert "grounded accuracy 80.0%" in _desc(block.charts[BOARD["light"]])
+        assert "model-b †: misses the safety bar, grounded accuracy 80.0%" in _desc(
+            block.charts[BOARD["light"]]
+        )
     # Only the JML per-task table, inside a collapsed block, shows the difference.
     assert blocks[0].charts == blocks[1].charts
     assert _visible(blocks[0].markdown) == _visible(blocks[1].markdown)
@@ -620,13 +672,12 @@ def test_harmful_flips_are_in_the_safety_bar_and_robustness_tables_not_the_headl
     block = readme_leaderboard([run])
     md = block.markdown
     assert not any("Harmful" in h for h in _text_table(md)[0])
-    assert "harmful flips" not in _desc(block.charts[BOARD["light"]]).split(".")[0]
-    bar = _tables(_details(md, "<b>Safety bar: criteria and every model</b>"))[0]
+    bar = _tables(_details(md, "Safety bar: criteria and every model"))[0]
     flips = _header(bar).index("Harmful flips ↓ req · rev")
     rows = {_plain(r[0]): r for r in _rows(bar) if r[1:] and any(r[1:])}
     assert _plain(rows["model-a"][flips]) == "✗ 25.0"
     assert _plain(rows["model-b"][flips]) == "0.0"
-    robustness = _details(md, "<b>Per-task results and")
+    robustness = _details(md, "Per-task results and")
     assert "**Robustness** · requests: 1 adversarial and 2 twin pairs" in robustness
     table = _tables(robustness)[-1]
     assert _header(table)[1:] == [
@@ -642,7 +693,8 @@ def test_reference_rows_follow_the_models_in_italics(runs: Fixture) -> None:
     rows = _headline_rows(md)
     references = _headline_references(md)
     assert [r[0] for r in references] == ["*Human-review reference †*", "*Oracle reference †*"]
-    assert rows[-2:] == references  # after every model, in a fixed order
+    assert rows[-2:] == references  # after every model, in a fixed order, under their label
+    assert _labels(md)[-1] == "References"
     status_quo = references[0][1:]
     assert _plain(status_quo[NRC]) == "1.000"  # risk cost's unit: everything to a human
     # It automates nothing, so a 0.0 there would only say so by construction: a dash, and the
@@ -652,12 +704,10 @@ def test_reference_rows_follow_the_models_in_italics(runs: Fixture) -> None:
     assert (
         "References are not ranked. The human-review reference sends every case to a person: it "
         f"automates nothing ({NOT_SCORED}), approves nothing, answers no JML event, and its risk "
-        "cost is 1.000 by definition." in _details(md, "Table as text")
+        "cost is 1.000 by definition." in _details(md, "Full leaderboard table")
     )
-    # The figure sets them apart under the models, unranked and without a safety verdict.
-    desc = _desc(block.charts[BOARD["light"]])
-    assert "Human-review reference †: reference, not ranked, grounded accuracy —, " in desc
-    assert desc.index("Oracle reference †: reference") > desc.index("model-b †: ")
+    # The thesis graphic is about the models: the references are only in the table.
+    assert "reference" not in _desc(block.charts[BOARD["light"]])
 
 
 # --------------------------------------------------------------------------------------------
@@ -736,7 +786,7 @@ def test_significance_summarizes_the_tests_without_listing_pairs(runs: Fixture) 
         f"one model pair after Holm correction across {len(tested)} comparisons (α = 0.05). This "
         f"does not establish a total ordering of models. {PAIRWISE}"
     )
-    # Every model is beaten somewhere, and the top two rows differ on review risk cost, so
+    # Every model is beaten somewhere, and the two lowest risk costs differ on reviews, so
     # only the status quo bullet has something to say.
     assert bullets == [
         "**Against human review:** 2 of 3 models have a significantly lower risk cost than the "
@@ -744,9 +794,9 @@ def test_significance_summarizes_the_tests_without_listing_pairs(runs: Fixture) 
         "model-c is not significantly different on either.",
     ]
     assert "beats" not in md and " only " not in lead
-    # Between the table and the collapsed detail.
-    assert md.index(lead) > md.index("<summary>Table as text</summary>")
-    assert md.index(lead) < md.index("<summary><b>Safety bar")
+    # In the method and statistics, after the safety bar's method.
+    section = _details(md, "Method and statistics")
+    assert lead in section and section.index("**Safety bar:**") < section.index(lead)
 
 
 def test_significance_names_the_unbeaten_models_and_the_risk_cost_tie(runs: Fixture) -> None:
@@ -770,8 +820,8 @@ def test_significance_names_the_unbeaten_models_and_the_risk_cost_tie(runs: Fixt
     assert bullets == [
         "**Not beaten on any primary metric:** no other model is significantly better than "
         "model-b or model-d on any of them.",
-        "**Risk-cost ties:** no two models differ significantly on request risk cost, so the "
-        "table's order is a statistical tie.",
+        "**Risk-cost ties:** no two models differ significantly on request risk cost, so their "
+        "risk-cost order is a statistical tie.",
     ]
 
 
@@ -858,7 +908,7 @@ def test_a_run_with_only_baselines_shows_them_open_without_a_figure(runs: Fixtur
     assert block.charts == {}
     assert "<picture>" not in block.markdown
     assert "No model was scored in these runs" in block.markdown
-    assert "<details open>\n<summary><b>Baselines and oracle reference</b>" in block.markdown
+    assert "<details open>\n<summary>Baselines and oracle reference</summary>" in block.markdown
     assert "Interim leaderboard: 0 of 3 planned models**" in block.markdown
     assert "15 cases per configuration" in block.markdown
 
@@ -877,25 +927,23 @@ def test_labels_are_escaped(runs: Fixture) -> None:
 def test_long_names_wrap_only_where_the_table_needs_them(runs: Fixture) -> None:
     """GitHub lays a table out at its content's full width, so in the HTML tables a long
     display name breaks before its parenthetical and a name's own spaces and hyphens never
-    break; the text table keeps names as plain text (for copy and paste), and the figure puts
-    the disclosure on the name's second line, under it. The text table keeps a name on one
-    line, its disclosure a footnote letter, with plain hyphens (a word joiner after each)."""
+    break; the full table keeps a name on one line, its disclosure a footnote letter, with
+    plain hyphens (a word joiner after each), and the thesis graphic puts the disclosure on the
+    line under the name."""
     run = _loaded(runs)
     long = _with_config(
         run, "model_b", run.scores.configs["model_b"], label="qwen3.8-27b-exl3-4bit"
     )
     block = readme_leaderboard([long])
-    per_task = _tables(_details(block.markdown, "<b>Per-task results"))[0]
+    per_task = _tables(_details(block.markdown, "Per-task results"))[0]
     names = [row[0] for row in _rows(per_task)]
     assert "Qwen3.8&#8209;27B<br><sub>(4&#8209;bit,&nbsp;self&#8209;hosted)</sub>&nbsp;†" in names
     assert "model&#8209;a&nbsp;†" in names
     text = [row[0] for row in _headline_rows(block.markdown)]
     assert "Qwen3.8-&#8288;27B<sup>a</sup>&nbsp;†" in text and "model-&#8288;a&nbsp;†" in text
-    assert "<sup>a</sup> 4-bit, self-hosted." in _details(block.markdown, "Table as text")
+    assert "<sup>a</sup> 4-bit, self-hosted." in _details(block.markdown, "Full leaderboard table")
     figure = _texts(_parse(block.charts[BOARD["light"]]))
-    # Under the name, the vendor (in short when the line is long) and the disclosure: neither is
-    # ever dropped.
-    assert "Qwen3.8-27B †" in figure and "Alibaba · 4-bit, self-hosted" in figure
+    assert "Qwen3.8-27B †" in figure and "4-bit, self-hosted" in figure
 
 
 def test_model_names_read_as_display_names() -> None:
@@ -995,8 +1043,9 @@ def _desc(svg: str) -> str:
 
 
 def test_every_figure_prints_the_tables_numbers(runs: Fixture) -> None:
-    """The hero's grounded column and the scorecard's grounded cells are the headline table's
-    grounded accuracy, digit for digit, for every model."""
+    """The thesis graphic's bars, the hero's grounded column, the cost chart's points and the
+    scorecard's grounded cells are the full table's grounded accuracy, digit for digit, for
+    every model."""
     block = readme_leaderboard([_priced(_loaded(runs))])
     rows = {_plain(r[0]): r[1:] for r in _headline_models(block.markdown)}
     hero = _desc(block.charts[HERO["light"]])
@@ -1008,17 +1057,12 @@ def test_every_figure_prints_the_tables_numbers(runs: Fixture) -> None:
         shown = "n/a" if grounded == "n/a" else f"{grounded}%"
         assert f"{name}: grounded accuracy {shown}" in hero
         assert f"{name}: grounded accuracy {shown}" in cost
-        # The leaderboard figure prints every number of the text table's row.
-        described = board.split(f"{name}: ", 1)[1].split(";", 1)[0]
-        for key, label in ((GROUNDED, "grounded accuracy"), (AUTOMATION, "correct automation")):
-            assert f"{label} {_plain(cells[key])}%" in described
-        assert f"risk cost {_plain(cells[NRC])}" in described
-        requests, reviews = _plain(cells[HEADLINE[1:].index("Wrongful approvals req / rev")]).split(
-            " / "
+        assert re.search(
+            re.escape(name)
+            + r": (clears|misses) the safety bar, grounded accuracy "
+            + re.escape(shown),
+            board,
         )
-        assert f"wrongful approvals on requests {requests}%" in described
-        assert f"wrongful approvals on reviews {reviews}%" in described
-        assert f"cost per 1,000 decisions {_plain(cells[COST])}" in described
         assert re.search(
             re.escape(name) + r": .*Grounded Req \+ rev " + re.escape(grounded), scorecard
         )
@@ -1037,7 +1081,8 @@ def test_the_figures_order_models_by_grounded_accuracy(runs: Fixture) -> None:
 
 def test_the_cost_figure_waits_for_enough_priced_models(runs: Fixture) -> None:
     """With fewer than COST_FIGURE_MIN models on API prices there is no cost figure (the
-    table's cost column says as much); from COST_FIGURE_MIN on it follows the scorecard."""
+    table's cost column says as much); from COST_FIGURE_MIN on it follows the scorecard, in
+    the same collapsed section."""
     run = _loaded(runs)
     few = readme_leaderboard([_priced(run, COST_FIGURE_MIN - 1)])
     assert "readme-cost-quality" not in few.markdown
@@ -1045,16 +1090,10 @@ def test_the_cost_figure_waits_for_enough_priced_models(runs: Fixture) -> None:
     enough = readme_leaderboard([_priced(run)])
     md = enough.markdown
     assert sorted(enough.charts) == CHART_FILES
-    scorecard = md.index("charts/readme-scorecard-dark.svg")
-    cost = md.index("charts/readme-cost-quality-dark.svg")
-    assert md.index("<summary><b>Per-task results and") < scorecard < cost
-    section = _details(md, "<b>Inference cost and grounded accuracy</b>")
-    assert "charts/readme-cost-quality-dark.svg" in section
-    assert re.findall(r"<summary>(.*?)</summary>", md) == [
-        *SUMMARIES[:6],
-        "<b>Inference cost and grounded accuracy</b>",
-        SUMMARIES[6],
-    ]
+    more = _details(md, "More charts")
+    scorecard = more.index("charts/readme-scorecard-dark.svg")
+    assert scorecard < more.index("charts/readme-cost-quality-dark.svg")
+    assert re.findall(r"<summary>(.*?)</summary>", md) == SUMMARIES
     svg = enough.charts[README_CHARTS["cost-quality"]["light"]]
     assert len([c for c in _parse(svg).iter(f"{NS}circle") if c.get("data-point")]) == 4
 

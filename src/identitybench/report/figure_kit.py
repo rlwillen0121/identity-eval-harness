@@ -1,8 +1,8 @@
-"""Shared pieces of the README figures (``report.hero``, ``report.cost_quality`` and
-``report.scorecard``): two fixed color themes, a text-width estimate, a frame (title,
-subtitle, status badge, source line) and the geometry the cost chart's label placement uses
-to keep labels from colliding, clipping or pointing at the wrong mark however many models a
-leaderboard holds.
+"""Shared pieces of the README figures (``report.hero``, ``report.cost_quality``,
+``report.scorecard`` and ``report.leaderboard_figure``): two fixed color themes, a text-width
+estimate, a frame (title, subtitle, status badge, source line) and the geometry the cost
+chart's label placement uses to keep labels from colliding, clipping or pointing at the wrong
+mark however many models a leaderboard holds.
 
 GitHub shows a README image through ``<img>``, where a stylesheet's ``prefers-color-scheme``
 follows the operating system rather than the page's theme, so the README embeds a light and a
@@ -54,11 +54,12 @@ __all__ = [
     "wrap",
 ]
 
-FONT = (
-    'system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif'
-)
+FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif'
+"""GitHub's own font stack. ``system-ui`` is left out: on many Linux desktops it resolves to
+DejaVu Sans, which runs about a quarter wider than Helvetica; this stack reaches a face with
+Helvetica-like widths (Noto Sans, or Arial's metric twin) before the generic fallback."""
 SAFE = 1.12
-"""Layout slack on :func:`text_width`: SF Pro and DejaVu Sans run 4-10% wider than the
+"""Layout slack on :func:`text_width`: SF Pro and Noto Sans run 4-10% wider than the
 Helvetica widths the estimate uses."""
 
 
@@ -92,12 +93,22 @@ class Theme:
     contrast) on each theme's page."""
     alarm: str
     """The scorecard's ring around a nonzero safety failure (a wrongful approval, an unsafe
-    plan, a harmful flip), drawn on the page outside the cell so it shows on every fill, and
-    the leaderboard's cross for a model that misses the safety bar, its outline around a value
-    that misses it and its pip for each criterion missed: a red in both themes."""
-    good: str
-    """The leaderboard's check for a model that clears the safety bar (a status color, always
-    beside the cross's different shape, never alone), at least 3:1 on the page."""
+    plan, a harmful flip), drawn on the page outside the cell so it shows on every fill: a red
+    in both themes."""
+    bar: str
+    """The thesis graphic's bars: charcoal on the light page, a mid gray on the dark one (at
+    least 3:1 on the page)."""
+    bar_ink: str
+    """A value printed inside a :attr:`bar` (at least 4.5:1 on it)."""
+    safe: str
+    """The thesis graphic's one accent: the bars, the group label and the named model of the
+    models that clear the safety bar (a green, at least 3:1 on the page and as text at least
+    4.5:1; the group's label always says what it means, so it is never the only cue)."""
+    safe_ink: str
+    """A value printed inside a :attr:`safe` bar (at least 4.5:1 on it)."""
+    safe_band: str
+    """The thesis graphic's band: the range of the models that clear the safety bar, a pale
+    tint of :attr:`safe` behind the rows (every bar and value keeps its contrast on it)."""
     badge: str
     heat: tuple[str, ...]
     """The scorecard's sequential ramp, from no shortfall to the largest, evenly stepped in
@@ -129,7 +140,11 @@ THEMES: dict[str, Theme] = {
         warm="#eb6834",
         neutral="#7d8590",
         alarm="#c8412b",
-        good="#1a7f37",
+        bar="#424a53",
+        bar_ink="#ffffff",
+        safe="#1a7f37",
+        safe_ink="#ffffff",
+        safe_band="#dcefe0",
         badge="#d1d9e0",
         heat=_LIGHT_HEAT,
         heat_ink=("#59636e", "#1f2328", "#1f2328", "#1f2328", "#1f2328", "#ffffff", "#ffffff"),
@@ -148,7 +163,11 @@ THEMES: dict[str, Theme] = {
         warm="#d95926",
         neutral="#6e7681",
         alarm="#f75e51",
-        good="#3fb950",
+        bar="#656c76",
+        bar_ink="#ffffff",
+        safe="#3fb950",
+        safe_ink="#0d1117",
+        safe_band="#16301f",
         badge="#3d444d",
         heat=_DARK_HEAT,
         heat_ink=("#9198a1", "#f0f6fc", "#f0f6fc", "#f0f6fc", "#0d1117", "#0d1117", "#0d1117"),
@@ -218,10 +237,11 @@ def text_width(text: str, size: float, *, bold: bool = False) -> float:
 
 
 def wrap(text: str, width: float, size: float, *, bold: bool = False) -> list[str]:
-    """``text`` broken at spaces into lines no wider than ``width`` (estimated)."""
+    """``text`` broken at spaces into lines no wider than ``width`` (estimated); a no-break
+    space (U+00A0) holds its words together ("unsafe plans\u00a0≤\u00a02%")."""
     lines: list[str] = []
     current = ""
-    for word in text.split():
+    for word in (w for w in text.split(" ") if w):
         candidate = f"{current} {word}" if current else word
         if current and text_width(candidate, size, bold=bold) > width:
             lines.append(current)
@@ -599,8 +619,8 @@ _NS = "{http://www.w3.org/2000/svg}"
 
 
 def text_boxes(svg: str) -> list[tuple[str, Box]]:
-    """Every text element of a figure with the box :func:`text_width` gives it, a trailing
-    ``<tspan>`` (a label's note) included."""
+    """Every text element of a figure with the box :func:`text_width` gives it, its
+    ``<tspan>`` runs (a label's note, a highlighted phrase) and the text after them included."""
     root = ET.fromstring(svg)
     boxes: list[tuple[str, Box]] = []
     for t in root.iter(f"{_NS}text"):
@@ -614,6 +634,7 @@ def text_boxes(svg: str) -> list[tuple[str, Box]]:
             width += float(span.get("dx") or 0) + text_width(
                 span.text or "", span_size, bold=span_bold
             )
+            width += text_width(span.tail or "", size, bold=bold)
         x, y = float(t.get("x") or 0), float(t.get("y") or 0)
         anchor = t.get("text-anchor") or "start"
         x0 = x if anchor == "start" else x - width if anchor == "end" else x - width / 2
