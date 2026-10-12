@@ -26,6 +26,7 @@ The rules every figure follows, as ``report.svg`` does:
 from __future__ import annotations
 
 import math
+import re
 import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ __all__ = [
     "Canvas",
     "Segment",
     "Theme",
+    "balanced",
     "box_distance",
     "fmt_share",
     "label_box",
@@ -90,7 +92,12 @@ class Theme:
     contrast) on each theme's page."""
     alarm: str
     """The scorecard's ring around a nonzero safety failure (a wrongful approval, an unsafe
-    plan, a harmful flip), drawn on the page outside the cell so it shows on every fill."""
+    plan, a harmful flip), drawn on the page outside the cell so it shows on every fill, and
+    the leaderboard's cross for a model that misses the safety bar, its outline around a value
+    that misses it and its pip for each criterion missed: a red in both themes."""
+    good: str
+    """The leaderboard's check for a model that clears the safety bar (a status color, always
+    beside the cross's different shape, never alone), at least 3:1 on the page."""
     badge: str
     heat: tuple[str, ...]
     """The scorecard's sequential ramp, from no shortfall to the largest, evenly stepped in
@@ -103,7 +110,10 @@ class Theme:
 
 
 _LIGHT_HEAT = ("#f6f8fa", "#fae5c3", "#f9c68c", "#f7a059", "#ea763c", "#c8412b", "#a72629")
-_DARK_HEAT = ("#161b22", "#502824", "#783729", "#a24725", "#ca6112", "#ea8a18", "#fcba43")
+_DARK_HEAT = ("#161b22", "#502c19", "#773b23", "#a14a31", "#cd5c46", "#f57767", "#ff9f94")
+"""Brighter with the shortfall, as a dark page needs, but in one red-orange hue family from
+end to end (OKLCH hue 47 down to 25), so the worst class reads as the light theme's red does
+rather than as a caution yellow."""
 
 THEMES: dict[str, Theme] = {
     "light": Theme(
@@ -119,6 +129,7 @@ THEMES: dict[str, Theme] = {
         warm="#eb6834",
         neutral="#7d8590",
         alarm="#c8412b",
+        good="#1a7f37",
         badge="#d1d9e0",
         heat=_LIGHT_HEAT,
         heat_ink=("#59636e", "#1f2328", "#1f2328", "#1f2328", "#1f2328", "#ffffff", "#ffffff"),
@@ -136,7 +147,8 @@ THEMES: dict[str, Theme] = {
         accent="#4493f8",
         warm="#d95926",
         neutral="#6e7681",
-        alarm="#f0883e",
+        alarm="#f75e51",
+        good="#3fb950",
         badge="#3d444d",
         heat=_DARK_HEAT,
         heat_ink=("#9198a1", "#f0f6fc", "#f0f6fc", "#f0f6fc", "#0d1117", "#0d1117", "#0d1117"),
@@ -218,6 +230,33 @@ def wrap(text: str, width: float, size: float, *, bold: bool = False) -> list[st
             current = candidate
     if current:
         lines.append(current)
+    return lines
+
+
+def balanced(text: str, width: float, size: float, *, bold: bool = False) -> list[str]:
+    """``text`` wrapped into as few lines as :func:`wrap` gives at ``width``, so that a
+    subtitle never ends on an orphaned word: its last sentence (or clause, after a semicolon)
+    on a line of its own when that keeps the line count, else the lines narrowed just enough
+    that the last holds at least a third of the width."""
+    lines = wrap(text, width, size, bold=bold)
+    if len(lines) < 2:
+        return lines
+    for cut in sorted((i + 1 for i, c in enumerate(text) if c in ".;"), reverse=True):
+        head, tail = text[:cut].strip(), text[cut:].strip()
+        if not head or not tail or text[cut : cut + 1] != " ":
+            continue
+        first = wrap(head, width, size, bold=bold)
+        if len(first) == len(lines) - 1 and text_width(tail, size, bold=bold) <= width:
+            return [*first, tail]
+    trial = width
+    while trial > width / 2:
+        candidate = wrap(text, trial, size, bold=bold)
+        if len(candidate) > len(lines):
+            break
+        lines = candidate
+        if text_width(candidate[-1], size, bold=bold) >= width / 3:
+            break
+        trial -= 8.0
     return lines
 
 
@@ -524,7 +563,7 @@ class Canvas:
                 weight=600,
             )
         y -= 4
-        for line in wrap(subtitle, self.width - 2 * pad, _SUBTITLE):
+        for line in balanced(subtitle, self.width - 2 * pad, _SUBTITLE):
             self.text(pad, y, line, size=_SUBTITLE, fill="ink2")
             y += 21
         return y
@@ -578,5 +617,14 @@ def text_boxes(svg: str) -> list[tuple[str, Box]]:
         x, y = float(t.get("x") or 0), float(t.get("y") or 0)
         anchor = t.get("text-anchor") or "start"
         x0 = x if anchor == "start" else x - width if anchor == "end" else x - width / 2
-        boxes.append((text, Box(x0, y - size * 0.78, x0 + width, y + size * 0.22)))
+        box = Box(x0, y - size * 0.78, x0 + width, y + size * 0.22)
+        turned = _ROTATE.fullmatch(t.get("transform") or "")
+        if turned is not None:  # a quarter turn counterclockwise about (cx, cy)
+            cx, cy = float(turned[1]), float(turned[2])
+            box = Box(cx + box.y0 - cy, cy - (box.x1 - cx), cx + box.y1 - cy, cy - (box.x0 - cx))
+        boxes.append((text, box))
     return boxes
+
+
+_ROTATE = re.compile(r"rotate\(-90 (-?[\d.]+) (-?[\d.]+)\)")
+"""The one transform a figure's text may carry: a label set vertically, reading upward."""

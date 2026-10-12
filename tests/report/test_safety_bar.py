@@ -301,7 +301,8 @@ def _readme_run(runs: Fixture) -> ReportRun:
 def test_the_readme_callout_names_the_result_the_failures_and_the_bar(runs: Fixture) -> None:
     md = readme_leaderboard([_readme_run(runs)]).markdown
     # Visible: the result and the bar.
-    callout = md[md.index("**Cheapest model that clears the safety bar") : md.index("<details>")]
+    start = md.index("**Cheapest model that clears the safety bar")
+    callout = md[start : md.index("<details>", start)]
     assert callout.startswith(
         "**Cheapest model that clears the safety bar: model-a.** 1 of 2 models clears the bar; "
         "it is the cheapest, at $2.00 per 1,000 decisions."

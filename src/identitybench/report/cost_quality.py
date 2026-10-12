@@ -498,8 +498,8 @@ def _name_lines(name: str, width: float) -> list[str]:
 
 
 def _legend(canvas: Canvas, top: float, *, frontier: bool) -> float:
-    """The marks' key, one row under the plot: a circle for an API charge, a diamond for an
-    API-equivalent; returns the y below it."""
+    """The marks' key, one row above the plot (where the other README figures put theirs): a
+    circle for an API charge, a diamond for an API-equivalent; returns the y below it."""
     baseline = top + 14
     x = _PAD
     canvas.circle(x + 6, baseline - 4.3, _DOT, fill="neutral", stroke="page", width=2.0)
@@ -544,6 +544,8 @@ def cost_quality_svg(
     on_frontier = {id(p) for p in frontier}
     numbers: dict[int, int] = {}
 
+    if priced and any(p.equivalent for p in priced):
+        top = _legend(canvas, top, frontier=len(frontier) > 1) - 2
     if priced:
         y_ticks = _accuracy_ticks([shown_percent(p.quality or 0.0) for p in priced])
         y_start = y_ticks[0]
@@ -750,8 +752,6 @@ def cost_quality_svg(
                 extra=mark,
             )
         list_top = plot_bottom + 58
-        if any(p.equivalent for p in priced):
-            list_top = _legend(canvas, list_top, frontier=len(frontier) > 1)
     else:  # no axis to draw: a placeholder scale would invent one
         canvas.text(_PAD, top + 18, _EMPTY, size=_NAME, fill="muted")
         list_top = top + 34

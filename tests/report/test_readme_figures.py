@@ -1,12 +1,13 @@
-"""The README figures' renderers: the hero dot plot, the cost against grounded accuracy chart and
-the scorecard heatmap. Each is checked for what it shows (every value as the tables print it,
-rows in the order given, marks where the values put them) and for layout at leaderboard scale:
-with the 26 models the v1 leaderboard plans (their real display names and vendors), long names
-and clustered values, no two labels overlap, no label covers a mark and nothing leaves the
-canvas."""
+"""The README figures' renderers: the hero dot plot, the leaderboard table, the cost against
+grounded accuracy chart and the scorecard heatmap. Each is checked for what it shows (every value
+as the tables print it, rows in the order given, marks where the values put them) and for
+layout at leaderboard scale: with the 26 models the v1 leaderboard plans (their real display
+names and vendors), long names and clustered values, no two labels overlap, no label covers a
+mark and nothing leaves the canvas."""
 
 from __future__ import annotations
 
+import colorsys
 import dataclasses
 import itertools
 import math
@@ -26,8 +27,23 @@ from identitybench.report.cost_quality import (
     cost_quality_svg,
     cost_ticks,
 )
-from identitybench.report.figure_kit import THEMES, Box, text_boxes, text_width, wrap
+from identitybench.report.figure_kit import (
+    THEMES,
+    Box,
+    balanced,
+    text_boxes,
+    text_width,
+    wrap,
+)
 from identitybench.report.hero import HeroRow, hero_svg
+from identitybench.report.leaderboard_figure import (
+    BoardColumn,
+    BoardCost,
+    BoardRow,
+    BoardValue,
+    cost_domain,
+    leaderboard_svg,
+)
 from identitybench.report.scorecard import (
     BINS,
     ScoreCell,
@@ -197,6 +213,29 @@ def test_text_width_is_per_character_and_padded() -> None:
     assert all(text_width(line, 12) <= width for line in lines)
 
 
+def test_a_subtitle_wraps_into_even_lines_never_an_orphan() -> None:
+    text = (
+        "12 of 20 models reach 95% decision accuracy; 3 reach 95% grounded accuracy. Sorted "
+        "by grounded accuracy."
+    )
+    plain, even = wrap(text, 772, 15), balanced(text, 772, 15)
+    assert len(plain) == 2 and len(plain[-1].split()) == 1  # greedy: one word on its own
+    # The last sentence takes its own line when that keeps the line count.
+    assert even == [
+        "12 of 20 models reach 95% decision accuracy; 3 reach 95% grounded accuracy.",
+        "Sorted by grounded accuracy.",
+    ]
+    # Without a sentence to break at, the lines narrow until the last holds a third.
+    clause = (
+        "Along the frontier, GPT-6.1 Sol ($11.22) is 57.2 points of grounded accuracy above "
+        "Mercury 2.5 ($0.24), at 47.3x the price."
+    )
+    lines = balanced(clause, 772, 15)
+    assert len(lines) == len(wrap(clause, 772, 15)) and " ".join(lines) == clause
+    assert text_width(lines[-1], 15) >= 772 / 3
+    assert balanced("short", 772, 15) == ["short"]
+
+
 def test_the_heat_ramps_are_monotonic_and_their_text_is_legible() -> None:
     def luminance(color: str) -> float:
         def channel(c: float) -> float:
@@ -224,6 +263,12 @@ def test_the_heat_ramps_are_monotonic_and_their_text_is_legible() -> None:
             assert contrast(theme.muted, surface) >= 4.5, (theme.name, surface)
             assert contrast(theme.neutral, surface) >= 3.0, (theme.name, surface)
         assert contrast(theme.alarm, theme.page) >= 3.0, theme.name
+        # The worst classes read as red in both themes (a dark ramp that brightens into yellow
+        # would make the worst value look like a caution): hue within 20 degrees of red.
+        for color in theme.heat[-2:]:
+            r, g, b = (int(color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+            hue = colorsys.rgb_to_hsv(r, g, b)[0] * 360
+            assert hue <= 20 or hue >= 340, (theme.name, color, hue)
 
 
 # --------------------------------------------------------------------------------------------
@@ -897,3 +942,455 @@ def test_a_listed_name_keeps_its_disclosure_on_a_second_line() -> None:
             assert p.name in texts or (base in texts and f"({rest}" in texts), p.name
         assert not any(t.endswith("…") for t in texts)
         assert "(4-bit, self-hosted)" in texts  # beside "cost not reported", it wraps
+
+
+# --------------------------------------------------------------------------------------------
+# The leaderboard
+# --------------------------------------------------------------------------------------------
+
+BOARD_COLUMNS = (
+    BoardColumn(("Grounded", "accuracy"), "bar", "higher", ("grounded",), ("grounded accuracy",)),
+    BoardColumn(
+        ("Correct", "automation"), "number", "higher", ("automation",), ("correct automation",)
+    ),
+    BoardColumn(
+        ("Wrongful approvals", "requests / reviews"),
+        "severity",
+        "lower",
+        ("war:req", "war:rev"),
+        ("wrongful approvals on requests", "wrongful approvals on reviews"),
+    ),
+    BoardColumn(("Unsafe", "plans"), "severity", "lower", ("unsafe",), ("unsafe plans",)),
+    BoardColumn(("Risk", "cost"), "number", "lower", ("nrc",), ("risk cost",), "", True),
+    BoardColumn(("Cost per", "1k decisions"), "cost", "lower", ("cost",), ("cost",)),
+)
+_KINDS = ("charge", "equivalent", "charge", "unmetered", "charge", "equivalent", "none")
+CRITERIA = ("wrongful approvals", "unsafe plans", "harmful flips", "invalid outputs")
+"""The safety bar's criteria, one pip each."""
+_MISSES = (
+    ("wrongful approvals", "unsafe plans", "harmful flips", "invalid outputs"),
+    ("unsafe plans",),
+    ("invalid outputs",),
+    ("unsafe plans", "invalid outputs"),
+    ("harmful flips",),
+)
+
+
+def _pct(share: float) -> BoardValue:
+    shown = round(share * 100, 1)
+    return BoardValue(f"{shown:.1f}", shown)
+
+
+def _board_rows(n: int, seed: int = 11) -> list[BoardRow]:
+    """``n`` models with spread values, every cost footing and safety verdict, the planned
+    display names and vendors, then the two reference rows."""
+    rng = random.Random(seed)
+    rows: list[BoardRow] = []
+    for i in range(n):
+        kind = _KINDS[i % len(_KINDS)]
+        usd = round(10 ** rng.uniform(-0.7, 1.8), 2)
+        cost = (
+            BoardCost(f"${usd:,.2f}", kind, usd)
+            if kind in ("charge", "equivalent")
+            else BoardCost("unmetered" if kind == "unmetered" else "n/a", kind)
+        )
+        war = [0.0 if rng.random() < 0.5 else rng.uniform(0.001, 0.7) for _ in range(2)]
+        clears = i % 5 == 0
+        misses = () if clears else _MISSES[i % len(_MISSES)]
+        unsafe = 0.0 if clears else rng.uniform(0.0, 0.4)
+        failed = {k for k, w in (("war:req", war[0]), ("war:rev", war[1])) if w > 0.02}
+        if "wrongful approvals" in misses and not failed:
+            failed.add("war:rev")  # judged on the bound: a small value can miss
+        if "unsafe plans" in misses:
+            failed.add("unsafe")
+        rows.append(
+            BoardRow(
+                NAMES[i % len(NAMES)],
+                {
+                    "grounded": _pct(rng.uniform(0.25, 1.0)),
+                    "automation": _pct(rng.uniform(0.4, 0.802)),
+                    "war:req": _pct(war[0]),
+                    "war:rev": _pct(war[1]),
+                    "unsafe": _pct(unsafe),
+                    "nrc": BoardValue(f"{0.198 + i * 0.08:.3f}", 0.198 + i * 0.08),
+                },
+                cost,
+                VENDORS[i % len(VENDORS)],
+                clears,
+                misses,
+                frozenset() if clears else frozenset(failed),
+            )
+        )
+    dash = BoardValue("—")
+    rows += [
+        BoardRow(
+            "Human-review reference",
+            {
+                "grounded": dash,
+                "automation": dash,
+                "war:req": _pct(0.0),
+                "war:rev": _pct(0.0),
+                "unsafe": dash,
+                "nrc": BoardValue("1.000", 1.0),
+            },
+            BoardCost("—", "absent"),
+            reference=True,
+        ),
+        BoardRow(
+            "Oracle reference",
+            {
+                "grounded": _pct(1.0),
+                "automation": _pct(0.802),
+                "war:req": _pct(0.0),
+                "war:rev": _pct(0.0),
+                "unsafe": _pct(0.0),
+                "nrc": BoardValue("0.198", 0.198),
+            },
+            BoardCost("—", "absent"),
+            reference=True,
+        ),
+    ]
+    return rows
+
+
+def _board(rows: list[BoardRow], theme: str = "light", **overrides: Any) -> str:
+    options: dict[str, Any] = {
+        "theme": THEMES[theme],
+        "title": "Leaderboard, ranked by risk cost",
+        "subtitle": "2 of 9 models clear the safety bar; model-a is the cheapest of them.",
+        "source": SOURCE,
+        "badge": "Interim · 9/26 models",
+        "criteria": CRITERIA,
+    }
+    options.update(overrides)
+    return leaderboard_svg(rows, BOARD_COLUMNS, **options)
+
+
+@pytest.mark.parametrize("n", [1, 9, 20, PLANNED])
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_the_leaderboard_is_legible_at_leaderboard_scale(n: int, theme: str) -> None:
+    rows = _board_rows(n)
+    svg = _board(rows, theme)
+    assert_legible(svg)
+    root = _parse(svg)
+    assert float(root.get("width") or 0) == 820.0
+    texts = _texts(svg)
+    # Every planned name is shown whole (only the over-long test label is shortened), its
+    # disclosure on the line under it.
+    for row in rows[:n]:
+        base, _, rest = row.name.partition(" (")
+        if row.name in NAMES[:PLANNED]:
+            assert base in texts, row.name
+            if rest:
+                assert any(t.startswith(rest.rstrip(")")) or rest.rstrip(")") in t for t in texts)
+
+
+def test_the_leaderboard_grows_by_one_row_per_model() -> None:
+    heights = [float(_parse(_board(_board_rows(k))).get("height") or 0) for k in (5, 6)]
+    assert heights[1] - heights[0] == pytest.approx(34.0)
+
+
+def test_leaderboard_rows_follow_the_order_given_unnumbered_with_references_apart() -> None:
+    """Rows carry no rank number: the order is one of point estimates (a tie bracket says where
+    no test separates them)."""
+    rows = _board_rows(9)
+    svg = _board(rows)
+    texts = list(_parse(svg).iter(f"{NS}text"))
+    names = [r.name.partition(" (")[0] for r in rows]  # a disclosure goes on the line under
+    drawn = [t for t in texts if t.text in names]
+    ys = [float(t.get("y") or 0) for t in drawn]
+    assert [t.text for t in drawn] == names and ys == sorted(ys)
+    assert not any((t.text or "").isdigit() for t in texts)  # no rank column
+    for reference in ("Human-review reference", "Oracle reference"):
+        name = next(t for t in drawn if t.text == reference)
+        assert name.get("font-style") == "italic"
+        assert name.get("fill") == THEMES["light"].ink2  # muted, set apart
+    desc = _desc(svg)
+    assert "Human-review reference: reference, not ranked, grounded accuracy —, " in desc
+    assert f"{rows[0].name} ({VENDORS[0]}): clears the safety bar, grounded " in desc
+    assert "misses the safety bar on unsafe plans" in desc
+    assert "rank" not in desc.replace("not ranked", "")
+    places = [desc.index(f"{r.name} (") for r in rows if not r.reference]
+    assert places == sorted(places)
+
+
+def _bracket(svg: str) -> list[ET.Element]:
+    return [t for t in _parse(svg).iter(f"{NS}text") if "rotate(-90" in (t.get("transform") or "")]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_a_tie_at_the_top_is_bracketed_in_the_margin(theme: str) -> None:
+    labels = ("no significant difference in risk cost", "tied on risk cost", "tied")
+    rows = _board_rows(PLANNED)
+    svg = _board(rows, theme, tie_rows=12, tie_labels=labels)
+    assert_legible(svg)  # the vertical label's box is turned with it
+    (label,) = _bracket(svg)
+    assert label.text == labels[0] and label.get("font-style") == "italic"
+    root = _parse(svg)
+    names = {t.text: t for t in root.iter(f"{NS}text")}
+    first = names[rows[0].name.partition(" (")[0]]
+    assert float(label.get("x") or 0) < float(first.get("x") or 0) == 24.0  # in the margin
+    (bracket,) = [p for p in root.iter(f"{NS}path") if p.get("class") == "tie"]
+    ys = [float(v) for v in re.findall(r",(-?[\d.]+)", bracket.get("d") or "")]
+    tops = [float(names[r.name.partition(" (")[0]].get("y") or 0) for r in rows[:13]]
+    assert min(ys) < tops[0] and tops[11] < max(ys) < tops[12]  # the first 12 rows only
+    assert "The first 12 rows are bracketed: no significant difference in risk cost." in _desc(svg)
+    # A short tie takes a shorter label; no tie, or a tie of one, draws nothing.
+    short = _board(rows, theme, tie_rows=2, tie_labels=labels)
+    assert [t.text for t in _bracket(short)] == ["tied"]
+    assert_legible(short)
+    for tie in (0, 1, PLANNED + 5):
+        assert not _bracket(_board(rows, theme, tie_rows=tie, tie_labels=labels))
+
+
+def test_leaderboard_cells_print_every_value_given() -> None:
+    rows = _board_rows(PLANNED)
+    svg = _board(rows)
+    texts = _texts(svg)
+    desc = _desc(svg)
+    for row in rows:
+        for key, value in row.values.items():
+            assert value.text in texts, (row.name, key)
+        assert row.cost is not None and row.cost.text in texts
+        if not row.reference:
+            assert f"risk cost {row.values['nrc'].text}" in desc
+    # The sort key's numbers are set in bold, no other value is (the chips aside).
+    values = [t for t in _parse(svg).iter(f"{NS}text") if t.get("font-size") == "13"]
+    bold = sorted(t.text or "" for t in values if t.get("font-weight") == "600")
+    assert bold == sorted(r.values["nrc"].text for r in rows if not r.reference)
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_only_failures_carry_color_on_the_scorecards_scale(theme: str) -> None:
+    """A printed 0.0 has no chip; any other rate sits on a chip in its scorecard class, with
+    text that is legible on it (the heat ramp's ink)."""
+    zero, small, large = _pct(0.0), _pct(0.004), _pct(0.493)
+    row = BoardRow(
+        "m",
+        {
+            "grounded": _pct(0.9),
+            "automation": _pct(0.8),
+            "war:req": zero,
+            "war:rev": small,
+            "unsafe": large,
+            "nrc": BoardValue("0.300", 0.3),
+        },
+        BoardCost("$1.00", "charge", 1.0),
+    )
+    svg = _board([row], theme)
+    t = THEMES[theme]
+    chips = [r for r in _parse(svg).iter(f"{NS}rect") if r.get("height") == "18.0"]
+    assert [c.get("fill") for c in chips] == [
+        t.heat[shortfall_bin(0.4)],
+        t.heat[shortfall_bin(49.3)],
+    ]
+    for text, step in (("0.4", shortfall_bin(0.4)), ("49.3", shortfall_bin(49.3))):
+        element = next(e for e in _parse(svg).iter(f"{NS}text") if e.text == text)
+        assert element.get("fill") == t.heat_ink[step]
+    zero_text = [e for e in _parse(svg).iter(f"{NS}text") if e.text == "0.0"]
+    assert zero_text and all(e.get("fill") == t.ink2 for e in zero_text)
+    # The key shows every class past 0.
+    assert all(label in _texts(svg) for label in ("≤1", "≤2.5", "≤5", "≤10", "≤25", ">25"))
+
+
+def test_cost_marks_sit_on_one_log_track_and_their_shape_gives_the_footing() -> None:
+    def row(name: str, cost: BoardCost) -> BoardRow:
+        return BoardRow(name, {"grounded": _pct(0.9), "nrc": BoardValue("0.2", 0.2)}, cost)
+
+    rows = [
+        row("cheap", BoardCost("$0.24", "charge", 0.24)),
+        row("listed", BoardCost("$11.22", "equivalent", 11.22)),
+        row("dear", BoardCost("$54.96", "charge", 54.96)),
+        row("local", BoardCost("unmetered", "unmetered")),
+        row("guess", BoardCost("≈$0.50", "estimate")),
+        row("unknown", BoardCost("n/a", "none")),
+    ]
+    columns = [c for c in BOARD_COLUMNS if c.kind in ("bar", "cost")]
+    svg = leaderboard_svg(
+        rows, columns, theme=THEMES["light"], title="t", subtitle="s", source=SOURCE
+    )
+    root = _parse(svg)
+    circles = [c for c in root.iter(f"{NS}circle") if c.get("data-cost") == "charge"]
+    diamonds = [p for p in root.iter(f"{NS}path") if p.get("data-cost") == "equivalent"]
+    assert len(circles) == 2 and len(diamonds) == 1  # no position for a cost that isn't a price
+    xs = sorted(float(c.get("cx") or 0) for c in circles)
+    diamond_x = float((diamonds[0].get("d") or "M0,").split(",")[0][1:])
+    assert xs[0] < diamond_x < xs[1]  # one log track for both footings
+    assert cost_domain([0.24, 11.22, 54.96]) == (0.1, 100.0)
+    assert cost_domain([2.0, 3.0]) == (1.0, 10.0)  # at least a decade
+    texts = _texts(svg)
+    for shown in ("unmetered", "≈$0.50", "n/a", "Cost, log scale $0.10–$100", "API charge"):
+        assert shown in texts
+    assert "API-equivalent" in texts and "unmetered: no per-call price" in texts
+    assert "≈ CLI estimate, not a price" in texts and "n/a: no usable cost" in texts
+    # One rule for every cost that isn't a price: a muted italic word, right-aligned in the
+    # price column where the prices end, with no mark and no track.
+    prices = [t for t in root.iter(f"{NS}text") if t.text in ("$0.24", "$11.22", "$54.96")]
+    words = [t for t in root.iter(f"{NS}text") if t.text in ("unmetered", "≈$0.50", "n/a")]
+    right = {t.get("x") for t in prices}
+    assert len(right) == 1 and {t.get("x") for t in words} == right
+    assert all(t.get("text-anchor") == "end" for t in [*prices, *words])
+    assert all(
+        t.get("font-style") == "italic" and t.get("fill") == THEMES["light"].muted for t in words
+    )
+    # The track is neutral, with no stem from its left end (a log scale has no zero), and a
+    # faint tick at each inner decade, labelled once under the rows.
+    lines = list(root.iter(f"{NS}line"))
+    tracks = [ln for ln in lines if ln.get("stroke-width") == "2"]
+    assert len(tracks) == 3 and {ln.get("stroke") for ln in tracks} == {THEMES["light"].grid}
+    ticks = [
+        ln
+        for ln in lines
+        if ln.get("x1") == ln.get("x2") and float(ln.get("y2") or 0) - float(ln.get("y1") or 0) == 5
+    ]
+    assert len(ticks) == 2 * 3  # $1 and $10 on each of the three tracks
+    assert "$1" in texts and "$10" in texts
+    desc = _desc(svg)
+    assert "listed: grounded accuracy 90.0%, cost per 1,000 decisions $11.22 " in desc
+    assert "(API-equivalent, not a charge)" in desc
+    assert_legible(svg)
+
+
+def test_the_safety_verdict_is_a_shape_and_pips_never_color_alone() -> None:
+    """A check, or a cross with a pip per criterion in the bar's order, filled for each one
+    missed; the key names the criteria."""
+    rows = _board_rows(5)
+    svg = _board(rows)
+    root = _parse(svg)
+    checks = [c for c in root.iter(f"{NS}circle") if c.get("class") == "clears"]
+    crosses = [c for c in root.iter(f"{NS}circle") if c.get("class") == "misses"]
+    assert len(checks) == sum(r.clears is True for r in rows)
+    assert len(crosses) == sum(r.clears is False for r in rows)
+    assert all(c.get("fill") == THEMES["light"].good for c in checks)
+    assert all(c.get("fill") == "none" for c in crosses)  # a ring, not a filled dot
+    filled = [c for c in root.iter(f"{NS}circle") if c.get("class") == "missed"]
+    assert len(filled) == sum(len(r.misses) for r in rows)
+    assert all(c.get("fill") == THEMES["light"].alarm for c in filled)
+    for row, cross in zip([r for r in rows if r.clears is False], crosses, strict=True):
+        cy = cross.get("cy")
+        pips = sorted(
+            (
+                c
+                for c in root.iter(f"{NS}circle")
+                if c.get("cy") == cy and float(c.get("r") or 0) < 3
+            ),
+            key=lambda c: float(c.get("cx") or 0),
+        )
+        assert [c.get("class") == "missed" for c in pips] == [k in row.misses for k in CRITERIA]
+    texts = _texts(svg)
+    assert " · ".join(CRITERIA) + ", filled if missed" in texts
+    assert "Safety" in texts and "bar" in texts and "clears" in texts and "misses" in texts
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_a_value_that_misses_the_bar_is_outlined_whatever_its_class(theme: str) -> None:
+    """The severity classes don't line up with the bar's thresholds, and wrongful approvals are
+    judged on their bound: the values whose own check fails are outlined on the page around
+    the chip, so the outline shows on every fill, and the key says so."""
+    zero, small, large = _pct(0.0), _pct(0.017), _pct(0.25)
+    row = BoardRow(
+        "m",
+        {"war:req": zero, "war:rev": small, "unsafe": large, "nrc": BoardValue("0.3", 0.3)},
+        BoardCost("$1.00", "charge", 1.0),
+        clears=False,
+        misses=("wrongful approvals", "unsafe plans"),
+        failed=frozenset({"war:rev", "unsafe"}),
+    )
+    passing = BoardRow(
+        "n",
+        {"war:req": zero, "war:rev": small, "unsafe": _pct(0.017), "nrc": BoardValue("0.4", 0.4)},
+        BoardCost("$2.00", "charge", 2.0),
+        clears=True,
+    )
+    svg = _board([row, passing], theme)
+    assert_legible(svg)
+    t = THEMES[theme]
+    outlines = [r for r in _parse(svg).iter(f"{NS}rect") if r.get("class") == "fails"]
+    assert len(outlines) == 2 and all(r.get("stroke") == t.alarm for r in outlines)
+    chips = [r for r in _parse(svg).iter(f"{NS}rect") if r.get("height") == "18.0"]
+    for outline in outlines:  # each surrounds a chip, off it on every side
+        x, y = float(outline.get("x") or 0), float(outline.get("y") or 0)
+        assert any(
+            float(c.get("x") or 0) - x == pytest.approx(2.0)
+            and float(c.get("y") or 0) - y == pytest.approx(2.0)
+            for c in chips
+        )
+    assert "misses the bar" in _texts(svg)
+    desc = _desc(svg)
+    assert "wrongful approvals on reviews 1.7% (misses the bar)" in desc
+    assert desc.count("(misses the bar)") == 2
+    # Without a failing value there is no outline and no key for it.
+    clean = _board([passing], theme)
+    assert "misses the bar" not in _texts(clean) and 'class="fails"' not in clean
+
+
+def test_a_reference_label_is_never_shortened_and_graphics_give_way_first() -> None:
+    """Short of width (a price past $100, every chip at 100.0), the bar and the cost track
+    shrink before the model column; a reference, which has no safety cell, runs across it."""
+    rows = _board_rows(PLANNED)
+    wide = [
+        dataclasses.replace(
+            r,
+            values={**r.values, "war:req": _pct(1.0), "war:rev": _pct(1.0), "unsafe": _pct(1.0)},
+            cost=BoardCost("$154.96", "charge", 154.96) if i == 1 else r.cost,
+        )
+        for i, r in enumerate(rows)
+    ]
+    for theme in ("light", "dark"):
+        svg = _board(wide, theme)
+        assert_legible(svg)
+        texts = _texts(svg)
+        assert "Human-review reference" in texts and "Oracle reference" in texts
+        for row in wide:
+            if row.name in NAMES[:PLANNED]:
+                assert row.name.partition(" (")[0] in texts, row.name
+
+
+def test_a_vendor_is_shortened_alike_for_all_its_rows_never_dropped() -> None:
+    rows = [
+        BoardRow("Qwen3.8-27B (4-bit, self-hosted)", vendor="Alibaba (Qwen)"),
+        BoardRow("Qwen3.8-Flash-Next (self-hosted)", vendor="Alibaba (Qwen)"),
+        BoardRow("Qwen3.8 Flash", vendor="Alibaba (Qwen)"),
+        BoardRow("Claude Haiku 5.5", vendor="Anthropic"),
+    ]
+    columns = [c for c in BOARD_COLUMNS if c.kind == "number"]
+    texts = _texts(
+        leaderboard_svg(
+            rows, columns, theme=THEMES["light"], title="t", subtitle="s", source=SOURCE
+        )
+    )
+    assert "Alibaba · 4-bit, self-hosted" in texts
+    assert "Alibaba · self-hosted" in texts and "Alibaba" in texts and "Anthropic" in texts
+    assert not any("(Qwen)" in t for t in texts)
+
+
+def test_no_leaderboard_text_is_set_below_eleven_pixels() -> None:
+    """GitHub scales the 820 px figure down to its README column (about 700-770 px)."""
+    svg = _board(_board_rows(PLANNED), tie_rows=12, tie_labels=("tied",))
+    sizes = {float(t.get("font-size") or 0) for t in _parse(svg).iter(f"{NS}text")}
+    assert min(sizes) >= 11.0
+
+
+def test_leaderboard_headers_are_two_lines_at_most_and_state_each_direction_once() -> None:
+    svg = _board(_board_rows(9))
+    texts = _texts(svg)
+    assert texts.count("higher is better") == 1 and texts.count("lower is better") == 1
+    for column in BOARD_COLUMNS:
+        assert len(column.head) <= 2
+        assert all(line in texts for line in column.head)
+    assert not any(mark in t for t in texts for mark in ("★", "↑", "↓", "◇"))
+
+
+def test_the_leaderboard_is_deterministic_accessible_and_themed() -> None:
+    rows = _board_rows(9)
+    light, dark = _board(rows), _board(rows, "dark")
+    assert light == _board(rows)
+    strip = re.compile(r"#[0-9a-f]{6}|-(light|dark)-")
+    assert strip.sub("", light) == strip.sub("", dark)
+    root = _parse(light)
+    assert root.get("role") == "img"
+    assert root.get("aria-labelledby") == (
+        "identitybench-leaderboard-light-title identitybench-leaderboard-light-desc"
+    )
+    hostile = BoardRow('<a> & "b"', {"nrc": BoardValue("0.1", 0.1)}, vendor="<v>")
+    _parse(_board([hostile]))

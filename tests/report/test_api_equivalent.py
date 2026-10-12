@@ -238,15 +238,21 @@ def test_the_equivalent_is_labelled_and_never_bolded_or_mixed_into_api_cost(
     # The scorer's headline is untouched: the CLI's API figure stays n/a.
     assert run.scores.configs["model_a_cli"].usage.api_usd_per_1k_decisions is None
 
-    md = readme_leaderboard([run]).markdown
-    headline = re.findall(r"<table>.*?</table>", md, flags=re.S)[0]
-    rows = headline.split("<tr>")
-    marked = [r for r in rows if "◇$" in r]
-    assert len(marked) == 1 and "<b>" not in marked[0]  # the CLI's row, never bolded
+    block = readme_leaderboard([run])
+    md = block.markdown
+    # The headline table as text marks the equivalent with a footnote letter, never a glyph,
+    # and never in bold; the figure draws it as a diamond, keyed once.
+    text = re.search(r"<summary>Table as text</summary>.*?</details>", md, flags=re.S)
+    assert text is not None
+    rows = [line for line in text.group(0).splitlines() if line.startswith("| model")]
+    marked = [r for r in rows if "<sup>a</sup>" in r]
+    assert len(marked) == 1 and "<b>" not in marked[0] and "◇" not in text.group(0)
     assert (
-        "◇ marks an API-equivalent cost (list price × the tokens a subscription CLI recorded), "
-        "not a charge." in md.split("<details>", 1)[0]
+        "<sup>a</sup> API-equivalent: the model's list price × the tokens a subscription CLI "
+        "recorded; a price, not a charge." in text.group(0)
     )
+    figure = block.charts["readme-leaderboard-light.svg"]
+    assert figure.count('data-cost="equivalent"') == 1 and ">API-equivalent<" in figure
     assert "◇ marks an API-equivalent: the tokens a subscription CLI recorded" in md
 
     usage = next(s for s in build_document([run]).sections if s.key == "usage")

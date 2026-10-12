@@ -5,7 +5,8 @@
   that fall back to inline SVG.
 - ``readme_leaderboard(runs, report_dir=..., planned_models=None, bar=DEFAULT_BAR)`` and
   ``update_readme(path, block.markdown)``: the README results block (the status line, a hero
-  dot plot, the headline table with its reference rows, one legend, a bounded summary of which
+  dot plot, the headline table with its reference rows drawn as a figure
+  (``report.leaderboard_figure``) and as plain text one click away, a bounded summary of which
   differences are significant (``report.significance``) and the cheapest model that clears an
   explicit ``SafetyBar`` (``report.safety_bar``) visible; the safety bar, metric definitions,
   per-task results, a scorecard heatmap, a cost chart once enough models have a price, and the
