@@ -98,7 +98,9 @@ ticket that fails one check wherever the world has one, and ticketless break-gla
 share. The builder plans the same share of break-glass requests for every gold decision
 (``requests.BREAK_GLASS_SHARE``).
 
-**Known gaps.** Some structures the build brief asks for need material generated worlds don't
+**Known gaps.** Some structures the templates target (role nesting up to depth 3, SPEC §6.2;
+the L3 traits of SPEC §10.1; the break-glass interactions of SPEC §7.4) need material generated
+worlds don't
 hold yet (measured on non-release midmarket worlds, 7 and 101 among them, with the catalog whose
 critical applications are the identity provider's admin console and the production secrets
 vault); the templates for them find it in a world that does:

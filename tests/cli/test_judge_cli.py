@@ -245,7 +245,7 @@ def test_judge_input_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     missing = scored_cli("judge", "runs/none")
-    assert missing.exit_code == ExitCode.INPUT and "not a run directory" in missing.stderr
+    assert missing.exit_code == ExitCode.INPUT and "no such run directory" in missing.stderr
     bad = write(scored_repo / "bad.yaml", "- provider: claude_cli\n  model: m\n  concurrency: 2\n")
     result = scored_cli("judge", run_dir, "--judges", bad)
     assert result.exit_code == ExitCode.INPUT and "concurrency" in result.stderr

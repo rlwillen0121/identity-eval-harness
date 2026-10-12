@@ -203,12 +203,24 @@ def _text_width(text: str, size: float = 12.0) -> float:
 class _Canvas:
     """Accumulates SVG elements; :meth:`render` wraps them with the accessible header."""
 
-    def __init__(self, key: str, width: float, height: float, title: str, desc: str) -> None:
+    def __init__(
+        self,
+        key: str,
+        width: float,
+        height: float,
+        title: str,
+        desc: str,
+        *,
+        note: str | None = None,
+    ) -> None:
         self.key = key
         self.width = width
         self.height = height
         self.title = title
-        self.desc = desc
+        self.desc = desc if note is None else f"{desc} {note}"
+        self.note = note
+        """A caveat drawn in small type under the title (and appended to the description), so
+        the chart carries it when shown alone."""
         self.parts: list[str] = []
 
     def line(self, x1: float, y1: float, x2: float, y2: float, cls: str) -> None:
@@ -254,6 +266,12 @@ class _Canvas:
             f'<text x="16.0" y="24.0" class="ibc-ink ibc-title">'
             f"{_esc(_truncate(self.title, fits))}</text>"
         )
+        if self.note is not None:
+            note_fits = max(int((self.width - 32) / (_CHAR_W * 10 / 12) + 1e-6), 8)
+            heading += (
+                f'<text x="16.0" y="42.0" class="ibc-muted ibc-small">'
+                f"{_esc(_truncate(self.note, note_fits))}</text>"
+            )
         return head + background + heading + "".join(self.parts) + "</svg>\n"
 
 
@@ -723,10 +741,12 @@ def selective_risk_svg(
     title: str,
     target: float | None = None,
     operating: OperatingMark | None = None,
+    note: str | None = None,
 ) -> str:
     """WAR (y) against coverage (x) as the auto-decide threshold varies (SPEC §12.7), with the
     WAR target as a reference line and the operating point measured on the scored split,
-    labeled certified or empirical, with a dashed whisker up to its exact WAR bound."""
+    labeled certified or empirical, with a dashed whisker up to its exact WAR bound. ``note``
+    is a caveat drawn under the title (a prompt variant whose confidences are anchored)."""
     defined = sorted((p.x, p.y) for p in points if p.y is not None)
     peaks = [0.05, *(y for _, y in defined)]
     if target is not None:
@@ -763,6 +783,7 @@ def selective_risk_svg(
         + ". "
         + "; ".join(f"coverage {_pct_tick(x)}: WAR {_pct_tick(y)}" for x, y in defined)
         + ".",
+        note=note,
     )
     plot = _Plot(
         left=64, top=64, right=WIDTH - 24, bottom=height - 52, x_max=1.0, y_max=_nice_top(peak)
@@ -807,9 +828,11 @@ def selective_risk_svg(
     return canvas.render()
 
 
-def calibration_svg(bins: Sequence[ReliabilityBin], *, key: str, title: str) -> str:
+def calibration_svg(
+    bins: Sequence[ReliabilityBin], *, key: str, title: str, note: str | None = None
+) -> str:
     """Reliability diagram: accuracy against mean confidence per confidence bin, with the
-    diagonal of perfect calibration."""
+    diagonal of perfect calibration. ``note`` is a caveat drawn under the title."""
     height = 360.0
     canvas = _Canvas(
         key,
@@ -822,6 +845,7 @@ def calibration_svg(bins: Sequence[ReliabilityBin], *, key: str, title: str) -> 
             for b in bins
         )
         + ".",
+        note=note,
     )
     plot = _Plot(left=64, top=64, right=WIDTH - 24, bottom=height - 52, x_max=1.0, y_max=1.0)
     _axes(

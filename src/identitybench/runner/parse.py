@@ -32,8 +32,7 @@ the re-asked answer only when ``repair_improves`` says it is better, and only th
 prediction ``repaired``.
 
 **Interface.** ``parse_response(case, response) -> ParseResult``, two positional arguments and
-nothing else. This differs from the wave 2 interface table, which gave
-``parse_response(case, response, *, schema_keys)`` (the requirement had ``repair=None``):
+nothing else, by design:
 
 - Repair isn't a parameter: it is a second call, which needs the runner's cache, budget, cost
   and recording, so the runner drives it with ``needs_repair``, ``repair_request`` and

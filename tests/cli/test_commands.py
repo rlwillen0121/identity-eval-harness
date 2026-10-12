@@ -143,15 +143,77 @@ def test_generate_reports_invalid_specs(cli: Invoke, repo: Path, generated: dict
 
 
 def test_generate_refusing_to_overwrite_is_an_input_error(
-    cli: Invoke, monkeypatch: pytest.MonkeyPatch
+    cli: Invoke, repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def refuse(spec: DatasetSpec, out_dir: Path, **kwargs: Any) -> DatasetInfo:
         raise FileExistsError(f"{out_dir} is not empty; pass overwrite=True to replace it")
 
     monkeypatch.setattr("identitybench.tasks.generate.generate_dataset", refuse)
+    (repo / "o").mkdir()
+    (repo / "o" / "dataset.json").write_text("{}", encoding="utf-8")
     result = cli("generate", "--profile", "midmarket", "--seed", "1", "--out", "o")
     assert result.exit_code == ExitCode.INPUT
-    assert "is not empty" in result.stderr
+    # The CLI names its own flag, not the Python keyword the back end's message names.
+    message = " ".join(result.stderr.split())
+    assert (
+        "error: o is not empty; choose another --out, or pass --force to replace a generated "
+        "dataset there" in message
+    )
+    assert "overwrite=True" not in message
+
+
+def test_generate_with_force_keeps_the_back_ends_refusal(
+    cli: Invoke, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With --force, the refusal is about what the directory holds, which the CLI can't word
+    better than the back end."""
+
+    def refuse(spec: DatasetSpec, out_dir: Path, **kwargs: Any) -> DatasetInfo:
+        assert kwargs["overwrite"] is True
+        raise FileExistsError(f"{out_dir} isn't a generated dataset: it holds notes.md")
+
+    monkeypatch.setattr("identitybench.tasks.generate.generate_dataset", refuse)
+    (repo / "o").mkdir()
+    (repo / "o" / "notes.md").write_text("x", encoding="utf-8")
+    result = cli("generate", "--profile", "midmarket", "--seed", "1", "--out", "o", "--force")
+    assert result.exit_code == ExitCode.INPUT
+    assert "error: o isn't a generated dataset: it holds notes.md" in result.stderr
+
+
+def test_generate_on_a_real_non_empty_directory_names_the_flag(cli: Invoke, repo: Path) -> None:
+    """The real back end's refusal (no fake), reworded in CLI terms."""
+    (repo / "o").mkdir()
+    (repo / "o" / "dataset.json").write_text("{}", encoding="utf-8")
+    result = cli("generate", "--profile", "midmarket", "--seed", "1", "--out", "o")
+    assert result.exit_code == ExitCode.INPUT
+    assert "pass --force to replace a generated dataset" in " ".join(result.stderr.split())
+
+
+@pytest.mark.parametrize("marker", ["probe", "name"])
+def test_generate_never_advises_force_on_a_committed_release(
+    cli: Invoke, repo: Path, marker: str
+) -> None:
+    """The default target of the release spec is the committed release. ``generate`` never
+    writes PROBE.json, so --force there would drop it and change the release's checksums: the
+    refusal points at --out instead (real back end, no --out given)."""
+    name = "identitybench" if marker == "name" else "toyset"
+    spec = repo / "spec.yaml"
+    spec.write_text(SPEC_YAML.replace("toyset", name).replace('"2.1"', '"1.0"'), encoding="utf-8")
+    target = repo / "datasets" / f"{name}-v1"  # the toy repo already holds identitybench-v1
+    target.mkdir(parents=True, exist_ok=True)
+    if marker == "probe":
+        (target / "dataset.json").write_text("{}", encoding="utf-8")
+        (target / "PROBE.json").write_text("{}", encoding="utf-8")
+    else:
+        assert any(target.iterdir()) and not (target / "PROBE.json").exists()
+    before = sorted(p.name for p in target.iterdir())
+    result = cli("generate", "--spec", spec)
+    assert result.exit_code == ExitCode.INPUT
+    message = " ".join(result.stderr.split())
+    assert "is a committed release; don't replace it" in message
+    assert "--out" in message
+    assert "--force" not in message
+    assert sorted(p.name for p in target.iterdir()) == before
 
 
 def _request_shortage(message: str) -> Exception:
@@ -863,9 +925,16 @@ def test_score_incomplete_run_exits_4(
 def test_score_missing_run_is_an_input_error(cli: Invoke) -> None:
     result = cli("score", "runs/missing")
     assert result.exit_code == ExitCode.INPUT
-    assert "error: not a run directory (no manifest.json): runs/missing" in result.stderr
+    assert "error: no such run directory: runs/missing" in result.stderr
     result = cli("score", "runs/missing", "--dev-run", "runs/dev")
     assert result.exit_code == ExitCode.INPUT
+
+
+def test_score_directory_without_a_manifest_is_not_a_run(cli: Invoke, repo: Path) -> None:
+    (repo / "runs" / "empty").mkdir(parents=True)
+    result = cli("score", "runs/empty")
+    assert result.exit_code == ExitCode.INPUT
+    assert "error: not a run directory (no manifest.json): runs/empty" in result.stderr
 
 
 # --------------------------------------------------------------------------------------------
@@ -933,10 +1002,29 @@ def test_report_updates_the_readme(
 def test_report_requires_scored_runs(
     cli: Invoke, repo: Path, reports: list[tuple[str, Any]]
 ) -> None:
-    (repo / "runs" / "r").mkdir(parents=True)
+    placeholder_run(repo, "r")
     result = cli("report", "runs/r", "--out", "o")
     assert result.exit_code == ExitCode.INPUT
-    assert "identitybench score" in result.stderr
+    assert "error: not scored yet: runs/r; run `identitybench score RUN_DIR` first" in (
+        result.stderr
+    )
+    assert not reports
+
+
+def test_report_on_a_missing_run_says_it_does_not_exist(
+    cli: Invoke, repo: Path, reports: list[tuple[str, Any]]
+) -> None:
+    """A mistyped run ID is a missing directory, not an unscored run: following 'score it'
+    would only fail again."""
+    placeholder_run(repo, "r")
+    result = cli("report", "runs/r", "runs/nope", "--out", "o")
+    assert result.exit_code == ExitCode.INPUT
+    assert "error: no such run directory: runs/nope" in result.stderr
+    assert "identitybench score" not in result.stderr
+    (repo / "runs" / "bare").mkdir()
+    bare = cli("report", "runs/bare", "--out", "o")
+    assert bare.exit_code == ExitCode.INPUT
+    assert "error: not a run directory (no manifest.json): runs/bare" in bare.stderr
     assert not reports
 
 

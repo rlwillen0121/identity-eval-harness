@@ -109,11 +109,19 @@ class CostSummary(_Model):
     cost_mode: CostMode
     metered_api_usd: float | None = None
     """Usage x pricing.yaml; 0.0 when nothing is metered (self-hosted); None when unknown
-    (unpriced API model) or not applicable (subscription CLI). For a replay it is what the
+    (unpriced API model) or not applicable (``reported`` mode, a subscription CLI or a billing
+    gateway, whose cost is ``reported_usd``). For a replay it is what the
     recording says its answers cost (0.0 for a recording without costs): like every manifest
     cost, the answers' cost, though a replay itself spends nothing."""
     reported_usd: float | None = None
-    """Sum of costs the access path itself reported (CLI ``total_cost_usd``)."""
+    """Sum of the per-call costs the access path itself reported; None when it reported none.
+    What they are depends on the access path, so scoring decides it per configuration from
+    this manifest (``scoring.usage.config_reported_cost``). A billing gateway's
+    (``openai_compatible`` on OpenRouter: ``usage.cost``) are the USD it charged for each call:
+    real API cost, which the scored API figure counts, although ``metered_api_usd`` stays None
+    because nothing was priced from ``pricing.yaml``. A subscription CLI's (``claude_cli`` and
+    ``grok_cli``: ``total_cost_usd``) are the CLI's own API-equivalent estimate of calls nobody
+    was billed for, never counted as API cost."""
 
     @classmethod
     def from_tracker(cls, tracker: CostTracker) -> CostSummary:

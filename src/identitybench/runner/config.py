@@ -9,7 +9,7 @@ Each ``models:`` entry is checked against the providers' ``ModelSpec`` at load t
 config that validates here is one ``make_provider`` will accept: mistakes surface when the
 file is loaded, not halfway through a run.
 
-``ModelEntry`` carries one field beyond the brief's ``ModelSpec`` list: ``cost_mode``, because
+``ModelEntry`` carries one field beyond the providers' ``ModelSpec``: ``cost_mode``, because
 the manifest must tell a self-hosted model's real $0 from an unpriced API's unknown cost
 (SPEC §11.4) and the provider kind alone can't (``openai_compatible`` covers both). Its
 ``extra`` takes one key the runner reads itself and never passes to the provider

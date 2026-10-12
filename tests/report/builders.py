@@ -724,6 +724,10 @@ class RunSpec:
     """Model config IDs -> mode."""
     finished: bool = True
     no_temperature: frozenset[str] = frozenset()
+    entries: Mapping[str, Mapping[str, Any]] = field(default_factory=dict[str, Mapping[str, Any]])
+    """Model config IDs -> experiment model-entry fields (``provider``, ``base_url_env``,
+    ``cost_mode``), recorded in the manifest as ``ExperimentConfig.resolved_dict`` would; a
+    model without one is an ``openai_compatible`` config with no entry recorded."""
 
 
 def write_dataset(root: Path, cases: Sequence[Case]) -> Path:
@@ -733,6 +737,12 @@ def write_dataset(root: Path, cases: Sequence[Case]) -> Path:
             selected = [c for c in cases if c.suite is suite and c.split is split]
             write_jsonl(suite_file(dataset, suite, split), selected)
     return dataset
+
+
+def _provider(spec: RunSpec, config_id: str) -> str:
+    if config_id in spec.entries:
+        return str(spec.entries[config_id]["provider"])
+    return "openai_compatible" if config_id in spec.models else "baseline"
 
 
 def write_run(root: Path, dataset: Path, cases: Sequence[Case], spec: RunSpec) -> Path:
@@ -750,7 +760,7 @@ def write_run(root: Path, dataset: Path, cases: Sequence[Case], spec: RunSpec) -
             ConfigManifest(
                 config_id=config_id,
                 label=config_id.replace("_", "-"),
-                provider="openai_compatible" if config_id in spec.models else "baseline",
+                provider=_provider(spec, config_id),
                 model=config_id if config_id not in spec.models else f"{config_id}-weights",
                 endpoint_identity="local" if config_id not in spec.models else "endpoint-1234",
                 params=ParamsRecord(
@@ -773,6 +783,16 @@ def write_run(root: Path, dataset: Path, cases: Sequence[Case], spec: RunSpec) -
         experiment={
             "loss_matrix": "default",
             "tasks": sorted({c.suite.value for c in in_split}),
+            **(
+                {
+                    "models": [
+                        {"label": config_id.replace("_", "-"), **entry}
+                        for config_id, entry in sorted(spec.entries.items())
+                    ]
+                }
+                if spec.entries
+                else {}
+            ),
         },
     )
     run_dir = root / "runs" / spec.run_id

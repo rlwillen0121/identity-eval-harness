@@ -465,7 +465,7 @@ def test_judge_label_export_options(
     assert label_export["include_baselines"] is True
     assert len({c.case_id for c in label_export["cases"]}) == len(label_export["cases"])
     missing = scored_cli("audit", "export", "--judge-labels", "--run", "runs/none", "--out", "z")
-    assert missing.exit_code == ExitCode.INPUT and "not a run directory" in missing.stderr
+    assert missing.exit_code == ExitCode.INPUT and "no such run directory" in missing.stderr
 
 
 def labeled(label_id: str, split: str = "heldout") -> LabeledRationale:

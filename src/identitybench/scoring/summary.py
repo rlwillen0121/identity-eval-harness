@@ -141,7 +141,12 @@ from identitybench.scoring.units import (
     is_base,
     prediction_status,
 )
-from identitybench.scoring.usage import UsageScores, usage_scores
+from identitybench.scoring.usage import (
+    ReportedCost,
+    UsageScores,
+    config_reported_cost,
+    usage_scores,
+)
 from identitybench.world.entities import RiskTier
 
 __all__ = [
@@ -485,6 +490,7 @@ def score_config(
     ceiling: bool = False,
     mode: Mode = "context",
     served: ServedIndex | None = None,
+    reported_cost: ReportedCost = "estimate",
 ) -> ScoredConfig:
     """Score one configuration's predictions against ``cases`` (one split).
 
@@ -498,7 +504,11 @@ def score_config(
     returned, which its evidence claims are checked against, and a plan naming one (or a
     record one references) is simulated against, beside the view, in the primary metrics, the
     repeats and the tool metrics alike (SPEC §8.6, §12.4, §12.8, §13.1; ``scoring.served``);
-    predictions without a trace never use it. Raises ``ValueError`` for predictions that don't
+    predictions without a trace never use it. ``reported_cost`` says whether the configuration's
+    ``reported`` costs are a billing gateway's charges, CLI estimates or figures from an
+    unverified source (``scoring.usage.config_reported_cost``), which decides whether they
+    count as API cost.
+    Raises ``ValueError`` for predictions that don't
     belong to ``cases`` (unknown case, wrong task, another configuration, conflicting
     duplicates), for cases spanning splits, and (``scoring.served.ServedIndexError``) for a
     traced prediction citing a record its tools returned outside the view, or a traced plan
@@ -573,7 +583,7 @@ def score_config(
             small_n=settings.small_n,
         ),
         repeats=repeat_scores(by_id, index, settings.resampling, served=served),
-        usage=usage_scores(index.all(), by_id),
+        usage=usage_scores(index.all(), by_id, reported=reported_cost),
         ceiling=ceiling,
         tools=(
             tool_scores(
@@ -619,6 +629,7 @@ def score_cases(
     ceiling: bool = False,
     mode: Mode = "context",
     served: ServedIndex | None = None,
+    reported_cost: ReportedCost = "estimate",
 ) -> ConfigScores:
     """Score one configuration's predictions against ``cases``; see :func:`score_config`."""
     return score_config(
@@ -631,6 +642,7 @@ def score_cases(
         ceiling=ceiling,
         mode=mode,
         served=served,
+        reported_cost=reported_cost,
     ).scores
 
 
@@ -1474,6 +1486,11 @@ def score_run(
     (``ConfigScores.tools``, SPEC §8.6). Baselines never do: the manifest gives them the
     experiment's mode, but they answer in-process and never call a tool.
 
+    Whether a configuration's ``reported`` costs count as API cost is read off the manifest
+    (``scoring.usage.config_reported_cost``: a billing gateway's per-call charges do, a CLI's
+    estimates and other unverified figures don't), so a run recorded before the distinction
+    scores the same way.
+
     A traced prediction's evidence claims are checked, and a traced plan naming such a record
     is simulated, against the view plus the records its tools returned (``scoring.served``),
     served from the case's world rebuilt from the run's dataset (and checked against its
@@ -1521,6 +1538,7 @@ def score_run(
             ceiling=_is_ceiling(config),
             mode=_scoring_mode(config),
             served=served,
+            reported_cost=config_reported_cost(run.manifest, config),
         )
     rankings: dict[Task, TaskRanking] = {}
     pareto: dict[Task, dict[str, ParetoPoint]] = {}

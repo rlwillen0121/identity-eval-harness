@@ -4,8 +4,13 @@ It renders the same :class:`~identitybench.report.document.Document` as the Mark
 through the Jinja2 template in ``report/templates/``, so the two can't drift apart. Charts are
 inlined as SVG; those with a Vega-Lite spec (the family × tier heatmap, calibration and
 selective-risk curves, cost per 1,000 decisions, latency) are rendered by Vega-Embed when its
-pinned CDN scripts load and keep the inline SVG otherwise. Nothing else is fetched, so the file
+pinned CDN scripts load (each checked against its Subresource Integrity hash,
+``vega.INTEGRITY``) and keep the inline SVG otherwise. Nothing else is fetched, so the file
 works opened straight from disk.
+
+**Canary.** Reports quote test cases and their gold answers (the failure gallery), so the page
+carries the provenance canary (SPEC §17.4) like every dataset file: in an HTML comment at the
+top of the file and in a visible footer.
 
 **Escaping.** Autoescaping is on for every string. The only markup passed through is what this
 package builds: chart SVG (``report.svg`` escapes every text node and attribute it writes) and
@@ -23,6 +28,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from markupsafe import Markup
 
+from identitybench import CANARY
 from identitybench.report.document import (
     Block,
     Document,
@@ -35,7 +41,7 @@ from identitybench.report.document import (
 )
 from identitybench.report.inputs import RunInput, ValidationInput, load_report_runs
 from identitybench.report.sections import DEFAULT_GALLERY_SIZE, build_document
-from identitybench.report.vega import SCRIPTS
+from identitybench.report.vega import INTEGRITY, SCRIPTS
 
 __all__ = ["HTML_FILE", "TEMPLATE", "render_html", "spec_json", "write_html_report"]
 
@@ -105,7 +111,12 @@ def _environment() -> Environment:
 def render_html(document: Document) -> str:
     """The document as one HTML page (see the module docstring)."""
     template = _environment().get_template(TEMPLATE)
-    return template.render(document=document, scripts=SCRIPTS, labels=_LABELS)
+    return template.render(
+        document=document,
+        scripts=[(src, INTEGRITY[src]) for src in SCRIPTS],
+        labels=_LABELS,
+        canary=CANARY,
+    )
 
 
 def write_html_report(

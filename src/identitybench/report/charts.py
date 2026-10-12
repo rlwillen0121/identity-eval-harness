@@ -28,8 +28,11 @@ from typing import Any
 from identitybench.report import format as fmt
 from identitybench.report import svg, vega
 from identitybench.report.common import (
+    ANCHORED_CHART_NOTE,
     TASK_TITLES,
     ConfigRef,
+    anchored_confidence,
+    headline_api_usd,
     interval_level,
     operating_bound,
     operating_status,
@@ -243,7 +246,8 @@ def selective_figure(
 ) -> Figure | None:
     """The selective-risk curve for one configuration (None without confident answers). The
     operating point carries its SPEC §12.7 status and exact bound in the chart itself, so the
-    chart can't be read as meeting the target on its own."""
+    chart can't be read as meeting the target on its own, and a prompt variant whose
+    confidences are anchored (``fewshot-3``) carries that caveat under its title."""
     curve = [p for p in calibration.selective_curve if p.coverage is not None]
     if not curve:
         return None
@@ -266,6 +270,8 @@ def selective_figure(
             bound_text = fmt.pct_against(operating.bound, op.target_war)
     key = f"selective-{task.value}-{ref.key}"
     title = f"{TASK_TITLES[task]}: selective risk · {ref.name}"
+    note = ANCHORED_CHART_NOTE if anchored_confidence(ref.prompt) else None
+    description = f"WAR against coverage as {ref.name}'s confidence threshold rises."
 
     def row(p: SelectivePointRecord) -> dict[str, Any]:
         return {
@@ -278,17 +284,19 @@ def selective_figure(
     return Figure(
         key=key,
         title=title,
-        description=f"WAR against coverage as {ref.name}'s confidence threshold rises.",
+        description=description if note is None else f"{description} {note}.",
         svg=svg.selective_risk_svg(
             [svg.CurvePoint(p.coverage or 0.0, p.war) for p in curve],
             key=key,
             title=title,
             target=target,
             operating=operating,
+            note=note,
         ),
         vega=vega.selective_spec(
             [row(p) for p in curve],
             title=title,
+            subtitle=note,
             target=target,
             operating=None
             if measured is None or operating is None
@@ -322,29 +330,35 @@ def reliability_bins(records: Sequence[CaseRecord], task: Task) -> list[svg.Reli
 
 
 def calibration_figure(ref: ConfigRef, task: Task) -> Figure | None:
+    """The reliability diagram for one configuration (None without confident answers), with
+    the anchored-confidence caveat under its title for ``fewshot-3`` (SPEC §12.7)."""
     bins = reliability_bins(ref.run.records_for(ref.config_id), task)
     if not bins:
         return None
     key = f"calibration-{task.value}-{ref.key}"
     title = f"{TASK_TITLES[task]}: reliability · {ref.name}"
+    note = ANCHORED_CHART_NOTE if anchored_confidence(ref.prompt) else None
+    description = (
+        f"Accuracy against mean confidence for {ref.name} in {RELIABILITY_BINS} equal-width bins."
+    )
     return Figure(
         key=key,
         title=title,
-        description=(
-            f"Accuracy against mean confidence for {ref.name} in {RELIABILITY_BINS} "
-            "equal-width bins."
-        ),
-        svg=svg.calibration_svg(bins, key=key, title=title),
+        description=description if note is None else f"{description} {note}.",
+        svg=svg.calibration_svg(bins, key=key, title=title, note=note),
         vega=vega.calibration_spec(
             [{"confidence": b.confidence, "accuracy": b.accuracy, "n": b.n} for b in bins],
             title=title,
+            subtitle=note,
         ),
     )
 
 
 def cost_figure(refs: Sequence[ConfigRef]) -> Figure | None:
-    """API $ per 1,000 decisions per configuration (None when no configuration has one)."""
-    values = [(ref, ref.scores.usage.api_usd_per_1k_decisions) for ref in refs]
+    """API $ per 1,000 decisions per configuration (None when no configuration has one): the
+    scorer's headline figure, which counts a gateway's billed charges and never a CLI's
+    estimate (``scoring.usage``)."""
+    values = [(ref, headline_api_usd(ref.scores.usage)) for ref in refs]
     if all(v is None for _, v in values):
         return None
     key = "cost-per-1k"
@@ -352,7 +366,10 @@ def cost_figure(refs: Sequence[ConfigRef]) -> Figure | None:
     return Figure(
         key=key,
         title=title,
-        description="Metered API cost per 1,000 decisions per configuration.",
+        description=(
+            "API cost (metered, or billed by a gateway) per 1,000 decisions per configuration; "
+            "n/a for a CLI's estimate, or a cost that is partly or wholly unknown."
+        ),
         svg=svg.bar_chart_svg(
             [
                 svg.BarRow(ref.base_name, (v,), suffix=ref.markers, baseline=ref.baseline)

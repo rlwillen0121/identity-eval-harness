@@ -522,7 +522,8 @@ class _Lazy:
 
 @dataclass(frozen=True, slots=True)
 class Builders:
-    """The case builders ``generate_dataset`` calls (signatures: BUILD_BRIEF, wave 2)."""
+    """The case builders ``generate_dataset`` calls, one per suite and twin kind (the protocols
+    above give their signatures)."""
 
     requests: RequestBuilder
     reviews: ReviewBuilder

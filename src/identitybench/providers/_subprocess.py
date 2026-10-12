@@ -184,7 +184,9 @@ async def retry_transient[T](
 
 _SECRET_NAME_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?)$", re.IGNORECASE)
 _SECRET_VALUE_RE = re.compile(
-    r"\b(?:sk|xai|sk-ant|pk|ghp|gho)-[A-Za-z0-9_\-]{12,}|Bearer\s+[A-Za-z0-9._\-~+/=]{12,}"
+    r"\b(?:sk|xai|pk)-[A-Za-z0-9_\-]{12,}"
+    r"|\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}"
+    r"|Bearer\s+[A-Za-z0-9._\-~+/=]{12,}"
 )
 _REDACTED = "<redacted>"
 

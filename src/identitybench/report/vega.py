@@ -1,9 +1,10 @@
 """Vega-Lite specs for the HTML report's interactive charts (SPEC §15, M7).
 
 The HTML report loads Vega, Vega-Lite and Vega-Embed from a CDN at exact versions that have
-been public for a long time (:data:`SCRIPTS`), and renders each spec in place of the inline
-SVG it ships as a fallback. Opened offline, or with scripts blocked, the page keeps the SVG,
-so every chart is readable either way.
+been public for a long time (:data:`SCRIPTS`), each pinned by its Subresource Integrity hash
+(:data:`INTEGRITY`), and renders each spec in place of the inline SVG it ships as a fallback.
+Opened offline, or with scripts blocked (or altered, which the hash refuses), the page keeps
+the SVG, so every chart is readable either way.
 
 Specs are plain JSON-ready dicts with their data inline (no fetches, so the page works from
 disk) and a tooltip on every mark. Colors match ``report.svg``: blue then orange for series,
@@ -19,6 +20,7 @@ from typing import Any
 from identitybench.report.svg import war_target_label
 
 __all__ = [
+    "INTEGRITY",
     "SCHEMA",
     "SCRIPTS",
     "bar_spec",
@@ -35,6 +37,17 @@ SCRIPTS: tuple[str, ...] = (
     "https://cdn.jsdelivr.net/npm/vega-embed@6.26.0/build/vega-embed.min.js",
 )
 """Exact, long-released versions: a report must render the same next year as today."""
+
+INTEGRITY: Mapping[str, str] = {
+    SCRIPTS[0]: "sha384-em7CHpJd+SsMugVFf6TY7AKQcLWMcbPhD84hmNK8o6WFDkK+2uHSUQRVQV1/w827",
+    SCRIPTS[1]: "sha384-GhkD6ks9/zgY1m5EFOUZWz/vMVMUFF/92DL61RZc+B42J8osL+jNufKv68bNHHZ2",
+    SCRIPTS[2]: "sha384-TqXb8su49m5OnEpKGO8m+VrgHesrUxyP22HgpXi4hnh1Hm43dXroiSYemNf5D8lv",
+}
+"""Subresource Integrity hash of each pinned script, computed from the published file
+(identical on jsDelivr and unpkg). The page loads each with ``integrity`` and
+``crossorigin="anonymous"``, so a CDN that serves anything else is refused by the browser and
+the inline SVG stays. Changing a version in :data:`SCRIPTS` means recomputing its hash:
+``curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A``."""
 
 _SERIES = ("#2a78d6", "#eb6834")
 _BASELINE = "#898781"
@@ -157,11 +170,13 @@ def selective_spec(
     title: str,
     target: float | None,
     operating: Mapping[str, Any] | None,
+    subtitle: str | None = None,
 ) -> dict[str, Any]:
-    """WAR against coverage across thresholds; ``points`` have ``threshold``, ``coverage``,
-    ``war`` and ``correct_automation``. The WAR target is a rule labeled at its right end with
-    the SVG fallback's text (``svg.war_target_label``), so the line reads without its tooltip,
-    and the operating point a larger orange mark; ``operating`` also carries ``label`` (drawn
+    """WAR against coverage across thresholds, with ``subtitle`` as a caveat under the title;
+    ``points`` have ``threshold``, ``coverage``, ``war`` and ``correct_automation``. The WAR
+    target is a rule labeled at its right end with the SVG fallback's text
+    (``svg.war_target_label``), so the line reads without its tooltip, and the operating point
+    a larger orange mark; ``operating`` also carries ``label`` (drawn
     beside it: certified or empirical), ``status`` (in its tooltip), ``bound`` (the exact
     WAR upper bound, drawn as a dashed rule up from the point, or None) and ``bound_text`` (that
     bound as the status prints it against the target, for the rule's tooltip: a d3 format
@@ -250,12 +265,15 @@ def selective_spec(
                 "encoding": {"x": x, "y": y, "text": {"field": "label"}},
             },
         ]
-    return _spec(title, {"height": 280, "layer": layers})
+    return _spec(title, {"height": 280, "layer": layers}, subtitle=subtitle)
 
 
-def calibration_spec(bins: Sequence[Mapping[str, Any]], *, title: str) -> dict[str, Any]:
-    """Reliability diagram; ``bins`` have ``confidence``, ``accuracy`` and ``n``. Both layers
-    name their axes identically, since Vega-Lite joins differing layer titles."""
+def calibration_spec(
+    bins: Sequence[Mapping[str, Any]], *, title: str, subtitle: str | None = None
+) -> dict[str, Any]:
+    """Reliability diagram; ``bins`` have ``confidence``, ``accuracy`` and ``n``; ``subtitle``
+    is a caveat under the title. Both layers name their axes identically, since Vega-Lite
+    joins differing layer titles."""
 
     def axis(field: str, title: str) -> dict[str, Any]:
         return {
@@ -294,6 +312,7 @@ def calibration_spec(bins: Sequence[Mapping[str, Any]], *, title: str) -> dict[s
                 },
             ],
         },
+        subtitle=subtitle,
     )
 
 

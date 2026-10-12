@@ -230,6 +230,42 @@ def test_redact_masks_secret_env_values_and_key_shapes() -> None:
     assert "/usr/bin:/bin" in redacted  # not a credential-named variable
 
 
+# Fake tokens in the real formats, assembled at run time so no literal looks like a live secret
+# to a scanner: GitHub's classic prefixes take 36 base62 characters, fine-grained PATs
+# ``github_pat_`` plus 82 characters with an underscore inside.
+_BODY36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+_FAKE_TOKENS = [
+    *(prefix + "_" + _BODY36 for prefix in ("ghp", "gho", "ghu", "ghs", "ghr")),
+    "github_pat_" + "11ABCDEFG0" + _BODY36[:12] + "_" + (_BODY36 + "AB")[:59],
+    "sk-" + "or-v1-" + _BODY36,
+    "sk-" + "ant-api03-" + _BODY36,
+    "sk-" + "proj-" + _BODY36,
+    "xai-" + _BODY36,
+    "pk-" + _BODY36,
+]
+
+
+@pytest.mark.parametrize("token", _FAKE_TOKENS, ids=lambda t: t.split("_")[0].split("-")[0])
+def test_redact_masks_each_key_shape(token: str) -> None:
+    redacted = redact(f"stderr: auth failed for {token} (401)", env={})
+    assert token not in redacted
+    assert _BODY36[:20] not in redacted
+    assert redacted == "stderr: auth failed for <redacted> (401)"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ghp-" + _BODY36,  # a hyphen is not GitHub's format
+        "ghp_short123",  # too short to be a token
+        "see the github_pat_ docs",
+        "skip-this-flag",
+    ],
+)
+def test_redact_leaves_lookalikes(text: str) -> None:
+    assert redact(text, env={}) == text
+
+
 def test_tail_keeps_the_end() -> None:
     assert tail("short") == "short"
     long = "x" * 50 + "END"

@@ -16,7 +16,13 @@ from identitybench.schemas.enums import Split, Suite
 
 REPO = Path(__file__).resolve().parents[2]
 EXPERIMENTS = REPO / "experiments"
-CONFIGS = ("smoke", "v1-leaderboard", "v1-ablation", "local-model.example")
+CONFIGS = (
+    "smoke",
+    "v1-leaderboard",
+    "v1-leaderboard-openai-compatible.example",
+    "v1-ablation",
+    "local-model.example",
+)
 ALL_SUITES = list(Suite)
 
 
@@ -73,14 +79,66 @@ def test_leaderboard_matrix() -> None:
         ("claude_cli", "claude-sonnet-5-5"),
         ("claude_cli", "claude-haiku-5-5"),
         ("codex_cli", "gpt-6-astra"),
-        ("grok_cli", "grok-4.7"),
+        ("codex_cli", "gpt-6.1-sol"),
+        ("codex_cli", "gpt-6-luna"),
     ]
-    codex = next(m for m in board.models if m.provider == "codex_cli")
-    assert codex.to_spec(board.params).effort == "medium"
+    codex = [m for m in board.models if m.provider == "codex_cli"]
+    assert all(m.to_spec(board.params).effort == "medium" for m in codex)
+    assert all(m.concurrency == 3 for m in codex)
     assert all(m.concurrency is not None and 2 <= m.concurrency <= 4 for m in board.models)
     assert set(board.baselines) == BASELINES
     assert (board.repeats.k, board.repeats.subset) == (3, 100)
     assert board.budget_usd is None  # codex_cli reports no cost, so a budget can't be enforced
+
+
+def test_leaderboard_header_says_baselines_are_repeated_too() -> None:
+    """The runner repeats every config on the repeat subset, baselines included."""
+    header = (EXPERIMENTS / "v1-leaderboard.yaml").read_text(encoding="utf-8").split("\nname:")[0]
+    assert "baselines included" in " ".join(header.replace("#", " ").split())
+    assert "stability" in header
+
+
+def test_openai_compatible_example_matches_the_leaderboard() -> None:
+    """Same split, suites, prompt and parameters as the main leaderboard, so its rows merge
+    into one report; only the main run carries baselines."""
+    board = config("v1-leaderboard")
+    extra = config("v1-leaderboard-openai-compatible.example")
+    assert (extra.split, extra.tasks, extra.prompts, extra.mode) == (
+        board.split,
+        board.tasks,
+        board.prompts,
+        board.mode,
+    )
+    assert extra.params == board.params
+    assert extra.baselines == []
+
+
+def test_openai_compatible_example_names_env_vars_and_placeholders() -> None:
+    extra = config("v1-leaderboard-openai-compatible.example")
+    deepseek, mistral, local = extra.models
+    assert [m.provider for m in extra.models] == ["openai_compatible"] * 3
+    for entry in (deepseek, mistral):
+        assert (entry.base_url_env, entry.api_key_env) == (
+            "OPENROUTER_BASE_URL",
+            "OPENROUTER_API_KEY",
+        )
+        assert entry.resolved_cost_mode == "reported" and entry.reports_cost
+    assert deepseek.model == "deepseek/deepseek-v4-pro-0813"
+    assert deepseek.extra["provider_routing"] == {
+        "order": ["Baidu", "Alibaba"],
+        "allow_fallbacks": False,
+        "require_parameters": True,
+    }
+    assert mistral.model == "mistralai/mistral-large-4-0"
+    assert "provider_routing" not in mistral.extra
+    assert (local.base_url_env, local.api_key_env) == ("LOCAL_LLM_BASE_URL", "LOCAL_LLM_API_KEY")
+    assert re.fullmatch(r"<[a-z-]+>", local.model)
+    assert local.cache_namespace
+    assert local.resolved_cost_mode == "unmetered"
+    # OpenRouter reports every call's cost, so the budget is enforceable for those rows.
+    assert extra.budget_usd is not None and extra.budget_usd > 0
+    text = (EXPERIMENTS / "v1-leaderboard-openai-compatible.example.yaml").read_text("utf-8")
+    assert "experiments/local/" in text
 
 
 def test_ablation_crosses_every_prompt_with_two_models() -> None:

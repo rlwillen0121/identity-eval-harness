@@ -81,12 +81,6 @@ SYSTEM_POINTER = (
 """Short system prompt used when the real one is too large for argv and moves into the prompt."""
 
 NEUTRAL_SYSTEM = "You are a helpful assistant."
-
-ACTION_SCHEMA_NAME = "tool_action"
-"""The schema name of a turn of the JSON action protocol (``render.tools.ACTION_SCHEMA_NAME``;
-a test pins the two together, since providers don't import the renderer). A CLI may send such
-a turn differently from a plain structured answer (``claude_cli`` withholds ``--json-schema``),
-so ``setup_revision`` builds one as a template too."""
 """System prompt sent in place of an empty one by CLIs that replace their own system prompt.
 
 An empty value doesn't mean "no system prompt" to these CLIs: grok treats
@@ -97,6 +91,12 @@ no system prompt at all, so the CLI rows get the closest equivalent instead: the
 chat templates conventionally apply to a conversation without a system message, which carries no
 task instructions. Responses record the substitution in ``raw["substituted_system"]``.
 """
+
+ACTION_SCHEMA_NAME = "tool_action"
+"""The schema name of a turn of the JSON action protocol (``render.tools.ACTION_SCHEMA_NAME``;
+a test pins the two together, since providers don't import the renderer). A CLI may send such
+a turn differently from a plain structured answer (``claude_cli`` withholds ``--json-schema``),
+so ``setup_revision`` builds one as a template too."""
 
 _EFFORT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$")
 

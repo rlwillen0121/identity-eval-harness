@@ -394,7 +394,8 @@ class WorldIdError(ValueError):
 
 def rebuild_world(world_id: str) -> World:
     """The world ``world_id`` names, rebuilt from its profile, seed and anchor date (worlds are
-    never stored; BUILD_BRIEF wave 3).
+    never stored: a dataset records only ``worlds.json``, and whatever needs a world rebuilds it
+    from its ID, SPEC §8.6, §16).
 
     Raises ``WorldIdError`` if the ID names no buildable world, and ``ValueError`` if the rebuilt
     world's ID differs (the generator changed under the dataset)."""

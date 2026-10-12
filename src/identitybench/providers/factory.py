@@ -54,7 +54,8 @@ ProviderKind = Literal[
 PROVIDER_KINDS: tuple[str, ...] = get_args(ProviderKind)
 
 _API_KINDS = frozenset({"anthropic", "anthropic_compatible", "openai_compatible"})
-_CLI_KINDS = frozenset({"claude_cli", "codex_cli", "grok_cli", "cursor_cli"})
+"""Kinds that take ``base_url_env``, ``api_key_env`` and ``cache_namespace``; every other kind
+rejects them."""
 
 _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
     "anthropic": frozenset({"max_retries"}),

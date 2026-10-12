@@ -30,6 +30,8 @@ from identitybench.judge.rubric import DIMENSION_TITLES, DIMENSIONS
 from identitybench.report import charts
 from identitybench.report import format as fmt
 from identitybench.report.common import (
+    ANCHORED,
+    ANCHORED_NOTE,
     CEILING,
     DECISION_NAMES,
     DECISION_TASKS,
@@ -40,10 +42,14 @@ from identitybench.report.common import (
     NO_DURATIONS,
     TASK_TITLES,
     ConfigRef,
+    anchored_confidence,
     config_refs,
+    cost_basis_title,
+    cost_source_title,
     decision_n,
     decision_scores,
     denominator_clusters,
+    headline_api_usd,
     interval_level,
     operating_bound_note,
     operating_status,
@@ -378,7 +384,11 @@ def _leaderboard(runs: Sequence[ReportRun]) -> Section:
             f"label, as on the README. {FLAG_SMALL_N} after n flags few base cases or "
             f"campaigns; {FLAG_SMALL_N} after a harmful flip rate flags few twin families among "
             "those with an adversarial pair whose gold isn't APPROVE (CERTIFY for reviews): the "
-            "families its denominator rests on, which its pairs are resampled by.",
+            "families its denominator rests on, which its pairs are resampled by. API $/1k "
+            "decisions is API cost over every task and repeat: metered, or billed by a gateway "
+            "(marked billed); n/a says why when there is none (a CLI's estimate, which is not "
+            "an API cost, or a cost that is partly or wholly unknown). Cost and latency has "
+            "the breakdown.",
             "note",
         )
     ]
@@ -1267,7 +1277,7 @@ def _robustness(refs: Sequence[ConfigRef]) -> Section:
             "gold-approve pair carries no harmful flip and a both-INVALID pair no invariance; "
             f"{FLAG_SMALL_N} marks fewer than the small-n threshold. Pairs whose members are "
             "both INVALID neither agree nor disagree and are left out of the flip and "
-            "invariance denominators; the Both INVALID column counts them.",
+            "invariance denominators (SPEC §12.6); the Both INVALID column counts them.",
             "note",
         )
     ]
@@ -1390,6 +1400,14 @@ def _calibration(refs: Sequence[ConfigRef]) -> Section:
             "note",
         )
     ]
+    if any(anchored_confidence(ref.prompt) for ref in refs):
+        blocks.append(
+            Text(
+                f"{ANCHORED_NOTE}. Its ECE and Brier are marked ({ANCHORED}) and its charts "
+                "carry the same caveat.",
+                "warning",
+            )
+        )
     for task in DECISION_TASKS:
         scored = [
             (ref, s, s.calibration) for ref, s in _scored(refs, task) if s.calibration is not None
@@ -1408,14 +1426,18 @@ def _calibration(refs: Sequence[ConfigRef]) -> Section:
             "ECE",
             "Brier",
         )
+
+        def anchored(cell: str, ref: ConfigRef) -> str:
+            return f"{cell} ({ANCHORED})" if anchored_confidence(ref.prompt) else cell
+
         cal_rows = tuple(
             (
                 ref.name,
                 str(c.n_with_confidence),
                 str(c.n_without_confidence),
                 str(c.n_invalid),
-                fmt.number(c.ece, 3),
-                fmt.number(c.brier, 3),
+                anchored(fmt.number(c.ece, 3), ref),
+                anchored(fmt.number(c.brier, 3), ref),
             )
             for ref, _, c in confident
         )
@@ -1930,6 +1952,8 @@ def _usage(refs: Sequence[ConfigRef]) -> Section:
     columns = (
         "Configuration",
         "API $/1k decisions",
+        "Cost basis",
+        "CLI estimate $/1k",
         "Decisions",
         "Predictions",
         "Cache hits",
@@ -1943,7 +1967,9 @@ def _usage(refs: Sequence[ConfigRef]) -> Section:
     rows = tuple(
         (
             ref.name,
-            fmt.usd(u.api_usd_per_1k_decisions),
+            fmt.usd(headline_api_usd(u)),
+            cost_basis_title(u),
+            fmt.usd(u.cli_estimate_usd_per_1k_decisions),
             str(u.n_decisions),
             str(u.n_predictions),
             str(u.n_cache_hits),
@@ -1960,7 +1986,7 @@ def _usage(refs: Sequence[ConfigRef]) -> Section:
     source_rows = tuple(
         (
             ref.name,
-            source,
+            cost_source_title(source, ref.scores.usage),
             str(c.n_predictions),
             str(c.n_decisions),
             fmt.usd(c.total_usd),
@@ -1973,13 +1999,18 @@ def _usage(refs: Sequence[ConfigRef]) -> Section:
     blocks: list[Block] = [
         Text(
             "A decision is one scored unit (a request, a review item, a plan), every repeat "
-            "included. The API figure is metered API cost only (usage × the dated pricing "
-            "table): n/a when any API-priced prediction lacks a cost. Subscription-CLI "
-            "estimates (reported) are listed by source and never mixed in. Latency is per call "
-            "over calls that reached the model (cache hits and transport errors excluded).",
+            "included. The API figure is API cost: metered (usage × the dated pricing table), "
+            "billed (the charge a billing gateway such as OpenRouter reported for each call), "
+            "or a real $0 when unmetered (self-hosted, baselines). A subscription CLI's own "
+            "cost figure is an estimate of what the calls would have cost, not a charge, so it "
+            "is listed apart (CLI estimate $/1k) and never mixed in. The API figure is n/a "
+            "unless every prediction has a recorded API cost: a configuration with any unknown "
+            "cost is incomplete, never shown as cheaper than it is; the cost basis says why. "
+            "Latency is per call over calls that reached the model (cache hits and transport "
+            "errors excluded).",
             "note",
         ),
-        Table(columns, rows, _numeric(len(columns))),
+        Table(columns, rows, tuple(i not in (0, 2) for i in range(len(columns)))),
     ]
     if source_rows:
         blocks.append(
@@ -2010,8 +2041,9 @@ def _variance(refs: Sequence[ConfigRef]) -> Section:
         Text(
             "A stratified subset runs several times per configuration, each repeat a fresh "
             "inference; primary metrics use repeat 0 only. Units whose repeats are all INVALID "
-            "neither agree nor disagree and are left out of the disagreement denominators "
-            "(SPEC §12.8); the All INVALID column counts them.",
+            "neither agree nor disagree and are left out of the disagreement denominators, by "
+            "the same rule as both-INVALID robustness pairs (SPEC §12.6); the All INVALID "
+            "column counts them.",
             "note",
         )
     ]

@@ -309,7 +309,10 @@ Every published number traces back to its inputs.
   scikit-learn).
 - **Dataset identity in a run.** `runner.manifest.dataset_fingerprint` is the SHA-256 of
   `SHA256SUMS`, after checking that every file still matches it. A run refuses a dataset whose
-  files no longer match.
+  files no longer match. `SHA256SUMS` lists every file, `DATASET_CARD.md` and `PROBE.json`
+  included, so once a dataset has runs nothing in its directory changes: the committed
+  `datasets/identitybench-v1` is frozen, and corrections to its card go to
+  `datasets/ERRATA.md` ([`RELEASE.md`](RELEASE.md#the-dataset-is-frozen-once-a-leaderboard-run-starts)).
 - **Prompts.** `render.prompt.prompt_sha256(variant)` hashes the variant's files with
   `TEMPLATE_VERSION`, and for few-shot variants also `render.fewshot.SELECTION_VERSION` and
   `tasks.ideal.IDEAL_VERSION`. Tool-use prompts use `render.tools.tool_prompt_sha256`, which
@@ -427,9 +430,9 @@ sending a change. Tests never touch the network: tests that call real endpoints 
    `reported_cost_usd`. List settings you can't honour in `raw["ignored_params"]`.
 2. For a CLI, subclass `providers._cli.CliProvider` and implement `_build` and `_parse`.
    `setup_revision()` then covers your setup with no hand-bumped constant.
-3. Register it in `providers/factory.py`: add the kind to `ProviderKind`, to `_API_KINDS` or
-   `_CLI_KINDS`, its accepted `extra` options to `_ALLOWED_EXTRA`, and a branch in
-   `make_provider`.
+3. Register it in `providers/factory.py`: add the kind to `ProviderKind`, to `_API_KINDS` if
+   it takes `base_url_env`, `api_key_env` and `cache_namespace`, its accepted `extra` options
+   to `_ALLOWED_EXTRA`, and a branch in `make_provider`.
 4. Check how its spend is known (`runner.cost.default_cost_mode`), and for a metered API add a
    dated row to `pricing.yaml`. If it has no effort setting, add it to `_NO_EFFORT_KINDS` in
    `runner/config.py`.
@@ -483,5 +486,7 @@ dataset under a new version.
   `tasks.validate` its consistency rules. Test orchestration with fake builders (see
   `tests/tasks/test_generate.py`).
 
-After any builder change, regenerate, run `identitybench validate --double-build`, and if the
-shortcut probe fails follow [`RELEASE.md`](RELEASE.md#when-the-probe-gate-fails).
+After any builder change, regenerate into a scratch directory (`generate --spec ... --out`) or
+under a new version, never into the frozen `datasets/identitybench-v1`; run
+`identitybench validate --double-build`, and if the shortcut probe fails follow
+[`RELEASE.md`](RELEASE.md#when-the-probe-gate-fails).

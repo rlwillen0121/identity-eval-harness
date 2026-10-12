@@ -145,7 +145,8 @@ def test_the_caption_says_what_the_numbers_are(runs: Fixture) -> None:
     assert "test split · n = 8 cases per row, the base cases scored" in caption
     assert "WAR counts cases where the oracle's decision isn't APPROVE" in caption
     assert "harmful flip rate adversarial pairs where the oracle's decision isn't" in caption
-    assert "API $/1k decisions = metered API cost" in caption
+    assert "API $/1k decisions = API cost per 1,000" in caption
+    assert "never a CLI's estimate" in caption
     assert "over every task and repeat, not this task alone" in caption
     assert "gold" not in caption
     assert "no interval = fewer than two resampled units" in caption
@@ -195,6 +196,19 @@ def test_several_runs_are_disambiguated_and_incomplete_runs_marked(runs: Fixture
     assert "model-a · run_main †" in models
     assert "model-a · run_partial ‡ †" in models
     assert "‡ = incomplete run" in table.splitlines()[0]
+
+
+def test_a_table_combining_runs_says_their_order_is_untested(runs: Fixture) -> None:
+    """SPEC §12.8 compares configurations only within one run: a caption over rows from
+    several runs says so, and a single run's caption says nothing about it."""
+    assert runs.incomplete is not None
+    main, partial = load_report_runs([runs.main, runs.incomplete], context=False)
+    caption = leaderboard_table([main, partial]).splitlines()[0]
+    assert (
+        "rows come from more than one run: configurations from different runs were not "
+        "compared (SPEC §12.8), so their relative order is untested"
+    ) in caption
+    assert "more than one run" not in leaderboard_table([main]).splitlines()[0]
 
 
 def test_runs_on_different_cases_are_refused_unless_mixing_is_allowed(runs: Fixture) -> None:

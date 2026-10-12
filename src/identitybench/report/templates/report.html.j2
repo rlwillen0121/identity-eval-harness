@@ -44,6 +44,7 @@
 {%- endif -%}
 {%- endmacro -%}
 <!doctype html>
+<!-- {{ canary }} -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -148,9 +149,11 @@ pre {
 .chart.vega-ready .fallback { display: none; }
 nav ol { columns: 2 260px; padding-left: 20px; }
 .group { margin-left: 0; }
+.canary { margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.canary code { overflow-wrap: anywhere; }
 </style>
-{% for src in scripts %}
-<script src="{{ src }}" defer></script>
+{% for src, integrity in scripts %}
+<script src="{{ src }}" integrity="{{ integrity }}" crossorigin="anonymous" defer></script>
 {% endfor %}
 </head>
 <body>
@@ -179,6 +182,9 @@ nav ol { columns: 2 260px; padding-left: 20px; }
 </section>
 {% endfor %}
 </main>
+<footer class="canary">
+<p>Not training data. Provenance canary (SPEC §17.4): <code>{{ canary }}</code></p>
+</footer>
 </div>
 <script>
 /* Progressive enhancement: render each Vega-Lite spec in place of its inline SVG. Without the
