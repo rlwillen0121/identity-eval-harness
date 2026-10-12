@@ -21,6 +21,14 @@ reports, and the sections that need them say why they are thin
 manifest's fingerprint is treated the same way rather than shown: its case views would describe
 different gold.
 
+One thing is priced at report time rather than read from the summary: the API-equivalent of a
+subscription CLI's configurations, its recorded tokens at the model's dated list price
+(``report.api_equivalent``, :attr:`ReportRun.api_equivalent`). It is a price applied to usage,
+not a score, so a run scored before its model had a price row still gets it. It needs the
+predictions' usage, which :func:`load_report_run` reads even without ``context`` (the usage
+alone, not the answers), and a pricing table (``runner.cost.default_pricing`` unless one is
+given); without either the configurations simply have no API-equivalent.
+
 The judge summaries are parsed into small read-only views (:class:`JudgeSummary`,
 :class:`ValidationSummary`) of exactly the JSON the judge package writes
 (``JudgeRun.summary()``, ``JudgeValidationReport.to_dict()``), so a report rebuilt from files
@@ -29,7 +37,7 @@ reads the same numbers as one built in memory, without re-running any bootstrap.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -39,12 +47,21 @@ from pydantic import BaseModel, ConfigDict
 from identitybench.judge.aggregate import JudgeRun
 from identitybench.judge.rubric import DIMENSIONS
 from identitybench.judge.validate import GateStatus, JudgeValidationReport
+from identitybench.report.api_equivalent import (
+    ApiEquivalent,
+    PredictionKey,
+    api_equivalents,
+    prompt_tokens,
+    read_keyed_usages,
+)
+from identitybench.runner.cost import PricingTable, default_pricing
 from identitybench.runner.manifest import DatasetMismatchError, RunManifest
 from identitybench.schemas.case import Case
 from identitybench.schemas.enums import Task
-from identitybench.schemas.predictions import Prediction
+from identitybench.schemas.predictions import Prediction, PredictionUsage
 from identitybench.scoring.summary import (
     PER_CASE_FILE,
+    PREDICTIONS_FILE,
     SCORES_DIR,
     SUMMARY_FILE,
     CaseRecord,
@@ -52,6 +69,7 @@ from identitybench.scoring.summary import (
     RunScores,
     load_run,
 )
+from identitybench.scoring.usage import CLI_PROVIDERS
 
 __all__ = [
     "BASELINE_PROVIDER",
@@ -294,6 +312,9 @@ class ReportRun:
     """Why cases and predictions are missing, when they are."""
     judge: JudgeSummary | None = None
     validation: ValidationSummary | None = None
+    api_equivalent: Mapping[str, ApiEquivalent] = field(default_factory=dict[str, ApiEquivalent])
+    """Subscription-CLI configurations' recorded tokens at list price, by config ID
+    (``report.api_equivalent``); empty when the usage or a price row is unavailable."""
 
     @property
     def run_id(self) -> str:
@@ -351,21 +372,79 @@ def _validation(value: ValidationInput) -> ValidationSummary:
     return ValidationSummary.read(value)
 
 
+def _pricing_table(pricing: PricingTable | None) -> PricingTable | None:
+    """``pricing``, else the default table, else None when there is no pricing file."""
+    if pricing is not None:
+        return pricing
+    try:
+        return default_pricing()
+    except FileNotFoundError:
+        return None
+
+
+def _equivalents(
+    root: Path,
+    scores: RunScores,
+    pricing: PricingTable | None,
+    predictions: Mapping[str, tuple[Prediction, ...]] | None,
+) -> dict[str, ApiEquivalent]:
+    """The run's API-equivalents (``report.api_equivalent``), from ``predictions`` when they
+    were loaded, else from the usage in ``predictions.jsonl``; empty without a pricing table,
+    a CLI configuration with a price row, or the predictions. The run's API configurations
+    (any model configuration not run through a CLI) are read too, for the estimate of each
+    CLI's own prompt overhead."""
+    table = _pricing_table(pricing)
+    if table is None:
+        return {}
+    wanted = [
+        config_id
+        for config_id in scores.configs
+        if (info := scores.config_info.get(config_id)) is not None
+        and info.provider in CLI_PROVIDERS
+        and table.get(info.model) is not None
+    ]
+    if not wanted:
+        return {}
+    peers = [
+        config_id
+        for config_id, info in scores.config_info.items()
+        if config_id in scores.configs
+        and info.provider not in CLI_PROVIDERS
+        and info.provider != BASELINE_PROVIDER
+    ]
+    keyed: Mapping[str, Sequence[tuple[PredictionKey, PredictionUsage]]]
+    if predictions is not None:
+        keyed = {
+            c: [((p.case_id, p.sample_idx), p.usage) for p in predictions.get(c, ())]
+            for c in [*wanted, *peers]
+        }
+    elif (root / PREDICTIONS_FILE).is_file():
+        keyed = read_keyed_usages(root / PREDICTIONS_FILE, [*wanted, *peers])
+    else:
+        return {}
+    usages = {c: [u for _, u in keyed[c]] for c in wanted}
+    prompts = {c: {key: prompt_tokens(u) for key, u in lines} for c, lines in keyed.items()}
+    return api_equivalents(scores, usages, table, prompts=prompts)
+
+
 def load_report_run(
     run_dir: Path | str,
     *,
     dataset_dir: Path | str | None = None,
     judge_validation: ValidationInput | None = None,
     context: bool = True,
+    pricing: PricingTable | None = None,
 ) -> ReportRun:
     """Read a scored run directory.
 
-    ``context=False`` reads only the manifest, the scores and the per-case records (enough for
-    a leaderboard). Otherwise the dataset and predictions are loaded too when they can be
-    (``scoring.summary.load_run``, which checks the dataset's fingerprint), along with the judge
-    summary; ``judge_validation`` (a ``JudgeValidationReport``, its summary, or the path of its
-    ``report.json``) gates the judge's dimensions. Raises ``FileNotFoundError`` for a run that
-    hasn't been scored, and ``ValueError`` when the scores belong to another run.
+    ``context=False`` reads only the manifest, the scores, the per-case records and the
+    predictions' usage (enough for a leaderboard). Otherwise the dataset and predictions are
+    loaded too when they can be (``scoring.summary.load_run``, which checks the dataset's
+    fingerprint), along with the judge summary; ``judge_validation`` (a
+    ``JudgeValidationReport``, its summary, or the path of its ``report.json``) gates the
+    judge's dimensions. ``pricing`` is the table subscription-CLI usage is priced from for the
+    API-equivalent (default ``runner.cost.default_pricing``). Raises ``FileNotFoundError`` for
+    a run that hasn't been scored, and ``ValueError`` when the scores belong to another run.
     """
     root = Path(run_dir)
     summary_path = root / SCORES_DIR / SUMMARY_FILE
@@ -382,7 +461,12 @@ def load_report_run(
     per_case = root / SCORES_DIR / PER_CASE_FILE
     records = read_case_records(per_case) if per_case.is_file() else ()
     if not context:
-        return ReportRun(scores=scores, manifest=manifest, records=records)
+        return ReportRun(
+            scores=scores,
+            manifest=manifest,
+            records=records,
+            api_equivalent=_equivalents(root, scores, pricing, None),
+        )
 
     cases: dict[str, Case] = {}
     predictions: dict[str, tuple[Prediction, ...]] = {}
@@ -394,6 +478,7 @@ def load_report_run(
     else:
         cases = {c.case_id: c for c in loaded.cases}
         predictions = dict(loaded.predictions)
+    equivalents = _equivalents(root, scores, pricing, predictions if note is None else None)
 
     judge_path = root / JUDGE_SUMMARY
     judge = (
@@ -411,6 +496,7 @@ def load_report_run(
         context_note=note,
         judge=judge,
         validation=validation,
+        api_equivalent=equivalents,
     )
 
 
@@ -434,6 +520,7 @@ def load_report_runs(
     dataset_dir: Path | str | None = None,
     judge_validation: ValidationInput | None = None,
     context: bool = True,
+    pricing: PricingTable | None = None,
 ) -> list[ReportRun]:
     """Load every run. Paths are read with :func:`load_report_run`. A ``ReportRun`` is used as
     given, except that ``judge_validation`` is applied to it when it carries none (and refused
@@ -451,7 +538,11 @@ def load_report_runs(
         _given(run, validation)
         if isinstance(run, ReportRun)
         else load_report_run(
-            run, dataset_dir=dataset_dir, judge_validation=validation, context=context
+            run,
+            dataset_dir=dataset_dir,
+            judge_validation=validation,
+            context=context,
+            pricing=pricing,
         )
         for run in given
     ]

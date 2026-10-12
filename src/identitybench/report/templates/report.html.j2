@@ -12,7 +12,7 @@
 <thead><tr>{% for c in b.columns %}<th scope="col"{% if b.is_numeric(loop.index0) %} class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
 <tbody>
 {%- for row in b.rows %}
-<tr>{% for cell in row %}<td{% if b.is_numeric(loop.index0) %} class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+<tr>{% for cell in row %}<td{% if b.is_numeric(loop.index0) %} class="num"{% endif %}>{% if cell is string %}{{ cell }}{% else %}{{ cell.text }}{% if cell.sub %}<br><span class="sub">{{ cell.sub }}</span>{% endif %}{% endif %}</td>{% endfor %}</tr>
 {%- endfor %}
 </tbody>
 </table>
@@ -129,6 +129,8 @@ th { font-weight: 600; color: var(--ink2); white-space: nowrap; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* A number with its interval and bound is one value: kept on one line, the table scrolls. */
 td.num { white-space: nowrap; }
+/* A cell's secondary line (what the value is: its interval, bound or counts), under it. */
+td .sub { display: inline-block; min-width: 20ch; color: var(--ink2); font-size: 12px; white-space: normal; }
 tbody tr:last-child td { border-bottom: none; }
 .facts { margin: 8px 0; display: grid; gap: 2px; }
 .facts div { display: grid; grid-template-columns: minmax(120px, 220px) 1fr; gap: 12px; }

@@ -390,8 +390,10 @@ def cost_figure(refs: Sequence[ConfigRef]) -> Figure | None:
 
 
 def latency_figure(refs: Sequence[ConfigRef]) -> Figure | None:
-    """p50 and p95 latency per call per configuration (None when nothing was timed)."""
-    usage = [(ref, ref.scores.usage) for ref in refs]
+    """p50 and p95 latency per model call per model configuration; None when no model call was
+    timed (a run assembled from the response cache). Baselines make no model calls, so they
+    are not rows: their 0.00 s would read as a measurement."""
+    usage = [(ref, ref.scores.usage) for ref in refs if not ref.baseline]
     if all(u.latency_p50_s is None for _, u in usage):
         return None
     key = "latency"

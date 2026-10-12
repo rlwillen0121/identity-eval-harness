@@ -1,7 +1,8 @@
-"""The README results block: the hero figure in both themes, the status line, the headline
-table with the best model value per column in bold and two reference rows, the cost and
-scorecard figures, the significance note, per-task intervals, the baselines and the reading
-notes one click away. The figures' own renderers are tested in ``test_readme_figures``."""
+"""The README results block: the status line, the hero figure in both themes, the headline
+table with two reference rows and no bold, the legend, the bounded significance summary and the
+cheapest model that clears the safety bar visible; the safety bar's detail, metric definitions,
+per-task intervals, the scorecard and cost figures and the baselines one click away. The
+figures' own renderers are tested in ``test_readme_figures``."""
 
 from __future__ import annotations
 
@@ -49,17 +50,24 @@ HERO = README_CHARTS["results"]
 HEADLINE = (
     "Model",
     "Grounded accuracy ★ ↑",
-    "WAR ★ ↓ req · rev",
+    "Wrongful approvals WAR ★ ↓ req · rev",
     "Unsafe plans ★ ↓",
     "Correct automation ★ ↑",
-    "NRC ★ ↓ risk cost",
-    "Harmful flips ↓ req",
-    "$ / 1k ↓ decisions",
+    "Risk cost NRC ★ ↓",
+    "Cost USD / 1k ↓ decisions",
 )
-NRC = HEADLINE[1:].index("NRC ★ ↓ risk cost")
+NRC = HEADLINE[1:].index("Risk cost NRC ★ ↓")
 GROUNDED = HEADLINE[1:].index("Grounded accuracy ★ ↑")
-FLIPS = HEADLINE[1:].index("Harmful flips ↓ req")
-COST = HEADLINE[1:].index("$ / 1k ↓ decisions")
+AUTOMATION = HEADLINE[1:].index("Correct automation ★ ↑")
+COST = HEADLINE[1:].index("Cost USD / 1k ↓ decisions")
+SUMMARIES = [
+    "<b>Safety bar: criteria and every model</b>",
+    "<b>Metric definitions</b>",
+    "<b>Per-task results and 95% intervals</b>",
+    "<b>Safety and robustness scorecard</b>",
+    "<b>Baselines and oracle reference</b>",
+]
+"""The collapsed sections, in order (the cost section only once enough models are priced)."""
 
 
 # --------------------------------------------------------------------------------------------
@@ -79,7 +87,9 @@ def _tables(markdown: str) -> list[str]:
 def _plain(html: str) -> str:
     text = re.sub(r"<br>", " ", html)
     text = re.sub(r"<[^>]+>", "", text)
-    text = text.replace("&nbsp;", " ").replace("&#8209;", "-").replace("&amp;", "&")
+    text = text.replace("&nbsp;", " ").replace("&#8202;", " ").replace("&#8209;", "-")
+    text = text.replace("&#8201;", " ").replace("&#8239;", " ").replace("&#8288;", "")
+    text = text.replace("&amp;", "&")
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -107,8 +117,9 @@ def _reference_rows(table: str) -> list[list[str]]:
     return [row for row in _rows(table) if row[0].startswith("<i>")]
 
 
-def _bold_parts(cell: str) -> list[str]:
-    return re.findall(r"<b>(.*?)</b>", cell)
+def _visible(markdown: str) -> str:
+    """The block above its first collapsed section."""
+    return markdown.split("<details>", 1)[0]
 
 
 def _details(markdown: str, summary: str) -> str:
@@ -212,58 +223,76 @@ def test_the_block_leads_with_status_hero_and_headline_table(runs: Fixture) -> N
     dataset = run.scores.dataset
     status = next(line for line in md.splitlines() if line.startswith("**"))
     assert status == (
-        f"**{dataset.name} {dataset.version}** · test split · context mode · "
-        f"n = 15 cases per model · run 2026-10-10 · dataset sha256 `{dataset.sha256[:12]}`"
+        f"**{dataset.name} {dataset.version}**<br>Test split · context mode · baseline prompt · "
+        "15 cases per model · run 2026-10-10"
     )
     assert "Interim" not in md
-    # The hero, then the status, the headline table and its method note, the significance note
-    # that qualifies the table's order, the scorecard and the collapsed blocks. With fewer than
-    # COST_FIGURE_MIN priced models there is no cost figure, and no figure has a Markdown
-    # caption repeating it.
-    pictures = [m.start() for m in re.finditer("<picture>", md)]
-    assert len(pictures) == 2
-    method = md.index("<sub>Rates in %.")
-    tested = md.index("**Which differences are significant")
-    order = [pictures[0], md.index(status), md.index("<table>"), method, tested, pictures[1]]
-    order.append(md.index("<details>"))
+    # The status, the hero, the headline table, its legend and links, the significance summary
+    # that qualifies the table's order and the cheapest model that clears the safety bar are
+    # visible; everything else is collapsed. With fewer than COST_FIGURE_MIN priced models
+    # there is no cost figure, and no figure has a Markdown caption repeating it.
+    visible = _visible(md)
+    assert visible.count("<picture>") == 1 and visible.count("<table>") == 1
+    order = [
+        md.index(status),
+        md.index("<picture>"),
+        md.index("<table>"),
+        md.index("Rates are percentages"),
+        md.index("[Full report](reports/v1/report.md)"),
+        md.index("**Statistical comparisons.**"),
+        md.index("**Cheapest model that clears the safety bar"),
+        md.index("**Bar:**"),
+        md.index("<details>"),
+    ]
     assert order == sorted(order)
-    for figure, start in zip(("results", "scorecard"), pictures, strict=True):
-        assert f"charts/readme-{figure}-dark.svg" in md[start : start + 200]
-    between = md[md.index("</picture>", pictures[1]) : md.index("<details>")]
-    assert "<sub>" not in between  # no caption under the scorecard
+    assert "charts/readme-results-dark.svg" in visible
     assert md.startswith("<!-- Generated by `identitybench report --readme`")
     headline = _tables(md)[0]
     assert tuple(_header(headline)) == HEADLINE
     names = [_plain(row[0]) for row in _model_rows(headline)]
     assert sorted(names) == ["model-a †", "model-b †"]
-    assert "[Markdown](reports/v1/report.md) · [HTML](reports/v1/report.html)" in md
-    assert "★ SPEC §12.8 primary metric" in md
+    assert "[Full report](reports/v1/report.md) · [HTML](reports/v1/report.html)" in visible
+    assert visible.count("reports/v1/report.md#comparisons-between-configurations") == 1
+    assert "★ marks a primary metric." in visible
     assert (
-        "Sorted by NRC as displayed, ties broken by grounded accuracy (the figures sort by "
-        "grounded accuracy)." in md
+        "Rows are ordered by displayed risk cost, then grounded accuracy; the chart is ordered by "
+        "grounded accuracy. Ordering reflects point estimates, not a statistically established "
+        "ranking." in visible
     )
-    # Collapsed blocks: per-task results, baselines, then how to read the table.
     summaries = re.findall(r"<summary>(.*?)</summary>", md)
-    assert summaries == [
-        "<b>Per-task results</b> with 95% intervals",
-        "<b>Baselines and the oracle ceiling</b> (SPEC §14)",
-        "<b>How to read the table</b>",
-    ]
+    assert summaries == SUMMARIES
+    # The scorecard is collapsed, with no caption beside it.
+    scorecard = _details(md, "<b>Safety and robustness scorecard</b>")
+    assert "charts/readme-scorecard-dark.svg" in scorecard and "<sub>" not in scorecard
 
 
-def test_the_hero_states_what_it_averages_and_how_it_was_run(runs: Fixture) -> None:
+def test_the_hero_states_both_denominators_and_how_it_was_run(runs: Fixture) -> None:
+    """Decision accuracy covers every base decision and grounded accuracy only the cases with
+    a policy certificate, so the hero says so, with the counts."""
     block = readme_leaderboard([runs.main])
-    dataset = _loaded(runs).scores.dataset
+    run = _loaded(runs)
+    dataset = run.scores.dataset
     root = _parse(block.charts[HERO["dark"]])
     desc = root.find(f"{NS}desc")
     assert desc is not None and desc.text is not None
-    assert "Both are means over 8 access requests and 2 review campaigns" in desc.text
+    model_a = run.scores.configs["model_a"]
+    requests, reviews = model_a.requests, model_a.reviews
+    assert requests is not None and reviews is not None
+    assert (
+        "Unweighted averages of the request and review scores. Decision accuracy uses every "
+        f"base decision ({requests.n_units} requests and {reviews.n_units} review items); "
+        "grounded accuracy uses only the cases with a policy certificate "
+        f"({requests.grounding.n_certificate_units} requests and "
+        f"{reviews.grounding.n_certificate_units} review items). The metrics have different "
+        "denominators." in desc.text
+    )
     source = (
         f"Source: {dataset.name} {dataset.version} · test split · context mode · baseline prompt"
-        f" · run 2026-10-10 · dataset {dataset.sha256[:12]}"
+        f" · run 2026-10-10 · dataset SHA-256 prefix {dataset.sha256[:12]}"
     )
     assert source in desc.text
     assert source in _texts(root)
+    assert "Decision accuracy and evidence grounding" in _texts(root)
 
 
 def test_the_hero_is_a_picture_with_light_and_dark_variants(runs: Fixture) -> None:
@@ -275,7 +304,10 @@ def test_the_hero_is_a_picture_with_light_and_dark_variants(runs: Fixture) -> No
         'srcset="reports/v1/charts/readme-results-dark.svg">'
     ) in picture.group(0)
     assert 'src="reports/v1/charts/readme-results-light.svg"' in picture.group(0)
-    assert re.search(r'<img alt="[^"]+\. Dot plot of grounded accuracy and decision', picture[0])
+    assert (
+        '<img alt="Decision and grounded accuracy by model. Grounding is evaluated on'
+        in (picture[0])
+    )
     assert sorted(block.charts) == SHOWN_FILES
 
 
@@ -283,7 +315,7 @@ def test_report_dir_sets_every_link(runs: Fixture) -> None:
     md = readme_leaderboard([runs.main], report_dir="../reports/x/").markdown
     assert 'srcset="../reports/x/charts/readme-results-dark.svg"' in md
     assert 'src="../reports/x/charts/readme-results-light.svg"' in md
-    assert "[Markdown](../reports/x/report.md)" in md
+    assert "[Full report](../reports/x/report.md)" in md
     assert "reports/v1" not in md
 
 
@@ -301,9 +333,10 @@ def test_html_blocks_survive_markdown(runs: Fixture) -> None:
 def test_the_interim_status_comes_from_planned_models(runs: Fixture) -> None:
     block = readme_leaderboard([runs.main], planned_models=4)
     status = next(line for line in block.markdown.splitlines() if "Interim" in line)
-    assert status.startswith("**Interim: 2 of 4 planned models** · ")
+    assert status.startswith("**toy v1 · Interim leaderboard: 2 of 4 planned models**<br>")
+    assert "running" not in status  # never says the missing models are under way
     for svg in block.charts.values():
-        assert "Interim · 2 of 4 models" in _texts(_parse(svg))
+        assert "Interim · 2/4 models" in _texts(_parse(svg))
     complete = readme_leaderboard([runs.main], planned_models=2)
     assert "Interim" not in complete.markdown
     assert all("Interim" not in svg for svg in complete.charts.values())
@@ -312,80 +345,34 @@ def test_the_interim_status_comes_from_planned_models(runs: Fixture) -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# Bold
+# Cells
 # --------------------------------------------------------------------------------------------
 
 
-def test_the_best_model_value_per_column_is_bold(runs: Fixture) -> None:
-    md = readme_leaderboard([runs.main]).markdown
-    headline = _tables(md)[0]
-    rows = {_plain(row[0]): row[1:] for row in _model_rows(headline)}
-    columns = HEADLINE[1:]
-    values = {name: float(_plain(cells[NRC])) for name, cells in rows.items()}
-    best = min(values, key=values.__getitem__)
-    assert values["model-b †"] < values["model-a †"]
-    oracle = float(_plain(_reference_rows(headline)[-1][1:][NRC]))
-    assert values[best] != oracle  # short of the oracle's floor: bold
-    for name, cells in rows.items():
-        assert bool(_bold_parts(cells[NRC])) is (name == best)
-    # WAR is bolded part by part, and a best value of 0.0 is a perfect score: never bold.
-    war = columns.index("WAR ★ ↓ req · rev")
-    parts = {name: _plain(cells[war]).split(" · ") for name, cells in rows.items()}
-    for k in range(2):
-        shown = {name: float(p[k]) for name, p in parts.items()}
-        lowest = min(shown.values())
-        for name, cells in rows.items():
-            part_html = cells[war].split("&nbsp;·&nbsp;")[k]
-            bold = bool(_bold_parts(part_html))
-            expected = shown[name] == lowest and len(set(shown.values())) > 1 and lowest != 0.0
-            assert bold is expected
-
-
-def test_baselines_and_the_ceiling_are_never_bold(runs: Fixture) -> None:
-    md = readme_leaderboard([runs.main]).markdown
-    baselines = _details(md, "<b>Baselines and the oracle ceiling</b>")
-    body = _tables(baselines)[0].split("<tbody>", 1)[1]
-    assert "<b>" not in body
-
-
-def test_ties_are_all_bold_however_many_share_the_best(runs: Fixture) -> None:
-    """Bold marks the best value short of perfect: tied leaders are all bold, however many
-    share it, and a column where every model reads the same is left plain."""
+def test_no_table_cell_is_bold(runs: Fixture) -> None:
+    """The table's order is a point-estimate order, so no winner is emphasized: the
+    significance summary says what the tests support."""
     run = _loaded(runs)
-    best, worst = run.scores.configs["model_b"], run.scores.configs["model_a"]
-    tied = _with_config(run, "model_c", best, label="model-c")
-    tied = _with_config(tied, "model_d", worst, label="model-d")
-    rows = {_plain(r[0]): r[1:] for r in _rows(_tables(readme_leaderboard([tied]).markdown)[0])}
-    assert _bold_parts(rows["model-b †"][NRC]) == _bold_parts(rows["model-c †"][NRC]) != []
-    assert _bold_parts(rows["model-a †"][NRC]) == _bold_parts(rows["model-d †"][NRC]) == []
-    most = _with_config(run, "model_c", best, label="model-c")  # two of three share the best
-    rows = {_plain(r[0]): r[1:] for r in _rows(_tables(readme_leaderboard([most]).markdown)[0])}
-    assert _bold_parts(rows["model-b †"][NRC]) == _bold_parts(rows["model-c †"][NRC]) != []
-    assert _bold_parts(rows["model-a †"][NRC]) == []
-    same = _with_config(run, "model_a", best, label="model-a")
-    headline = _tables(readme_leaderboard([same]).markdown)[0]
-    assert "<b>" not in headline
+    tied = _with_config(run, "model_c", run.scores.configs["model_b"], label="model-c")
+    perfect = _with_config(run, "model_d", run.scores.configs["oracle"], label="model-d")
+    for r in (run, tied, perfect, _priced(run)):
+        md = readme_leaderboard([r]).markdown
+        for table in _tables(md):
+            body = table.split("<tbody>", 1)[1]
+            # The safety-bar table's group labels ("Clear the bar") are bold label rows with no
+            # values; no value cell is ever bold.
+            body = re.sub(r"<tr><td><b>[^<]*</b></td>(<td></td>)+</tr>", "", body)
+            assert "<b>" not in body
 
 
-def test_a_perfect_score_is_never_bold(runs: Fixture) -> None:
-    """A model that matches the oracle's correct automation and NRC (their ceiling and floor)
-    has a perfect score there, which the scorecard shows; bold is left for the best value
-    still short of perfect, so neither column is bold."""
-    run = _loaded(runs)
-    perfect = _with_config(run, "model_c", run.scores.configs["oracle"], label="model-c")
-    md = readme_leaderboard([perfect]).markdown
-    headline = _tables(md)[0]
-    rows = {_plain(r[0]): r[1:] for r in _model_rows(headline)}
-    oracle = _reference_rows(headline)[-1][1:]
-    automation = HEADLINE[1:].index("Correct automation ★ ↑")
-    assert _plain(rows["model-c †"][NRC]) == _plain(oracle[NRC])
-    assert _plain(rows["model-c †"][automation]) == _plain(oracle[automation])
-    for cells in rows.values():
-        assert _bold_parts(cells[NRC]) == _bold_parts(cells[automation]) == []
-    assert "a perfect score (100 or 0, or the oracle's own correct automation and NRC)" in md
+def test_rows_are_ordered_by_displayed_risk_cost(runs: Fixture) -> None:
+    md = readme_leaderboard([runs.main]).markdown
+    rows = _model_rows(_tables(md)[0])
+    values = [float(_plain(cells[1:][NRC])) for cells in rows]
+    assert values == sorted(values)
 
 
-def test_cost_is_bolded_only_among_api_charges(runs: Fixture) -> None:
+def test_cost_cells_show_their_footing(runs: Fixture) -> None:
     run = _loaded(runs)
     b = run.scores.configs["model_b"]
     cheap_estimate = _usage(
@@ -413,13 +400,20 @@ def test_cost_is_bolded_only_among_api_charges(runs: Fixture) -> None:
         _usage(b, cost_basis="unmetered", api_usd_per_1k_decisions=0.0),
         label="model-d",
     )
-    headline = _tables(readme_leaderboard([edited]).markdown)[0]
-    cells = {_plain(r[0]): r[1:][COST] for r in _rows(headline)}
-    assert cells["model-a †"] == "≈$0.50"  # a CLI's estimate: shown, never bolded
+    md = readme_leaderboard([edited]).markdown
+    cells = {_plain(r[0]): r[1:][COST] for r in _rows(_tables(md)[0])}
+    assert cells["model-a †"] == "≈$0.50"  # a CLI's estimate, marked
     assert cells["model-b †"] == "$6.75"
-    assert cells["model-c †"] == "<b>$3.00</b>"
-    assert cells["model-d †"] == "unmetered"  # $0 that isn't a price
-    assert cells["Status quo †"] == cells["Oracle ceiling †"] == NOT_SCORED  # no model calls
+    assert cells["model-c †"] == "$3.00"
+    assert cells["model-d †"] == "<sub>unmetered</sub>"  # $0 that isn't a price: a note
+    assert cells["Human-review reference †"] == cells["Oracle reference †"] == NOT_SCORED
+    # The legend explains each mark shown, and that unmetered is not free.
+    visible = _visible(md)
+    assert "≈ marks a CLI's own cost estimate, not a charge." in visible
+    assert "`unmetered`: the endpoint charged nothing per call" in visible
+    assert "it does not mean inference is free" in visible
+    assert "◇" not in visible  # no API-equivalent shown, so none explained
+    assert "unmetered" not in _visible(readme_leaderboard([run]).markdown)
 
 
 def test_an_unpriced_model_says_why_its_cost_is_na(runs: Fixture) -> None:
@@ -430,9 +424,9 @@ def test_an_unpriced_model_says_why_its_cost_is_na(runs: Fixture) -> None:
     md = readme_leaderboard([_with_config(run, "model_b", unknown, label="model-b")]).markdown
     cells = {_plain(r[0]): r[1:][COST] for r in _rows(_tables(md)[0])}
     assert cells["model-b †"] == "n/a"
-    notes = _details(md, "<b>How to read the table</b>")
-    assert "n/a: the provider reported no cost for these calls" in notes
-    assert "n/a:" not in _details(readme_leaderboard([run]).markdown, "<b>How to read")
+    notes = _details(md, "<b>Metric definitions</b>")
+    assert "`n/a`: the provider reported no cost for these calls" in notes
+    assert "`n/a`" not in _details(readme_leaderboard([run]).markdown, "<b>Metric definitions")
 
 
 # --------------------------------------------------------------------------------------------
@@ -440,15 +434,17 @@ def test_an_unpriced_model_says_why_its_cost_is_na(runs: Fixture) -> None:
 # --------------------------------------------------------------------------------------------
 
 
-def test_baselines_and_the_oracle_ceiling_are_in_a_collapsed_block(runs: Fixture) -> None:
+def test_baselines_and_the_oracle_reference_are_in_a_collapsed_block(runs: Fixture) -> None:
     md = readme_leaderboard([runs.main]).markdown
-    block = _details(md, "<b>Baselines and the oracle ceiling</b>")
+    block = _details(md, "<b>Baselines and oracle reference</b>")
     assert block.startswith("<details>\n")  # collapsed while models are shown
     names = [_bare(_plain(row[0])) for row in _rows(_tables(block)[0])]
-    assert sorted(n.removesuffix(" (ceiling)") for n in names) == sorted(BASELINES)
-    assert names[-1] == "oracle (ceiling)"  # the ceiling comes last, never ranked
+    assert sorted(n.removesuffix(" (reference)") for n in names) == sorted(BASELINES)
+    assert names[-1] == "oracle (reference)"  # the oracle comes last, never ranked
     assert "<code>always_approve</code>" in block
-    assert "The oracle answers with gold: a pipeline check and the ceiling, never ranked." in block
+    assert "Baseline results are point estimates." in block
+    assert "The oracle supplies reference answers and is not ranked." in block
+    assert "Baselines make no model calls" in block
     headline = _tables(md)[0]
     assert not any(b in headline for b in BASELINES)
     assert md.index(block) > md.index(headline)
@@ -457,7 +453,7 @@ def test_baselines_and_the_oracle_ceiling_are_in_a_collapsed_block(runs: Fixture
 def test_baseline_cells_name_each_task(runs: Fixture) -> None:
     """Baselines answer only some tasks, so accuracy is per task there, with ``—`` for a task
     a baseline wasn't scored on, never a mean that hides it."""
-    block = _details(readme_leaderboard([runs.main]).markdown, "<b>Baselines")
+    block = _details(readme_leaderboard([runs.main]).markdown, "<b>Baselines and oracle")
     table = _tables(block)[0]
     header = _header(table)
     assert header[1] == "Accuracy ↑ req · rev · JML"
@@ -465,12 +461,12 @@ def test_baseline_cells_name_each_task(runs: Fixture) -> None:
     approve = _plain(rows["always_approve"][0]).split(" · ")
     assert len(approve) == 3 and approve[2] == NOT_SCORED  # no JML answers
     assert all(p != NOT_SCORED for p in approve[:2])
-    assert f"{NOT_SCORED} not scored on that task." in _plain(block)
+    assert f"A dash ({NOT_SCORED}) means not scored on that task." in _plain(block)
 
 
 def test_per_task_tables_carry_intervals_and_exact_bounds(runs: Fixture) -> None:
     md = readme_leaderboard([runs.main]).markdown
-    block = _details(md, "<b>Per-task results</b> with 95% intervals")
+    block = _details(md, "<b>Per-task results and 95% intervals</b>")
     assert "**Access requests** · 8 cases" in block
     assert "**Access reviews** · 2 campaigns (7 items)" in block
     assert "**JML plans** · 2 events" in block
@@ -478,49 +474,62 @@ def test_per_task_tables_carry_intervals_and_exact_bounds(runs: Fixture) -> None
     assert _header(requests)[1:] == [
         "Accuracy ↑",
         "Grounded accuracy ★ ↑",
-        "WAR ★ ↓",
+        "Wrongful approvals WAR ★ ↓",
         "High-risk WAR ↓",
         "Correct automation ★ ↑",
-        "NRC ★ ↓ risk cost",
+        "Risk cost NRC ★ ↓",
     ]
     cells = [cell for row in _rows(requests) for cell in row[1:]]
     assert all("<br><sub>" in cell for cell in cells if _plain(cell) not in (NOT_SCORED, "n/a"))
-    assert any(re.search(r"<sub>\d+\.\d–\d+\.\d</sub>", cell) for cell in cells)
-    # An exact bound never wraps inside its cell.
+    # Neither an interval nor an exact bound ever wraps inside its cell.
+    assert any(re.search(r"<sub>\d+\.\d–&#8288;\d+\.\d</sub>", cell) for cell in cells)
     assert any("<sub>CP95&nbsp;≤&nbsp;" in cell for cell in cells)
-    # SPEC §12.8: every bound shown states its estimand, units and failure event.
+    # SPEC §12.8: every bound shown states its estimand, units and failure event, and the note
+    # says which metrics carry one (the scorer's rule), not "where events are rare".
     assert "Exact bounds: CP95 bound on" in block
     assert "failure event:" in block
-
-
-def test_how_to_read_defines_every_column_and_how_cost_is_measured(runs: Fixture) -> None:
-    md = readme_leaderboard([runs.main]).markdown
-    notes = _details(md, "<b>How to read the table</b>")
-    for term in (
-        "**What each model answered**",
-        "**Accuracy**",
-        "**Grounded accuracy**",
-        "**WAR**",
-        "**Unsafe plans**",
-        "**Correct automation**",
-        "**NRC**",
-        "**Harmful flips**",
-        "**$ / 1k decisions**",
-    ):
-        assert f"- {term}" in notes
-    assert "≈ marks a subscription CLI's own estimate, which is not a charge" in notes
-    assert "a wrongful approval costs 2.5 to 20 times a wrongful denial by risk tier" in notes
-    # The anchors that make the scales readable: the oracle's ceiling and floor.
-    assert re.search(r"The oracle's \d+\.\d is the ceiling", notes)
-    assert re.search(
-        r"1\.000 is the all-human status quo and the oracle's \d\.\d{3} is the floor", notes
+    assert (
+        "Exact bounds apply to request WAR and high-risk WAR with fewer than 5 wrongful "
+        "approvals and to every unsafe-plan rate." in block
     )
-    assert "Latency is in the full report" in notes
-    # The small print under the table is one method line; warnings stay visible above the
-    # collapsed blocks.
-    first_details = md.index("<details>")
-    assert md.index("† fewer than 30 resampled units on some task.") < first_details
-    assert "**Grounded accuracy**" not in md[:first_details]
+    assert "where events are rare" not in block
+    assert "Review-item rates use campaign-cluster intervals." in block
+
+
+def test_metric_definitions_define_every_metric_once_with_its_denominator(runs: Fixture) -> None:
+    md = readme_leaderboard([runs.main]).markdown
+    notes = _details(md, "<b>Metric definitions</b>")
+    for term in (
+        "**What each model answered:**",
+        "**Decision accuracy**",
+        "**Grounded accuracy ★**",
+        "**Wrongful approvals (WAR) ★:**",
+        "**Unsafe plans ★:**",
+        "**Correct automation ★:**",
+        "**Risk cost (NRC) ★:**",
+        "**Harmful flips:**",
+        "**Inference cost:**",
+    ):
+        assert notes.count(f"- {term}") == 1
+    # The two accuracy denominators are stated.
+    assert "Evaluated on all base decisions (8 requests and 7 review items)." in notes
+    certified = r"Evaluated on the cases with a certificate \(\d+ requests and \d+ review"
+    assert re.search(certified, notes)
+    assert "A plain figure is a recorded API charge, metered from the dated pricing table" in notes
+    assert "a wrongful approval costs 2.5 to 20 times a wrongful denial, by risk tier" in notes
+    # The anchors that make the scales readable: the oracle's ceiling and floor.
+    assert re.search(r"so the oracle's \d+\.\d is the ceiling", notes)
+    assert re.search(
+        r"The human-review reference is 1\.000 and the oracle's \d\.\d{3} is the floor", notes
+    )
+    assert "JML grounding is exploratory. JML plans do not contribute to correct" in notes
+    assert "Latency and its measurement limitations are in the full report." in notes
+    assert "Dataset SHA-256 prefix:" in notes
+    # Definitions live only here; warnings stay visible, at normal size, above the collapsed
+    # sections.
+    visible = _visible(md)
+    assert "\n† fewer than 30 resampled units on some task.\n" in visible
+    assert "**Grounded accuracy" not in visible
 
 
 def test_grounded_accuracy_is_the_mean_over_requests_and_reviews_only(runs: Fixture) -> None:
@@ -535,25 +544,33 @@ def test_grounded_accuracy_is_the_mean_over_requests_and_reviews_only(runs: Fixt
         rows = {_plain(r[0]): r[1:] for r in _rows(_tables(block.markdown)[0])}
         assert _plain(rows["model-b †"][GROUNDED]) == "80.0"
         assert "model-b †: grounded accuracy 80.0%" in block.charts[HERO["light"]]
-    # Only the JML per-task table, inside the collapsed block, shows the difference.
+    # Only the JML per-task table, inside a collapsed block, shows the difference.
     assert blocks[0].charts == blocks[1].charts
-    head = [block.markdown.split("<details>", 1)[0] for block in blocks]
-    assert head[0] == head[1]
+    assert _visible(blocks[0].markdown) == _visible(blocks[1].markdown)
     assert blocks[0].markdown != blocks[1].markdown
-    assert "mean over 8 access requests and 2 review campaigns" in blocks[0].markdown
+    assert (
+        "Unweighted averages of the request and review scores." in (blocks[0].charts[HERO["light"]])
+    )
 
 
-def test_harmful_flips_are_a_headline_column(runs: Fixture) -> None:
+def test_harmful_flips_are_in_the_safety_bar_and_robustness_tables_not_the_headline(
+    runs: Fixture,
+) -> None:
+    """The exploratory harmful flip rate stays out of the headline table, which keeps it
+    inside the README column; the safety bar and the robustness table show it."""
     run = with_request_robustness(
         _loaded(runs),
         "model_a",
         lambda t: t.model_copy(update={"harmful_flip_rate": _point(t.harmful_flip_rate, 0.25)}),
     )
     md = readme_leaderboard([run]).markdown
-    rows = {_plain(r[0]): r[1:] for r in _rows(_tables(md)[0])}
-    assert rows["model-a †"][FLIPS] == "25.0"
-    assert rows["model-b †"][FLIPS] == "0.0"  # the best, but a perfect score: never bold
-    robustness = _details(md, "<b>Per-task results</b>")
+    assert not any("Harmful" in h for h in _header(_tables(md)[0]))
+    bar = _tables(_details(md, "<b>Safety bar: criteria and every model</b>"))[0]
+    flips = _header(bar).index("Harmful flips ↓ req · rev")
+    rows = {_plain(r[0]): r for r in _rows(bar) if r[1:] and any(r[1:])}
+    assert _plain(rows["model-a"][flips]) == "✗ 25.0"
+    assert _plain(rows["model-b"][flips]) == "0.0"
+    robustness = _details(md, "<b>Per-task results and")
     assert "**Robustness** · requests: 1 adversarial and 2 twin pairs" in robustness
     table = _tables(robustness)[-1]
     assert _header(table)[1:] == [
@@ -563,18 +580,25 @@ def test_harmful_flips_are_a_headline_column(runs: Fixture) -> None:
     ]
 
 
-def test_reference_rows_follow_the_models_in_italics_and_are_never_bold(runs: Fixture) -> None:
+def test_reference_rows_follow_the_models_in_italics(runs: Fixture) -> None:
     md = readme_leaderboard([runs.main]).markdown
     headline = _tables(md)[0]
     rows = _rows(headline)
     references = _reference_rows(headline)
-    assert [_plain(r[0]) for r in references] == ["Status quo †", "Oracle ceiling †"]
+    assert [_plain(r[0]) for r in references] == ["Human-review reference †", "Oracle reference †"]
     assert rows[-2:] == references  # after every model, in a fixed order
-    assert all("<b>" not in cell for row in references for cell in row)
     status_quo = references[0][1:]
-    assert _plain(status_quo[NRC]) == "1.000"  # NRC's unit: everything to a human
-    assert "*Italic*: reference rows, never ranked: the all-human status quo" in md
-    assert "<code>always_escalate</code>" in md.split("<details>", 1)[0]
+    assert _plain(status_quo[NRC]) == "1.000"  # risk cost's unit: everything to a human
+    # It automates nothing, so a 0.0 there would only say so by construction: a dash, and the
+    # legend says why.
+    assert _plain(status_quo[GROUNDED]) == _plain(status_quo[AUTOMATION]) == NOT_SCORED
+    assert _plain(references[1][1:][GROUNDED]) != NOT_SCORED
+    assert "*Italic rows are references.*" in _visible(md)
+    assert (
+        "The human-review reference sends every case to a person: it makes no automated "
+        f"decision to ground or count ({NOT_SCORED}), approves nothing, answers no JML event, "
+        "and its risk cost is 1.000 by definition." in _visible(md)
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -608,13 +632,11 @@ def _with_comparisons(run: ReportRun, tested: list[_Tested]) -> ReportRun:
 
 
 def _significance(md: str) -> tuple[str, list[str]]:
-    """The significance note's lead-in and its bullets."""
+    """The significance summary's lead paragraph and its bullets."""
     lines = md.splitlines()
-    start = next(
-        i for i, line in enumerate(lines) if line.startswith("**Which differences are significant")
-    )
+    start = next(i for i, line in enumerate(lines) if line.startswith("**Statistical comparisons."))
     bullets: list[str] = []
-    for line in lines[start + 1 :]:
+    for line in lines[start + 2 :]:
         if not line.startswith("- "):
             break
         bullets.append(line[2:])
@@ -622,11 +644,10 @@ def _significance(md: str) -> tuple[str, list[str]]:
 
 
 REQ, REV = Task.access_request, Task.access_review
+PAIRWISE = "[Inspect pairwise results](reports/v1/report.md#comparisons-between-configurations)."
 
 
-def test_significance_names_a_trailing_model_the_metrics_that_separate_the_rest_and_the_status_quo(
-    runs: Fixture,
-) -> None:
+def test_significance_summarizes_the_tests_without_listing_pairs(runs: Fixture) -> None:
     run = _loaded(runs)
     run = _with_config(run, "model_c", run.scores.configs["model_a"], label="model-c")
     tested: list[_Tested] = [
@@ -637,7 +658,7 @@ def test_significance_names_a_trailing_model_the_metrics_that_separate_the_rest_
         ("model_c", "model_b", REQ, "grounded_accuracy", -0.3, True),
         ("model_c", "model_a", REV, "nrc", 0.1, False),
         ("model_c", "model_b", REV, "nrc", 0.1, False),
-        # Between the other two, each wins one metric, so neither leads.
+        # Between the other two, each wins one metric.
         ("model_a", "model_b", REQ, "nrc", 0.0, False),
         ("model_a", "model_b", REQ, "grounded_accuracy", -0.1, True),
         ("model_a", "model_b", REV, "nrc", -0.2, True),
@@ -652,24 +673,24 @@ def test_significance_names_a_trailing_model_the_metrics_that_separate_the_rest_
     md = readme_leaderboard([_with_comparisons(run, tested)]).markdown
     lead, bullets = _significance(md)
     assert lead == (
-        "**Which differences are significant** (paired tests on the primary metrics, "
-        f"Holm-adjusted across the run's {len(tested)} comparisons, α = 0.05):"
+        "**Statistical comparisons.** Each of the three primary metrics distinguishes at least "
+        f"one model pair after Holm correction across {len(tested)} comparisons (α = 0.05). This "
+        f"does not establish a total ordering of models. {PAIRWISE}"
     )
+    # Every model is beaten somewhere, and the top two rows differ on review risk cost, so
+    # only the status quo bullet has something to say.
     assert bullets == [
-        "model-c trails every other model on every primary metric but review NRC.",
-        "Between the other two, only request grounded accuracy and review NRC separate "
-        "models: on request grounded accuracy, model-b beats model-a; on review NRC, model-a "
-        "beats model-b.",
-        "Every model but model-c has a significantly lower NRC than the all-human status quo "
-        "on both requests and reviews; model-c's is not significantly different from it on "
-        "requests or reviews.",
+        "**Against human review:** 2 of 3 models have a significantly lower risk cost than the "
+        "human-review reference (the all-human status quo) on both requests and reviews; "
+        "model-c is not significantly different on either.",
     ]
+    assert "beats" not in md and " only " not in lead
     # Between the table and the collapsed detail.
     assert md.index(lead) > md.index("</table>")
     assert md.index(lead) < md.index("<details>")
 
 
-def test_significance_calls_an_untested_order_a_tie(runs: Fixture) -> None:
+def test_significance_names_the_unbeaten_models_and_the_risk_cost_tie(runs: Fixture) -> None:
     run = _loaded(runs)
     run = _with_config(run, "model_c", run.scores.configs["model_a"], label="model-c")
     run = _with_config(run, "model_d", run.scores.configs["model_b"], label="model-d")
@@ -682,20 +703,63 @@ def test_significance_calls_an_untested_order_a_tie(runs: Fixture) -> None:
         ("model_a", "model_c", REV, "grounded_accuracy", 0.0, False),
     ]
     md = readme_leaderboard([_with_comparisons(run, tested)]).markdown
-    _, bullets = _significance(md)
+    lead, bullets = _significance(md)
+    assert lead.startswith(
+        "**Statistical comparisons.** 1 of 2 primary metrics distinguishes at least one model "
+        "pair after Holm correction across 6 comparisons (α = 0.05)."
+    )
     assert bullets == [
-        "Among the four models, only review grounded accuracy separates models: model-b and "
-        "model-d each beat model-a and model-c. No NRC difference among them is significant, "
-        "so their order in the table, by NRC, is a statistical tie."
+        "**Not beaten on any primary metric:** no other model is significantly better than "
+        "model-b or model-d on any of them.",
+        "**Risk-cost ties:** no two models differ significantly on request risk cost, so the "
+        "table's order is a statistical tie.",
     ]
+
+
+def test_significance_without_any_difference_does_not_claim_equivalence(runs: Fixture) -> None:
+    tested: list[_Tested] = [("model_a", "model_b", REQ, "nrc", 0.1, False)]
+    md = readme_leaderboard([_with_comparisons(_loaded(runs), tested)]).markdown
+    lead, _ = _significance(md)
+    assert lead == (
+        "**Statistical comparisons.** No tested model-pair difference on the primary metrics "
+        "meets the adjusted significance threshold after Holm correction across 1 comparison "
+        f"(α = 0.05). This does not establish equivalence. {PAIRWISE}"
+    )
+
+
+def test_significance_stays_short_however_many_pairs_differ(runs: Fixture) -> None:
+    """Sixteen models, every pair different on every primary metric: the summary still reads
+    in a few lines (it never lists pairs; the full report does)."""
+    run = _loaded(runs)
+    ids = [f"model_{chr(ord('c') + i)}" for i in range(14)]
+    for config_id in ids:
+        run = _with_config(run, config_id, run.scores.configs["model_a"], label=config_id)
+    models = ["model_a", "model_b", *ids]
+    tested: list[_Tested] = [
+        (a, b, task, metric, 0.1, True)
+        for i, a in enumerate(models)
+        for b in models[i + 1 :]
+        for task in (REQ, REV)
+        for metric in ("nrc", "war", "correct_automation", "grounded_accuracy")
+    ]
+    tested += [(m, "always_escalate", t, "nrc", -0.5, True) for m in models for t in (REQ, REV)]
+    md = readme_leaderboard([_with_comparisons(run, tested)]).markdown
+    lead, bullets = _significance(md)
+    assert "Each of the eight primary metrics distinguishes" in lead
+    assert len(lead) + sum(len(b) for b in bullets) < 1200
+    assert bullets[-1] == (
+        "**Against human review:** every model has a significantly lower risk cost than the "
+        "human-review reference (the all-human status quo) on both requests and reviews."
+    )
 
 
 def test_significance_is_left_out_across_runs(runs: Fixture) -> None:
     """SPEC §12.8 compares configurations only within a run."""
     assert runs.incomplete is not None
     md = readme_leaderboard([runs.main, runs.incomplete]).markdown
-    assert "Which differences are significant" not in md
-    assert "Which differences are significant" in readme_leaderboard([runs.main]).markdown
+    assert "Statistical comparisons" not in md
+    assert "#comparisons-between-configurations" not in md
+    assert "**Statistical comparisons.**" in readme_leaderboard([runs.main]).markdown
 
 
 # --------------------------------------------------------------------------------------------
@@ -735,9 +799,9 @@ def test_a_run_with_only_baselines_shows_them_open_without_a_figure(runs: Fixtur
     assert block.charts == {}
     assert "<picture>" not in block.markdown
     assert "No model was scored in these runs" in block.markdown
-    assert "<details open>\n<summary><b>Baselines and the oracle ceiling</b>" in block.markdown
-    assert "**Interim: 0 of 3 planned models**" in block.markdown
-    assert "n = " in block.markdown and "cases per configuration" in block.markdown
+    assert "<details open>\n<summary><b>Baselines and oracle reference</b>" in block.markdown
+    assert "Interim leaderboard: 0 of 3 planned models**" in block.markdown
+    assert "15 cases per configuration" in block.markdown
 
 
 def test_labels_are_escaped(runs: Fixture) -> None:
@@ -751,6 +815,22 @@ def test_labels_are_escaped(runs: Fixture) -> None:
         _parse(svg)
 
 
+def test_long_names_wrap_only_where_the_table_needs_them(runs: Fixture) -> None:
+    """GitHub lays a table out at its content's full width, so a long display name breaks
+    before its parenthetical, and a reference label before its last word; a name's own spaces
+    and hyphens never break."""
+    run = _loaded(runs)
+    long = _with_config(
+        run, "model_b", run.scores.configs["model_b"], label="qwen3.8-27b-exl3-4bit"
+    )
+    rows = _rows(_tables(readme_leaderboard([long]).markdown)[0])
+    names = [row[0] for row in rows]
+    assert "Qwen3.8&#8209;27B<br><sub>(4&#8209;bit,&nbsp;self&#8209;hosted)</sub>&nbsp;†" in names
+    assert "<i>Human&#8209;review<br>reference&nbsp;†</i>" in names
+    assert "<i>Oracle<br>reference&nbsp;†</i>" in names
+    assert "model&#8209;a&nbsp;†" in names
+
+
 def test_model_names_read_as_display_names() -> None:
     assert model_name("claude_cli:claude-opus-5-5") == "Claude Opus 5.5"
     assert model_name("codex_cli:gpt-6.1-sol") == "GPT-6.1 Sol"
@@ -759,8 +839,44 @@ def test_model_names_read_as_display_names() -> None:
     assert all(":" not in name for name in MODEL_NAMES.values())
 
 
+def test_every_planned_model_has_a_display_name_and_a_vendor() -> None:
+    """The v1 leaderboard's 26 planned rows never show a raw slug or lack a vendor label."""
+    planned = {
+        "claude_cli:claude-opus-5-5": ("Claude Opus 5.5", "Anthropic"),
+        "claude_cli:claude-sonnet-5-5": ("Claude Sonnet 5.5", "Anthropic"),
+        "claude_cli:claude-haiku-5-5": ("Claude Haiku 5.5", "Anthropic"),
+        "codex_cli:gpt-6.1-sol": ("GPT-6.1 Sol", "OpenAI"),
+        "codex_cli:gpt-6-astra": ("GPT-6 Astra", "OpenAI"),
+        "codex_cli:gpt-6-luna": ("GPT-6 Luna", "OpenAI"),
+        "deepseek-v4-pro": ("DeepSeek V4 Pro", "DeepSeek"),
+        "deepseek-v4.1-flash": ("DeepSeek V4.1 Flash", "DeepSeek"),
+        "mistral-large-4": ("Mistral Large 4", "Mistral AI"),
+        "glm-5.3-flash": ("GLM-5.3 Flash", "Z.ai"),
+        "gemini-3.8-flash": ("Gemini 3.8 Flash", "Google"),
+        "gemini-3.5-flash-lite": ("Gemini 3.5 Flash-Lite", "Google"),
+        "hunyuan-3": ("Hunyuan 3", "Tencent"),
+        "mimo-v2.6-flash": ("MiMo-V2.6-Flash", "Xiaomi"),
+        "mimo-v2.6-pro": ("MiMo-V2.6-Pro", "Xiaomi"),
+        "mercury-2.5": ("Mercury 2.5", "Inception"),
+        "solar-pro-4": ("Solar Pro 4", "Upstage"),
+        "muse-glimmer-30b": ("Muse Glimmer 30B", "Meta"),
+        "ling-3.0-flash": ("Ling 3.0 Flash", "inclusionAI"),
+        "ternary-bonsai-2-27b": ("Ternary Bonsai 2 27B", "Prism ML"),
+        "minimax-m3": ("MiniMax M3", "MiniMax"),
+        "granite-4.2-8b": ("Granite 4.2 8B", "IBM"),
+        "qwen3.8-flash-api": ("Qwen3.8 Flash", "Alibaba (Qwen)"),
+        "qwen3.8-omni-flash": ("Qwen3.8 Omni Flash", "Alibaba (Qwen)"),
+        "qwen3.8-27b-exl3-4bit": ("Qwen3.8-27B (4-bit, self-hosted)", "Alibaba (Qwen)"),
+        "qwen3.8-flash-next": ("Qwen3.8-Flash-Next (self-hosted)", "Alibaba (Qwen)"),
+    }
+    assert len(planned) == 26
+    for label, (name, vendor) in planned.items():
+        assert (model_name(label), model_vendor(label)) == (name, vendor), label
+
+
 def test_a_quantized_label_keeps_its_disclosure() -> None:
     assert model_name("openai_compat:qwen3.8-27b-4bit") == "Qwen3.8-27B (4-bit)"
+    assert model_name("qwen3.8-27b-exl3-4bit") == "Qwen3.8-27B (4-bit, self-hosted)"
     assert model_name("qwen3.8-27b-awq-8bit") == "Qwen3.8-27B (8-bit)"
     # Only a quantization suffix on a known name: another model is never renamed.
     assert model_name("gpt-6-luna-mini") == "gpt-6-luna-mini"
@@ -852,7 +968,14 @@ def test_the_cost_figure_waits_for_enough_priced_models(runs: Fixture) -> None:
     assert sorted(enough.charts) == CHART_FILES
     scorecard = md.index("charts/readme-scorecard-dark.svg")
     cost = md.index("charts/readme-cost-quality-dark.svg")
-    assert scorecard < cost < md.index("<details>")
+    assert md.index("<summary><b>Per-task results and") < scorecard < cost
+    section = _details(md, "<b>Inference cost and grounded accuracy</b>")
+    assert "charts/readme-cost-quality-dark.svg" in section
+    assert re.findall(r"<summary>(.*?)</summary>", md) == [
+        *SUMMARIES[:4],
+        "<b>Inference cost and grounded accuracy</b>",
+        SUMMARIES[4],
+    ]
     svg = enough.charts[README_CHARTS["cost-quality"]["light"]]
     assert len([c for c in _parse(svg).iter(f"{NS}circle") if c.get("data-point")]) == 4
 
@@ -869,7 +992,7 @@ def test_the_cost_figure_never_places_an_estimate_on_the_axis(runs: Fixture) -> 
     block = readme_leaderboard([_with_config(run, "model_e", estimated, label="model-e")])
     svg = block.charts[README_CHARTS["cost-quality"]["light"]]
     texts = _texts(_parse(svg))
-    assert "≈$0.50 CLI estimate" in texts and "No API price" in texts
+    assert "≈$0.50 CLI estimate" in texts and "No price" in texts
     assert "$0.50" not in [t for t in texts if t.startswith("$")]
     # Four priced dots; the estimated model is listed, not plotted.
     assert len([c for c in _parse(svg).iter(f"{NS}circle") if c.get("data-point")]) == 4
@@ -880,7 +1003,9 @@ def test_vendors_come_from_the_label() -> None:
     assert model_vendor("claude_cli:claude-opus-5-5") == "Anthropic"
     assert model_vendor("codex_cli:gpt-6.1-sol") == "OpenAI"
     assert model_vendor("glm-5.3-flash") == "Z.ai"
-    assert model_vendor("qwen3.8-27b-4bit") == "Alibaba"
+    assert model_vendor("qwen3.8-27b-4bit") == "Alibaba (Qwen)"
+    assert model_vendor("hunyuan-3") == "Tencent"
+    assert model_vendor("openai_compatible:mimo-v2.6-pro") == "Xiaomi"
     assert model_vendor("model-a") is None
 
 
@@ -894,25 +1019,48 @@ def test_figure_takeaways_are_stated_only_when_the_numbers_bear_them_out() -> No
 
     gapped = [HeroRow("a", (1.0, 0.99)), HeroRow("b", (0.99, 0.90)), HeroRow("c", (0.97, 0.80))]
     title, sub = _hero_text(gapped)
-    assert title == "Models decide right, but can't always show why"
-    assert sub.startswith("3 of 3 models score 95% or more on decision accuracy; only 1 does on")
-    level = [HeroRow("a", (0.9, 0.9)), HeroRow("b", (0.8, 0.79))]
-    title, sub = _hero_text(level)
-    assert title == "Decision accuracy and grounded accuracy"
-    assert sub.startswith("The line is the gap")
+    assert title == "Decision accuracy and evidence grounding"
+    assert sub == "3 of 3 models reach 95% decision accuracy; 1 reaches 95% grounded accuracy."
+    level = [HeroRow("a", (0.9, 0.9)), HeroRow("b", (0.8, None))]
+    assert _hero_text(level)[1] == (
+        "0 of 2 models reach 95% decision accuracy; 0 reach 95% grounded accuracy."
+    )
 
     unpriced = CostPoint("cli", 0.95, None, "≈$1.00 CLI estimate")
     one = [CostPoint("cheap", 0.95, 2.0), CostPoint("dear", 0.90, 8.0), unpriced]
+    # Coverage first, then the frontier.
     assert _cost_text(one) == (
-        "Of the 2 models with an API price, cheap ($2.00) has both the lowest price and the "
-        "highest grounded accuracy as a point estimate; 1 more has no API price and is listed "
-        "under the chart."
+        "2 of 3 models have a price (2 API charges); 1 without a comparable price is listed "
+        "under the chart. cheap ($2.00) has both the lowest price and the highest grounded "
+        "accuracy, as point estimates."
+    )
+    equivalent = [CostPoint("cheap", 0.95, 2.0, equivalent=True), CostPoint("dear", 0.90, 8.0)]
+    assert _cost_text(equivalent).startswith(
+        "All 2 models have a price (1 API charge, 1 API-equivalent). cheap (◇$2.00) has both "
+        "the lowest price"
     )
     two = [CostPoint("cheap", 0.90, 2.0), CostPoint("dear", 0.95, 8.0)]
-    assert _cost_text(two) == (
-        "Along the frontier, dear's grounded accuracy is 5.0 points above cheap's (point "
-        "estimates) at 4.0× the price."
+    assert _cost_text(two).endswith(
+        "Along the frontier, dear ($8.00) is 5.0 points of grounded accuracy above cheap "
+        "($2.00), as point estimates, at 4.0× the price."
     )
-    assert _cost_text([unpriced]).startswith("No model has an API price yet")
+    # A ratio across the two kinds of cost says what the mark on one endpoint means.
+    mixed = [CostPoint("cheap", 0.90, 2.0), CostPoint("dear", 0.95, 8.0, equivalent=True)]
+    assert _cost_text(mixed).endswith(
+        "Along the frontier, dear (◇$8.00) is 5.0 points of grounded accuracy above cheap "
+        "($2.00), as point estimates, at 4.0× the price (◇ marks an API-equivalent, not a "
+        "charge)."
+    )
+    flipped = [CostPoint("cheap", 0.90, 2.0, equivalent=True), CostPoint("dear", 0.95, 8.0)]
+    assert _cost_text(flipped).endswith("4.0× the price (◇ marks an API-equivalent, not a charge).")
+    both = [
+        CostPoint("cheap", 0.90, 2.0, equivalent=True),
+        CostPoint("dear", 0.95, 8.0, equivalent=True),
+    ]
+    assert _cost_text(both).endswith("(◇$2.00), as point estimates, at 4.0× the price.")
+    assert _cost_text([unpriced]).startswith("No model has a price yet")
     only = [CostPoint("only", 0.9, 1.0), unpriced]
-    assert _cost_text(only).startswith("Only only has an API price")
+    assert _cost_text(only) == (
+        "1 of 2 models has a price (1 API charge); 1 without a comparable price is listed "
+        "under the chart."
+    )

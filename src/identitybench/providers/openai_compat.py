@@ -424,6 +424,11 @@ class OpenAICompatProvider:
             return self._fail(f"{type(exc).__name__}: {exc.message}")
         except openai.OpenAIError as exc:
             return self._fail(f"{type(exc).__name__}: {exc}")
+        except ValueError as exc:
+            # The SDK parses the body itself; a gateway that cuts a response short (seen on
+            # OpenRouter) raises json.JSONDecodeError there. That is a failed call to retry,
+            # not a crash that ends the run.
+            return self._fail(f"unparseable response body ({type(exc).__name__}: {exc})")
         try:
             return self._to_response(completion, request)
         except (AttributeError, TypeError, ValueError, RecursionError) as exc:

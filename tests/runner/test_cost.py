@@ -29,23 +29,44 @@ M = 1_000_000
 
 def test_repo_pricing_file_rows() -> None:
     table = load_pricing(SOURCE_PRICING_PATH)
+    # model: (input, output, cache read, cache write 5m, cache write 1h, as_of, source prefix)
+    anthropic = (date(2026, 10, 6), "Anthropic API pricing")
+    catalog = (date(2026, 10, 12), "OpenRouter model catalog")
     expected = {
-        "claude-fable-5-1": (10.0, 50.0, 0.25),
-        "claude-opus-5-5": (4.0, 20.0, 0.20),
-        "claude-sonnet-5-5": (2.0, 10.0, 0.20),
-        "claude-haiku-5-5": (0.10, 0.50, 0.01),
-        "claude-opus-5": (5.0, 25.0, 0.50),
-        "claude-sonnet-5": (2.0, 10.0, 0.20),
+        "claude-fable-5-1": (10.0, 50.0, 0.25, 12.5, 20.0, *anthropic),
+        "claude-opus-5-5": (4.0, 20.0, 0.20, 5.0, 8.0, *catalog),
+        "claude-sonnet-5-5": (2.0, 10.0, 0.10, 2.5, 4.0, *catalog),
+        "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125, 0.20, *catalog),
+        "claude-opus-5": (5.0, 25.0, 0.50, 6.25, 10.0, *anthropic),
+        "claude-sonnet-5": (2.0, 10.0, 0.20, 2.5, 4.0, *anthropic),
+        "gpt-6-astra": (10.0, 50.0, 1.00, 12.5, 20.0, *catalog),
+        "gpt-6.1-sol": (2.0, 10.0, 0.10, 2.5, 4.0, *catalog),
+        "gpt-6-luna": (0.10, 0.50, 0.01, 0.125, 0.20, *catalog),
     }
     assert set(table.models) == set(expected)
-    for model, (inp, out, read) in expected.items():
+    for model, (inp, out, read, write_5m, write_1h, as_of, source) in expected.items():
         price = table.models[model]
         assert (price.input, price.output) == (inp, out)
         assert price.cache_read_rate == pytest.approx(read)
-        assert price.cache_write_rate("5m") == pytest.approx(1.25 * inp)
-        assert price.cache_write_rate("1h") == pytest.approx(2.0 * inp)
-        assert price.as_of == date(2026, 10, 6)
-        assert "Anthropic" in price.source
+        assert price.cache_write_rate("5m") == pytest.approx(write_5m)
+        assert price.cache_write_rate("1h") == pytest.approx(write_1h)
+        assert price.as_of == as_of
+        assert price.source.startswith(source)
+    # The catalog rows name the catalog entry they were taken from.
+    assert "anthropic/claude-sonnet-5.5" in table.models["claude-sonnet-5-5"].source
+    assert "openai/gpt-6.1-sol" in table.models["gpt-6.1-sol"].source
+
+
+def test_repo_long_context_tiers() -> None:
+    table = load_pricing(SOURCE_PRICING_PATH)
+    haiku = table.models["claude-haiku-5-5"].long_context
+    assert haiku is not None and haiku.threshold_tokens == 100_000
+    assert (haiku.input, haiku.output, haiku.cache_read_rate) == (0.50, 2.50, 0.05)
+    assert haiku.cache_write_rate("1h") == pytest.approx(1.00)
+    for model in ("gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"):
+        tier = table.models[model].long_context
+        assert tier is not None and tier.threshold_tokens == 272_000
+        assert tier.input == pytest.approx(2 * table.models[model].input)
 
 
 def test_plain_input_output_cost() -> None:
@@ -135,7 +156,7 @@ def test_tracker_exposes_its_table_and_row() -> None:
     table = load_pricing(SOURCE_PRICING_PATH)
     opus = CostTracker("claude-opus-5-5", table=table)
     assert opus.pricing is table
-    assert opus.price is not None and opus.price.as_of == date(2026, 10, 6)
+    assert opus.price is not None and opus.price.as_of == date(2026, 10, 12)
     unpriced = CostTracker("gpt-5", table=table)
     assert unpriced.pricing is table and unpriced.price is None
     # Non-metered modes never touch a pricing file.

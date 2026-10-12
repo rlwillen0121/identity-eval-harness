@@ -29,7 +29,7 @@ at least 4.5:1 contrast with its fill.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from identitybench.report.figure_kit import (
@@ -56,7 +56,7 @@ WIDTH = 820.0
 _PAD = 24.0
 _ROW = 28.0
 _NAME, _CELL, _HEAD, _SUB = 13.5, 12.5, 12.5, 11.5
-_NAME_MAX = 190.0
+_NAME_MAX = 232.0
 _GROUP_GAP = 12.0
 
 BINS: tuple[float, ...] = (0.0, 1.0, 2.5, 5.0, 10.0, 25.0)
@@ -73,6 +73,26 @@ class ScoreColumn:
     group: str
     label: str
     ideal: float
+    short: str | None = None
+    """A shorter head ("Req" for "Requests"), used for every column when some full head
+    wouldn't fit its column (many columns beside a long model name); None: the full head."""
+
+
+_SHORT_LABELS: Mapping[str, str] = {
+    "Requests": "Req",
+    "Reviews": "Rev",
+    "JML plans": "JML",
+    "Req + rev": "Req+rev",
+}
+"""Default short heads for the task labels the README uses."""
+
+
+def _labels(columns: Sequence[ScoreColumn], width: float) -> list[str]:
+    """The column heads: every full head if each fits ``width``, else every short one."""
+    full = [c.label for c in columns]
+    if all(text_width(label, _SUB) + 6 <= width for label in full):
+        return full
+    return [c.short or _SHORT_LABELS.get(c.label, c.label) for c in columns]
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,10 +224,8 @@ def scorecard_svg(
         gx0, gx1 = col_x[members[0]], col_x[members[-1]] + cw
         canvas.text((gx0 + gx1) / 2, head_y, group, size=_HEAD, weight=600, anchor="middle")
         canvas.line(gx0 + 3, head_y + 7, gx1 - 3, head_y + 7, stroke="axis")
-    for j, column in enumerate(columns):
-        canvas.text(
-            col_x[j] + cw / 2, head_y + 23, column.label, size=_SUB, fill="ink2", anchor="middle"
-        )
+    for j, label in enumerate(_labels(columns, cw)):
+        canvas.text(col_x[j] + cw / 2, head_y + 23, label, size=_SUB, fill="ink2", anchor="middle")
 
     rows_top = head_y + 34
     for i, row in enumerate(rows):

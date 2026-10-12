@@ -189,6 +189,9 @@ _WIDTHS.update(
         "≤": 584,
         "≥": 584,
         "×": 584,
+        "◇": 800,
+        "✓": 800,
+        "✗": 800,
     }
 )
 _DEFAULT_WIDTH = 650
@@ -453,6 +456,30 @@ class Canvas:
         self.parts.append(
             f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(r)}" fill="{color}"{ring}{extra}/>'
         )
+
+    def diamond(
+        self,
+        cx: float,
+        cy: float,
+        r: float,
+        *,
+        fill: str,
+        stroke: str | None = None,
+        width: float = 2.0,
+        extra: str = "",
+    ) -> None:
+        """A square standing on a corner, ``r`` from its center to each corner: the cost
+        figure's mark for an API-equivalent cost, beside the circle of an API charge."""
+        color = fill if fill.startswith("#") or fill == "none" else self.color(fill)
+        ring = ""
+        if stroke is not None:
+            ring_color = stroke if stroke.startswith("#") else self.color(stroke)
+            ring = f' stroke="{ring_color}" stroke-width="{width:g}" stroke-linejoin="round"'
+        d = (
+            f"M{_f(cx)},{_f(cy - r)}L{_f(cx + r)},{_f(cy)}L{_f(cx)},{_f(cy + r)}"
+            f"L{_f(cx - r)},{_f(cy)}Z"
+        )
+        self.parts.append(f'<path d="{d}" fill="{color}"{ring}{extra}/>')
 
     def path(self, d: str, *, stroke: str, width: float = 1.5, extra: str = "") -> None:
         color = stroke if stroke.startswith("#") else self.color(stroke)

@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 __all__ = [
     "Block",
+    "Cell",
     "Document",
     "Facts",
     "Figure",
@@ -45,11 +46,26 @@ class Text:
 
 
 @dataclass(frozen=True, slots=True)
+class Cell:
+    """A table cell with a secondary line: ``text`` is the value and ``sub`` says what it is (an
+    interval, a bound, its counts). The Markdown report prints ``text (sub)``, as ``str()``
+    does; the HTML report puts ``sub`` on a smaller second line, so a table with many such
+    columns keeps each value on one line instead of wrapping it word by word."""
+
+    text: str
+    sub: str | None = None
+
+    def __str__(self) -> str:
+        return f"{self.text} ({self.sub})" if self.sub else self.text
+
+
+@dataclass(frozen=True, slots=True)
 class Table:
-    """Rows of already-formatted cells. ``numeric`` right-aligns a column."""
+    """Rows of already-formatted cells (a string, or a :class:`Cell` with a secondary line).
+    ``numeric`` right-aligns a column."""
 
     columns: tuple[str, ...]
-    rows: tuple[tuple[str, ...], ...]
+    rows: tuple[tuple[str | Cell, ...], ...]
     numeric: tuple[bool, ...] = ()
     caption: str | None = None
 

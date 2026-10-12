@@ -1,5 +1,12 @@
-# Metered API prices in USD per 1M tokens (SPEC §11.4). Used for "metered API cost" only:
-# self-hosted models cost $0 here, and CLI providers report their own cost per call.
+# Dated public list prices in USD per 1M tokens (SPEC §11.4). Two uses:
+#
+# - metered API cost: a commercial API entry (provider kind `anthropic`, or `openai_compatible`
+#   on OpenAI's endpoint) is billed from its row at run time. Self-hosted models cost $0 here,
+#   and an access path that states each call's cost (a subscription CLI, a billing gateway)
+#   records that figure instead: the runner never applies this table to it.
+# - API-equivalent cost: the report prices a subscription CLI's recorded tokens at its model's
+#   row (report.api_equivalent), labelled as such and never mixed into API cost, so a model run
+#   through a subscription still gets a list-price figure.
 #
 # Fields per model:
 #   input, output                 required
@@ -11,7 +18,15 @@
 #                                 is billed at the tier's rates (same field rules and defaults)
 #   as_of, source                 required: when and where the price was taken
 #
-# Only add a row when you have a dated, official price. Leave other vendors out otherwise.
+# Only add a row when you have a dated price from the vendor or a catalog that lists the
+# vendor's per-token price. Leave other vendors out otherwise.
+#
+# The six rows dated 2026-10-12 were taken from OpenRouter's public model catalog
+# (https://openrouter.ai/api/v1/models, `pricing` per token x 1M), retrieved 2026-10-12 04:52
+# UTC; the catalog id is in each row's source. The Claude rows agree with the Claude CLI's own
+# per-call cost estimates on the v1 leaderboard run (every call, to the cent, with cache writes
+# at the 1-hour rate), which also corrected Claude Sonnet 5.5's cache-read rate (0.10, not the
+# 0.20 an earlier row had).
 
 models:
   claude-fable-5-1:
@@ -25,25 +40,35 @@ models:
     input: 4.00
     output: 20.00
     cache_read: 0.20
-    as_of: 2026-10-06
-    source: Anthropic API pricing (as cached 2026-10-06)
+    cache_write_5m: 5.00
+    cache_write_1h: 8.00
+    as_of: 2026-10-12
+    source: OpenRouter model catalog, anthropic/claude-opus-5.5 (retrieved 2026-10-12)
 
   claude-sonnet-5-5:
     input: 2.00
     output: 10.00
-    cache_read: 0.20
-    as_of: 2026-10-06
-    source: Anthropic API pricing (as cached 2026-10-06)
+    cache_read: 0.10
+    cache_write_5m: 2.50
+    cache_write_1h: 4.00
+    as_of: 2026-10-12
+    source: OpenRouter model catalog, anthropic/claude-sonnet-5.5 (retrieved 2026-10-12)
 
   claude-haiku-5-5:
     input: 0.10
     output: 0.50
+    cache_read: 0.01
+    cache_write_5m: 0.125
+    cache_write_1h: 0.20
     long_context:
       threshold_tokens: 100000
       input: 0.50
       output: 2.50
-    as_of: 2026-10-06
-    source: Anthropic API pricing (as cached 2026-10-06)
+      cache_read: 0.05
+      cache_write_5m: 0.625
+      cache_write_1h: 1.00
+    as_of: 2026-10-12
+    source: OpenRouter model catalog, anthropic/claude-haiku-5.5 (retrieved 2026-10-12)
 
   claude-opus-5:
     input: 5.00
@@ -56,3 +81,45 @@ models:
     output: 10.00
     as_of: 2026-10-06
     source: Anthropic API pricing (as cached 2026-10-06)
+
+  gpt-6-astra:
+    input: 10.00
+    output: 50.00
+    cache_read: 1.00
+    cache_write_5m: 12.50
+    long_context:
+      threshold_tokens: 272000
+      input: 20.00
+      output: 75.00
+      cache_read: 2.00
+      cache_write_5m: 25.00
+    as_of: 2026-10-12
+    source: OpenRouter model catalog, openai/gpt-6-astra (retrieved 2026-10-12)
+
+  gpt-6.1-sol:
+    input: 2.00
+    output: 10.00
+    cache_read: 0.10
+    cache_write_5m: 2.50
+    long_context:
+      threshold_tokens: 272000
+      input: 4.00
+      output: 15.00
+      cache_read: 0.20
+      cache_write_5m: 5.00
+    as_of: 2026-10-12
+    source: OpenRouter model catalog, openai/gpt-6.1-sol (retrieved 2026-10-12)
+
+  gpt-6-luna:
+    input: 0.10
+    output: 0.50
+    cache_read: 0.01
+    cache_write_5m: 0.125
+    long_context:
+      threshold_tokens: 272000
+      input: 0.20
+      output: 0.75
+      cache_read: 0.02
+      cache_write_5m: 0.25
+    as_of: 2026-10-12
+    source: OpenRouter model catalog, openai/gpt-6-luna (retrieved 2026-10-12)

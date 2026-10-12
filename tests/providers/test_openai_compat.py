@@ -726,3 +726,13 @@ def test_openrouter_entry_reads_its_paired_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-real-openai-key-123")
     p = OpenAICompatProvider("mistralai/mistral-large-4-0", base_url_env="OPENROUTER_BASE_URL")
     assert p._get_client().api_key == "or-test-key-123"
+
+
+async def test_a_response_body_the_sdk_cannot_parse_is_a_failed_call() -> None:
+    """A gateway that cuts a body short makes the SDK raise json.JSONDecodeError; the call
+    fails (and is retried on resume) instead of ending the run."""
+    import json
+
+    p = provider(json.JSONDecodeError("Expecting value", '{"id":', 7))
+    response = await p.complete(make_request(schema=DECISION_SCHEMA))
+    assert response.error is not None and "unparseable response body" in response.error

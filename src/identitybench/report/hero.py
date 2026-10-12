@@ -1,19 +1,23 @@
-"""The README's hero figure: a dumbbell chart, one row per model, with a dot for grounded
-accuracy and a ring for decision accuracy joined by a line, so the gap between deciding right
-and showing why is the first thing a reader sees (SPEC §15: README charts are SVG exports).
+"""The README's hero figure: a dot plot, one row per model, with a dot for grounded accuracy
+and a ring for decision accuracy on one percentage axis (SPEC §15: README charts are SVG
+exports).
 
-Built like a chart-table: the model's name and vendor on the left, the dumbbell on a shared
-percentage axis in the middle, and the three numbers it draws (grounded, decision and the gap
-between them) in fixed columns on the right, whose heads name the two marks, so no legend is
-needed and no label can collide with a mark, however many rows there are. Rows are drawn in
-the order given (the README sorts by grounded accuracy); every other row is striped so a row
-can be followed from name to numbers. The oracle ceiling is a labeled hairline, never a row.
+The two marks are drawn side by side, never joined: the metrics have different denominators
+(decision accuracy covers every base decision; grounded accuracy only the cases with a policy
+certificate), so the distance between them is not a count of correct decisions that lack
+evidence, and no line or "gap" column suggests it is.
+
+Built like a chart-table: the model's name and vendor on the left, the marks on a shared
+percentage axis in the middle, and the two numbers it draws in fixed columns on the right,
+whose heads name the marks, so no legend is needed and no label can collide with a mark,
+however many rows there are. Rows are drawn in the order given (the README sorts by grounded
+accuracy); every other row is striped so a row can be followed from name to numbers. The
+oracle ceiling is a labeled hairline, never a row.
 
 The axis needn't start at zero (dots mark positions, not lengths): it starts at the 10% step
 below the lowest value, so a saturated metric still reads as saturated against 100%.
 
-Numbers are printed as the README table prints them (a percentage to one decimal); the gap is
-the difference of the two printed numbers, so a reader's subtraction always checks out.
+Numbers are printed as the README tables print them (a percentage to one decimal).
 """
 
 from __future__ import annotations
@@ -31,13 +35,13 @@ from identitybench.report.figure_kit import (
     truncate,
 )
 
-__all__ = ["WIDTH", "HeroRow", "gap_text", "hero_svg"]
+__all__ = ["WIDTH", "HeroRow", "hero_svg"]
 
 WIDTH = 820.0
 _PAD = 24.0
 _ROW = 29.0
 _NAME, _VENDOR, _VALUE, _HEAD, _TICK = 14.0, 11.5, 14.0, 12.5, 12.0
-_NAME_MAX = 210.0
+_NAME_MAX = 240.0
 _RING = 5.0
 """The decision ring's radius."""
 
@@ -50,13 +54,6 @@ class HeroRow:
     name: str
     values: tuple[float | None, float | None]
     vendor: str | None = None
-
-
-def gap_text(decision: float | None, grounded: float | None) -> str:
-    """Decision minus grounded accuracy in points, from the printed (rounded) numbers."""
-    if decision is None or grounded is None:
-        return "n/a"
-    return f"{shown_percent(decision) - shown_percent(grounded):.1f}"
 
 
 def _domain(rows: Sequence[HeroRow]) -> tuple[float, list[float]]:
@@ -93,9 +90,8 @@ def hero_svg(
     vendors = [r.vendor for r in rows if r.vendor]
     vendor_x = name_x + name_w + 12
     vendor_w = max([text_width(v, _VENDOR) for v in vendors], default=0.0)
-    gap_right = WIDTH - _PAD - 10
-    decision_right = gap_right - 70
-    grounded_right = decision_right - 88
+    decision_right = WIDTH - _PAD - 10
+    grounded_right = decision_right - 86
     x0 = vendor_x + vendor_w + (24 if vendors else 12)
     x1 = grounded_right - 90
     start, ticks = _domain(rows)
@@ -108,22 +104,17 @@ def hero_svg(
     head_a = top + 18
     head_b = head_a + 16
     heads = (
-        (grounded_right, "Grounded", "%", "dot"),
-        (decision_right, "Decision", "%", "ring"),
-        (gap_right, "Gap", "pts", "line"),
+        (grounded_right, "Grounded", "dot"),
+        (decision_right, "Decision", "ring"),
     )
-    for right, name, unit, glyph in heads:
+    for right, name, glyph in heads:
         box = canvas.text(right, head_a, name, size=_HEAD, fill="ink", anchor="end", weight=600)
         gx, gy = box.x0 - 11, head_a - 4.2
         if glyph == "dot":
             canvas.circle(gx, gy, 5.0, fill="accent")
-        elif glyph == "ring":
-            canvas.circle(gx, gy, 4.2, fill="none", stroke="neutral", width=2.0)
         else:
-            canvas.line(
-                gx - 7, gy, gx + 3, gy, stroke="warm", width=3.0, extra=' stroke-linecap="round"'
-            )
-        canvas.text(right, head_b, unit, size=_TICK, fill="muted", anchor="end")
+            canvas.circle(gx, gy, 4.2, fill="none", stroke="neutral", width=2.0)
+        canvas.text(right, head_b, "%", size=_TICK, fill="muted", anchor="end")
     canvas.text(name_x, head_b, "Model", size=_TICK, fill="muted")
     if vendors:
         canvas.text(vendor_x, head_b, "Vendor", size=_TICK, fill="muted")
@@ -154,10 +145,8 @@ def hero_svg(
         if row.vendor:
             canvas.text(vendor_x, cy + 4.0, row.vendor, size=_VENDOR, fill="muted")
         decision, grounded = row.values
-        # The gap line stops at the ring's edge, and the ring (hollow) is drawn over the dot,
-        # so a model whose two numbers coincide shows a dot inside a ring.
-        if decision is not None and grounded is not None and x(decision) - x(grounded) > _RING:
-            canvas.line(x(grounded), cy, x(decision) - _RING, cy, stroke="warm", width=3.0)
+        # The ring (hollow) is drawn over the dot, so a model whose two numbers coincide shows
+        # a dot inside a ring. The marks are never joined (see the module docstring).
         if grounded is not None:
             canvas.circle(x(grounded), cy, 6.0, fill="accent", stroke=surface, width=2.0)
         if decision is not None:
@@ -167,14 +156,6 @@ def hero_svg(
         )
         canvas.text(
             decision_right, cy + 4.7, fmt_share(decision), size=_VALUE, fill="ink2", anchor="end"
-        )
-        canvas.text(
-            gap_right,
-            cy + 4.7,
-            gap_text(decision, grounded),
-            size=_VALUE,
-            fill="ink2",
-            anchor="end",
         )
 
     if len(rows) > 12:  # a tall chart repeats its ticks under the rows
@@ -196,7 +177,7 @@ def hero_svg(
     )
     desc = (
         f"Dot plot of {len(rows)} models on a percentage axis: for each, a dot for grounded "
-        f"accuracy and a ring for decision accuracy, joined by a line whose length is the gap. "
+        f"accuracy and a ring for decision accuracy. "
         f"{subtitle} {described}. {' '.join(source)}"
     )
     return canvas.render(height, title=title, desc=desc, key=key)

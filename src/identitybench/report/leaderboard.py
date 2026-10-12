@@ -1,10 +1,9 @@
-"""The leaderboard: rows per task, the SPEC §15 table and the README update.
+"""The leaderboard: rows per task, one task's full table and the README update.
 
-The README's results block itself (hero figure, status line, headline table, significance
-note, scorecard and cost figures, collapsed per-task and baseline tables) is built by
-``report.readme`` and written with
-:func:`update_readme`; :func:`leaderboard_table` is one task's full table with every interval,
-for callers that want the SPEC §15 columns as Markdown.
+The README's results block itself (status line, hero figure, headline table, legend,
+significance summary and the cheapest model that clears the safety bar, then collapsed detail)
+is built by ``report.readme`` and written with :func:`update_readme`; :func:`leaderboard_table`
+is one task's full table with every interval, for callers that want it as Markdown.
 
 **Rows.** One per scored configuration of every run, baselines included (SPEC §14: baselines
 appear on every leaderboard), ordered by NRC, the headline ranking metric (SPEC §12.3), with
@@ -13,7 +12,7 @@ n/a last. The configuration the scorer marks as the ceiling (``ConfigScores.ceil
 pipeline check that would otherwise top every table, and the scorer leaves it out of its
 rankings too. A row's numbers are read straight from the scores; nothing is recomputed.
 
-**README table.** The SPEC §15 columns: Model · Prompt · Mode · NRC · Accuracy · WAR ·
+**The per-task table.** Its columns: Model · Prompt · Mode · NRC · Accuracy · WAR ·
 High-risk WAR · Correct automation · Grounded accuracy · Harmful flip rate · API $/1k
 decisions, each with its interval, under a one-line caption that says which task, dataset,
 split and n the numbers are for and what the markers mean. The SPEC §12.8 primary metrics
@@ -32,7 +31,7 @@ the table's rows come from more than one run its caption says that configuration
 different runs were not compared and their relative order is untested. A single run's table
 says nothing about it.
 
-**Comparable runs only.** A README table ranks its rows against each other, so every row must be
+**Comparable runs only.** A table ranks its rows against each other, so every row must be
 measured on the same cases under the same settings. Runs whose dataset, split, sample or base
 cases of the task differ (a ``--sample 0.1`` smoke run next to a full run, say), or whose loss
 matrix, interval level or small-n threshold differ (``comparable.settings_differences``), are
@@ -284,7 +283,8 @@ def _caption(
         f"{FLAG_BASELINE} = SPEC §14 baseline",
         "API $/1k decisions = API cost per 1,000 of the configuration's decisions over every "
         "task and repeat, not this task alone: metered (usage × the dated pricing table) or "
-        "billed by a gateway, $0.00 when unmetered (self-hosted); never a CLI's estimate",
+        "billed by a gateway, $0.00 when unmetered (an endpoint that charged nothing per call, "
+        "which is not a price); never a CLI's estimate",
     ]
     tags = {tag for row in rows if (tag := api_cost_tag(row.ref.scores.usage)) is not None}
     parts.extend(note for tag, note in API_COST_TAG_NOTES.items() if tag in tags)

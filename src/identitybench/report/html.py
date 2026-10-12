@@ -40,6 +40,7 @@ from identitybench.report.document import (
     Verbatim,
 )
 from identitybench.report.inputs import RunInput, ValidationInput, load_report_runs
+from identitybench.report.safety_bar import DEFAULT_BAR, SafetyBar
 from identitybench.report.sections import DEFAULT_GALLERY_SIZE, build_document
 from identitybench.report.vega import INTEGRITY, SCRIPTS
 
@@ -127,11 +128,15 @@ def write_html_report(
     judge_validation: ValidationInput | None = None,
     dataset_dir: Path | str | None = None,
     gallery_size: int = DEFAULT_GALLERY_SIZE,
+    bar: SafetyBar = DEFAULT_BAR,
+    planned_models: int | None = None,
 ) -> Path:
     """Write ``report.html`` for ``runs`` under ``out_dir`` and return its path. Arguments are
     those of ``report.markdown.write_markdown_report``."""
     loaded = load_report_runs(runs, dataset_dir=dataset_dir, judge_validation=judge_validation)
-    document = build_document(loaded, title=title, gallery_size=gallery_size)
+    document = build_document(
+        loaded, title=title, gallery_size=gallery_size, bar=bar, planned_models=planned_models
+    )
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / HTML_FILE

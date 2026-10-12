@@ -34,6 +34,7 @@ from identitybench.report.document import (
 )
 from identitybench.report.inputs import RunInput, ValidationInput, load_report_runs
 from identitybench.report.markdown_text import escape_cell, escape_inline, fenced
+from identitybench.report.safety_bar import DEFAULT_BAR, SafetyBar
 from identitybench.report.sections import DEFAULT_GALLERY_SIZE, build_document
 
 __all__ = ["CHARTS_DIR", "MARKDOWN_FILE", "render_markdown", "write_markdown_report"]
@@ -58,7 +59,7 @@ def _table(table: Table) -> list[str]:
         + "|".join("---:" if table.is_numeric(i) else "---" for i in range(len(table.columns)))
         + "|"
     )
-    lines += ["| " + " | ".join(escape_cell(c) for c in row) + " |" for row in table.rows]
+    lines += ["| " + " | ".join(escape_cell(str(c)) for c in row) + " |" for row in table.rows]
     return lines
 
 
@@ -130,6 +131,8 @@ def write_markdown_report(
     judge_validation: ValidationInput | None = None,
     dataset_dir: Path | str | None = None,
     gallery_size: int = DEFAULT_GALLERY_SIZE,
+    bar: SafetyBar = DEFAULT_BAR,
+    planned_models: int | None = None,
 ) -> Path:
     """Write ``report.md`` and ``charts/*.svg`` for ``runs`` under ``out_dir``; return the
     report's path.
@@ -138,10 +141,15 @@ def write_markdown_report(
     ``JudgeValidationReport``, its summary, or a path to its ``report.json``) gates the judge's
     dimensions; without it no judge score is shown (SPEC §13.3). It also applies to a loaded
     run that carries no validation of its own (``load_report_runs``). ``dataset_dir`` overrides
-    where run datasets are looked for, and is refused alongside a loaded run.
+    where run datasets are looked for, and is refused alongside a loaded run. ``bar`` is the
+    safety bar of the section on the cheapest model that clears it (``report.safety_bar``).
+    ``planned_models`` is how many model configurations the release will hold: while fewer are
+    scored, the report opens with an interim note.
     """
     loaded = load_report_runs(runs, dataset_dir=dataset_dir, judge_validation=judge_validation)
-    document = build_document(loaded, title=title, gallery_size=gallery_size)
+    document = build_document(
+        loaded, title=title, gallery_size=gallery_size, bar=bar, planned_models=planned_models
+    )
     out = Path(out_dir)
     charts = out / CHARTS_DIR
     charts.mkdir(parents=True, exist_ok=True)

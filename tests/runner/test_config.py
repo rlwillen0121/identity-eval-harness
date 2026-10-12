@@ -47,9 +47,9 @@ def _base(**overrides: object) -> dict[str, object]:
 
 def test_spec_example_parses(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, spec_example()))
-    assert cfg.name == "v1-leaderboard"
+    assert cfg.name == "example"
     assert cfg.split is Split.test
-    assert cfg.tasks == [Suite.requests]
+    assert cfg.tasks == [Suite.requests, Suite.reviews, Suite.jml, Suite.twins, Suite.adversarial]
     assert cfg.mode == "context"
     assert cfg.prompts == ["baseline", "checklist"]
     assert [m.label for m in cfg.models] == [
@@ -66,7 +66,7 @@ def test_spec_example_parses(tmp_path: Path) -> None:
     assert cfg.concurrency == 8
     assert cfg.budget_usd == 50
     assert cfg.loss_matrix == "default"
-    assert len(cfg.baselines) == 6
+    assert len(cfg.baselines) == 8
     assert cfg.sample is None and cfg.seed == 0
     assert cfg.repair is False
 
@@ -77,7 +77,7 @@ def test_resolved_dict_is_json_safe_and_complete(tmp_path: Path) -> None:
     assert json.loads(json.dumps(resolved)) == resolved
     assert resolved["dataset"] == "datasets/identitybench-v1"
     assert resolved["repair"] is False
-    assert resolved["tasks"] == ["requests"]
+    assert resolved["tasks"] == ["requests", "reviews", "jml", "twins", "adversarial"]
     assert resolved["split"] == "test"
     opus, _, openai, local = resolved["models"]
     assert opus["label"] == "anthropic:claude-opus-5-5"

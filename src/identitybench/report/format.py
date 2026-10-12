@@ -19,6 +19,8 @@ disagree on rounding. The conventions:
   says so and names its n, ``0.0% (no interval: 1 request twin pair)``, so a bare number never
   reads as exact (SPEC §1: every number ships with its n).
 - Ratios (NRC) with three decimals; per-event means with two.
+- Costs in dollars (:func:`usd`); an API-equivalent cost, which is a list price and not a
+  charge, carries :data:`EQUIVALENT` (``◇$1.25``), and a CLI's own estimate ``≈``.
 
 Every function is pure and locale-independent, so outputs are byte-identical across machines.
 """
@@ -31,6 +33,7 @@ from collections.abc import Iterable, Sequence
 from identitybench.scoring.metrics import Bound, Metric
 
 __all__ = [
+    "EQUIVALENT",
     "NA",
     "bound",
     "bound_note",
@@ -52,6 +55,11 @@ __all__ = [
 ]
 
 NA = "n/a"
+
+EQUIVALENT = "◇"
+"""Marks an API-equivalent cost (a subscription CLI's recorded tokens at list price,
+``report.api_equivalent``) wherever one is printed, as ``≈`` marks a CLI's own estimate; the
+cost figure draws such a point as a diamond."""
 
 
 def pct(value: float | None, digits: int = 1) -> str:

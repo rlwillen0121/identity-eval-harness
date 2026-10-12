@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "IdentityBench: a synthetic benchmark and eval harness for LLM agents that make identity governance decisions."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
 authors = [{ name = "rlwillen0121" }]
 keywords = ["llm", "evals", "benchmark", "identity", "iam", "iga", "access-governance"]
 classifiers = [

@@ -1,14 +1,18 @@
-"""The README's cost figure: grounded accuracy against API cost per 1,000 decisions, one point
-per model with an API price, and the cost-quality frontier (SPEC §15).
+"""The README's cost figure: grounded accuracy against cost per 1,000 decisions, one point per
+model with a price, and the cost-quality frontier (SPEC §15).
 
-**Only API charges get a position.** The x axis is logarithmic and holds only the models whose
-cost is an API charge (metered from the dated pricing table, or billed by a gateway). A
-subscription CLI's own estimate is not a charge, an unmetered model's $0 is not a price and an
-unreported cost is unknown: those models are listed under the plot with their grounded
-accuracy and what their cost is, and are never drawn at a cost position. The accuracy axis is
-taken from the priced models alone, so a model that isn't plotted never stretches it.
+**Only prices get a position.** The x axis is logarithmic and holds the models whose cost is an
+API charge (metered from the dated pricing table, or billed by a gateway), drawn as circles,
+and those with an API-equivalent (a subscription CLI's recorded tokens at the model's dated list
+price, ``report.api_equivalent``), drawn as diamonds and marked ``◇`` in every label, so the two
+footings never read as one. A legend under the plot names both. A CLI's own estimate is not a
+price, an unmetered model's $0 is not a price either, and an unreported cost is
+unknown: those models are listed under the plot with their grounded accuracy and what their
+cost is, and are never drawn at a cost position. The accuracy axis is taken from the priced
+models alone, so a model that isn't plotted never stretches it.
 
-**The frontier** is taken over the priced models: a model is on it when no other priced model
+**The frontier** is taken over the priced models, charges and API-equivalents alike (both are
+per-token list prices for the tokens the run used): a model is on it when no other priced model
 costs no more and is at least as grounded, better on one of the two (point estimates as
 printed, not a significance test). It is a staircase through those models, filled in the
 accent color; the others are gray.
@@ -75,7 +79,7 @@ _NAME, _NOTE, _TICK, _KEY = 13.0, 12.0, 12.0, 11.5
 _DOT = 6.0
 _ROW = 20.0
 """The key list's row pitch."""
-_LABEL_MAX = 200.0
+_LABEL_MAX = 225.0
 """A plotted name is shortened beyond this width (the description keeps it whole)."""
 LABEL_ALL = 8
 """Up to this many priced models, every point is named (where its name fits)."""
@@ -90,19 +94,28 @@ names its dot, and no other dot sits close enough to claim it."""
 _CLUSTER = 9.0
 """Dots whose centers are closer than this overlap: they share one number tag."""
 _GROW, _GROW_MAX = 80.0, 640.0
-_EMPTY = "No model has an API price yet."
+_DIAMOND = _DOT * 1.25
+"""An API-equivalent's diamond, center to corner: about the area of a charge's circle."""
+_EMPTY = "No model has a price yet."
 
 
 @dataclass(frozen=True, slots=True)
 class CostPoint:
-    """One model: grounded accuracy (a share, or None when undefined), its API cost per 1,000
-    decisions when that cost is an API charge (else None), and ``note``, what its cost is when
-    it has no API charge (a CLI's estimate, unmetered, not reported), listed beside it."""
+    """One model: grounded accuracy (a share, or None when undefined), its cost per 1,000
+    decisions when it has a price (else None), whether that price is an API-equivalent rather
+    than an API charge (``equivalent``), and ``note``, what its cost is when it has no price (a
+    CLI's estimate, unmetered, not reported), listed beside it."""
 
     name: str
     quality: float | None
     cost: float | None = None
     note: str | None = None
+    equivalent: bool = False
+
+    @property
+    def cost_text(self) -> str:
+        """The price as labels print it: ``$1.25``, or ``◇$1.25`` for an API-equivalent."""
+        return (fmt.EQUIVALENT if self.equivalent else "") + fmt.usd(self.cost)
 
 
 def cost_frontier(points: Sequence[CostPoint]) -> list[CostPoint]:
@@ -356,7 +369,7 @@ def _clusters(dots: Sequence[tuple[float, float]]) -> list[tuple[int, ...]]:
 def _name_text(p: CostPoint) -> tuple[str, str]:
     """A named point's label: its name (shortened if very long) and its cost."""
     assert p.cost is not None
-    return truncate(p.name, _LABEL_MAX, _NAME), fmt.usd(p.cost)
+    return truncate(p.name, _LABEL_MAX, _NAME), p.cost_text
 
 
 def _name_width(p: CostPoint) -> float:
@@ -454,9 +467,10 @@ def _key_list(
                     canvas.circle(
                         x + 10, baseline - 4.3, 4.5, fill="none", stroke="ink2", width=1.5
                     )
-                canvas.text(
-                    name_x, baseline, truncate(item.name, name_w, _NAME), size=_NAME, weight=500
-                )
+                lines = _name_lines(item.name, name_w)
+                canvas.text(name_x, baseline, lines[0], size=_NAME, weight=500)
+                if len(lines) > 1:
+                    canvas.text(name_x, baseline + _ROW - 3, lines[1], size=_NOTE, fill="ink2")
                 canvas.text(
                     value_right,
                     baseline,
@@ -465,9 +479,43 @@ def _key_list(
                     anchor="end",
                 )
                 canvas.text(value_right + 12, baseline, item.cost, size=_NOTE, fill="ink2")
+                y += (len(lines) - 1) * (_ROW - 3)
             y += _ROW
         bottom = max(bottom, y)
     return bottom
+
+
+def _name_lines(name: str, width: float) -> list[str]:
+    """A listed model's name in ``width``: whole on one line if it fits; else, for a name with a
+    parenthetical ("Qwen3.8-27B (4-bit, self-hosted)"), the parenthetical on a second, smaller
+    line, so a disclosure is never cut off; else shortened with an ellipsis."""
+    if text_width(name, _NAME) <= width:
+        return [name]
+    base, paren, rest = name.partition(" (")
+    if paren:
+        return [truncate(base, width, _NAME), truncate(f"({rest}", width, _NOTE)]
+    return [truncate(name, width, _NAME)]
+
+
+def _legend(canvas: Canvas, top: float, *, frontier: bool) -> float:
+    """The marks' key, one row under the plot: a circle for an API charge, a diamond for an
+    API-equivalent; returns the y below it."""
+    baseline = top + 14
+    x = _PAD
+    canvas.circle(x + 6, baseline - 4.3, _DOT, fill="neutral", stroke="page", width=2.0)
+    box = canvas.text(x + 18, baseline, "API charge (billed or metered)", size=_TICK, fill="ink2")
+    x = box.x1 + 22
+    canvas.diamond(x + 7, baseline - 4.3, _DIAMOND, fill="neutral", stroke="page", width=2.0)
+    box = canvas.text(
+        x + 20,
+        baseline,
+        f"API-equivalent, marked {fmt.EQUIVALENT} (list price × a subscription CLI's tokens)",
+        size=_TICK,
+        fill="ink2",
+    )
+    if frontier:
+        canvas.text(box.x1 + 16, baseline, "blue: frontier", size=_TICK, fill="muted")
+    return top + _ROW + 10
 
 
 def cost_quality_svg(
@@ -481,9 +529,10 @@ def cost_quality_svg(
     reference: tuple[float, str] | None = None,
     key: str = "identitybench-cost",
 ) -> str:
-    """Grounded accuracy (y) against API cost per 1,000 decisions (log x) for the priced
-    points, and the rest listed under the plot (see the module docstring). Points without a
-    grounded accuracy can't be placed and are named in the description and the source line."""
+    """Grounded accuracy (y) against cost per 1,000 decisions (log x) for the priced points
+    (circles for API charges, diamonds for API-equivalents), and the rest listed under the plot
+    (see the module docstring). Points without a grounded accuracy can't be placed and are named
+    in the description and the source line."""
     canvas = Canvas(WIDTH, theme)
     top = canvas.frame(title=title, subtitle=subtitle, badge=badge, pad=_PAD)
     placed = [p for p in points if p.quality is not None]
@@ -614,7 +663,7 @@ def cost_quality_svg(
         canvas.text(
             (plot_x0 + plot_x1) / 2,
             plot_bottom + 38,
-            "API cost per 1,000 decisions, US$ (log scale)",
+            "Cost per 1,000 decisions, US$ (log scale)",
             size=_TICK,
             fill="ink2",
             anchor="middle",
@@ -647,9 +696,11 @@ def cost_quality_svg(
                 )
         for i, (p, (px, py)) in enumerate(zip(priced, lay.dots, strict=True)):
             fill = "accent" if id(p) in on_frontier else "neutral"
-            canvas.circle(
-                px, py, _DOT, fill=fill, stroke="page", width=2.0, extra=f' data-point="{i}"'
-            )
+            mark = f' data-point="{i}"' + (' class="equivalent"' if p.equivalent else "")
+            if p.equivalent:
+                canvas.diamond(px, py, _DIAMOND, fill=fill, stroke="page", width=2.0, extra=mark)
+            else:
+                canvas.circle(px, py, _DOT, fill=fill, stroke="page", width=2.0, extra=mark)
         for tag in lay.tags:
             owners = " ".join(str(i) for i in tag.owners)
             if tag.number:
@@ -699,23 +750,25 @@ def cost_quality_svg(
                 extra=mark,
             )
         list_top = plot_bottom + 58
+        if any(p.equivalent for p in priced):
+            list_top = _legend(canvas, list_top, frontier=len(frontier) > 1)
     else:  # no axis to draw: a placeholder scale would invent one
         canvas.text(_PAD, top + 18, _EMPTY, size=_NAME, fill="muted")
         list_top = top + 34
 
     keyed_rows = [
-        _Row(str(numbers[i]), p.name, p.quality, fmt.usd(p.cost or 0.0))
+        _Row(str(numbers[i]), p.name, p.quality, p.cost_text)
         for i, p in sorted(
             ((i, p) for i, p in enumerate(priced) if i in numbers), key=lambda c: numbers[c[0]]
         )
     ]
-    band_rows = [_Row("", p.name, p.quality, p.note or "no API price") for p in unpriced]
+    band_rows = [_Row("", p.name, p.quality, p.note or "no price") for p in unpriced]
     list_bottom = _key_list(
         canvas,
         list_top,
         [
             ("Numbered on the chart", "", keyed_rows),
-            ("No API price", "not on the cost axis", band_rows),
+            ("No price", "not on the cost axis", band_rows),
         ],
     )
 
@@ -726,13 +779,17 @@ def cost_quality_svg(
     height = canvas.footer(max(list_bottom + 22, list_top + 8), lines, _PAD)
 
     def described(p: CostPoint) -> str:
-        cost = fmt.usd(p.cost) if p.cost is not None else p.note or "no API price"
+        if p.cost is None:
+            cost = p.note or "no price"
+        else:
+            cost = f"{fmt.usd(p.cost)} {'API-equivalent' if p.equivalent else 'API cost'}"
         return f"{p.name}: grounded accuracy {fmt_share(p.quality)}%, {cost}"
 
     desc = (
-        "Scatter plot of grounded accuracy against API cost per 1,000 decisions on a log axis, "
-        "for the models with an API price; models without one are listed under it with their "
-        f"grounded accuracy. {subtitle} "
+        "Scatter plot of grounded accuracy against cost per 1,000 decisions on a log axis, for "
+        "the models with a price: circles are API charges, diamonds API-equivalents (list "
+        "price × the tokens a subscription CLI recorded); models without a price are listed "
+        f"under it with their grounded accuracy. {subtitle} "
         f"Frontier: {fmt.words([p.name for p in frontier]) or 'none'}. "
         + "; ".join(described(p) for p in points)
         + f". {' '.join(lines)}"

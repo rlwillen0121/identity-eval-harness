@@ -113,24 +113,48 @@ def test_openai_compatible_example_matches_the_leaderboard() -> None:
     assert extra.baselines == []
 
 
-def test_openai_compatible_example_names_env_vars_and_placeholders() -> None:
+OPENROUTER_ROWS = {
+    "deepseek-v4-pro": "deepseek/deepseek-v4-pro-0813",
+    "mistral-large-4": "mistralai/mistral-large-4-0",
+    "mimo-v2.6-flash": "xiaomi/mimo-v2.6-flash",
+    "gemini-3.5-flash-lite": "google/gemini-3.5-flash-lite",
+    "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash",
+    "hunyuan-3": "tencent/hy3",
+    "gemini-3.8-flash": "google/gemini-3.8-flash",
+    "mercury-2.5": "inception/mercury-2.5",
+    "solar-pro-4": "upstage/solar-pro4",
+}
+"""The published v1 leaderboard's OpenRouter rows: label -> OpenRouter model ID."""
+REQUIRE_PARAMETERS = {"deepseek-v4.1-flash", "hunyuan-3", "gemini-3.8-flash", "mercury-2.5"}
+REQUIRE_PARAMETERS |= {"solar-pro-4"}
+
+
+def test_openai_compatible_example_holds_the_published_rows_and_a_placeholder() -> None:
+    """Every published OpenRouter row as it ran (model ID, routing, output cap), so the committed
+    files reproduce every leaderboard row but the one behind a private endpoint, named in the
+    header; then a self-hosted placeholder."""
     extra = config("v1-leaderboard-openai-compatible.example")
-    deepseek, mistral, local = extra.models
-    assert [m.provider for m in extra.models] == ["openai_compatible"] * 3
-    for entry in (deepseek, mistral):
+    *routed, local = extra.models
+    assert {m.label: m.model for m in routed} == OPENROUTER_ROWS
+    assert [m.provider for m in extra.models] == ["openai_compatible"] * len(extra.models)
+    for entry in routed:
         assert (entry.base_url_env, entry.api_key_env) == (
             "OPENROUTER_BASE_URL",
             "OPENROUTER_API_KEY",
         )
         assert entry.resolved_cost_mode == "reported" and entry.reports_cost
-    assert deepseek.model == "deepseek/deepseek-v4-pro-0813"
-    assert deepseek.extra["provider_routing"] == {
-        "order": ["Baidu", "Alibaba"],
-        "allow_fallbacks": False,
-        "require_parameters": True,
-    }
-    assert mistral.model == "mistralai/mistral-large-4-0"
-    assert "provider_routing" not in mistral.extra
+        assert entry.max_output_tokens == 65536
+        routing = entry.extra.get("provider_routing")
+        if entry.label == "deepseek-v4-pro":
+            assert routing == {
+                "order": ["Baidu", "Alibaba"],
+                "allow_fallbacks": False,
+                "require_parameters": True,
+            }
+        elif entry.label in REQUIRE_PARAMETERS:
+            assert routing == {"require_parameters": True}
+        else:
+            assert routing is None
     assert (local.base_url_env, local.api_key_env) == ("LOCAL_LLM_BASE_URL", "LOCAL_LLM_API_KEY")
     assert re.fullmatch(r"<[a-z-]+>", local.model)
     assert local.cache_namespace
@@ -139,6 +163,7 @@ def test_openai_compatible_example_names_env_vars_and_placeholders() -> None:
     assert extra.budget_usd is not None and extra.budget_usd > 0
     text = (EXPERIMENTS / "v1-leaderboard-openai-compatible.example.yaml").read_text("utf-8")
     assert "experiments/local/" in text
+    assert "GLM-5.3 Flash ran through a private" in " ".join(text.replace("#", " ").split())
 
 
 def test_ablation_crosses_every_prompt_with_two_models() -> None:

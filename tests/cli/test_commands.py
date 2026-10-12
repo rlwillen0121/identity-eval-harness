@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from identitybench.cli import ExitCode, single_world_spec
+from identitybench.report.safety_bar import DEFAULT_BAR, SafetyBar
 from identitybench.runner.run import ProgressEvent, RunError
 from identitybench.schemas.enums import Split, Suite, Task
 from identitybench.schemas.predictions import Prediction, PredictionStatus
@@ -984,7 +985,13 @@ def test_report_writes_markdown_and_html(
     result = scored_cli("report", run_dir, "--out", "reports/v1")
     assert result.exit_code == 0, result.output
     assert [kind for kind, _ in reports] == ["md", "html"]
-    options = {"title": None, "judge_validation": None, "dataset_dir": None}
+    options = {
+        "title": None,
+        "judge_validation": None,
+        "dataset_dir": None,
+        "bar": DEFAULT_BAR,
+        "planned_models": None,
+    }
     assert reports[0][1] == ([run_dir], Path("reports/v1"), options)
     assert reports[1][1] == reports[0][1]
     assert result.stdout.splitlines() == ["reports/v1/report.md", "reports/v1/report.html"]
@@ -997,7 +1004,10 @@ def test_report_updates_the_readme(
     assert result.exit_code == 0, result.output
     assert [kind for kind, _ in reports] == ["md", "block", "charts", "readme"]
     # The block links the report directory as seen from the README, and writes its chart there.
-    assert reports[1][1] == ([run_dir], {"report_dir": "r", "planned_models": None})
+    assert reports[1][1] == (
+        [run_dir],
+        {"report_dir": "r", "planned_models": None, "bar": DEFAULT_BAR},
+    )
     assert reports[2][1] == Path("r")
     assert reports[3][1] == (scored_repo.resolve() / "README.md", "| table |")
     assert result.stdout.splitlines()[-2:] == [
@@ -1046,9 +1056,6 @@ def test_report_usage_errors(cli: Invoke, reports: list[tuple[str, Any]]) -> Non
     assert cli("report", "--out", "o").exit_code == ExitCode.USAGE  # no runs
     result = cli("report", "runs/r", "--out", "o", "--readme-file", "X.md")
     assert result.exit_code == ExitCode.USAGE
-    alone = cli("report", "runs/r", "--out", "o", "--planned-models", "10")
-    assert alone.exit_code == ExitCode.USAGE
-    assert "--planned-models goes with --readme" in usage_text(alone.stderr)
     assert cli("report", "runs/r", "--out", "o", "--readme", "--planned-models", "0").exit_code == (
         ExitCode.USAGE
     )
@@ -1064,7 +1071,16 @@ def test_report_passes_planned_models_and_a_link_from_the_readme(
     )  # fmt: skip
     assert result.exit_code == 0, result.output
     (block,) = [args for kind, args in reports if kind == "block"]
-    assert block == ([run_dir], {"report_dir": "../reports/v1", "planned_models": 10})
+    assert block == (
+        [run_dir],
+        {"report_dir": "../reports/v1", "planned_models": 10, "bar": DEFAULT_BAR},
+    )
+    # The full report says it is interim too, with or without --readme.
+    (md,) = [args for kind, args in reports if kind == "md"]
+    assert md[2]["planned_models"] == 10
+    alone = scored_cli("report", run_dir, "--out", "o", "--no-html", "--planned-models", "10")
+    assert alone.exit_code == 0, alone.output
+    assert reports[-1][1][2]["planned_models"] == 10
 
 
 def test_run_prints_config_warnings(cli: Invoke, repo: Path, runs: dict[str, Any]) -> None:
@@ -1105,8 +1121,25 @@ def test_report_passes_title_dataset_and_judge_validation(
         "title": "V1",
         "judge_validation": Path("val/report.json"),
         "dataset_dir": Path("d"),
+        "bar": DEFAULT_BAR,
+        "planned_models": None,
     }
     assert reports[0][1][2] == expected and reports[1][1][2] == expected
+
+
+def test_report_passes_the_safety_bar(
+    scored_cli: Invoke, run_dir: Path, reports: list[tuple[str, Any]]
+) -> None:
+    result = scored_cli(
+        "report", run_dir, "--out", "r", "--readme", "--bar-war-bound", "0.05",
+        "--bar-unsafe-plans", "0.1", "--bar-harmful-flips", "0.01", "--bar-invalid", "0.02",
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    bar = SafetyBar(war_bound=0.05, unsafe_plans=0.1, harmful_flips=0.01, invalid=0.02)
+    md, html, block = (r[1] for r in reports if r[0] in ("md", "html", "block"))
+    assert md[2]["bar"] == bar and html[2]["bar"] == bar and block[1]["bar"] == bar
+    refused = scored_cli("report", run_dir, "--out", "r", "--bar-invalid", "2")
+    assert refused.exit_code != 0
 
 
 def test_report_with_the_real_back_end(

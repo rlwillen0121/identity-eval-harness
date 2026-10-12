@@ -1,11 +1,13 @@
-"""The README figures' renderers: the hero dumbbell, the cost against grounded accuracy chart and
+"""The README figures' renderers: the hero dot plot, the cost against grounded accuracy chart and
 the scorecard heatmap. Each is checked for what it shows (every value as the tables print it,
 rows in the order given, marks where the values put them) and for layout at leaderboard scale:
-with twenty synthetic models, long names and clustered values, no two labels overlap, no label
-covers a mark and nothing leaves the canvas."""
+with the 26 models the v1 leaderboard plans (their real display names and vendors), long names
+and clustered values, no two labels overlap, no label covers a mark and nothing leaves the
+canvas."""
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import math
 import random
@@ -25,7 +27,7 @@ from identitybench.report.cost_quality import (
     cost_ticks,
 )
 from identitybench.report.figure_kit import THEMES, Box, text_boxes, text_width, wrap
-from identitybench.report.hero import HeroRow, gap_text, hero_svg
+from identitybench.report.hero import HeroRow, hero_svg
 from identitybench.report.scorecard import (
     BINS,
     ScoreCell,
@@ -37,30 +39,58 @@ from identitybench.report.scorecard import (
 )
 
 NS = "{http://www.w3.org/2000/svg}"
+PLANNED = 26
+"""The model rows the v1 leaderboard plans."""
 NAMES = (
+    "Qwen3.8-Flash-Next (self-hosted)",
     "Claude Opus 5.5",
     "Claude Sonnet 5.5",
     "Claude Haiku 5.5",
     "GPT-6.1 Sol",
     "GPT-6 Astra",
     "GPT-6 Luna",
-    "Gemini 3.5 Ultra Deep Think",
-    "Gemini 3.5 Flash",
-    "Mistral Large 4",
-    "Magistral Medium 2",
     "DeepSeek V4 Pro",
-    "DeepSeek V4 Lite",
+    "DeepSeek V4.1 Flash",
+    "Mistral Large 4",
     "GLM-5.3 Flash",
-    "GLM-5.3",
-    "Qwen3.8-27B (4-bit)",
-    "Qwen3.8-235B-A22B",
-    "Grok 5",
-    "Llama 5 Maverick 400B",
-    "Kimi K3",
+    "Gemini 3.8 Flash",
+    "Gemini 3.5 Flash-Lite",
+    "Hunyuan 3",
+    "MiMo-V2.6-Flash",
+    "MiMo-V2.6-Pro",
+    "Mercury 2.5",
+    "Solar Pro 4",
+    "Muse Glimmer 30B",
+    "Ling 3.0 Flash",
+    "Ternary Bonsai 2 27B",
+    "MiniMax M3",
+    "Granite 4.2 8B",
+    "Qwen3.8 Flash",
+    "Qwen3.8 Omni Flash",
+    "Qwen3.8-27B (4-bit, self-hosted)",
     "model-with-a-very-long-label-v2-preview-0611 ‡",
 )
+"""The planned rows' display names (the longest first, so every size includes it), then a label
+long enough to be shortened."""
 _DOT = 6.0
-VENDORS = ("Anthropic", "OpenAI", "Google", "Mistral AI", "DeepSeek", "Z.ai", "Alibaba", "xAI")
+VENDORS = (
+    "Alibaba (Qwen)",
+    "Anthropic",
+    "OpenAI",
+    "DeepSeek",
+    "Mistral AI",
+    "Z.ai",
+    "Google",
+    "Tencent",
+    "Xiaomi",
+    "Inception",
+    "Upstage",
+    "Meta",
+    "inclusionAI",
+    "Prism ML",
+    "MiniMax",
+    "IBM",
+)
 SOURCE = ["Synthetic rows.", "Source: synthetic · run 2026-10-12"]
 
 
@@ -129,7 +159,7 @@ def _hero_rows(n: int, seed: int = 7) -> list[HeroRow]:
         grounded = max(0.3, decision - abs(rng.gauss(0.06, 0.06)))
         if i < 4:  # a tight cluster at the ceiling
             decision, grounded = 1.0, 0.996 - i * 0.001
-        rows.append(HeroRow(NAMES[i % len(NAMES)], (decision, grounded), VENDORS[i % 8]))
+        rows.append(HeroRow(NAMES[i % len(NAMES)], (decision, grounded), VENDORS[i % len(VENDORS)]))
     return sorted(rows, key=lambda r: -(r.values[1] or 0.0))
 
 
@@ -137,7 +167,7 @@ def _hero(rows: list[HeroRow] | None = None, theme: str = "light", **overrides: 
     options: dict[str, Any] = {
         "theme": THEMES[theme],
         "title": "Models decide right, but can't always show why",
-        "subtitle": "8 of 9 models score 95% or more on decision accuracy; only 2 do on grounded.",
+        "subtitle": "8 of 9 models reach 95% decision accuracy; 2 reach 95% grounded accuracy.",
         "source": SOURCE,
         "badge": "Interim · 9 of 20 models",
         "reference": (1.0, "Oracle ceiling (100%)"),
@@ -212,26 +242,33 @@ def test_the_hero_is_accessible_and_states_every_value() -> None:
     assert 'model <a> & "b": grounded accuracy 93.4%, decision accuracy 99.5%' in desc
     assert "undefined: grounded accuracy n/a, decision accuracy 80.0%" in desc
     texts = _texts(svg)
-    for text in ("93.4", "99.5", "6.1", "80.0", "n/a", "Oracle ceiling (100%)", "Grounded"):
+    for text in ("93.4", "99.5", "80.0", "n/a", "Oracle ceiling (100%)", "Grounded", "Decision"):
         assert text in texts
 
 
-def test_the_hero_prints_the_tables_numbers_and_the_gap_of_the_printed_numbers() -> None:
-    # From the printed numbers (99.9 - 93.3), not the unrounded difference (6.7).
-    assert gap_text(0.99949, 0.93251) == "6.6"
-    assert gap_text(None, 0.5) == "n/a"
-    rows = _hero_rows(20)
-    texts = _texts(_hero(rows))
+def test_the_hero_prints_the_tables_numbers_and_never_joins_the_two_marks() -> None:
+    """The metrics have different denominators, so the hero draws no line between a model's
+    two marks and prints no gap: the difference is not a count of decisions lacking evidence."""
+    rows = _hero_rows(PLANNED)
+    svg = _hero(rows)
+    texts = _texts(svg)
     for row in rows:
         decision, grounded = row.values
         assert decision is not None and grounded is not None
         assert f"{round(grounded * 100, 1):.1f}" in texts
         assert f"{round(decision * 100, 1):.1f}" in texts
-        assert gap_text(decision, grounded) in texts
+    assert "Gap" not in texts and "pts" not in texts
+    horizontal = [
+        line
+        for line in _parse(svg).iter(f"{NS}line")
+        if line.get("y1") == line.get("y2") and line.get("x1") != line.get("x2")
+    ]
+    assert horizontal == []  # gridlines and the ceiling are vertical; nothing joins the marks
+    assert "joined" not in _desc(svg)
 
 
 def test_hero_rows_are_drawn_in_the_order_given() -> None:
-    rows = _hero_rows(20)
+    rows = _hero_rows(PLANNED)
     texts = list(_parse(_hero(rows)).iter(f"{NS}text"))
 
     def drawn(name: str) -> ET.Element:
@@ -273,7 +310,7 @@ def test_the_hero_axis_starts_at_the_ten_point_step_below_the_lowest_value() -> 
     assert next(t for t in _texts(low) if re.fullmatch(r"\d+%", t)) == "40%"
 
 
-@pytest.mark.parametrize("n", [1, 9, 20])
+@pytest.mark.parametrize("n", [1, 9, 20, PLANNED])
 def test_the_hero_grows_with_its_rows_and_stays_legible(n: int) -> None:
     svg = _hero(_hero_rows(n))
     assert_legible(svg)
@@ -282,8 +319,13 @@ def test_the_hero_grows_with_its_rows_and_stays_legible(n: int) -> None:
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_the_hero_is_legible_with_twenty_models_in_either_theme(theme: str) -> None:
-    assert_legible(_hero(_hero_rows(20, seed=3), theme))
+def test_the_hero_is_legible_with_every_planned_model_in_either_theme(theme: str) -> None:
+    rows = _hero_rows(PLANNED, seed=3)
+    svg = _hero(rows, theme)
+    assert_legible(svg)
+    # Every planned display name is shown whole (only the over-long test label is shortened).
+    texts = _texts(svg)
+    assert all(name in texts for name in NAMES[:PLANNED])
 
 
 def test_the_hero_themes_differ_only_in_color() -> None:
@@ -322,12 +364,15 @@ def _cost_points(n: int, seed: int) -> list[CostPoint]:
 
 
 def _named_cases() -> dict[str, list[CostPoint]]:
-    """The layouts that broke the first placer: twenty models priced in a $4-$7 cluster, a
-    $0.02-$300 spread with ties at one accuracy, and a realistic mix."""
+    """The layouts that broke the first placer, at the planned leaderboard's size: every model
+    priced in a $4-$7 cluster, a $0.02-$300 spread with ties at one accuracy, and a realistic
+    mix."""
     rng = random.Random(11)
-    dense = [CostPoint(NAMES[i], rng.uniform(0.90, 0.95), rng.uniform(4, 7)) for i in range(20)]
+    dense = [
+        CostPoint(NAMES[i], rng.uniform(0.90, 0.95), rng.uniform(4, 7)) for i in range(PLANNED)
+    ]
     wide: list[CostPoint] = []
-    for i in range(20):
+    for i in range(PLANNED):
         if i % 3 == 2:
             wide.append(CostPoint(NAMES[i], rng.uniform(0.6, 1.0), None, "cost not reported"))
         else:
@@ -340,7 +385,7 @@ def _named_cases() -> dict[str, list[CostPoint]]:
             None if i in (3, 4, 5) else round(10 ** rng.uniform(-0.3, 1.6), 2),
             "cost not reported" if i in (3, 4, 5) else None,
         )
-        for i in range(20)
+        for i in range(PLANNED)
     ]
     return {"dense": dense, "wide": wide, "realistic": realistic}
 
@@ -381,6 +426,26 @@ def _cross(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
     return side(b0, b1, *a0) * side(b0, b1, *a1) < 0 and side(a0, a1, *b0) * side(a0, a1, *b1) < 0
 
 
+def _marks(svg: str) -> dict[str | None, tuple[float, float]]:
+    """Each priced point's mark center by ``data-point``: a charge's circle or an
+    API-equivalent's diamond (a path whose first corner is straight above its center)."""
+    root = _parse(svg)
+    marks: dict[str | None, tuple[float, float]] = {
+        c.get("data-point"): (float(c.get("cx") or 0), float(c.get("cy") or 0))
+        for c in root.iter(f"{NS}circle")
+        if c.get("data-point") is not None
+    }
+    for path in root.iter(f"{NS}path"):
+        if path.get("class") == "equivalent":
+            corners = [
+                tuple(map(float, xy.split(",")))
+                for xy in re.findall(r"[\d.]+,[\d.]+", path.get("d") or "")
+            ]
+            (top_x, _), (_, right_y) = corners[0], corners[1]
+            marks[path.get("data-point")] = (top_x, right_y)
+    return marks
+
+
 def assert_cost_legible(svg: str, points: list[CostPoint]) -> None:
     """Everything :func:`assert_legible` checks, and the cost chart's own rules, read from the
     SVG alone (``data-point`` ties each name, number, leader and dot to its point):
@@ -396,11 +461,7 @@ def assert_cost_legible(svg: str, points: list[CostPoint]) -> None:
     root = _parse(svg)
     boxes = text_boxes(svg)
     texts = list(root.iter(f"{NS}text"))
-    dots = {
-        c.get("data-point"): (float(c.get("cx") or 0), float(c.get("cy") or 0))
-        for c in root.iter(f"{NS}circle")
-        if c.get("data-point") is not None
-    }
+    dots = _marks(svg)
 
     def segment(line: ET.Element) -> tuple[float, float, float, float]:
         x1, y1, x2, y2 = (float(line.get(k) or 0) for k in ("x1", "y1", "x2", "y2"))
@@ -508,7 +569,7 @@ def test_priced_points_sit_on_the_log_axis_and_the_rest_are_listed_under_it() ->
     assert costs == ["$1.00", "$10.00", "$100.00"]  # all three named, each with its cost
     # The unpriced models are a list under the plot, never at a cost position: a ring glyph,
     # the name, the grounded accuracy and what the cost is, most grounded first.
-    assert "No API price" in texts and "not on the cost axis" in texts
+    assert "No price" in texts and "not on the cost axis" in texts
     i = texts.index("cli")
     assert texts[i : i + 3] == ["cli", "93.0%", "≈$21.31 CLI estimate"]
     assert texts.index("unknown") > i and "cost not reported" in texts
@@ -517,6 +578,43 @@ def test_priced_points_sit_on_the_log_axis_and_the_rest_are_listed_under_it() ->
     assert float(listed.get("y") or 0) > float(axis_title.get("y") or 0)
     rings = [c for c in _circles(svg) if c[3] == "none"]
     assert len(rings) == 2
+
+
+def test_api_equivalents_are_diamonds_on_the_same_axis_with_a_legend() -> None:
+    points = [
+        CostPoint("charged", 0.80, 1.0),
+        CostPoint("listed", 0.95, 10.0, equivalent=True),
+        CostPoint("dear", 0.97, 100.0),
+        CostPoint("local", 0.90, None, "unmetered"),
+    ]
+    svg = _cost(points)
+    root = _parse(svg)
+    diamonds = [p for p in root.iter(f"{NS}path") if p.get("class") == "equivalent"]
+    assert [d.get("data-point") for d in diamonds] == ["1"]
+    circles = [c for c in root.iter(f"{NS}circle") if c.get("data-point") is not None]
+    assert sorted(c.get("data-point") for c in circles) == ["0", "2"]
+    marks = _marks(svg)
+    assert marks["0"][0] < marks["1"][0] < marks["2"][0]  # one log axis for both footings
+    texts = _texts(svg)
+    assert "◇$10.00" in texts and "$1.00" in texts  # the label carries the mark too
+    assert "API charge (billed or metered)" in texts
+    assert any(t.startswith("API-equivalent, marked ◇") for t in texts)
+    assert "listed: grounded accuracy 95.0%, $10.00 API-equivalent" in _desc(svg)
+    assert "Frontier: charged, listed and dear." in _desc(svg)
+    assert_cost_legible(svg, points)
+    # Without an API-equivalent there is no legend to read.
+    plain = _texts(_cost([CostPoint("a", 0.9, 1.0), CostPoint("b", 0.95, 3.0)]))
+    assert "API charge (billed or metered)" not in plain
+
+
+@pytest.mark.parametrize("case", ["dense", "wide", "realistic"])
+def test_a_crowd_with_api_equivalents_stays_legible(case: str) -> None:
+    points = [
+        dataclasses.replace(p, equivalent=p.cost is not None and i % 3 == 0)
+        for i, p in enumerate(_named_cases()[case])
+    ]
+    for theme in THEMES:
+        assert_cost_legible(_cost(points, theme), points)
 
 
 def test_the_accuracy_axis_comes_from_the_priced_models_only() -> None:
@@ -567,9 +665,9 @@ def test_crowded_cost_charts_keep_every_rule(case: str, theme: str) -> None:
     assert float(_parse(svg).get("height") or 0) < 1000
 
 
-@pytest.mark.parametrize("seed", range(40))
+@pytest.mark.parametrize("seed", range(46))
 def test_every_point_is_identified_without_collisions_at_any_size(seed: int) -> None:
-    n = 4 + seed % 17  # 4 to 20 models
+    n = 4 + seed % (PLANNED - 3)  # 4 to 26 models
     points = _cost_points(n, seed)
     svg = _cost(points, "dark" if seed % 2 else "light")
     assert_cost_legible(svg, points)
@@ -602,7 +700,7 @@ def test_unplaceable_points_are_named_and_no_price_means_no_axis() -> None:
     svg = _cost([CostPoint("none", None, 3.0), CostPoint("cli", 0.9, None, "unmetered")])
     texts = " ".join(_texts(svg))
     assert "Not shown (grounded accuracy n/a): none." in texts
-    assert "No model has an API price yet." in texts
+    assert "No model has a price yet." in texts
     assert "log scale" not in texts and "$1" not in texts  # no invented axis
     assert_legible(svg)
 
@@ -764,10 +862,14 @@ def test_scorecard_cells_print_the_tables_numbers_in_row_order() -> None:
         assert [t.text for t in line] == expected, row.name
 
 
-@pytest.mark.parametrize("n", [1, 9, 20])
+@pytest.mark.parametrize("n", [1, 9, 20, PLANNED])
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_the_scorecard_is_legible_at_leaderboard_scale(n: int, theme: str) -> None:
-    assert_legible(_scorecard(_score_rows(n), theme))
+    rows = _score_rows(n)
+    svg = _scorecard(rows, theme)
+    assert_legible(svg)
+    texts = _texts(svg)
+    assert all(row.name in texts for row in rows if row.name in NAMES[:PLANNED])
 
 
 def test_the_scorecard_is_deterministic_and_themed() -> None:
@@ -776,3 +878,22 @@ def test_the_scorecard_is_deterministic_and_themed() -> None:
     assert light == _scorecard(rows)
     strip = re.compile(r"#[0-9a-f]{6}|-(light|dark)-|darker|brighter")
     assert strip.sub("", light) == strip.sub("", dark)
+
+
+def test_a_listed_name_keeps_its_disclosure_on_a_second_line() -> None:
+    """A long name in the list under the plot is never cut off mid-disclosure: its
+    parenthetical moves to a second line ("Qwen3.8-27B" / "(4-bit, self-hosted)")."""
+    priced = [CostPoint(NAMES[1 + i], 0.80 + i * 0.03, 10 ** (i * 0.5)) for i in range(4)]
+    unpriced = [
+        CostPoint("Qwen3.8-27B (4-bit, self-hosted)", 0.865, None, "cost not reported"),
+        CostPoint("Qwen3.8-Flash-Next (self-hosted)", 0.90, None, "cost not reported"),
+    ]
+    for theme in THEMES:
+        svg = _cost([*priced, *unpriced], theme)
+        assert_cost_legible(svg, [*priced, *unpriced])
+        texts = _texts(svg)
+        for p in unpriced:
+            base, _, rest = p.name.partition(" (")
+            assert p.name in texts or (base in texts and f"({rest}" in texts), p.name
+        assert not any(t.endswith("…") for t in texts)
+        assert "(4-bit, self-hosted)" in texts  # beside "cost not reported", it wraps

@@ -1018,6 +1018,13 @@ def test_runs_measured_on_different_cases_are_flagged(runs: Fixture) -> None:
     assert any("not scored on the same cases" in t for t in _texts(leaderboard.blocks))
     frontier = _group(_section(document, "war-automation").blocks, "Access requests")
     assert any("not scored on the same cases" in t for t in _texts(frontier.blocks))
+    # The cheapest-safe ranking spans every run's models, and cost per 1,000 decisions
+    # depends on the task mix: it says so too.
+    safe = [t for t in _texts(_section(document, "smallest-safe").blocks) if "same cases" in t]
+    assert safe and "nor their cost per 1,000 decisions, which depends on the mix" in safe[0]
+    assert not any(
+        "same cases" in t for t in _texts(_section(build_document([main]), "smallest-safe").blocks)
+    )
     renamed = dataclasses.replace(
         _sampled(main, "run_other"),
         records=tuple(r.model_copy(update={"case_id": f"{r.case_id}x"}) for r in main.records),
@@ -1435,3 +1442,73 @@ def test_the_selective_vega_chart_labels_the_war_target() -> None:
 
 def test_html_numeric_cells_do_not_wrap(written: tuple[Path, Path]) -> None:
     assert "td.num { white-space: nowrap; }" in written[1].read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------------------------
+# Interim releases, untimed runs and runs without a dev run
+# --------------------------------------------------------------------------------------------
+
+
+def test_an_interim_report_says_so_without_claiming_models_are_running(runs: Fixture) -> None:
+    loaded = load_report_runs([runs.main])
+    first = build_document(loaded, planned_models=5).intro[0]
+    assert isinstance(first, Text) and first.tone == "warning"
+    assert first.text == (
+        "Interim leaderboard: 2 of 5 planned models are scored. Models added later are scored "
+        "on the same cases, with the same metrics."
+    )
+    assert "running" not in first.text
+    complete = build_document(loaded, planned_models=2)
+    assert not any("Interim" in b.text for b in complete.intro if isinstance(b, Text))
+    with pytest.raises(ValueError, match="planned_models is 1, but 2 model configurations"):
+        build_document(loaded, planned_models=1)
+
+
+def test_without_a_dev_run_no_operating_point_is_claimed(
+    runs: Fixture, main_document: Document
+) -> None:
+    with_dev = _texts(_section(main_document, "calibration").blocks)
+    assert any("t is chosen on dev and measured here" in t for t in with_dev)
+    (run,) = load_report_runs([runs.main])
+    scores = run.scores.model_copy(update={"dev_run_id": None, "dev_completeness": None})
+    edited = dataclasses.replace(run, scores=scores)
+    texts = _texts(_section(build_document([edited]), "calibration").blocks)
+    assert any(
+        "No dev run was scored with this run (identitybench score --dev-run), so no threshold "
+        "was chosen and no operating point is reported" in t
+        for t in texts
+    )
+    assert not any("t is chosen on dev" in t for t in texts)
+
+
+def test_latency_has_no_baseline_rows_and_an_untimed_run_has_no_chart(runs: Fixture) -> None:
+    (run,) = load_report_runs([runs.main])
+    figures = {f.key: f for f in build_document([run]).figures()}
+    latency = figures["latency"]
+    assert "always_approve" not in latency.svg and "oracle" not in latency.svg
+    # A run assembled from the response cache times no model call.
+    configs = {
+        config_id: scores.model_copy(
+            update={
+                "usage": scores.usage.model_copy(
+                    update={"latency_p50_s": None, "latency_p95_s": None, "n_latency": 0}
+                )
+            }
+        )
+        for config_id, scores in run.scores.configs.items()
+    }
+    assert run.manifest is not None
+    manifest = run.manifest.model_copy(
+        update={"counts": run.manifest.counts.model_copy(update={"calls": 0})}
+    )
+    untimed = dataclasses.replace(
+        run, scores=run.scores.model_copy(update={"configs": configs}), manifest=manifest
+    )
+    document = build_document([untimed])
+    assert "latency" not in {f.key for f in document.figures()}
+    texts = _texts(_section(document, "usage").blocks)
+    assert any(
+        "No model call in this run was timed: no live calls were made, every answer being "
+        "replayed from the response cache" in t
+        for t in texts
+    )

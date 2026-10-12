@@ -72,6 +72,7 @@ from identitybench.schemas.predictions import CostSource, Prediction, Prediction
 __all__ = [
     "API_BASES",
     "API_COST_SOURCES",
+    "CLI_PROVIDERS",
     "CostBasis",
     "CostBySource",
     "HeadlineBasis",
@@ -126,8 +127,9 @@ may be unknown), ``incomplete`` (some costs unknown, every recorded one an API c
 _GATEWAY_PROVIDERS = frozenset({"openai_compatible"})
 """Provider kinds whose reported cost, when their endpoint reports one, is a per-call charge."""
 
-_CLI_PROVIDERS = frozenset({"claude_cli", "codex_cli", "grok_cli", "cursor_cli"})
-"""Subscription CLI kinds: what they report is the CLI's own estimate, never a charge."""
+CLI_PROVIDERS: frozenset[str] = frozenset({"claude_cli", "codex_cli", "grok_cli", "cursor_cli"})
+"""Subscription CLI kinds: what they report is the CLI's own estimate, never a charge (a
+report may still price their recorded tokens at list price, ``report.api_equivalent``)."""
 
 _NOT_API: frozenset[CostBasis] = frozenset({"estimate", "unverified"})
 """Recorded costs that are not API cost."""
@@ -151,7 +153,7 @@ def reported_cost_of(
         and reports_cost(provider, base_url_env)
     ):
         return "billed"
-    if provider in _CLI_PROVIDERS:
+    if provider in CLI_PROVIDERS:
         return "estimate"
     return "unverified"
 
