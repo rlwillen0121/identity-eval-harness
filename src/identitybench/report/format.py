@@ -26,7 +26,7 @@ Every function is pure and locale-independent, so outputs are byte-identical acr
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from identitybench.scoring.metrics import Bound, Metric
 
@@ -48,6 +48,7 @@ __all__ = [
     "seconds",
     "units",
     "usd",
+    "words",
 ]
 
 NA = "n/a"
@@ -217,3 +218,10 @@ def usd(value: float | None) -> str:
 
 def seconds(value: float | None) -> str:
     return NA if value is None else f"{value:.2f} s"
+
+
+def words(items: Sequence[str], joiner: str = "and") -> str:
+    """``a``, ``a and b``, ``a, b and c`` (no serial comma), or with ``joiner="or"``."""
+    if len(items) <= 2:
+        return f" {joiner} ".join(items)
+    return ", ".join(items[:-1]) + f" {joiner} " + items[-1]

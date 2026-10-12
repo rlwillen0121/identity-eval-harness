@@ -1,4 +1,9 @@
-"""The leaderboard: rows per task, the README table (SPEC §15) and the README update.
+"""The leaderboard: rows per task, the SPEC §15 table and the README update.
+
+The README's results block itself (status line, hero figure, headline table, collapsed
+per-task and baseline tables) is built by ``report.readme`` and written with
+:func:`update_readme`; :func:`leaderboard_table` is one task's full table with every interval,
+for callers that want the SPEC §15 columns as Markdown.
 
 **Rows.** One per scored configuration of every run, baselines included (SPEC §14: baselines
 appear on every leaderboard), ordered by NRC, the headline ranking metric (SPEC §12.3), with

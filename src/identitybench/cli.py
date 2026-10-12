@@ -9,7 +9,7 @@ Commands::
     identitybench run experiments/v1-leaderboard.yaml [--sample 0.1] [--resume RUN_ID] [--refresh]
     identitybench score runs/<run_id> [--dataset DIR]
     identitybench judge runs/<run_id> --judges experiments/judges.yaml [--include-baselines NAME]
-    identitybench report runs/<a> runs/<b> --out reports/v1 [--readme]
+    identitybench report runs/<a> runs/<b> --out reports/v1 [--readme [--planned-models N]]
     identitybench compare runs/<a> runs/<b>          # or RUN:CONFIG_ID, or A B --run RUN_DIR
     identitybench audit export --n 100 --out audit/oracle
     identitybench audit export --judge-labels --run runs/<run_id> --out audit/judge
@@ -1455,22 +1455,38 @@ def report(
         typer.Option(help="The judge validation report.json that gates judge dimensions."),
     ] = None,
     readme: Annotated[
-        bool, typer.Option("--readme", help="Update the README leaderboard table.")
+        bool,
+        typer.Option(
+            "--readme",
+            help="Update the README results block (status line, chart, table) and write its "
+            "chart into OUT/charts.",
+        ),
     ] = False,
     readme_file: Annotated[
         Path | None, typer.Option(help="README to update (default: <root>/README.md).")
     ] = None,
+    planned_models: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            help="With --readme: how many model configurations the leaderboard will hold. "
+            "While fewer are scored, the README and its chart say 'Interim: k of N'.",
+        ),
+    ] = None,
 ) -> None:
     """Write the Markdown (and HTML) report for scored runs; optionally update the README.
 
-    Prints each file written. The README changes only between its leaderboard markers.
+    Prints each file written. The README changes only between its leaderboard markers; its
+    links to the chart and the full report point at OUT.
     """
     session = _session(ctx)
     if readme_file is not None and not readme:
         _usage("--readme-file goes with --readme")
+    if planned_models is not None and not readme:
+        _usage("--planned-models goes with --readme")
     with _errors("runs"):
         from identitybench.report import (
-            leaderboard_table,
+            readme_leaderboard,
             update_readme,
             write_html_report,
             write_markdown_report,
@@ -1501,7 +1517,10 @@ def report(
             )
         if readme:
             readme_path = _under_root(session, readme_file, Path("README.md"))
-            if update_readme(readme_path, leaderboard_table(run_dirs)):
+            link = Path(os.path.relpath(out.resolve(), readme_path.resolve().parent)).as_posix()
+            block = readme_leaderboard(run_dirs, report_dir=link, planned_models=planned_models)
+            written.extend(block.write_charts(out))
+            if update_readme(readme_path, block.markdown):
                 written.append(readme_path)
             else:
                 _note(session, f"{readme_path}: leaderboard already up to date")

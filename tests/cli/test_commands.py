@@ -953,9 +953,16 @@ def reports(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
 
         return write
 
-    def table(runs: list[Path]) -> str:
-        calls.append(("table", list(runs)))
-        return "| table |"
+    class Block:
+        markdown = "| table |"
+
+        def write_charts(self, out_dir: Path) -> list[Path]:
+            calls.append(("charts", Path(out_dir)))
+            return [Path(out_dir) / "charts" / "readme-results-light.svg"]
+
+    def block(runs: list[Path], **kwargs: Any) -> Block:
+        calls.append(("block", (list(runs), kwargs)))
+        return Block()
 
     def update(path: Path, text: str) -> bool:
         calls.append(("readme", (path, text)))
@@ -964,7 +971,7 @@ def reports(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
     for name, fn in (
         ("write_markdown_report", writer("md")),
         ("write_html_report", writer("html")),
-        ("leaderboard_table", table),
+        ("readme_leaderboard", block),
         ("update_readme", update),
     ):
         monkeypatch.setattr(f"identitybench.report.{name}", fn)
@@ -988,9 +995,15 @@ def test_report_updates_the_readme(
 ) -> None:
     result = scored_cli("report", run_dir, "--out", "r", "--no-html", "--readme")
     assert result.exit_code == 0, result.output
-    assert [kind for kind, _ in reports] == ["md", "table", "readme"]
-    assert reports[2][1] == (scored_repo.resolve() / "README.md", "| table |")
-    assert result.stdout.splitlines()[-1] == str(scored_repo.resolve() / "README.md")
+    assert [kind for kind, _ in reports] == ["md", "block", "charts", "readme"]
+    # The block links the report directory as seen from the README, and writes its chart there.
+    assert reports[1][1] == ([run_dir], {"report_dir": "r", "planned_models": None})
+    assert reports[2][1] == Path("r")
+    assert reports[3][1] == (scored_repo.resolve() / "README.md", "| table |")
+    assert result.stdout.splitlines()[-2:] == [
+        str(Path("r") / "charts" / "readme-results-light.svg"),
+        str(scored_repo.resolve() / "README.md"),
+    ]
     custom = scored_cli("report", run_dir, "--out", "r", "--readme", "--readme-file", "X.md")
     assert custom.exit_code == 0
     assert reports[-1][1][0] == Path("X.md")
@@ -1033,6 +1046,25 @@ def test_report_usage_errors(cli: Invoke, reports: list[tuple[str, Any]]) -> Non
     assert cli("report", "--out", "o").exit_code == ExitCode.USAGE  # no runs
     result = cli("report", "runs/r", "--out", "o", "--readme-file", "X.md")
     assert result.exit_code == ExitCode.USAGE
+    alone = cli("report", "runs/r", "--out", "o", "--planned-models", "10")
+    assert alone.exit_code == ExitCode.USAGE
+    assert "--planned-models goes with --readme" in usage_text(alone.stderr)
+    assert cli("report", "runs/r", "--out", "o", "--readme", "--planned-models", "0").exit_code == (
+        ExitCode.USAGE
+    )
+
+
+def test_report_passes_planned_models_and_a_link_from_the_readme(
+    scored_cli: Invoke, scored_repo: Path, run_dir: Path, reports: list[tuple[str, Any]]
+) -> None:
+    (scored_repo / "docs").mkdir()
+    result = scored_cli(
+        "report", run_dir, "--out", "reports/v1", "--no-html", "--readme",
+        "--readme-file", "docs/README.md", "--planned-models", "10",
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    (block,) = [args for kind, args in reports if kind == "block"]
+    assert block == ([run_dir], {"report_dir": "../reports/v1", "planned_models": 10})
 
 
 def test_run_prints_config_warnings(cli: Invoke, repo: Path, runs: dict[str, Any]) -> None:

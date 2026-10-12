@@ -81,6 +81,26 @@ def _manifest_facts(manifest: RunManifest) -> list[tuple[str, str]]:
     ]
 
 
+SELF_HOSTED_ENDPOINT = "self-hosted endpoint (not published)"
+"""What the configurations table shows in place of a self-hosted endpoint's identity hash."""
+
+
+def _published_model(
+    manifest: RunManifest, config_id: str, label: str, model: str, identity: str
+) -> tuple[str, str]:
+    """The model and endpoint identity a published report shows for one configuration.
+
+    A self-hosted endpoint (``openai_compatible`` costed as unmetered) shows its label and no
+    identity hash: the served-model route can name private infrastructure, and the hash of a
+    private base URL can be reversed by trying its small address space. Vendor APIs, gateways
+    and CLIs keep their public model names and hashes, which are what a reader needs to rerun
+    them."""
+    cost = manifest.cost.get(config_id)
+    if cost is not None and cost.cost_mode == "unmetered" and model != label:
+        return label, SELF_HOSTED_ENDPOINT
+    return model, identity
+
+
 def _configs(manifest: RunManifest) -> Table:
     columns = (
         "Config",
@@ -98,8 +118,7 @@ def _configs(manifest: RunManifest) -> Table:
         (
             c.config_id,
             c.provider,
-            c.model,
-            c.endpoint_identity,
+            *_published_model(manifest, c.config_id, c.label, c.model, c.endpoint_identity),
             c.prompt_variant,
             c.prompt_sha256,
             c.mode,

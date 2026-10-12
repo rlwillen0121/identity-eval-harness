@@ -3,11 +3,16 @@
 - ``write_markdown_report(runs, out_dir)``: ``report.md`` plus ``charts/*.svg``.
 - ``write_html_report(runs, out_dir)``: a self-contained ``report.html`` with Vega-Lite charts
   that fall back to inline SVG.
-- ``leaderboard_table(runs, task=..., allow_mixed=False)`` and ``update_readme(path, table)``:
-  the README leaderboard between its ``<!-- leaderboard:start -->`` /
-  ``<!-- leaderboard:end -->`` markers; runs not measured on the same cases, or scored under a
-  different loss matrix, interval level or small-n threshold, are refused
-  (``IncomparableRunsError``) unless ``allow_mixed``.
+- ``readme_leaderboard(runs, report_dir=..., planned_models=None)`` and
+  ``update_readme(path, block.markdown)``: the README results block (status line, a hero chart
+  in light and dark, the headline table with its reference rows, which differences are
+  significant (``report.significance``), and per-task results, baselines and reading notes in
+  collapsed blocks) between its ``<!-- leaderboard:start -->`` / ``<!-- leaderboard:end -->``
+  markers, with ``block.write_charts(report_dir)`` for the chart files (``report.readme``).
+- ``leaderboard_table(runs, task=..., allow_mixed=False)``: one task's SPEC §15 table with
+  every interval, as the full report shows it. Both refuse runs not measured on the same cases,
+  or scored under a different loss matrix, interval level or small-n threshold
+  (``IncomparableRunsError``), unless ``allow_mixed``.
 - ``report.svg``: the dependency-free chart builders, usable on their own.
 
 ``runs`` are scored run directories (``runs/<run_id>`` with ``scores/summary.json``) or
@@ -34,6 +39,7 @@ from identitybench.report.leaderboard import (
     update_readme,
 )
 from identitybench.report.markdown import write_markdown_report
+from identitybench.report.readme import ReadmeLeaderboard, readme_leaderboard
 from identitybench.report.sections import build_document
 from identitybench.report.svg import (
     accuracy_heatmap_svg,
@@ -50,6 +56,7 @@ __all__ = [
     "IncomparableRunsError",
     "JudgeSummary",
     "MarkerError",
+    "ReadmeLeaderboard",
     "ReportRun",
     "ValidationSummary",
     "accuracy_heatmap_svg",
@@ -62,6 +69,7 @@ __all__ = [
     "load_report_run",
     "load_report_runs",
     "nrc_bars_svg",
+    "readme_leaderboard",
     "selective_risk_svg",
     "update_readme",
     "war_automation_svg",
