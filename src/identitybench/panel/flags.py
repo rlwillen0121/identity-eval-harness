@@ -743,7 +743,9 @@ def summary_markdown(manifest: PanelManifest, summary: Mapping[str, Any]) -> str
         "",
     ]
     adj = summary["adjudication"]
-    if not adj["adjudicated"]:
+    if not adj["flagged"]:
+        lines.append("No unit is flagged, so there is nothing to adjudicate: 0 classifications.")
+    elif not adj["adjudicated"]:
         lines.append(f"Not run yet: {adj['flagged']} flagged units await adjudication.")
     else:
         classes = ", ".join(f"{name} {n}" for name, n in adj["by_classification"].items())
