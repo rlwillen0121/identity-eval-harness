@@ -78,6 +78,7 @@ def test_leaderboard_matrix() -> None:
         ("claude_cli", "claude-opus-5-5"),
         ("claude_cli", "claude-sonnet-5-5"),
         ("claude_cli", "claude-haiku-5-5"),
+        ("claude_cli", "claude-fable-5-1"),
         ("codex_cli", "gpt-6-astra"),
         ("codex_cli", "gpt-6.1-sol"),
         ("codex_cli", "gpt-6-luna"),
@@ -123,15 +124,24 @@ OPENROUTER_ROWS = {
     "gemini-3.8-flash": "google/gemini-3.8-flash",
     "mercury-2.5": "inception/mercury-2.5",
     "solar-pro-4": "upstage/solar-pro4",
+    "mimo-v2.6-pro": "xiaomi/mimo-v2.6-pro",
+    "qwen3.8-flash-api": "qwen/qwen3.8-flash",
+    "muse-glimmer-30b": "meta/muse-glimmer-30b",
+    "minimax-m3": "minimax/minimax-m3",
+    "granite-4.2-8b": "ibm-granite/granite-4.2-8b",
+    "longcat-2.0": "meituan/longcat-2.0",
+    "inkling-small": "thinkingmachines/inkling-small",
+    "glm-5.3": "z-ai/glm-5.3",
 }
 """The published v1 leaderboard's OpenRouter rows: label -> OpenRouter model ID."""
 REQUIRE_PARAMETERS = {"deepseek-v4.1-flash", "hunyuan-3", "gemini-3.8-flash", "mercury-2.5"}
-REQUIRE_PARAMETERS |= {"solar-pro-4"}
+REQUIRE_PARAMETERS |= {"solar-pro-4", "mimo-v2.6-pro", "qwen3.8-flash-api", "muse-glimmer-30b"}
+REQUIRE_PARAMETERS |= {"minimax-m3", "granite-4.2-8b", "glm-5.3"}
 
 
 def test_openai_compatible_example_holds_the_published_rows_and_a_placeholder() -> None:
     """Every published OpenRouter row as it ran (model ID, routing, output cap), so the committed
-    files reproduce every leaderboard row but the one behind a private endpoint, named in the
+    files reproduce every leaderboard row but the three that ran outside OpenRouter, named in the
     header; then a self-hosted placeholder."""
     extra = config("v1-leaderboard-openai-compatible.example")
     *routed, local = extra.models
@@ -163,7 +173,9 @@ def test_openai_compatible_example_holds_the_published_rows_and_a_placeholder() 
     assert extra.budget_usd is not None and extra.budget_usd > 0
     text = (EXPERIMENTS / "v1-leaderboard-openai-compatible.example.yaml").read_text("utf-8")
     assert "experiments/local/" in text
-    assert "GLM-5.3 Flash ran through a private" in " ".join(text.replace("#", " ").split())
+    header = " ".join(text.replace("#", " ").split())
+    assert "GLM-5.3 Flash through a private" in header
+    assert "qwen3.8-27b-exl3-4bit" in header and "qwen3.8-flash-next" in header
 
 
 def test_ablation_crosses_every_prompt_with_two_models() -> None:

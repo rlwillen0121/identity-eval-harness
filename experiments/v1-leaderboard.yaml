@@ -31,6 +31,9 @@ models:
   - provider: claude_cli
     model: claude-haiku-5-5
     concurrency: 4
+  - provider: claude_cli
+    model: claude-fable-5-1
+    concurrency: 2
   - provider: codex_cli
     model: gpt-6-astra
     effort: medium
