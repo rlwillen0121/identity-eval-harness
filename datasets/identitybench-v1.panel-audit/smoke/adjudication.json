@@ -1,0 +1,79 @@
+{
+  "adjudicators": [
+    {
+      "endpoint_identity": "3c68b9fdc5f43614",
+      "label": "claude-opus-5-5",
+      "model": "claude-opus-5-5",
+      "params": {
+        "effort": null,
+        "extra": {},
+        "max_output_tokens": 16384,
+        "temperature": null
+      },
+      "provider": "claude_cli"
+    },
+    {
+      "endpoint_identity": "2969de098408fc0f",
+      "label": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "params": {
+        "effort": "medium",
+        "extra": {},
+        "max_output_tokens": 16384,
+        "temperature": null
+      },
+      "provider": "codex_cli"
+    },
+    {
+      "endpoint_identity": "private endpoint (not published)",
+      "label": "grok-4.7",
+      "model": "grok-4.7",
+      "params": {
+        "effort": null,
+        "extra": {},
+        "max_output_tokens": 16384,
+        "temperature": 0.0
+      },
+      "provider": "openai_compatible"
+    }
+  ],
+  "dataset_sha256": "0e9efcd4217f5d52d1fd8724c719da3f1402a782ebbfb186383187e62c801f69",
+  "format": 1,
+  "harness_version": "0.1.0",
+  "output_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "cited_rules": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "classification": {
+        "enum": [
+          "oracle_bug",
+          "ambiguous_text",
+          "model_error"
+        ],
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "classification",
+      "cited_rules",
+      "reason"
+    ],
+    "type": "object"
+  },
+  "panel_predictions_sha256": "d4c412ff6ddc191c1c96b7c3cfe83990b58eea202dcba4d172b9b4e5393275eb",
+  "protocol_sha256": "14ea9319aa9300a9b5564ec2112c04aa7a389ae357b34dc3df3f28631bdedc45",
+  "retries": 2,
+  "rule": "majority of valid votes (at least two agree); otherwise the maintainer classifies, marked as the maintainer's",
+  "run_id": "20261013T083914Z-v1-leaderboard",
+  "run_manifest_sha256": "f795ac2ff9a42eaece661f3c28eab75524365dbdf226a27933b8c13938c5b91d",
+  "schema_name": "panel_classification",
+  "system_file": "panel_adjudication.md"
+}
