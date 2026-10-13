@@ -202,7 +202,27 @@ def test_adjudicate_refuses_bad_input(scored_cli: Invoke, scored_repo: Path, run
     assert no_config.exit_code == ExitCode.INPUT and "not found" in no_config.stderr
 
 
-def test_audit_without_a_subcommand_names_all_four(cli: Invoke) -> None:
+def test_audit_without_a_subcommand_names_all_five(cli: Invoke) -> None:
     result = cli("audit", "--out", "x")
     assert result.exit_code == ExitCode.USAGE
-    assert "export, ingest, panel or adjudicate" in usage_text(result.stderr)
+    assert "export, ingest, panel, adjudicate or missed" in usage_text(result.stderr)
+
+
+def test_missed_ranks_the_units_beside_the_panel_audit(cli: Invoke, tmp_path: Path) -> None:
+    out = toy_audit(cli, tmp_path)
+    run = tmp_path / "runs" / "run_1"
+    result = cli("--root", tmp_path, "audit", "missed", run, "--top", "3")
+    assert result.exit_code == ExitCode.OK, result.output
+    assert Path(result.stdout.strip()) == out / "MISSED.md"
+    summary = json.loads((out / "missed.json").read_text(encoding="utf-8"))
+    assert summary["configs"] == sorted(TOY_PANEL)
+    assert summary["missed"][0]["unit_id"] == "rq_split"
+    assert (out / LEDGER_FILE).is_file()
+    some = cli(
+        "--root", tmp_path, "audit", "missed", run, "--config", "opus", "--out", tmp_path / "m"
+    )
+    assert some.exit_code == ExitCode.OK, some.output
+    picked = json.loads((tmp_path / "m" / "missed.json").read_text(encoding="utf-8"))
+    assert picked["configs"] == ["opus"]
+    bad = cli("--root", tmp_path, "audit", "missed", run, "--config", "sonnet")
+    assert bad.exit_code == ExitCode.INPUT and "no configuration 'sonnet'" in bad.stderr

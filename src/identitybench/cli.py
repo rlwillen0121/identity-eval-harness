@@ -17,6 +17,7 @@ Commands::
     identitybench audit ingest audit/judge/heldout.csv --judge-labels
     identitybench audit panel runs/<run_id> --out audit/panel
     identitybench audit adjudicate audit/panel --adjudicators experiments/local/panel.yaml
+    identitybench audit missed runs/<run_id> --out audit/panel
 
 Two SPEC §16 forms are deliberately split. ``generate --profile/--seed`` builds one split's
 base suites from one world; the release (every split, twins, adversarial copies, worlds
@@ -205,11 +206,12 @@ _AUDIT_FORMS = (
     "audit/oracle` (oracle-audit cases) and `audit export --judge-labels --run RUN_DIR --out "
     "audit/judge` (judge-validation labels); `audit ingest SHEET` reads either back. The "
     "model-panel oracle audit is `audit panel RUN_DIR` (the blind pass over a leaderboard run's "
-    "answers) and `audit adjudicate AUDIT_DIR` (the flagged units' classification)."
+    "answers) and `audit adjudicate AUDIT_DIR` (the flagged units' classification); `audit missed "
+    "RUN_DIR` ranks every unit by how many of the run's models miss it."
 )
 audit_app = typer.Typer(
     help=(
-        "The oracle audit (SPEC §9.3): the model-panel audit (panel, adjudicate) and blind "
+        "The oracle audit (SPEC §9.3): the model-panel audit (panel, adjudicate, missed) and blind "
         "labeling sheets for a human audit, or with --judge-labels the judge-validation "
         "labels (SPEC §13.3) (export, ingest)."
     ),
@@ -1900,7 +1902,9 @@ def _audit_group(
     # Hidden options catch SPEC §16's subcommand-less form and say what replaced it, instead
     # of typer's bare "No such option: --n".
     if n is not None or out is not None:
-        _usage(f"audit takes a subcommand: export, ingest, panel or adjudicate. {_AUDIT_FORMS}")
+        _usage(
+            f"audit takes a subcommand: export, ingest, panel, adjudicate or missed. {_AUDIT_FORMS}"
+        )
 
 
 @audit_app.command("export")
@@ -2481,6 +2485,63 @@ def audit_panel(
         f"{counts['units']} units: {counts['flagged']} flagged, {counts['unanimous_gold']} all "
         f"agree with gold, {counts['differs']} other differ, {counts['invalid']} with an INVALID "
         "or missing answer",
+    )
+
+
+@audit_app.command("missed")
+def audit_missed(
+    ctx: typer.Context,
+    run_dir: Annotated[Path, typer.Argument(help="The leaderboard run whose answers to read.")],
+    config: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--config",
+            help="A configuration ID to count (repeatable; default: every configuration of "
+            "the run that isn't a baseline).",
+        ),
+    ] = None,
+    dataset: Annotated[
+        Path | None, typer.Option(help="Dataset directory (default: the run manifest's).")
+    ] = None,
+    out: Annotated[
+        Path | None, typer.Option(help="Output directory (default: audit/panel).")
+    ] = None,
+    top: Annotated[
+        int, typer.Option(min=1, help="How many of the most-missed units MISSED.md lists.")
+    ] = 15,
+) -> None:
+    """Rank every answer unit by how many models differ from gold, with the panel audit's
+    units and agreement rules (SPEC §9.3 item 5), as a triage aid. No model is called.
+
+    Writes missed.json (the distribution and every missed unit, ranked) and MISSED.md (the
+    distribution and the top units) to --out, beside a panel audit's files.
+    """
+    session = _session(ctx)
+    target = _under_root(session, out, DEFAULT_PANEL_AUDIT_DIR)
+    with _errors("most-missed input"):
+        from identitybench.panel.missed import (
+            MISSED_MD,
+            default_configs,
+            missed_summary,
+            missed_units,
+            write_missed,
+        )
+        from identitybench.scoring.summary import load_run
+
+        _require_run(run_dir)
+        loaded = load_run(run_dir, dataset)
+        configs = tuple(dict.fromkeys(config)) if config else default_configs(loaded)
+        if not configs:
+            raise CliError(f"{run_dir} has no configuration that isn't a baseline; pass --config")
+        units = missed_units(loaded, configs)
+        summary = missed_summary(loaded, configs, units)
+        write_missed(target, summary, top)
+    _say(str(target / MISSED_MD))
+    worst = units[0].differ if units else 0
+    _note(
+        session,
+        f"{len(units)} units over {len(configs)} models: {sum(u.differ > 0 for u in units)} "
+        f"differ from gold in some valid answer; the most-missed by {worst}",
     )
 
 

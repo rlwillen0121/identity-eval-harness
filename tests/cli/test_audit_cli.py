@@ -159,7 +159,7 @@ def test_the_spec_audit_form_points_at_the_subcommands(cli: Invoke, args: tuple[
     result = cli("audit", *args)
     assert result.exit_code == ExitCode.USAGE
     message = usage_text(result.stderr)
-    assert "audit takes a subcommand: export, ingest, panel or adjudicate" in message
+    assert "audit takes a subcommand: export, ingest, panel, adjudicate or missed" in message
     assert "audit export --n 100 --out audit/oracle" in message
     assert "audit export --judge-labels --run RUN_DIR --out audit/judge" in message
 
