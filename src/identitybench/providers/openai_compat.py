@@ -28,6 +28,10 @@ environment.
   ``order``, ``allow_fallbacks``, ``require_parameters``...) go in the request body. Routing can
   change which host answers, so it is part of the endpoint identity and therefore of every
   cache key.
+- **Extra headers** (``headers``) go on every request, for gateways that route on a header
+  (OpenCode Go rejects requests without ``x-opencode-session``). They steer delivery, not the
+  answer, so they are not part of the endpoint identity; credentials never go here
+  (``Authorization`` and ``api-key`` are rejected), only through ``api_key_env``.
 
 Base URL and key are always passed to the SDK explicitly, so it never falls back to
 ``OPENAI_BASE_URL``/``OPENAI_API_KEY`` behind the configuration's back. Without an explicit
@@ -175,6 +179,24 @@ def _gateway_raw(completion: ChatCompletion) -> dict[str, Any]:
     return raw
 
 
+_CREDENTIAL_HEADERS = frozenset({"authorization", "api-key", "x-api-key"})
+
+
+def headers_problem(value: object) -> str | None:
+    """Why ``value`` is not a usable ``headers`` mapping, or None if it is: a non-empty mapping
+    of non-empty string names to string values, with no credential header (keys come from
+    ``api_key_env``, never from a config file)."""
+    if not isinstance(value, Mapping) or not value:
+        return "must be a non-empty mapping"
+    headers = cast(Mapping[object, object], value)
+    for name, header in headers.items():
+        if not isinstance(name, str) or not name.strip() or not isinstance(header, str):
+            return "must map non-empty header names to string values"
+        if name.lower() in _CREDENTIAL_HEADERS:
+            return f"must not set {name!r}: credentials come from api_key_env"
+    return None
+
+
 def provider_routing_problem(value: object) -> str | None:
     """Why ``value`` is not a usable routing preference, or None if it is.
 
@@ -255,6 +277,7 @@ class OpenAICompatProvider:
         reasoning_effort_param: bool = True,
         max_tokens_param: MaxTokensParam = "max_completion_tokens",
         provider_routing: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
         max_retries: int = 4,
         timeout_s: float = 600.0,
         client: AsyncOpenAI | None = None,
@@ -265,6 +288,10 @@ class OpenAICompatProvider:
             problem = provider_routing_problem(provider_routing)
             if problem is not None:
                 raise ValueError(f"provider_routing {problem}")
+        if headers is not None:
+            problem = headers_problem(headers)
+            if problem is not None:
+                raise ValueError(f"headers {problem}")
         self.model = model
         self._base_url_env = base_url_env
         self._api_key_env = (
@@ -283,6 +310,7 @@ class OpenAICompatProvider:
         self._provider_routing: dict[str, Any] | None = (
             json.loads(self._routing_json) if self._routing_json is not None else None
         )
+        self._headers: dict[str, str] | None = dict(headers) if headers is not None else None
         self._max_retries = max_retries
         self._timeout_s = timeout_s
         self._client = client
@@ -453,6 +481,7 @@ class OpenAICompatProvider:
                 base_url=self._base_url,
                 max_retries=self._max_retries,
                 timeout=self._timeout_s,
+                default_headers=self._headers,
             )
         return self._client
 

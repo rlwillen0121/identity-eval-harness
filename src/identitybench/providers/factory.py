@@ -15,7 +15,9 @@ each response instead.
 ``extra`` holds constructor options, which never reach the request, with one exception:
 ``openai_compatible``'s ``provider_routing`` (OpenRouter's ``provider`` preference object) is
 sent in every request body, and the provider folds it into its endpoint identity, so it is part
-of every cache key like any other setting that can change the answer.
+of every cache key like any other setting that can change the answer. Its ``headers`` (extra
+request headers a gateway routes on) also reach every request but stay out of the cache key,
+since they can't change the answer.
 
 Where a provider would otherwise apply a hidden default effort (``codex_cli``), the spec's
 generation parameters carry that default explicitly, so the cache key and manifest record the
@@ -37,6 +39,7 @@ from identitybench.providers.cursor_cli import CursorCliProvider
 from identitybench.providers.grok_cli import GrokCliProvider
 from identitybench.providers.openai_compat import (
     OpenAICompatProvider,
+    headers_problem,
     provider_routing_problem,
 )
 from identitybench.providers.replay import ReplayProvider
@@ -61,7 +64,7 @@ _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
     "anthropic": frozenset({"max_retries"}),
     "anthropic_compatible": frozenset({"max_retries"}),
     "openai_compatible": frozenset(
-        {"max_retries", "reasoning_effort_param", "max_tokens_param", "provider_routing"}
+        {"max_retries", "reasoning_effort_param", "max_tokens_param", "provider_routing", "headers"}
     ),
     "claude_cli": frozenset({"binary"}),
     "codex_cli": frozenset({"binary"}),
@@ -87,6 +90,8 @@ def _extra_problem(name: str, value: object) -> str | None:
             return f"must be one of {list(_MAX_TOKENS_PARAMS)}"
     elif name == "provider_routing":
         return provider_routing_problem(value)
+    elif name == "headers":
+        return headers_problem(value)
     elif not isinstance(value, str) or not value.strip():  # binary, path
         return "must be a non-empty string"
     return None
@@ -191,7 +196,12 @@ def make_provider(spec: ModelSpec) -> Provider:
     if kind == "openai_compatible":
         options: dict[str, Any] = {
             name: extra[name]
-            for name in ("reasoning_effort_param", "max_tokens_param", "provider_routing")
+            for name in (
+                "reasoning_effort_param",
+                "max_tokens_param",
+                "provider_routing",
+                "headers",
+            )
             if name in extra
         }
         return OpenAICompatProvider(

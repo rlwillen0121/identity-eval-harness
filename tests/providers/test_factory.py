@@ -115,6 +115,14 @@ def test_spec_from_experiment_yaml_shape() -> None:
             },
             "provider_routing allow_fallbacks must be true or false",
         ),
+        (
+            {"provider": "openai_compatible", "model": "m", "extra": {"headers": {"a": 1}}},
+            "headers must map non-empty header names to string values",
+        ),
+        (
+            {"provider": "anthropic", "model": "m", "extra": {"headers": {"a": "b"}}},
+            "unknown extra options",
+        ),
         # Routing is OpenRouter's request field; no other kind sends it.
         (
             {"provider": "anthropic", "model": "m", "extra": {"provider_routing": {"order": []}}},

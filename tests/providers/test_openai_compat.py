@@ -15,6 +15,7 @@ from identitybench.providers.openai_compat import (
     OpenAICompatProvider,
     accepts_temperature,
     default_api_key_env,
+    headers_problem,
     is_vendor_endpoint,
     provider_routing_problem,
 )
@@ -669,6 +670,38 @@ def test_routing_is_part_of_the_endpoint_identity(monkeypatch) -> None:
     assert routed.endpoint_identity() != plain.endpoint_identity()
     assert reordered.endpoint_identity() != routed.endpoint_identity()  # host order matters
     assert same.endpoint_identity() == routed.endpoint_identity()  # key order doesn't
+
+
+def test_headers_go_on_every_request_but_not_in_the_endpoint_identity(monkeypatch) -> None:
+    """OpenCode Go routes on ``x-opencode-session``; a header steers delivery, not the answer."""
+    monkeypatch.setenv("GO_BASE_URL", "https://gateway.example/v1")
+    monkeypatch.setenv("GO_API_KEY", "go-key")
+    headers = {"x-opencode-session": "identitybench"}
+    plain = OpenAICompatProvider("kimi-k3", base_url_env="GO_BASE_URL", api_key_env="GO_API_KEY")
+    with_headers = OpenAICompatProvider(
+        "kimi-k3", base_url_env="GO_BASE_URL", api_key_env="GO_API_KEY", headers=headers
+    )
+    headers["x-opencode-session"] = "changed"  # copied at construction
+    assert with_headers._get_client().default_headers["x-opencode-session"] == "identitybench"
+    assert "x-opencode-session" not in plain._get_client().default_headers
+    assert with_headers.endpoint_identity() == plain.endpoint_identity()
+
+
+@pytest.mark.parametrize(
+    ("headers", "problem"),
+    [
+        ({}, "non-empty mapping"),
+        (["x-opencode-session"], "non-empty mapping"),
+        ({"": "v"}, "non-empty header names"),
+        ({"x-session": 1}, "string values"),
+        ({"Authorization": "Bearer k"}, "credentials come from api_key_env"),
+        ({"X-API-Key": "k"}, "credentials come from api_key_env"),
+    ],
+)
+def test_invalid_headers_are_rejected(headers: object, problem: str) -> None:
+    assert problem in (headers_problem(headers) or "")
+    with pytest.raises(ValueError, match="headers"):
+        OpenAICompatProvider("m", headers=headers)  # type: ignore[arg-type]
 
 
 async def test_routing_is_copied_so_later_edits_change_nothing() -> None:
