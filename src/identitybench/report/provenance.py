@@ -25,7 +25,7 @@ from identitybench.runner.manifest import ConfigManifest, RunManifest
 from identitybench.scoring.summary import BASELINE_PROVIDER
 from identitybench.scoring.usage import CLI_PROVIDERS
 
-__all__ = ["PRIVATE_ENDPOINT", "provenance_blocks"]
+__all__ = ["PRIVATE_ENDPOINT", "provenance_blocks", "published_model"]
 
 
 def _yes_no(value: bool | None) -> str:
@@ -99,7 +99,17 @@ def _published_model(
     be reversed by trying its small address space. Vendor APIs, gateways and CLIs keep their
     public model names and hashes, which are what a reader needs to rerun them."""
     cost = manifest.cost.get(config_id)
-    if cost is not None and cost.cost_mode == "unmetered" and model != label:
+    return published_model(cost.cost_mode if cost is not None else None, label, model, identity)
+
+
+def published_model(
+    cost_mode: str | None, label: str, model: str, identity: str
+) -> tuple[str, str]:
+    """``_published_model``'s rule for one model configuration whose cost mode is known: an
+    unmetered configuration whose model name differs from its label (a private route) is
+    published as its label and ``PRIVATE_ENDPOINT``; any other keeps its model and identity.
+    The model-panel audit publishes its panel's configurations with it."""
+    if cost_mode == "unmetered" and model != label:
         return label, PRIVATE_ENDPOINT
     return model, identity
 
