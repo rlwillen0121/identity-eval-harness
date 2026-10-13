@@ -241,6 +241,7 @@ MODEL_NAMES: Mapping[str, str] = {
     "claude-opus-5-5": "Claude Opus 5.5",
     "claude-sonnet-5-5": "Claude Sonnet 5.5",
     "claude-haiku-5-5": "Claude Haiku 5.5",
+    "claude-fable-5-1": "Claude Fable 5.1",
     "gpt-6.1-sol": "GPT-6.1 Sol",
     "gpt-6-astra": "GPT-6 Astra",
     "gpt-6-luna": "GPT-6 Luna",
@@ -248,6 +249,11 @@ MODEL_NAMES: Mapping[str, str] = {
     "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
     "mistral-large-4": "Mistral Large 4",
     "glm-5.3-flash": "GLM-5.3 Flash",
+    "glm-5.3": "GLM-5.3",
+    "gpt-oss-120b": "gpt-oss-120b",
+    "grok-4.7": "Grok 4.7",
+    "longcat-2.0": "LongCat 2.0",
+    "inkling-small": "Inkling Small",
     "gemini-3.8-flash": "Gemini 3.8 Flash",
     "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
     "hunyuan-3": "Hunyuan 3",
@@ -291,6 +297,8 @@ MODEL_VENDORS: tuple[tuple[str, str], ...] = (
     ("ternary-bonsai-", "Prism ML"),
     ("minimax-", "MiniMax"),
     ("granite-", "IBM"),
+    ("longcat-", "Meituan"),
+    ("inkling-", "Thinking Machines"),
 )
 """Vendors by model label prefix (after any ``provider:`` prefix), for the figures' small
 vendor labels; a label matching none has no vendor label."""
