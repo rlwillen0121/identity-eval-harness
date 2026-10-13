@@ -69,7 +69,7 @@ def _properties(schema: object) -> Iterator[str]:
 
 def test_variant_names_are_the_files_in_prompts() -> None:
     stems = {p.stem for p in default_prompts_dir().glob("*.md")} - {"README"}
-    stems = {s for s in stems if not s.startswith("judge")}
+    stems = {s for s in stems if not s.startswith(("judge", "panel_"))}
     assert set(PROMPT_VARIANTS) == stems
     for name in PROMPT_VARIANTS:
         variant = load_variant(name)

@@ -57,7 +57,8 @@ def test_config_ids_in_usage_comments_exist(name: str) -> None:
 
 def test_the_committed_files_are_exactly_these() -> None:
     names = sorted(p.name for p in EXPERIMENTS.glob("*.yaml"))
-    assert names == sorted([*(f"{n}.yaml" for n in CONFIGS), "judges.yaml"])
+    expected = [*(f"{n}.yaml" for n in CONFIGS), "judges.yaml", "panel-adjudication.example.yaml"]
+    assert names == sorted(expected)
 
 
 def test_smoke_runs_every_dev_suite_with_baselines_only() -> None:
