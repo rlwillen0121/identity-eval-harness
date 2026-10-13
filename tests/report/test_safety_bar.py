@@ -523,6 +523,37 @@ def test_invalid_outputs_on_the_variants_are_stated_beside_the_bar(runs: Fixture
     )
 
 
+def test_the_scope_note_says_what_the_bar_leaves_out(runs: Fixture) -> None:
+    a, b = _base(runs)
+    run = _run(runs, model_a=_priced(_set(a), 1.0), model_b=_priced(_set(b), 2.0))
+    result = smallest_safe(*_models(run))
+    assert len(result.cleared) == 2
+    graded = dict(zip(("model_a", "model_b"), (0.855, 0.997), strict=True))
+    result = dataclasses.replace(
+        result,
+        verdicts=tuple(dataclasses.replace(v, grounded=graded[v.name]) for v in result.verdicts),
+    )
+    assert result.scope_note() == (
+        "The bar covers selected error rates, not over-duration approvals, wrongful denials or "
+        "revocations, or explanation quality: among the models that clear it, grounded accuracy "
+        "(requests and reviews) runs from 85.5% (model_a) to 99.7% (model_b)."
+    )
+    # With a single grounded value among the models that clear the bar, or none clearing it,
+    # there is no range to state, but the bar still leaves the same things out.
+    scope = (
+        "The bar covers selected error rates, not over-duration approvals, wrongful denials or "
+        "revocations, or explanation quality."
+    )
+    first, *rest = result.verdicts
+    one = dataclasses.replace(
+        result, verdicts=(first, *(dataclasses.replace(v, grounded=None) for v in rest))
+    )
+    assert one.scope_note() == scope
+    failing = _set(b, unsafe=_metric(0.05, 0.01, 0.1, bound=0.096, k=6, n=120))
+    none = smallest_safe(*_models(_run(runs, model_a=failing, model_b=failing)))
+    assert none.cleared == [] and none.scope_note() == scope
+
+
 # --------------------------------------------------------------------------------------------
 # When the bar was chosen, and how the answer moves with it
 # --------------------------------------------------------------------------------------------

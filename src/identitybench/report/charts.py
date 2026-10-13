@@ -162,7 +162,7 @@ def nrc_figure(rows: Sequence[LeaderboardRow], task: Task) -> Figure | None:
         title=title,
         description=(
             f"NRC with {interval_level([row.ref.run for row in rows])} intervals for "
-            f"{len(bars)} configurations; 1 is the status quo."
+            f"{len(bars)} configurations; 1 is all-human routing."
         ),
         svg=svg.nrc_bars_svg(bars, key=key, title=title),
     )

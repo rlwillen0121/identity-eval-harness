@@ -278,7 +278,8 @@ def _intro(runs: Sequence[ReportRun], refs: Sequence[ConfigRef]) -> list[Block]:
         blocks.append(
             Text(
                 "No SPEC §14 baseline was scored. Every leaderboard should show the baselines, "
-                "always_escalate above all (the status quo NRC is measured against).",
+                "always_escalate above all (the all-human routing reference NRC is measured "
+                "against).",
                 "warning",
             )
         )
@@ -567,9 +568,7 @@ def _smallest_safe(runs: Sequence[ReportRun], refs: Sequence[ConfigRef], bar: Sa
     variants = result.variant_note()
     if variants is not None:
         blocks.append(Text(variants))
-    grounded = result.grounded_note()
-    if grounded is not None:
-        blocks.append(Text(grounded))
+    blocks.append(Text(result.scope_note()))
     named = [
         (ref.name, e)
         for ref in models
