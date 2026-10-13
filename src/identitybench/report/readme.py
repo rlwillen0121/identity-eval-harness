@@ -255,6 +255,7 @@ MODEL_NAMES: Mapping[str, str] = {
     "longcat-2.0": "LongCat 2.0",
     "inkling-small": "Inkling Small",
     "nemotron-3.5-lightning": "Nemotron 3.5 Lightning",
+    "kimi-k3": "Kimi K3",
     "gemini-3.8-flash": "Gemini 3.8 Flash",
     "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
     "hunyuan-3": "Hunyuan 3",
@@ -301,6 +302,7 @@ MODEL_VENDORS: tuple[tuple[str, str], ...] = (
     ("longcat-", "Meituan"),
     ("inkling-", "Thinking Machines"),
     ("nemotron-", "NVIDIA"),
+    ("kimi-", "Moonshot AI"),
 )
 """Vendors by model label prefix (after any ``provider:`` prefix), for the figures' small
 vendor labels; a label matching none has no vendor label."""
