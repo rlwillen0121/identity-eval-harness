@@ -30,3 +30,6 @@ audit/scratch/
 
 # Local experiment configs that name private endpoints or served-model names
 experiments/local/
+
+# Agent worktrees (they would otherwise mark run manifests git_dirty)
+.claude/worktrees/
