@@ -127,7 +127,9 @@ may be unknown), ``incomplete`` (some costs unknown, every recorded one an API c
 _GATEWAY_PROVIDERS = frozenset({"openai_compatible"})
 """Provider kinds whose reported cost, when their endpoint reports one, is a per-call charge."""
 
-CLI_PROVIDERS: frozenset[str] = frozenset({"claude_cli", "codex_cli", "grok_cli", "cursor_cli"})
+CLI_PROVIDERS: frozenset[str] = frozenset(
+    {"claude_cli", "codex_cli", "grok_cli", "agy_cli", "cursor_cli"}
+)
 """Subscription CLI kinds: what they report is the CLI's own estimate, never a charge (a
 report may still price their recorded tokens at list price, ``report.api_equivalent``)."""
 
@@ -144,8 +146,8 @@ def reported_cost_of(
     ``billed`` only for an ``openai_compatible`` entry in ``reported`` mode on an endpoint the
     runner knows reports a per-call charge (``runner.cost.reports_cost``: OpenRouter), the
     same test the runner used to decide the costs could be recorded at all. A CLI kind
-    (``claude_cli``, ``grok_cli``, ``codex_cli``, ``cursor_cli``) is an ``estimate``; everything
-    else (a replay, another endpoint, a baseline) is ``unverified``.
+    (``claude_cli``, ``grok_cli``, ``codex_cli``, ``agy_cli``, ``cursor_cli``) is an
+    ``estimate``; everything else (a replay, another endpoint, a baseline) is ``unverified``.
     """
     if (
         provider in _GATEWAY_PROVIDERS

@@ -1,4 +1,5 @@
-"""Shared machinery for the subscription-CLI providers (``claude``, ``codex``, ``grok``, Cursor).
+"""Shared machinery for the subscription-CLI providers (``claude``, ``codex``, ``grok``, ``agy``,
+Cursor).
 
 Each CLI call runs in a fresh, empty temporary working directory so the agent has nothing to
 read, no project instructions to pick up and nowhere useful to write. Prompt, schema and output
@@ -273,6 +274,10 @@ class Invocation:
     raw: Mapping[str, Any] = field(default_factory=dict[str, Any])
     """Facts about how the request was sent (e.g. a substituted system prompt), merged into the
     response's ``raw``."""
+    home_files: Mapping[str, str] = field(default_factory=dict[str, str])
+    """Files for the call's private home (path relative to it -> text), written after
+    ``_isolate`` set the home up: per-request setup a CLI only reads from there (``agy_cli``'s
+    agent definition). Only for providers whose ``_isolate`` sets ``HOME``."""
 
 
 @dataclass(frozen=True)
@@ -421,12 +426,12 @@ class CliProvider(ABC):
         """Short hash of the call setup the harness controls, computed once per provider.
 
         It is derived from the setup itself rather than a hand-bumped constant, so no change can
-        be forgotten: the argv, stdin and input files ``_build`` produces for two template
-        requests (an empty system prompt, no schema and no effort; a system prompt, a multi-turn
-        transcript, a schema and an effort; and the same as a JSON action protocol turn), the
-        environment and files ``_isolate`` sets up in a private home (login links excluded:
-        whether the user is logged in is not setup), the environment rules, and the
-        large-system-prompt fallback. Temporary paths, the binary's location and the model name
+        be forgotten: the argv, stdin, input files and private-home files ``_build`` produces for
+        three template requests (an empty system prompt, no schema and no effort; a system
+        prompt, a multi-turn transcript, a schema and an effort; and the same as a JSON action
+        protocol turn), the environment and files ``_isolate`` sets up in a private home (login
+        links excluded: whether the user is logged in is not setup), the environment rules, and
+        the large-system-prompt fallback. Temporary paths, the binary's location and the model name
         are replaced by placeholders, so the revision is the same on every machine and for every
         model of the provider.
 
@@ -483,14 +488,17 @@ class CliProvider(ABC):
                     "<binary>",
                     *("<model>" if arg == self.model else arg for arg in built.argv[1:]),
                 ]
-                invocations.append(
-                    {
-                        "argv": argv,
-                        "stdin": built.stdin,
-                        "raw": dict(built.raw),
-                        "files": _files(io_dir),
-                    }
-                )
+                invocation: dict[str, Any] = {
+                    "argv": argv,
+                    "stdin": built.stdin,
+                    "raw": dict(built.raw),
+                    "files": _files(io_dir),
+                }
+                if built.home_files:
+                    # Only when present, so the revisions of providers without any stay as
+                    # they were (and their cached responses valid).
+                    invocation["home_files"] = dict(built.home_files)
+                invocations.append(invocation)
             home = root / "home"
             home.mkdir()
             isolation = self._isolate(home)
@@ -584,6 +592,10 @@ class CliProvider(ABC):
                 )
             try:
                 isolation = self._isolate(home_dir)
+                for relative, text in built.home_files.items():
+                    path = home_dir / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(text, encoding="utf-8")
             except OSError as exc:
                 return self._fail(f"could not set up a private CLI home: {exc}")
             env = self.child_env()

@@ -256,6 +256,7 @@ MODEL_NAMES: Mapping[str, str] = {
     "inkling-small": "Inkling Small",
     "nemotron-3.5-lightning": "Nemotron 3.5 Lightning",
     "kimi-k3": "Kimi K3",
+    "gemini-4-argon": "Gemini 4 Argon",
     "gemini-3.8-flash": "Gemini 3.8 Flash",
     "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
     "hunyuan-3": "Hunyuan 3",

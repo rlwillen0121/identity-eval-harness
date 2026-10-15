@@ -33,6 +33,7 @@ from identitybench.providers._cli import (
     valid_effort,
 )
 from identitybench.providers._subprocess import Command, ProcessResult
+from identitybench.providers.agy_cli import AgyCliProvider
 from identitybench.providers.base import Message, Provider, Role, ToolCall
 from identitybench.providers.claude_cli import ClaudeCliProvider
 from identitybench.providers.codex_cli import CodexCliProvider
@@ -246,6 +247,7 @@ def test_probe_version_reads_first_line_and_handles_missing_binaries() -> None:
         ClaudeCliProvider("m", version="1"),
         CodexCliProvider("m", version="1"),
         GrokCliProvider("m", version="1"),
+        AgyCliProvider("m", version="1"),
         CursorCliProvider(version="1"),
     ],
 )
@@ -326,6 +328,7 @@ def test_endpoint_identity_changes_with_the_environment_rules_and_neutral_system
         lambda **kw: ClaudeCliProvider("m", version="1", **kw),
         lambda **kw: CodexCliProvider("m", version="1", **kw),
         lambda **kw: GrokCliProvider("m", version="1", **kw),
+        lambda **kw: AgyCliProvider("m", version="1", **kw),
         lambda **kw: CursorCliProvider(version="1", **kw),
     ],
 )
@@ -364,15 +367,17 @@ def test_setup_revisions_differ_between_cli_kinds() -> None:
         ClaudeCliProvider("m", version="1").setup_revision(),
         CodexCliProvider("m", version="1").setup_revision(),
         GrokCliProvider("m", version="1").setup_revision(),
+        AgyCliProvider("m", version="1").setup_revision(),
         CursorCliProvider("m", version="1").setup_revision(),
     }
-    assert len(revisions) == 4
+    assert len(revisions) == 5
 
 
 def test_setup_revision_leaves_nothing_behind(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     GrokCliProvider("m", version="1").setup_revision()
     CodexCliProvider("m", version="1").setup_revision()
+    AgyCliProvider("m", version="1").setup_revision()
     assert list(tmp_path.iterdir()) == []
 
 

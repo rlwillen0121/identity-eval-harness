@@ -12,7 +12,7 @@ model's ``CostMode`` says which one it is:
   even when the model name has a row; that cost (``ModelResponse.reported_cost_usd``) is
   recorded and counts toward the budget. Subscription CLIs: the figure is the CLI's own (often
   notional) estimate; ``claude_cli`` and ``grok_cli`` report one (``total_cost_usd``),
-  ``codex_cli`` and ``cursor_cli`` don't, so a budget can't be enforced for them
+  ``codex_cli``, ``agy_cli`` and ``cursor_cli`` don't, so a budget can't be enforced for them
   (``reports_cost``). Billing gateways: an ``openai_compatible`` entry on OpenRouter
   (``OPENROUTER_BASE_URL``, the default there) gets the USD OpenRouter charged for the call
   (``usage.cost``), which makes ``budget_usd`` enforceable for models no ``pricing.yaml`` row
@@ -69,6 +69,7 @@ _DEFAULT_COST_MODE: dict[str, CostMode] = {
     "claude_cli": "reported",
     "codex_cli": "reported",
     "grok_cli": "reported",
+    "agy_cli": "reported",
     "cursor_cli": "reported",
 }
 

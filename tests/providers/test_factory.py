@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from identitybench.providers.agy_cli import AgyCliProvider
 from identitybench.providers.anthropic_api import AnthropicProvider
 from identitybench.providers.base import GenerationParams, Message, ModelRequest, Provider, Role
 from identitybench.providers.claude_cli import ClaudeCliProvider
@@ -33,6 +34,7 @@ def test_provider_kinds() -> None:
         "claude_cli",
         "codex_cli",
         "grok_cli",
+        "agy_cli",
         "cursor_cli",
         "replay",
     )
@@ -304,6 +306,12 @@ def test_make_cli_providers() -> None:
     )
     assert isinstance(grok, GrokCliProvider)
     assert grok.binary == "/opt/grok"
+
+    agy = make_provider(ModelSpec(provider="agy_cli", model="gemini-4-argon", effort="medium"))
+    assert isinstance(agy, AgyCliProvider)
+    assert (agy.model, agy.effort, agy.binary) == ("gemini-4-argon", "medium", "agy")
+    # Kinds without a pinned default leave effort to the CLI.
+    assert ModelSpec(provider="agy_cli", model="m").generation_params().effort is None
 
     cursor = make_provider(ModelSpec(provider="cursor_cli", model="auto"))
     assert isinstance(cursor, CursorCliProvider)

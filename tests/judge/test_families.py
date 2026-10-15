@@ -56,6 +56,8 @@ from .helpers import (
         ("anthropic_compatible", "claude-sonnet-4-5", "anthropic"),
         ("anthropic_compatible", "sonnet-4", "anthropic"),
         ("replay", "grok-code-fast", "xai"),
+        ("agy_cli", "gemini-4-argon", "google"),
+        ("agy_cli", "claude-opus-5-5-medium", "anthropic"),
         (None, "claude-haiku-5-5-20261001", "anthropic"),
     ],
 )
