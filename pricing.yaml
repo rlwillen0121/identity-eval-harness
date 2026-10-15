@@ -137,16 +137,14 @@ models:
     source: OpenRouter model catalog, openai/gpt-6-luna (retrieved 2026-10-12)
 
   gemini-4-argon:
-    input: 2.00
-    output: 10.00
-    cache_read: 0.10
-    cache_write_5m: 0.1875
+    input: 4.00
+    output: 20.00
+    cache_read: 0.20
     as_of: 2026-10-14
-    valid_until: 2026-11-30
     source: >-
-      OpenRouter model catalog, google/gemini-4-argon (retrieved 2026-10-14); Google's
-      introductory price, through 2026-11-30 (the standard list price from 2026-12-01 is
-      reported as $4.00 input and $20.00 output per 1M)
+      Google Gemini API pricing, gemini-4-argon (retrieved 2026-10-14); standard retail list
+      price ($4.00 input, $20.00 output, $0.20 context caching per 1M; introductory pricing
+      through 2026-11-30 is half of these rates)
 
   grok-4.7:
     input: 2.00

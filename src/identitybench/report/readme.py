@@ -270,6 +270,7 @@ MODEL_NAMES: Mapping[str, str] = {
     "mimo-v2.6-pro": "MiMo-V2.6-Pro",
     "mercury-2.5": "Mercury 2.5",
     "solar-pro-4": "Solar Pro 4",
+    "muse-spark-1.3-contributor": "Muse Spark 1.3",
     "muse-glimmer-30b": "Muse Glimmer 30B",
     "ling-3.0-flash": "Ling 3.0 Flash",
     "ternary-bonsai-2-27b": "Ternary Bonsai 2 27B",

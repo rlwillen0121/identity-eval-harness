@@ -44,7 +44,9 @@ def test_repo_pricing_file_rows() -> None:
         "gpt-6-astra": (10.0, 50.0, 1.00, 12.5, 20.0, *catalog),
         "gpt-6.1-sol": (2.0, 10.0, 0.10, 2.5, 4.0, *catalog),
         "gpt-6-luna": (0.10, 0.50, 0.01, 0.125, 0.20, *catalog),
-        "gemini-4-argon": (2.0, 10.0, 0.10, 0.1875, 4.0, *catalog_oct14),
+        "gemini-4-argon": (
+            4.0, 20.0, 0.20, 5.0, 8.0, date(2026, 10, 14), "Google Gemini API pricing"
+        ),
         "grok-4.7": (2.0, 6.0, 0.50, 2.0 * 1.25, 2.0 * 2.0, *catalog_oct14),
         "glm-5.3-flash": (0.036, 0.90, 0.01125, 0.036 * 1.25, 0.036 * 2.0, *catalog_oct14),
         "muse-spark-1.3-contributor": (1.25, 4.25, 0.15, 1.25 * 1.25, 1.25 * 2.0, *catalog_oct15),
@@ -59,7 +61,6 @@ def test_repo_pricing_file_rows() -> None:
         assert price.cache_write_rate("1h") == pytest.approx(write_1h)
         assert price.as_of == as_of
         assert price.source.startswith(source)
-    assert table.models["gemini-4-argon"].valid_until == date(2026, 11, 30)
     # The catalog rows name the catalog entry they were taken from.
     assert "anthropic/claude-sonnet-5.5" in table.models["claude-sonnet-5-5"].source
     assert "openai/gpt-6.1-sol" in table.models["gpt-6.1-sol"].source

@@ -535,8 +535,9 @@ def test_the_pricing_table_never_prices_a_self_hosted_deployment() -> None:
     assert not SELF_HOSTED & set(table.models)
     disclosed = {label for label, name in MODEL_NAMES.items() if "self-hosted" in name}
     assert disclosed == SELF_HOSTED
-    for model in ("gemini-4-argon", "grok-4.7", "glm-5.3-flash"):
+    for model in ("gemini-4-argon", "grok-4.7", "glm-5.3-flash", "muse-spark-1.3-contributor"):
         assert table.get(model) is not None
     argon = table.get("gemini-4-argon")
-    assert argon is not None and argon.valid_until == date(2026, 11, 30)
-    assert "introductory" in argon.source
+    assert argon is not None and (argon.input, argon.output) == (4.0, 20.0)
+    spark = table.get("muse-spark-1.3-contributor")
+    assert spark is not None and (spark.input, spark.output) == (1.25, 4.25)
