@@ -1726,17 +1726,28 @@ def _comparison_rows(comparisons: Sequence[Comparison]) -> list[list[str]]:
 
 
 def _compare_command(
-    targets: Sequence[_Target], run_ids: Sequence[str], one_run: bool, seed: int, n_boot: int | None
+    targets: Sequence[_Target],
+    run_ids: Sequence[str],
+    *,
+    one_run: bool,
+    seed: int,
+    n_boot: int | None,
+    allow_incomplete: bool,
 ) -> str:
     """The ``compare`` command a page names, with each run as ``runs/<run_id>`` (never the path
-    it was given, which may be absolute and private)."""
+    it was given, which may be absolute and private). Two different directories holding one run
+    ID (a copied run) are named ``$RUN_A`` and ``$RUN_B`` instead, so the command never reads as
+    comparing a run with itself."""
     if one_run:
         args = [str(targets[0].config_id), str(targets[1].config_id), "--run", f"runs/{run_ids[0]}"]
     else:
+        dirs = ["$RUN_A", "$RUN_B"] if run_ids[0] == run_ids[1] else [f"runs/{i}" for i in run_ids]
         args = [
-            f"runs/{run_id}" + (f":{t.config_id}" if t.config_id is not None else "")
-            for t, run_id in zip(targets, run_ids, strict=True)
+            run + (f":{t.config_id}" if t.config_id is not None else "")
+            for t, run in zip(targets, dirs, strict=True)
         ]
+    if allow_incomplete:
+        args.append("--allow-incomplete")
     if n_boot is not None:
         args += ["--n-boot", str(n_boot)]
     if seed:
@@ -1774,7 +1785,12 @@ def _write_paired_markdown(
         )
     if title is None:
         first, second = paired[0], paired[1]
-        title = f"{first.model} ({first.mode_title}) vs {second.model} ({second.mode_title})"
+        title = (
+            f"{first.model} ({first.mode_title}) vs {second.model} ({second.mode_title})"
+            if len(paired) == 2
+            else f"Paired comparison: run {first.run_id} vs run {second.run_id} "
+            f"({len(paired) // 2} configuration pairs)"
+        )
     dataset = sides[0][1].manifest.dataset
     document = paired_document(
         comparisons,
@@ -1902,9 +1918,10 @@ def compare(
                 command=_compare_command(
                     targets,
                     [run_a.manifest.run_id, run_b.manifest.run_id],
-                    run_dir is not None,
-                    seed,
-                    n_boot,
+                    one_run=run_dir is not None,
+                    seed=seed,
+                    n_boot=n_boot,
+                    allow_incomplete=allow_incomplete,
                 ),
                 small_n=settings.small_n,
             )

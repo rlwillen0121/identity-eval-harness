@@ -970,8 +970,9 @@ def paired_document(
     note = (
         f"Paired comparisons of A − B over the units both configurations answered, at the SPEC "
         f"§12.8 units, with the paired cluster bootstrap's {level}% interval. Each p is the "
-        "larger of the bootstrap's and an exact paired sign-flip test's on the per-unit "
-        "differences; Holm–Bonferroni adjusts it across this page's family of comparisons, and "
+        "larger of the bootstrap's p-value and a paired sign-flip test's on the per-unit "
+        "differences, which is exact unless marked Monte Carlo; Holm–Bonferroni adjusts it "
+        "across this page's family of comparisons, and "
         "Reject is Holm's decision at the family's alpha. A comparison without a p-value is not "
         "in the family and reads n/a. Discordant counts the units whose contribution to the "
         "metric differs, then how many favor A and how many B: comparison power rests on them, "
@@ -988,6 +989,7 @@ def paired_document(
         f"A − B ({level}% CI)",
         "Discordant (A / B better)",
         "n",
+        "p sign-flip",
         "p",
         "Holm p",
         "Reject",
@@ -1002,13 +1004,14 @@ def paired_document(
             _difference(c),
             _discordant(c),
             _comparison_n(c, small_n),
+            _signflip(c),
             _p(c.p_value),
             _p(c.adjusted_p),
             _reject(c),
         )
         for c in comparisons
     )
-    numeric = (*((False,) if multi else ()), False, False, *(True,) * 7, False)
+    numeric = (*((False,) if multi else ()), False, False, *(True,) * 8, False)
     table = Table(columns, rows, numeric, caption=_comparison_caption(comparisons))
     section = Section("paired", "Paired comparison", (Text(note, "note"), table), "primary")
     return Document(title, (Facts(tuple(facts)),), (section,))
