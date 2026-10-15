@@ -160,6 +160,7 @@ __all__ = [
     "rationale_fingerprint",
     "read_label_keys",
     "read_validation_labels",
+    "with_rationale",
     "write_validation_labels",
 ]
 
@@ -411,7 +412,9 @@ _PROBE_WRITERS: Mapping[ProbeKind, Callable[[JudgeTarget, random.Random], str]] 
 )
 
 
-def _with_rationale(prediction: Prediction, item_id: str | None, text: str) -> Prediction:
+def with_rationale(prediction: Prediction, item_id: str | None, text: str) -> Prediction:
+    """``prediction`` with the rationale of ``item_id`` (or of the whole output) set to ``text``
+    and no raw text. Used for probes and for the consensus gate's anchor pairs."""
     output = prediction.output
     if isinstance(output, ReviewOutput):
         items = [
@@ -436,7 +439,7 @@ def make_probe(target: JudgeTarget, kind: ProbeKind, *, seed: int = 0) -> Predic
         raise ValueError("a correct_terse probe needs a correct source decision")
     rng = random.Random(f"probe|{seed}|{kind.value}|{target.target_id}")
     text = _PROBE_WRITERS[kind](target, rng)
-    return _with_rationale(target.prediction, target.item_id, text)
+    return with_rationale(target.prediction, target.item_id, text)
 
 
 def _eligible(kind: ProbeKind, target: JudgeTarget) -> bool:

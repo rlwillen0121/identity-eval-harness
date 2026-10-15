@@ -1,4 +1,5 @@
-"""Interval estimates, paired comparisons and multiplicity control (SPEC §10.3, §12.8, §13.3).
+"""Interval estimates, paired comparisons, agreement and multiplicity control (SPEC §10.3,
+§12.8, §13.3).
 
 Every rate IdentityBench reports is a *ratio of sums* over units (cases, review items, events):
 WAR is wrongful approvals over gold-non-APPROVE cases, NRC is total cost over cases, and so on.
@@ -61,6 +62,7 @@ __all__ = [
     "DEFAULT_POWER",
     "MAX_EXACT_WORK",
     "RARE_EVENT_THRESHOLD",
+    "AlphaMetric",
     "Discordance",
     "HolmResult",
     "Interval",
@@ -74,12 +76,15 @@ __all__ = [
     "discordance",
     "holm_bonferroni",
     "kappa_ci",
+    "krippendorff_alpha",
+    "krippendorff_alpha_ci",
     "mean_ci",
     "minimum_detectable_difference",
     "paired_bootstrap_diff",
     "paired_signflip_test",
     "quadratic_weighted_kappa",
     "ratio_ci",
+    "ratio_difference_ci",
     "sign_test_p",
     "signflip_p",
 ]
@@ -986,6 +991,200 @@ def kappa_ci[T: Hashable](
         n_clusters=n_clusters,
         numerator_total=obs,
         denominator_total=exp,
+        method=method,
+        dropped_resamples=int(n_boot - np.count_nonzero(valid)),
+        alpha=alpha,
+    )
+
+
+AlphaMetric = Literal["nominal", "ordinal", "interval"]
+
+
+def _unit_coincidences(
+    units: Sequence[Sequence[Hashable]], categories: Sequence[Hashable]
+) -> tuple[FloatArray, int]:
+    """Per-unit coincidence counts, ``(n_units, k * k)``, and ``k``.
+
+    A unit with m ≥ 2 values adds every ordered pair of two different values' categories,
+    weighted 1 / (m − 1) (Krippendorff 2011); a unit with fewer values pairs nothing.
+    """
+    index = {c: i for i, c in enumerate(categories)}
+    if len(index) != len(categories):
+        raise ValueError("categories must be distinct")
+    if len(index) < 2:
+        raise ValueError("at least two categories are needed")
+    k = len(index)
+    rows = np.zeros((len(units), k * k), dtype=np.float64)
+    for row, values in enumerate(units):
+        m = len(values)
+        if m < 2:
+            continue
+        try:
+            codes = np.fromiter((index[v] for v in values), dtype=np.intp, count=m)
+        except KeyError as exc:
+            raise ValueError(f"rating {exc.args[0]!r} is not one of the categories") from exc
+        counts = np.bincount(codes, minlength=k).astype(np.float64)
+        pairs = np.outer(counts, counts) - np.diag(counts)
+        rows[row] = (pairs / (m - 1)).ravel()
+    return rows, k
+
+
+def _alpha_terms(
+    coincidences: FloatArray, metric: AlphaMetric, values: FloatArray
+) -> tuple[FloatArray, FloatArray]:
+    """Observed and expected disagreement for ``(..., k, k)`` coincidence tensors, scaled so
+    that α = 1 − observed / expected: Σ o·δ² and Σ n_c·n_k·δ² / (n − 1)."""
+    k = coincidences.shape[-1]
+    marginals = coincidences.sum(axis=-1)
+    total = marginals.sum(axis=-1)
+    if metric == "nominal":
+        delta = np.broadcast_to(1.0 - np.eye(k), coincidences.shape)
+    elif metric == "interval":
+        delta = np.broadcast_to((values[:, None] - values[None, :]) ** 2, coincidences.shape)
+    else:
+        # Ordinal: δ(c, k) = Σ_{g=c..k} n_g − (n_c + n_k) / 2, from the pooled marginals.
+        positions = np.arange(k, dtype=np.intp)
+        low = np.minimum(positions[:, None], positions[None, :])
+        high = np.maximum(positions[:, None], positions[None, :])
+        cumulative = np.cumsum(marginals, axis=-1)
+        between = (
+            cumulative[..., high] - cumulative[..., low] + marginals[..., low]
+        )  # Σ n_g for g from min(c, k) to max(c, k)
+        half = (marginals[..., :, None] + marginals[..., None, :]) / 2.0
+        delta = (between - half) ** 2
+    observed = (coincidences * delta).sum(axis=(-2, -1))
+    pairs = marginals[..., :, None] * marginals[..., None, :]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        expected = (pairs * delta).sum(axis=(-2, -1)) / (total - 1.0)
+    return observed, np.nan_to_num(expected, nan=0.0, posinf=0.0)
+
+
+def krippendorff_alpha_ci(
+    units: Sequence[Sequence[Hashable]],
+    categories: Sequence[Hashable],
+    metric: AlphaMetric = "ordinal",
+    n_boot: int = DEFAULT_N_BOOT,
+    seed: int = 0,
+    *,
+    alpha: float = DEFAULT_ALPHA,
+    clusters: Labels | None = None,
+) -> Interval:
+    """Krippendorff's α across any number of raters, with a percentile bootstrap interval.
+
+    ``units`` holds, per rated item, the values the raters gave it (missing ratings simply
+    left out); ``categories`` lists every possible value in order (for ``interval`` they must
+    be numbers). Items with fewer than two values pair nothing and don't count toward
+    ``n_units``. Pass ``clusters`` (one per item) to resample correlated items together, as
+    :func:`kappa_ci` does; the bootstrap resamples whole items or clusters and recomputes α,
+    marginals included. α is undefined (``n/a``) when no disagreement is expected: fewer than
+    two pairable values, or all of them in one category.
+    """
+    _check_boot(n_boot, alpha)
+    rows, k = _unit_coincidences(units, categories)
+    values = (
+        np.asarray(categories, dtype=np.float64)
+        if metric == "interval"
+        else np.arange(k, dtype=np.float64)
+    )
+    paired = rows.sum(axis=1) > 0
+    codes, _ = _cluster_codes(clusters, len(units))
+    rows, codes = rows[paired], codes[paired]
+    n = int(paired.sum())
+    effective = len(np.unique(codes))
+    method = _method(clusters)
+    observed, expected = _alpha_terms(rows.sum(axis=0).reshape(k, k), metric, values)
+    obs, exp = float(observed), float(expected)
+    if exp == 0.0:
+        return Interval(None, None, None, n, effective, obs, exp, method, alpha=alpha)
+    point = 1.0 - obs / exp
+    if effective < 2:
+        return Interval(point, None, None, n, effective, obs, exp, method, alpha=alpha)
+    _, dense = np.unique(codes, return_inverse=True)
+    sums = _cluster_sums(rows, dense.astype(np.intp), effective)
+    boot = _resampled_sums(sums, n_boot, seed).reshape(n_boot, k, k)
+    b_obs, b_exp = _alpha_terms(boot, metric, values)
+    valid = b_exp != 0.0
+    low, high = _percentile_ci(1.0 - b_obs[valid] / b_exp[valid], alpha)
+    return Interval(
+        point=point,
+        low=low,
+        high=high,
+        n_units=n,
+        n_clusters=effective,
+        numerator_total=obs,
+        denominator_total=exp,
+        method=method,
+        dropped_resamples=int(n_boot - np.count_nonzero(valid)),
+        alpha=alpha,
+    )
+
+
+def krippendorff_alpha(
+    units: Sequence[Sequence[Hashable]],
+    categories: Sequence[Hashable],
+    metric: AlphaMetric = "ordinal",
+) -> float | None:
+    """Krippendorff's α (no interval); ``None`` when undefined. See
+    :func:`krippendorff_alpha_ci`."""
+    rows, k = _unit_coincidences(units, categories)
+    values = (
+        np.asarray(categories, dtype=np.float64)
+        if metric == "interval"
+        else np.arange(k, dtype=np.float64)
+    )
+    observed, expected = _alpha_terms(rows.sum(axis=0).reshape(k, k), metric, values)
+    exp = float(expected)
+    return None if exp == 0.0 else 1.0 - float(observed) / exp
+
+
+def ratio_difference_ci(
+    numerators_a: Numbers,
+    denominators_a: Numbers,
+    numerators_b: Numbers,
+    denominators_b: Numbers,
+    clusters: Labels | None = None,
+    *,
+    n_boot: int = DEFAULT_N_BOOT,
+    alpha: float = DEFAULT_ALPHA,
+    seed: int = 0,
+) -> Interval:
+    """Percentile bootstrap interval for ``Σnum_a / Σden_a − Σnum_b / Σden_b``, resampling
+    units (or ``clusters``) jointly, so both ratios move together in every resample.
+
+    Each unit contributes to either side or both (zeros elsewhere). n/a when either observed
+    denominator is 0; only the point when fewer than two clusters have a nonzero denominator on
+    either side; resamples where either is 0 are dropped and counted.
+    """
+    num_a = _as_vector(numerators_a, "numerators_a")
+    n = num_a.size
+    den_a = _as_denominators(denominators_a, "denominators_a", n)
+    num_b = _as_vector(numerators_b, "numerators_b", n)
+    den_b = _as_denominators(denominators_b, "denominators_b", n)
+    _check_boot(n_boot, alpha)
+    columns = [num_a, den_a, num_b, den_b]
+    stacked = np.column_stack(columns)
+    codes, n_clusters = _cluster_codes(clusters, n)
+    method = _method(clusters)
+    totals = stacked.sum(axis=0)
+    if totals[1] == 0.0 or totals[3] == 0.0:
+        return Interval(None, None, None, n, n_clusters, 0.0, 0.0, method, alpha=alpha)
+    point = float(totals[0] / totals[1] - totals[2] / totals[3])
+    sums = _cluster_sums(stacked, codes, n_clusters)
+    if min(np.count_nonzero(sums[:, 1]), np.count_nonzero(sums[:, 3])) < 2:
+        # Fewer than two clusters on a side: the bootstrap can't see that side's variation.
+        return Interval(point, None, None, n, n_clusters, 0.0, 0.0, method, alpha=alpha)
+    boot = _resampled_sums(sums, n_boot, seed)
+    valid = (boot[:, 1] != 0.0) & (boot[:, 3] != 0.0)
+    diffs = boot[valid, 0] / boot[valid, 1] - boot[valid, 2] / boot[valid, 3]
+    low, high = _percentile_ci(diffs, alpha)
+    return Interval(
+        point=point,
+        low=low,
+        high=high,
+        n_units=n,
+        n_clusters=n_clusters,
+        numerator_total=0.0,
+        denominator_total=0.0,
         method=method,
         dropped_resamples=int(n_boot - np.count_nonzero(valid)),
         alpha=alpha,
