@@ -475,5 +475,7 @@ def test_a_markdown_page_never_names_two_copies_of_a_run_alike(
     a, b = f"{run_dir}:always_approve", f"{copy}:always_approve"
     result = scored_cli("compare", a, b, "--n-boot", "30", "--markdown", page)
     assert result.exit_code == 0, result.output
-    command = "identitybench compare $RUN_A:always_approve $RUN_B:always_approve --n-boot 30"
+    command = (
+        'identitybench compare "${RUN_A}":always_approve "${RUN_B}":always_approve --n-boot 30'
+    )
     assert f"- **Command:** {command}\n" in page.read_text(encoding="utf-8")

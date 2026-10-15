@@ -1736,12 +1736,17 @@ def _compare_command(
 ) -> str:
     """The ``compare`` command a page names, with each run as ``runs/<run_id>`` (never the path
     it was given, which may be absolute and private). Two different directories holding one run
-    ID (a copied run) are named ``$RUN_A`` and ``$RUN_B`` instead, so the command never reads as
+    ID (a copied run) are named ``"${RUN_A}"`` and ``"${RUN_B}"`` instead (quoted, since zsh
+    reads ``$RUN_A:a`` as a modifier), so the command never reads as
     comparing a run with itself."""
     if one_run:
         args = [str(targets[0].config_id), str(targets[1].config_id), "--run", f"runs/{run_ids[0]}"]
     else:
-        dirs = ["$RUN_A", "$RUN_B"] if run_ids[0] == run_ids[1] else [f"runs/{i}" for i in run_ids]
+        dirs = (
+            ['"${RUN_A}"', '"${RUN_B}"']
+            if run_ids[0] == run_ids[1]
+            else [f"runs/{i}" for i in run_ids]
+        )
         args = [
             run + (f":{t.config_id}" if t.config_id is not None else "")
             for t, run in zip(targets, dirs, strict=True)
