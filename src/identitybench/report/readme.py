@@ -128,13 +128,15 @@ hyphens (a non-breaking space for each space and a word joiner after each hyphen
 columns fit the README column.
 
 **Cost** is shown on its footing (``common.decision_cost``): an API charge (metered from the
-pricing table, or billed by a gateway) as a plain figure; a subscription CLI's API-equivalent
-(its recorded tokens at list price, ``report.api_equivalent``) with ``◇`` in the collapsed
+pricing table, or billed by a gateway) as a plain figure; an API-equivalent (the tokens a
+subscription CLI, or an endpoint that charged nothing per call, recorded, at list price,
+``report.api_equivalent``) with ``◇`` in the collapsed
 tables (and in the thesis graphic when its costs mix footings; when every cost it shows is
 one, its small print says so), as a diamond in the cost chart and with a footnote letter in
 the full table; a CLI's own estimate (for a model with no list price) with ``≈`` (a letter in
 the full table);
-``unmetered`` for an endpoint that charged nothing per call, whose $0 is not a price (in the
+``unmetered`` for an endpoint that charged nothing per call and has no API-equivalent (a
+self-hosted model, or a model with no list price), whose $0 is not a price (in the
 thesis graphic, "no per-call price"); else n/a, with the reason in the definitions. The
 visible prose says the footing in words.
 
@@ -176,7 +178,9 @@ from identitybench.report.common import (
     decision_cost,
     decision_scores,
     equivalent_notes,
+    equivalent_tokens,
     interval_level,
+    introductory_rates_clause,
     small_n_limit,
 )
 from identitybench.report.comparable import settings_differences, task_differences
@@ -1297,16 +1301,15 @@ def _definitions(
         for kind, text in (
             (
                 "equivalent",
-                f"{EQUIVALENT_MARK} marks an API-equivalent: the tokens a subscription CLI "
-                "recorded, priced at the model's dated list price, which is a price but not a "
-                "charge",
+                f"{EQUIVALENT_MARK} marks an API-equivalent: {equivalent_tokens(costs)}, "
+                "priced at the model's dated list price, which is a price but not a charge",
             ),
             ("estimate", "≈ marks a CLI-reported estimate, not a charge"),
             (
                 "unmetered",
                 "`unmetered` means the endpoint charged nothing per call (self-hosted, or a "
-                "private flat-rate endpoint), so no per-call price is available; it does not "
-                "mean inference is free",
+                "private flat-rate endpoint whose model has no list price here), so no per-call "
+                "price is available; it does not mean inference is free",
             ),
         )
         if kind in kinds
@@ -1742,10 +1745,17 @@ def _cost_figure(
         )
         if kind in unpriced
     ]
+    intro = introductory_rates_clause(
+        [
+            (p.name, decision_cost(ref))
+            for ref, p in zip(order, points, strict=True)
+            if p.cost is not None
+        ]
+    )
     source = [
         _cost_coverage(points, apart)
         + " API charges are metered from the dated pricing table or billed by a gateway"
-        + ("; an API-equivalent is not a charge" if equivalents else "")
+        + (f"; an API-equivalent{intro} is not a charge" if equivalents else "")
         + ". Hardware costs are excluded. On the frontier (blue), no priced model is cheaper "
         "and at least as grounded; it uses point estimates, not a significance test.",
         _source(runs, models),
@@ -2486,10 +2496,13 @@ def _thesis_figure(
         "Grounded accuracy: among rule-backed decisions, the share answered right with the "
         "right evidence" + (" (mean of requests and reviews)." if len(averaged) > 1 else ".")
     )
+    intro = introductory_rates_clause([(v.name, v.cost) for v in result.cleared])
     if kinds == {"equivalent"}:
-        metric += " Costs: list price × the tokens used, not a charge."
+        metric += f" Costs: list price × the tokens used{intro}, not a charge."
     elif marked:
-        metric += f" {fmt.EQUIVALENT} API-equivalent: list price × the tokens used, not a charge."
+        metric += (
+            f" {fmt.EQUIVALENT} API-equivalent: list price × the tokens used{intro}, not a charge."
+        )
     if "estimate" in kinds:
         metric += " ≈ a CLI's own estimate, not a price."
     source.append(metric)
@@ -2597,7 +2610,8 @@ def _text_table(
     order = [k for k in _TEXT_ORDER if k in by_key]
     judged = bool(result.verdicts)
     letters: dict[str, str] = {}
-    kinds = [decision_cost(ref).kind for ref in models]
+    model_costs = [decision_cost(ref) for ref in models]
+    kinds = [cost.kind for cost in model_costs]
     for kind in ("equivalent", "estimate"):
         if kind in kinds:
             letters[kind] = string.ascii_lowercase[len(letters)]
@@ -2674,9 +2688,10 @@ def _text_table(
             else ""
         )
     ]
+    intro = introductory_rates_clause([(r.name, decision_cost(r.ref)) for r in model_rows])
     footnotes = {
-        "equivalent": "API-equivalent: the model's list price × the tokens a subscription CLI "
-        "recorded; a price, not a charge.",
+        "equivalent": f"API-equivalent: the model's list price × {equivalent_tokens(model_costs)}"
+        f"{intro}; a price, not a charge.",
         "estimate": "A CLI's own cost estimate, not a charge.",
     }
     notes += [f"<sup>{letter}</sup> {footnotes[kind]}" for kind, letter in letters.items()]

@@ -194,8 +194,9 @@ See [Data contracts](#data-contracts).
 - `runner.manifest`: `RunManifest`, `ConfigManifest`, `dataset_fingerprint`, `dataset_info`,
   `git_info`.
 - `runner.cost`: `pricing.yaml` loading (`load_pricing`), `CostTracker`, `BudgetGuard`,
-  `default_cost_mode`. The same dated table prices a subscription CLI's tokens for the
-  report's API-equivalent (`report.api_equivalent`); the runner never applies it to a CLI.
+  `default_cost_mode`. The same dated table prices a subscription CLI's tokens, and an
+  unmetered endpoint's, for the report's API-equivalent (`report.api_equivalent`); the runner
+  never applies it to either.
 - `runner.dataset`: JSONL I/O (`read_cases`, `write_jsonl`), `write_sha256sums`,
   `verify_sha256sums`, `stratified_sample`, `portable_path`.
 
@@ -290,8 +291,10 @@ Every file the panel audit publishes that holds test-split gold (`panel.json`, e
   private endpoint shows its label and no identity hash), `report.inputs` (scored runs and
   judge results read back from disk), `report.charts` (the full report's figures, drawn with
   `report.svg` and `report.vega`) and `report.comparable` (what makes runs comparable).
-- `report.api_equivalent`: a subscription CLI's recorded tokens priced at the model's dated
-  list price in `pricing.yaml` (`ApiEquivalent`), computed when a run is loaded
+- `report.api_equivalent`: the tokens a subscription CLI recorded, or an unmetered
+  `openai_compatible` endpoint in front of a hosted model (priced at its label's row, never its
+  route; self-hosted labels are excluded, `SELF_HOSTED`), priced at the model's dated list price
+  in `pricing.yaml` (`ApiEquivalent`, `price_key`), computed when a run is loaded
   (`ReportRun.api_equivalent`) because it is a price applied to usage, not a score, with an
   estimate of the CLI's own prompt overhead against the run's API configurations on the same
   predictions (`ApiEquivalent.prompt_gap`). It is labelled `◇` everywhere and never mixed into

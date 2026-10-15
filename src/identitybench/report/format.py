@@ -58,9 +58,9 @@ __all__ = [
 NA = "n/a"
 
 EQUIVALENT = "◇"
-"""Marks an API-equivalent cost (a subscription CLI's recorded tokens at list price,
-``report.api_equivalent``) wherever one is printed, as ``≈`` marks a CLI's own estimate; the
-cost figure draws such a point as a diamond."""
+"""Marks an API-equivalent cost (the tokens a subscription CLI or an unmetered endpoint recorded, at
+list price, ``report.api_equivalent``) wherever one is printed, as ``≈`` marks a CLI's own estimate;
+the cost figure draws such a point as a diamond."""
 
 
 def pct(value: float | None, digits: int = 1) -> str:

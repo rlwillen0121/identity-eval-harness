@@ -22,8 +22,9 @@ manifest's fingerprint is treated the same way rather than shown: its case views
 different gold.
 
 One thing is priced at report time rather than read from the summary: the API-equivalent of a
-subscription CLI's configurations, its recorded tokens at the model's dated list price
-(``report.api_equivalent``, :attr:`ReportRun.api_equivalent`). It is a price applied to usage,
+subscription CLI's configurations and of unmetered endpoints in front of a hosted model, their
+recorded tokens at the model's dated list price (``report.api_equivalent``,
+:attr:`ReportRun.api_equivalent`). It is a price applied to usage,
 not a score, so a run scored before its model had a price row still gets it. It needs the
 predictions' usage, which :func:`load_report_run` reads even without ``context`` (the usage
 alone, not the answers), and a pricing table (``runner.cost.default_pricing`` unless one is
@@ -51,6 +52,7 @@ from identitybench.report.api_equivalent import (
     ApiEquivalent,
     PredictionKey,
     api_equivalents,
+    price_key,
     prompt_tokens,
     read_keyed_usages,
 )
@@ -313,8 +315,9 @@ class ReportRun:
     judge: JudgeSummary | None = None
     validation: ValidationSummary | None = None
     api_equivalent: Mapping[str, ApiEquivalent] = field(default_factory=dict[str, ApiEquivalent])
-    """Subscription-CLI configurations' recorded tokens at list price, by config ID
-    (``report.api_equivalent``); empty when the usage or a price row is unavailable."""
+    """Subscription-CLI and unmetered-endpoint configurations' recorded tokens at list price,
+    by config ID (``report.api_equivalent``); empty when the usage or a price row is
+    unavailable."""
 
     @property
     def run_id(self) -> str:
@@ -390,7 +393,8 @@ def _equivalents(
 ) -> dict[str, ApiEquivalent]:
     """The run's API-equivalents (``report.api_equivalent``), from ``predictions`` when they
     were loaded, else from the usage in ``predictions.jsonl``; empty without a pricing table,
-    a CLI configuration with a price row, or the predictions. The run's API configurations
+    a configuration with a price row to price (``report.api_equivalent.price_key``), or the
+    predictions. The run's API configurations
     (any model configuration not run through a CLI) are read too, for the estimate of each
     CLI's own prompt overhead."""
     table = _pricing_table(pricing)
@@ -399,9 +403,7 @@ def _equivalents(
     wanted = [
         config_id
         for config_id in scores.configs
-        if (info := scores.config_info.get(config_id)) is not None
-        and info.provider in CLI_PROVIDERS
-        and table.get(info.model) is not None
+        if (key := price_key(scores, config_id)) is not None and table.get(key) is not None
     ]
     if not wanted:
         return {}
@@ -442,9 +444,10 @@ def load_report_run(
     loaded too when they can be (``scoring.summary.load_run``, which checks the dataset's
     fingerprint), along with the judge summary; ``judge_validation`` (a
     ``JudgeValidationReport``, its summary, or the path of its ``report.json``) gates the
-    judge's dimensions. ``pricing`` is the table subscription-CLI usage is priced from for the
-    API-equivalent (default ``runner.cost.default_pricing``). Raises ``FileNotFoundError`` for
-    a run that hasn't been scored, and ``ValueError`` when the scores belong to another run.
+    judge's dimensions. ``pricing`` is the table subscription-CLI and unmetered-endpoint usage is
+    priced from for the API-equivalent (default ``runner.cost.default_pricing``). Raises
+    ``FileNotFoundError`` for a run that hasn't been scored, and ``ValueError`` when the scores
+    belong to another run.
     """
     root = Path(run_dir)
     summary_path = root / SCORES_DIR / SUMMARY_FILE
