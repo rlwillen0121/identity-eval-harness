@@ -46,7 +46,9 @@ Conventions shared by the whole module:
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Hashable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Final, Literal
@@ -81,6 +83,7 @@ __all__ = [
     "mean_ci",
     "minimum_detectable_difference",
     "paired_bootstrap_diff",
+    "paired_bootstrap_diffs",
     "paired_signflip_test",
     "quadratic_weighted_kappa",
     "ratio_ci",
@@ -570,6 +573,160 @@ def paired_bootstrap_diff(
         n_clusters=n_clusters,
         dropped_resamples=dropped,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingPair:
+    index: int
+    n_clusters: int
+    n_units: int
+    point_a: float
+    point_b: float
+    key_na: bytes
+    key_da: bytes
+    key_nb: bytes
+    key_db: bytes
+
+
+def _finish_pending(
+    pending: _PendingPair,
+    resampled: Mapping[tuple[int, bytes], FloatArray],
+    ratios: Mapping[tuple[int, bytes, bytes], FloatArray],
+    *,
+    n_boot: int,
+    alpha: float,
+) -> tuple[int, PairedResult]:
+    nc = pending.n_clusters
+    ra = ratios.get((nc, pending.key_na, pending.key_da))
+    rb = ratios.get((nc, pending.key_nb, pending.key_db))
+    if ra is not None and rb is not None:
+        diffs = ra - rb
+    else:
+        boot_na = resampled[(nc, pending.key_na)]
+        boot_da = resampled[(nc, pending.key_da)]
+        boot_nb = resampled[(nc, pending.key_nb)]
+        boot_db = resampled[(nc, pending.key_db)]
+        valid = (boot_da != 0.0) & (boot_db != 0.0)
+        diffs = boot_na[valid] / boot_da[valid] - boot_nb[valid] / boot_db[valid]
+    dropped = int(n_boot - diffs.size)
+    low, high = _percentile_ci(diffs, alpha)
+    p_value: float | None = None
+    if diffs.size:
+        tail = int(min(np.count_nonzero(diffs <= 0.0), np.count_nonzero(diffs >= 0.0)))
+        p_value = max(min(1.0, 2.0 * tail / diffs.size), 1.0 / (diffs.size + 1))
+    return pending.index, PairedResult(
+        diff=pending.point_a - pending.point_b,
+        low=low,
+        high=high,
+        p_value=p_value,
+        point_a=pending.point_a,
+        point_b=pending.point_b,
+        n_units=pending.n_units,
+        n_clusters=nc,
+        dropped_resamples=dropped,
+    )
+
+
+def paired_bootstrap_diffs(
+    items: Sequence[tuple[Numbers, Numbers, Numbers, Numbers, Labels | None]],
+    *,
+    n_boot: int = DEFAULT_N_BOOT,
+    alpha: float = DEFAULT_ALPHA,
+    seed: int = 0,
+) -> list[PairedResult]:
+    """Batch :func:`paired_bootstrap_diff` over ``items`` with identical outputs.
+
+    Because :func:`_resampled_sums` depends only on ``(n_clusters, n_boot, seed)`` and sums each
+    column independently, unique per-cluster column sums sharing ``n_clusters`` are resampled
+    once in a single pass instead of once per pair, and configurations whose resampled
+    denominators are never zero divide ``boot_num / boot_den`` once before pairwise differences
+    and quantiles are evaluated across worker threads.
+    """
+    _check_boot(n_boot, alpha)
+    if not items:
+        return []
+    results: list[PairedResult | None] = [None] * len(items)
+    pending: list[_PendingPair] = []
+    columns_by_nc: dict[int, dict[bytes, FloatArray]] = {}
+    ratio_keys: set[tuple[int, bytes, bytes]] = set()
+    codes_cache: dict[tuple[int, tuple[Hashable, ...] | None], tuple[IntArray, int]] = {}
+
+    for idx, (num_a, den_a, num_b, den_b, clusters) in enumerate(items):
+        na = _as_vector(num_a, "num_a")
+        n = na.size
+        da = _as_denominators(den_a, "den_a", n)
+        nb = _as_vector(num_b, "num_b", n)
+        db = _as_denominators(den_b, "den_b", n)
+        cache_key = (n, tuple(clusters) if clusters is not None else None)
+        cached = codes_cache.get(cache_key)
+        if cached is None:
+            cached = _cluster_codes(clusters, n)
+            codes_cache[cache_key] = cached
+        codes, n_clusters = cached
+        den_a_total, den_b_total = float(da.sum()), float(db.sum())
+        point_a = float(na.sum()) / den_a_total if den_a_total != 0.0 else None
+        point_b = float(nb.sum()) / den_b_total if den_b_total != 0.0 else None
+        if point_a is None or point_b is None:
+            results[idx] = PairedResult(None, None, None, None, point_a, point_b, n, n_clusters)
+            continue
+        sums = _cluster_sums(np.column_stack([na, da, nb, db]), codes, n_clusters)
+        if np.count_nonzero(sums[:, 1]) < 2 or np.count_nonzero(sums[:, 3]) < 2:
+            results[idx] = PairedResult(
+                point_a - point_b, None, None, None, point_a, point_b, n, n_clusters
+            )
+            continue
+        bucket = columns_by_nc.setdefault(n_clusters, {})
+        keys: list[bytes] = []
+        for j in range(4):
+            col = np.ascontiguousarray(sums[:, j], dtype=np.float64)
+            kb = col.tobytes()
+            bucket.setdefault(kb, col)
+            keys.append(kb)
+        ratio_keys.add((n_clusters, keys[0], keys[1]))
+        ratio_keys.add((n_clusters, keys[2], keys[3]))
+        pending.append(
+            _PendingPair(
+                index=idx,
+                n_clusters=n_clusters,
+                n_units=n,
+                point_a=point_a,
+                point_b=point_b,
+                key_na=keys[0],
+                key_da=keys[1],
+                key_nb=keys[2],
+                key_db=keys[3],
+            )
+        )
+
+    if not pending:
+        return [r for r in results if r is not None]
+
+    resampled: dict[tuple[int, bytes], FloatArray] = {}
+    for nc, bucket in columns_by_nc.items():
+        key_list = list(bucket.keys())
+        stacked = np.column_stack([bucket[k] for k in key_list])
+        boot = _resampled_sums(stacked, n_boot, seed)
+        for j, kb in enumerate(key_list):
+            resampled[(nc, kb)] = boot[:, j]
+
+    ratios: dict[tuple[int, bytes, bytes], FloatArray] = {}
+    for nc, k_num, k_den in ratio_keys:
+        b_den = resampled[(nc, k_den)]
+        if not np.any(b_den == 0.0):
+            ratios[(nc, k_num, k_den)] = resampled[(nc, k_num)] / b_den
+
+    def finish(p: _PendingPair) -> tuple[int, PairedResult]:
+        return _finish_pending(p, resampled, ratios, n_boot=n_boot, alpha=alpha)
+
+    workers = min(8, os.cpu_count() or 1)
+    if workers > 1 and len(pending) > 1 and n_boot * len(pending) >= 100_000:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            finished = list(pool.map(finish, pending))
+    else:
+        finished = [finish(p) for p in pending]
+    for idx, res in finished:
+        results[idx] = res
+    return [r for r in results if r is not None]
 
 
 def sign_test_p(n_positive: int, n_negative: int) -> float:

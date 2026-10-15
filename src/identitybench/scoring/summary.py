@@ -130,7 +130,7 @@ from identitybench.scoring.stats import (
     SignFlipTest,
     holm_bonferroni,
     minimum_detectable_difference,
-    paired_bootstrap_diff,
+    paired_bootstrap_diffs,
     paired_signflip_test,
 )
 from identitybench.scoring.tooluse import ToolScores, tool_scores
@@ -825,32 +825,6 @@ class _Tested:
         return self.signflip.a_higher, self.signflip.b_higher
 
 
-def _test(
-    configs: Mapping[str, ScoredConfig],
-    pair: tuple[str, str],
-    key: tuple[Task, str],
-    *,
-    n_boot: int,
-    alpha: float,
-    seed: int,
-) -> _Tested:
-    vector_a, vector_b = configs[pair[0]].vectors[key], configs[pair[1]].vectors[key]
-    num_a, den_a, num_b, den_b, clusters = _aligned(vector_a, vector_b)
-    return _Tested(
-        config_a=pair[0],
-        config_b=pair[1],
-        task=key[0],
-        metric=key[1],
-        result=paired_bootstrap_diff(
-            num_a, den_a, num_b, den_b, clusters, n_boot=n_boot, alpha=alpha, seed=seed
-        ),
-        signflip=paired_signflip_test(
-            num_a, den_a, num_b, den_b, clusters, n_draws=n_boot, seed=seed
-        ),
-        vector=vector_a,
-    )
-
-
 def compare_configs(
     configs: Mapping[str, ScoredConfig],
     *,
@@ -913,8 +887,26 @@ def compare_configs(
     # Sized on every planned comparison, an upper bound on the family that ends up with a
     # p-value, so the resolution never falls short of the family actually tested.
     resamples = comparison_resamples(len(planned), alpha=alpha, n_boot=n_boot)
+    aligned = [
+        _aligned(configs[pair[0]].vectors[key], configs[pair[1]].vectors[key])
+        for pair, key in planned
+    ]
+    boot_results = paired_bootstrap_diffs(aligned, n_boot=resamples, alpha=alpha, seed=seed)
     tested = [
-        _test(configs, pair, key, n_boot=resamples, alpha=alpha, seed=seed) for pair, key in planned
+        _Tested(
+            config_a=pair[0],
+            config_b=pair[1],
+            task=key[0],
+            metric=key[1],
+            result=boot,
+            signflip=paired_signflip_test(
+                num_a, den_a, num_b, den_b, clusters, n_draws=resamples, seed=seed
+            ),
+            vector=configs[pair[0]].vectors[key],
+        )
+        for (pair, key), (num_a, den_a, num_b, den_b, clusters), boot in zip(
+            planned, aligned, boot_results, strict=True
+        )
     ]
     p_values = {i: p for i, t in enumerate(tested) if (p := t.p_value) is not None}
     holm = holm_bonferroni(p_values, alpha) if p_values else {}

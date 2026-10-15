@@ -31,6 +31,7 @@ from identitybench.scoring.stats import (
     mean_ci,
     minimum_detectable_difference,
     paired_bootstrap_diff,
+    paired_bootstrap_diffs,
     paired_signflip_test,
     quadratic_weighted_kappa,
     ratio_ci,
@@ -1084,3 +1085,28 @@ def test_kappa_ci_undefined_and_dropped_resamples() -> None:
     iv = kappa_ci(a, b, [1, 2, 3], n_boot=1000, seed=0)
     assert iv.point is not None
     assert iv.dropped_resamples > 0
+
+
+def test_paired_bootstrap_diffs_matches_single_calls() -> None:
+    """Batch resampling produces bit-identical results across shared/unshared clusters,
+    dropped resamples, single-cluster edge cases, and empty denominators."""
+    assert paired_bootstrap_diffs([]) == []
+    rng = np.random.default_rng(42)
+    n = 40
+    clusters = [f"c{i // 4}" for i in range(n)]
+    den = [1.0] * n
+    na = rng.integers(0, 2, n).astype(float).tolist()
+    nb = rng.integers(0, 2, n).astype(float).tolist()
+    nc = rng.integers(0, 2, n).astype(float).tolist()
+    sparse_den = [1.0, 1.0] + [0.0] * (n - 2)
+    items: list[tuple[list[float], list[float], list[float], list[float], list[str] | None]] = [
+        (na, den, nb, den, None),
+        (na, den, nc, den, None),
+        (nb, den, nc, den, clusters),
+        (na, sparse_den, nb, sparse_den, None),
+        ([1.0, 0.0], [1.0, 0.0], [0.0, 0.0], [1.0, 0.0], ["only", "only"]),
+        ([0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [1.0, 1.0], None),
+    ]
+    batch = paired_bootstrap_diffs(items, n_boot=50_000, alpha=0.05, seed=7)
+    single = [paired_bootstrap_diff(*item, n_boot=50_000, alpha=0.05, seed=7) for item in items]
+    assert batch == single
