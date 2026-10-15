@@ -187,6 +187,10 @@ class ModelPrice(Rates):
     long_context: LongContextTier | None = None
     as_of: date
     source: str = Field(min_length=1)
+    valid_until: date | None = None
+    """The last day a time-limited price (an introductory price) applies, when the vendor
+    dates its end; the report states it beside an API-equivalent priced at this row. The
+    runner doesn't use it: a row is updated when its price changes."""
 
     def rates_for(self, usage: Usage) -> Rates:
         """Base rates, or the long-context tier when this call's prompt is over its threshold.

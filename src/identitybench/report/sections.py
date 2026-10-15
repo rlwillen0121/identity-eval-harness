@@ -16,15 +16,15 @@ visible wherever its numbers appear. Sections about a task no run scored still a
 line saying so, so two reports always have the same outline.
 
 Every number is read from the scores as the scorer wrote them; the report computes nothing but
-the frontier across runs (``charts``), the reliability bins, the API-equivalent of a
-subscription CLI's recorded tokens at list price (``report.api_equivalent``, with its estimate
-of the CLI's own prompt overhead), and, for the safety bar (``report.safety_bar``), the exact
-bounds it computes from the scorer's counts, the spread of invalid review items over campaigns
+the frontier across runs (``charts``), the reliability bins, the API-equivalent of the tokens
+a subscription CLI or an unmetered endpoint recorded, at list price (``report.api_equivalent``, with
+its estimate of a CLI's own prompt overhead), and, for the safety bar (``report.safety_bar``), the
+exact bounds it computes from the scorer's counts, the spread of invalid review items over campaigns
 and the invalid outputs on the variant suites, both from the per-case records. The ceiling
-(``ConfigScores.ceiling``) is shown wherever its numbers belong and labeled as the ceiling
-wherever configurations are ranked, following the scorer, which ranks and compares without it.
-Every table that shows an exact bound is followed by what the bound is on (``fmt.bound_notes``,
-and ``common.operating_bound_note`` for operating points, whose records carry no estimand).
+(``ConfigScores.ceiling``) is shown wherever its numbers belong and labeled as the ceiling wherever
+configurations are ranked, following the scorer, which ranks and compares without it. Every table
+that shows an exact bound is followed by what the bound is on (``fmt.bound_notes``, and
+``common.operating_bound_note`` for operating points, whose records carry no estimand).
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from identitybench.report.common import (
     NO_DURATIONS,
     TASK_TITLES,
     ConfigRef,
+    DecisionCost,
     anchored_confidence,
     config_refs,
     cost_basis_title,
@@ -59,6 +60,7 @@ from identitybench.report.common import (
     equivalent_notes,
     headline_api_usd,
     interval_level,
+    introductory_rates_clause,
     operating_bound_note,
     operating_status,
     prompt_overhead,
@@ -523,10 +525,11 @@ def _smallest_safe(runs: Sequence[ReportRun], refs: Sequence[ConfigRef], bar: Sa
             "to every model before any is ranked by price, and every threshold is a parameter "
             f"of the report (identitybench report --bar-*): {result.describe_bar()}. "
             f"{result.provenance()} The models that clear it are ranked by cost per 1,000 "
-            "decisions on a price, an API charge (metered or billed) or an API-equivalent (a "
-            "subscription CLI's recorded tokens at list price), each labelled; an unmetered "
-            "model (an endpoint that charged nothing per call: self-hosted, or a private "
-            "flat-rate endpoint) is listed apart, since its $0 is not a price. Every model is "
+            "decisions on a price, an API charge (metered or billed) or an API-equivalent (the "
+            "tokens a subscription CLI, or an endpoint that charged nothing per call, recorded, "
+            "at list price), each labelled; an unmetered model with no API-equivalent "
+            "(self-hosted, or with no list price) is listed apart, since its $0 is not a "
+            "price. Every model is "
             "listed, with the criteria it misses. The bar is a synthetic-benchmark screen, not "
             "evidence that a model is safe to deploy.",
             "note",
@@ -2327,6 +2330,13 @@ def _usage(refs: Sequence[ConfigRef]) -> Section:
         for ref in refs
         for source, c in ref.scores.usage.by_cost_source.items()
     )
+    intro = introductory_rates_clause(
+        [
+            (ref.name, DecisionCost("equivalent", e.usd_per_1k_decisions, e))
+            for ref in refs
+            if (e := ref.run.api_equivalent.get(ref.config_id)) is not None
+        ]
+    )
     blocks: list[Block] = [
         Text(
             "A decision is one scored unit (a request, a review item, a plan), every repeat "
@@ -2337,8 +2347,9 @@ def _usage(refs: Sequence[ConfigRef]) -> Section:
             "CLI's own "
             "cost figure is an estimate of what the calls would have cost, not a charge, so it "
             "is listed apart (CLI estimate $/1k) and never mixed in, and so is the "
-            "API-equivalent (◇), a subscription CLI's recorded tokens at the model's dated list "
-            "price (see the safety-bar section). The API figure is n/a "
+            "API-equivalent (◇), the tokens a subscription CLI or an unmetered endpoint in front "
+            f"of a hosted model recorded, at the model's dated list price{intro} (see the "
+            "safety-bar section). The API figure is n/a "
             "unless every prediction has a recorded API cost: a configuration with any unknown "
             "cost is incomplete, never shown as cheaper than it is; the cost basis says why. "
             "Latency is per call over calls that reached the model (cache hits and transport "

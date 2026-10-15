@@ -1,56 +1,82 @@
-"""API-equivalent cost: a subscription CLI's recorded tokens at its model's dated list price
-(SPEC §11.4, §15).
+"""API-equivalent cost: recorded tokens repriced at a dated list-price snapshot, for a
+configuration whose calls this run was not billed for per call (SPEC §11.4, §15).
 
-A subscription CLI (``claude_cli``, ``codex_cli``, ``grok_cli``, ``agy_cli``, ``cursor_cli``)
-bills nobody per call, so its configurations have no API cost: the scorer's headline figure is
-n/a for them (``scoring.usage``), and a CLI's own figure, where it reports one, is kept apart as
-an estimate. That would leave "which model is cheapest" unanswerable for exactly the models people
-run through a subscription. The *API-equivalent* answers it: every prediction's recorded tokens
-priced at the model's row in the dated pricing table (``pricing.yaml``, the table metered API
-cost uses). It is not a charge, so every surface labels it and draws it apart from billed
-(gateway) and metered costs, and it never enters the scorer's headline figure. It is priced
-here, at report time, because it is a price applied to recorded usage, not a score: a run
-scored before a model had a price row gets the figure without being re-scored.
+Two kinds of configuration reach a model that has a public per-token price without this run being
+billed per call:
+
+- a **subscription CLI** (``claude_cli``, ``codex_cli``, ``grok_cli``, ``agy_cli``,
+  ``cursor_cli``): it has no API cost, so the scorer's headline figure is n/a for it
+  (``scoring.usage``), and a CLI's own figure, where it reports one, is kept apart as an
+  estimate;
+- an **unmetered endpoint**: an ``openai_compatible`` configuration every one of whose recorded
+  predictions has ``cost_source == "unmetered"`` (an endpoint that charges this caller nothing
+  per call, such as a private proxy or a flat-rate subscription in front of the vendor's hosted
+  model). The scorer's headline is its $0, which is not a price.
+
+That would leave "which model is cheapest" unanswerable for exactly the models people run that
+way. The *API-equivalent* answers it: every prediction's recorded tokens repriced at the model's
+row in the dated pricing table (``pricing.yaml``, the table metered API cost uses). It is a
+hypothetical list-price equivalent, not a recorded charge to this run, so every surface labels it
+and draws it apart from billed (gateway) and metered costs, and it never enters the scorer's
+headline figure. It is priced here, at report time, because it is a price applied to recorded
+usage, not a score: a run scored before a model had a price row gets the figure without being
+re-scored.
+
+**Which row** (:func:`price_key`). A CLI configuration is priced at the row for its model name,
+which for a CLI is the vendor's public model name. An unmetered endpoint's model name is
+whatever the endpoint routes on, which can be a private route string, so it is never looked
+up: the row is the one for the configuration's *label* (``grok-4.7``), the public name it is
+published under, and an endpoint configuration whose label has no row keeps its unmetered $0.
+A **self-hosted** model's $0 is real (nobody sells those calls), and a vendor's API price says
+nothing about what the same weights cost on someone's own hardware. A run doesn't record whether
+an endpoint is self-hosted, so the public label's model identity and hosting classification are
+publisher-maintained assertions: every published self-hosted configuration must be registered in
+:data:`SELF_HOSTED` (kept equal by a test to the README's self-hosted display-name disclosures),
+and registered self-hosted labels are never priced even if a matching price row exists, on top of
+the table holding only vendor list prices for hosted models.
 
 **What is priced.** Every prediction of the configuration (every repeat; a prediction replayed
 from the response cache carries the usage its call recorded, as for every cost): uncached input,
 cache reads and cache writes at the row's cache rates, and output, which includes reasoning
 tokens (``providers.base.Usage``). The figure per 1,000 decisions divides by the scorer's
 decision count (``UsageScores.n_decisions``), so it is on the same footing as the API column. It
-is computed only when the predictions read back are exactly the ones the scorer counted;
-otherwise the run changed since it was scored, and the configuration gets no figure.
+is computed only when the predictions read back are exactly the ones the scorer counted (and, for
+an endpoint configuration, every prediction's recorded ``cost_source`` is ``"unmetered"``);
+otherwise the run changed since it was scored or mixed cost sources, and the configuration gets
+no figure.
 
 **Cache-write lifetime.** ``Usage`` has one cache-write counter. ``claude_cli`` writes its prompt
 to the 1-hour cache: on every call of the v1 leaderboard run its own cost estimate equals the
 recorded tokens at list price with cache writes at the 1-hour rate, so its writes are priced at
-that rate (:data:`CACHE_TTL`). Other CLIs are priced at the 5-minute rate (``codex_cli``
-records no cache writes at all). Writing every prompt to a 1-hour cache costs twice the input
-rate, more than an API caller sending one-off prompts would pay, so the figure keeps the share
-spent on cache writes (:attr:`ApiEquivalent.cache_write_usd`) for the report to state.
+that rate (:data:`CACHE_TTL`). Other CLIs and unmetered endpoints are priced at the 5-minute rate
+(``codex_cli`` records no cache writes at all). Writing every prompt to a 1-hour cache costs twice
+the input rate, more than an API caller sending one-off prompts would pay, so the figure keeps the
+share spent on cache writes (:attr:`ApiEquivalent.cache_write_usd`) for the report to state.
 
 **Long-context tiers.** A row's long-context tier applies per model request, by that request's
-prompt size. A CLI call can make several requests inside one prediction (the CLI's internal
-turns), and ``Usage`` holds their sum, not each request's size. A prediction whose summed prompt
-is at or under the threshold is exact: every request in it was under it too. One whose summed
-prompt passes it can't be told apart from a single long request, so it is priced at the base
-rates and counted (:attr:`ApiEquivalent.n_over_threshold`), and :attr:`ApiEquivalent.tier_usd`
-is what the configuration would cost if every such prediction were billed at the tier, an upper
-bound the report states beside the figure.
+prompt size. A CLI call can make several requests inside one prediction (the CLI's internal turns;
+for an endpoint, a tool-use loop's turns), and ``Usage`` holds their sum, not each request's size. A
+prediction whose summed prompt is at or under the threshold is exact: every request in it was under
+it too. One whose summed prompt passes it can't be told apart from a single long request, so it is
+priced at the base rates and counted (:attr:`ApiEquivalent.n_over_threshold`), and
+:attr:`ApiEquivalent.tier_usd` is what the configuration would cost if every such prediction were
+billed at the tier, an upper bound the report states beside the figure.
 
 **Cross-check, and what it can't catch.** Where the CLI also reported its own estimate for every
 prediction, the sum is kept (:attr:`ApiEquivalent.cli_estimate_usd`) so the report can say
 whether the two agree. Agreement shows the CLI's tokens and its own price list are consistent;
 neither figure can include tokens the CLI never reports.
 
-**The CLI's own prompt.** A CLI's recorded prompt includes what the CLI adds to every call (its
-own instructions, and the prompts of any internal turns), which a direct API call with the same
-rendered prompt wouldn't send. Where the run also has API configurations (which send only the
-rendered prompt), :func:`api_equivalents` estimates that overhead: for each API configuration,
-the median over the predictions both made (same case, same repeat) of how many more prompt
-tokens the CLI recorded, kept as the lowest and highest of those medians
-(:attr:`ApiEquivalent.prompt_gap`). Each model counts tokens with its own tokenizer, so it is an
-estimate, and the report states it as a range beside the figure, which runs high by up to about
-that share of its prompt cost.
+**The CLI's own prompt.** (CLI configurations only: an unmetered endpoint is a direct API call that
+sends the rendered prompt, so it has no such overhead, and it is one of the API configurations a CLI
+is compared with.) A CLI's recorded prompt includes what the CLI adds to every call (its own
+instructions, and the prompts of any internal turns), which a direct API call with the same rendered
+prompt wouldn't send. Where the run also has API configurations (which send only the rendered
+prompt), :func:`api_equivalents` estimates that overhead: for each API configuration, the median
+over the predictions both made (same case, same repeat) of how many more prompt tokens the CLI
+recorded, kept as the lowest and highest of those medians (:attr:`ApiEquivalent.prompt_gap`). Each
+model counts tokens with its own tokenizer, so it is an estimate, and the report states it as a
+range beside the figure, which runs high by up to about that share of its prompt cost.
 """
 
 from __future__ import annotations
@@ -62,6 +88,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from types import MappingProxyType
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -73,10 +100,14 @@ from identitybench.scoring.usage import CLI_PROVIDERS
 
 __all__ = [
     "CACHE_TTL",
+    "ENDPOINT_PROVIDERS",
+    "SELF_HOSTED",
+    "Access",
     "ApiEquivalent",
     "PredictionKey",
     "api_equivalent",
     "api_equivalents",
+    "price_key",
     "prompt_gap",
     "prompt_tokens",
     "read_keyed_usages",
@@ -86,6 +117,19 @@ __all__ = [
 CACHE_TTL: Mapping[str, CacheTtl] = MappingProxyType({"claude_cli": "1h"})
 """The cache-write lifetime a CLI kind's writes are priced at (see the module docstring); any
 other CLI kind is priced at the 5-minute rate."""
+
+ENDPOINT_PROVIDERS: frozenset[str] = frozenset({"openai_compatible"})
+"""Provider kinds whose configurations, when every call was unmetered, are priced at their
+label's row (see the module docstring)."""
+
+SELF_HOSTED: frozenset[str] = frozenset({"qwen3.8-27b-exl3-4bit", "qwen3.8-flash-next"})
+"""Registered labels of the self-hosted deployments the leaderboard publishes: never priced,
+even if a matching row exists in the pricing table. Every published self-hosted configuration
+must be registered here; the README's display names disclose each as self-hosted
+(``report.readme.MODEL_NAMES``), and a test keeps the two lists in step."""
+
+Access = Literal["cli", "endpoint"]
+"""How the priced calls were made: through a subscription CLI, or an unmetered endpoint."""
 
 _PER_TOKEN = 1_000_000
 
@@ -99,6 +143,8 @@ class ApiEquivalent:
     docstring)."""
 
     model: str
+    """The price row's key: a CLI's model name, or an endpoint configuration's label (never an
+    endpoint's route)."""
     provider: str
     as_of: date
     """The price row's date."""
@@ -136,6 +182,10 @@ class ApiEquivalent:
     an API configuration to compare with."""
     n_peers: int = 0
     """The API configurations :attr:`prompt_gap` compares with."""
+    access: Access = "cli"
+    """Whose calls were priced: a subscription CLI's, or an unmetered endpoint's."""
+    valid_until: date | None = None
+    """The last day the price row applies, for a time-limited (introductory) price."""
 
     @property
     def usd_per_1k_decisions(self) -> float | None:
@@ -199,6 +249,27 @@ def prompt_gap(
     return (min(medians), max(medians)), len(medians)
 
 
+def price_key(scores: RunScores, config_id: str) -> str | None:
+    """The price row a configuration's API-equivalent is looked up under, or None when it gets
+    none (see the module docstring): a subscription CLI's model name; an ``openai_compatible``
+    configuration's label when its aggregate cost basis is ``unmetered`` and the label isn't a
+    registered self-hosted deployment (:data:`SELF_HOSTED`); nothing for any other
+    configuration, which has an API cost of its own or no usable figure."""
+    info = scores.config_info.get(config_id)
+    config = scores.configs.get(config_id)
+    if info is None or config is None:
+        return None
+    if info.provider in CLI_PROVIDERS:
+        return info.model
+    if (
+        info.provider in ENDPOINT_PROVIDERS
+        and config.usage.cost_basis == "unmetered"
+        and info.label not in SELF_HOSTED
+    ):
+        return info.label
+    return None
+
+
 def _usage(u: PredictionUsage) -> Usage:
     return Usage(
         input_tokens=u.input_tokens,
@@ -218,8 +289,10 @@ def api_equivalent(
     n_decisions: int,
     table_sha256: str,
     table_name: str = "in-memory table",
+    access: Access = "cli",
 ) -> ApiEquivalent:
-    """Price one configuration's predictions (``usages``, one per prediction) at ``price``."""
+    """Price one configuration's predictions (``usages``, one per prediction) at ``price``;
+    ``model`` is the row's key."""
     ttl: CacheTtl = CACHE_TTL.get(provider, "5m")
     tier = price.long_context
     base: list[float] = []
@@ -258,6 +331,8 @@ def api_equivalent(
         tier_usd=math.fsum(tiered) if over else None,
         cli_estimate_usd=math.fsum(e or 0.0 for e in estimates) if complete else None,
         prompt_tokens=prompts,
+        access=access,
+        valid_until=price.valid_until,
     )
 
 
@@ -268,12 +343,15 @@ def api_equivalents(
     *,
     prompts: Mapping[str, Mapping[PredictionKey, int]] | None = None,
 ) -> dict[str, ApiEquivalent]:
-    """The API-equivalent of every scored subscription-CLI configuration whose model has a
-    price row in ``table``, by config ID. ``usages`` holds each configuration's predictions'
-    usage (every repeat); a configuration whose count differs from the scorer's has changed
-    since it was scored and is left out. ``prompts`` holds prompt tokens by prediction for the
+    """The API-equivalent of every scored configuration that gets one (a subscription CLI, or an
+    unmetered endpoint: :func:`price_key`) and has a price row in ``table``, by config ID.
+    ``usages`` holds each configuration's predictions'
+    usage (every repeat); a configuration whose count differs from the scorer's (or an endpoint
+    configuration with any prediction whose ``cost_source`` is not ``"unmetered"``) is left out.
+    ``prompts`` holds prompt tokens by prediction for the
     CLI configurations and the API configurations to compare them with (every configuration
-    in it whose provider isn't a CLI is a peer), for :attr:`ApiEquivalent.prompt_gap`."""
+    in it whose provider isn't a CLI is a peer, unmetered endpoints included), for
+    :attr:`ApiEquivalent.prompt_gap`, which only a CLI configuration gets."""
     peers = [
         tokens
         for config_id, tokens in (prompts or {}).items()
@@ -282,23 +360,28 @@ def api_equivalents(
     ]
     out: dict[str, ApiEquivalent] = {}
     for config_id, config in scores.configs.items():
-        info = scores.config_info.get(config_id)
-        if info is None or info.provider not in CLI_PROVIDERS:
-            continue
-        price = table.get(info.model)
+        key = price_key(scores, config_id)
+        price = table.get(key) if key is not None else None
         recorded = usages.get(config_id, ())
-        if price is None or len(recorded) != config.usage.n_predictions or not recorded:
+        if key is None or price is None:
+            continue
+        if len(recorded) != config.usage.n_predictions or not recorded:
+            continue
+        provider = scores.config_info[config_id].provider
+        cli = provider in CLI_PROVIDERS
+        if not cli and any(u.cost_source != "unmetered" for u in recorded):
             continue
         figure = api_equivalent(
             recorded,
             price,
-            model=info.model,
-            provider=info.provider,
+            model=key,
+            provider=provider,
             n_decisions=config.usage.n_decisions,
             table_sha256=table.sha256,
             table_name=table.source_path.name if table.source_path else "in-memory table",
+            access="cli" if cli else "endpoint",
         )
-        own = (prompts or {}).get(config_id)
+        own = (prompts or {}).get(config_id) if cli else None
         gap = prompt_gap(own, peers) if own is not None else None
         if gap is not None:
             figure = replace(figure, prompt_gap=gap[0], n_peers=gap[1])

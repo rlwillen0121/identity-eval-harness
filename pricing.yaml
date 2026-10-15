@@ -6,7 +6,11 @@
 #   records that figure instead: the runner never applies this table to it.
 # - API-equivalent cost: the report prices a subscription CLI's recorded tokens at its model's
 #   row (report.api_equivalent), labelled as such and never mixed into API cost, so a model run
-#   through a subscription still gets a list-price figure.
+#   through a subscription still gets a list-price figure. An `unmetered` `openai_compatible`
+#   entry (an endpoint that charges this caller nothing per call, in front of the vendor's
+#   hosted model) is priced the same way at the row for its label, its public model name, never
+#   its route; registered self-hosted labels (`report.api_equivalent.SELF_HOSTED`) are never
+#   priced, and no row should be keyed on a self-hosted deployment's label.
 #
 # Fields per model:
 #   input, output                 required
@@ -17,6 +21,8 @@
 #                                 cache write tokens) exceeds threshold_tokens, the whole call
 #                                 is billed at the tier's rates (same field rules and defaults)
 #   as_of, source                 required: when and where the price was taken
+#   valid_until                   optional: the last day of a price the vendor dates an end
+#                                 for (an introductory price); the report states it
 #
 # Only add a row when you have a dated price from the vendor or a catalog that lists the
 # vendor's per-token price. Leave other vendors out otherwise.
@@ -27,6 +33,12 @@
 # per-call cost estimates on the v1 leaderboard run (every call, to the cent, with cache writes
 # at the 1-hour rate), which also corrected Claude Sonnet 5.5's cache-read rate (0.10, not the
 # 0.20 an earlier row had).
+#
+# The three rows dated 2026-10-14 (Gemini 4 Argon, Grok 4.7, GLM-5.3 Flash) were taken from the
+# same catalog, retrieved 2026-10-14 (US time; 2026-10-15 04:39 UTC). Each row is the catalog's
+# base `pricing` entry, its long-context `overrides` as the tier (min_prompt_tokens as the
+# threshold), and its `input_cache_write` as cache_write_5m. Gemini 4 Argon's is Google's
+# introductory price, which ends 2026-11-30 (valid_until): update the row when it does.
 
 models:
   claude-fable-5-1:
@@ -123,3 +135,34 @@ models:
       cache_write_5m: 0.25
     as_of: 2026-10-12
     source: OpenRouter model catalog, openai/gpt-6-luna (retrieved 2026-10-12)
+
+  gemini-4-argon:
+    input: 2.00
+    output: 10.00
+    cache_read: 0.10
+    cache_write_5m: 0.1875
+    as_of: 2026-10-14
+    valid_until: 2026-11-30
+    source: >-
+      OpenRouter model catalog, google/gemini-4-argon (retrieved 2026-10-14); Google's
+      introductory price, through 2026-11-30 (the standard list price from 2026-12-01 is
+      reported as $4.00 input and $20.00 output per 1M)
+
+  grok-4.7:
+    input: 2.00
+    output: 6.00
+    cache_read: 0.50
+    long_context:
+      threshold_tokens: 200000
+      input: 4.00
+      output: 12.00
+      cache_read: 1.00
+    as_of: 2026-10-14
+    source: OpenRouter model catalog, x-ai/grok-4.7 (retrieved 2026-10-14)
+
+  glm-5.3-flash:
+    input: 0.036
+    output: 0.90
+    cache_read: 0.01125
+    as_of: 2026-10-14
+    source: OpenRouter model catalog, z-ai/glm-5.3-flash (retrieved 2026-10-14)

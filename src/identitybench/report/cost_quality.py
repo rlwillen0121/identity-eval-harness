@@ -3,13 +3,13 @@ model with a price, and the cost-quality frontier (SPEC §15).
 
 **Only prices get a position.** The x axis is logarithmic and holds the models whose cost is an
 API charge (metered from the dated pricing table, or billed by a gateway), drawn as circles,
-and those with an API-equivalent (a subscription CLI's recorded tokens at the model's dated list
-price, ``report.api_equivalent``), drawn as diamonds and marked ``◇`` in every label, so the two
-footings never read as one. A legend under the plot names both. A CLI's own estimate is not a
-price, an unmetered model's $0 is not a price either, and an unreported cost is
-unknown: those models are listed under the plot with their grounded accuracy and what their
-cost is, and are never drawn at a cost position. The accuracy axis is taken from the priced
-models alone, so a model that isn't plotted never stretches it.
+and those with an API-equivalent (the tokens a subscription CLI, or an endpoint that charged nothing
+per call, recorded, at the model's dated list price, ``report.api_equivalent``), drawn as diamonds
+and marked ``◇`` in every label, so the two footings never read as one. A legend under the plot
+names both. A CLI's own estimate is not a price, an unmetered model's $0 is not a price either, and
+an unreported cost is unknown: those models are listed under the plot with their grounded accuracy
+and what their cost is, and are never drawn at a cost position. The accuracy axis is taken from the
+priced models alone, so a model that isn't plotted never stretches it.
 
 **The frontier** is taken over the priced models, charges and API-equivalents alike (both are
 per-token list prices for the tokens the run used): a model is on it when no other priced model
@@ -509,7 +509,7 @@ def _legend(canvas: Canvas, top: float, *, frontier: bool) -> float:
     box = canvas.text(
         x + 20,
         baseline,
-        f"API-equivalent, marked {fmt.EQUIVALENT} (list price × a subscription CLI's tokens)",
+        f"API-equivalent, marked {fmt.EQUIVALENT} (list price × the tokens recorded)",
         size=_TICK,
         fill="ink2",
     )
@@ -788,7 +788,8 @@ def cost_quality_svg(
     desc = (
         "Scatter plot of grounded accuracy against cost per 1,000 decisions on a log axis, for "
         "the models with a price: circles are API charges, diamonds API-equivalents (list "
-        "price × the tokens a subscription CLI recorded); models without a price are listed "
+        "price × the tokens a subscription CLI or an endpoint that charged nothing per call "
+        "recorded); models without a price are listed "
         f"under it with their grounded accuracy. {subtitle} "
         f"Frontier: {fmt.words([p.name for p in frontier]) or 'none'}. "
         + "; ".join(described(p) for p in points)

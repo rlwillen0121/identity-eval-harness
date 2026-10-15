@@ -32,6 +32,7 @@ def test_repo_pricing_file_rows() -> None:
     # model: (input, output, cache read, cache write 5m, cache write 1h, as_of, source prefix)
     anthropic = (date(2026, 10, 6), "Anthropic API pricing")
     catalog = (date(2026, 10, 12), "OpenRouter model catalog")
+    catalog_oct14 = (date(2026, 10, 14), "OpenRouter model catalog")
     expected = {
         "claude-fable-5-1": (10.0, 50.0, 0.25, 12.5, 20.0, *anthropic),
         "claude-opus-5-5": (4.0, 20.0, 0.20, 5.0, 8.0, *catalog),
@@ -42,6 +43,9 @@ def test_repo_pricing_file_rows() -> None:
         "gpt-6-astra": (10.0, 50.0, 1.00, 12.5, 20.0, *catalog),
         "gpt-6.1-sol": (2.0, 10.0, 0.10, 2.5, 4.0, *catalog),
         "gpt-6-luna": (0.10, 0.50, 0.01, 0.125, 0.20, *catalog),
+        "gemini-4-argon": (2.0, 10.0, 0.10, 0.1875, 4.0, *catalog_oct14),
+        "grok-4.7": (2.0, 6.0, 0.50, 2.0 * 1.25, 2.0 * 2.0, *catalog_oct14),
+        "glm-5.3-flash": (0.036, 0.90, 0.01125, 0.036 * 1.25, 0.036 * 2.0, *catalog_oct14),
     }
     assert set(table.models) == set(expected)
     for model, (inp, out, read, write_5m, write_1h, as_of, source) in expected.items():
@@ -52,6 +56,7 @@ def test_repo_pricing_file_rows() -> None:
         assert price.cache_write_rate("1h") == pytest.approx(write_1h)
         assert price.as_of == as_of
         assert price.source.startswith(source)
+    assert table.models["gemini-4-argon"].valid_until == date(2026, 11, 30)
     # The catalog rows name the catalog entry they were taken from.
     assert "anthropic/claude-sonnet-5.5" in table.models["claude-sonnet-5-5"].source
     assert "openai/gpt-6.1-sol" in table.models["gpt-6.1-sol"].source
@@ -67,6 +72,9 @@ def test_repo_long_context_tiers() -> None:
         tier = table.models[model].long_context
         assert tier is not None and tier.threshold_tokens == 272_000
         assert tier.input == pytest.approx(2 * table.models[model].input)
+    grok = table.models["grok-4.7"].long_context
+    assert grok is not None and grok.threshold_tokens == 200_000
+    assert (grok.input, grok.output, grok.cache_read_rate) == (4.00, 12.00, 1.00)
 
 
 def test_plain_input_output_cost() -> None:
