@@ -17,7 +17,8 @@ each response instead.
 sent in every request body, and the provider folds it into its endpoint identity, so it is part
 of every cache key like any other setting that can change the answer. Its ``headers`` (extra
 request headers a gateway routes on) also reach every request but stay out of the cache key,
-since they can't change the answer.
+since they can't change the answer. Its ``api`` (``chat_completions`` or ``responses``) picks
+the OpenAI API the requests use and is part of the endpoint identity.
 
 Where a provider would otherwise apply a hidden default effort (``codex_cli``), the spec's
 generation parameters carry that default explicitly, so the cache key and manifest record the
@@ -39,6 +40,7 @@ from identitybench.providers.codex_cli import CodexCliProvider
 from identitybench.providers.cursor_cli import CursorCliProvider
 from identitybench.providers.grok_cli import GrokCliProvider
 from identitybench.providers.openai_compat import (
+    APIS,
     OpenAICompatProvider,
     headers_problem,
     provider_routing_problem,
@@ -66,7 +68,14 @@ _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
     "anthropic": frozenset({"max_retries"}),
     "anthropic_compatible": frozenset({"max_retries"}),
     "openai_compatible": frozenset(
-        {"max_retries", "reasoning_effort_param", "max_tokens_param", "provider_routing", "headers"}
+        {
+            "max_retries",
+            "reasoning_effort_param",
+            "max_tokens_param",
+            "provider_routing",
+            "headers",
+            "api",
+        }
     ),
     "claude_cli": frozenset({"binary"}),
     "codex_cli": frozenset({"binary"}),
@@ -95,6 +104,9 @@ def _extra_problem(name: str, value: object) -> str | None:
         return provider_routing_problem(value)
     elif name == "headers":
         return headers_problem(value)
+    elif name == "api":
+        if value not in APIS:
+            return f"must be one of {list(APIS)}"
     elif not isinstance(value, str) or not value.strip():  # binary, path
         return "must be a non-empty string"
     return None
@@ -204,6 +216,7 @@ def make_provider(spec: ModelSpec) -> Provider:
                 "max_tokens_param",
                 "provider_routing",
                 "headers",
+                "api",
             )
             if name in extra
         }

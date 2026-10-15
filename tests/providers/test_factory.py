@@ -98,6 +98,11 @@ def test_spec_from_experiment_yaml_shape() -> None:
             {"provider": "openai_compatible", "model": "m", "extra": {"max_tokens_param": "max"}},
             "max_tokens_param must be one of",
         ),
+        (
+            {"provider": "openai_compatible", "model": "m", "extra": {"api": "completions"}},
+            "api must be one of",
+        ),
+        ({"provider": "anthropic", "model": "m", "extra": {"api": "responses"}}, "api"),
         ({"provider": "anthropic", "model": "m", "extra": {"max_retries": "3"}}, "non-negative"),
         ({"provider": "anthropic", "model": "m", "extra": {"max_retries": -1}}, "non-negative"),
         ({"provider": "anthropic", "model": "m", "extra": {"max_retries": True}}, "non-negative"),
@@ -181,8 +186,15 @@ def test_make_openai_provider(monkeypatch) -> None:
     assert p._base_url == "http://localhost:8000/v1"
     assert p._reasoning_effort_param is False
     assert p._max_tokens_param == "max_tokens"
+    assert p.api == "chat_completions"
     default = make_provider(ModelSpec(provider="openai_compatible", model="gpt-test"))
     assert isinstance(default, OpenAICompatProvider)
+    responses = make_provider(
+        ModelSpec(provider="openai_compatible", model="gpt-test", extra={"api": "responses"})
+    )
+    assert isinstance(responses, OpenAICompatProvider)
+    assert responses.api == "responses"
+    assert responses.endpoint_identity() != default.endpoint_identity()
     assert default._api_key_env == "OPENAI_API_KEY"
     assert default._base_url_env == "OPENAI_BASE_URL"
 

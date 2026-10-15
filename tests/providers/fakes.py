@@ -179,6 +179,10 @@ class FakeOpenAICompletions:
 
 
 class FakeOpenAIClient:
+    """``chat.completions`` and ``responses`` share one queue of scripted results."""
+
     def __init__(self, *results: Any) -> None:
-        self.completions = FakeOpenAICompletions(list(results))
+        queue = list(results)
+        self.completions = FakeOpenAICompletions(queue)
+        self.responses = FakeOpenAICompletions(queue)
         self.chat = self

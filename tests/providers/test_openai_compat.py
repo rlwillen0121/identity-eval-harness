@@ -6,6 +6,7 @@ import httpx2
 import openai
 import pytest
 from openai.types.chat import ChatCompletion
+from openai.types.responses import Response, ResponseUsage
 
 from identitybench.providers.base import Message, Provider, Role, ToolCall, hash_endpoint
 from identitybench.providers.openai_compat import (
@@ -769,3 +770,297 @@ async def test_a_response_body_the_sdk_cannot_parse_is_a_failed_call() -> None:
     p = provider(json.JSONDecodeError("Expecting value", '{"id":', 7))
     response = await p.complete(make_request(schema=DECISION_SCHEMA))
     assert response.error is not None and "unparseable response body" in response.error
+
+
+# --------------------------------------------------------------------------- Responses API
+
+
+def responses_reply(
+    content: str | None = "hi",
+    *,
+    refusal: str | None = None,
+    status: str = "completed",
+    incomplete_reason: str | None = None,
+    function_calls: list[dict[str, Any]] | None = None,
+    usage: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+    **top: Any,
+) -> Response:
+    """A Responses API reply as the SDK parses it: a reasoning item, then the message."""
+    parts: list[dict[str, Any]] = []
+    if content is not None:
+        parts.append({"type": "output_text", "text": content, "annotations": []})
+    if refusal is not None:
+        parts.append({"type": "refusal", "refusal": refusal})
+    output: list[dict[str, Any]] = [
+        {"id": "rs_1", "type": "reasoning", "summary": [], "encrypted_content": "opaque"}
+    ]
+    if parts:
+        output.append(
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": parts,
+            }
+        )
+    output.extend(
+        {"type": "function_call", "id": f"fc_{i}", "status": "completed", **call}
+        for i, call in enumerate(function_calls or [])
+    )
+    return Response.model_validate(
+        {
+            **top,
+            "id": "resp_1",
+            "object": "response",
+            "created_at": 0,
+            "model": "responses-model-2026",
+            "status": status,
+            "error": error,
+            "incomplete_details": {"reason": incomplete_reason} if incomplete_reason else None,
+            "output": output,
+            "parallel_tool_calls": True,
+            "tool_choice": "auto",
+            "tools": [],
+            "usage": usage
+            or {
+                "input_tokens": 1000,
+                "output_tokens": 300,
+                "total_tokens": 1300,
+                "input_tokens_details": {"cached_tokens": 600, "cache_write_tokens": 0},
+                "output_tokens_details": {"reasoning_tokens": 200},
+            },
+        }
+    )
+
+
+def responses_provider(*results: Any, **kwargs: Any) -> OpenAICompatProvider:
+    return provider(*results, api="responses", **kwargs)
+
+
+def sent_responses(p: OpenAICompatProvider) -> dict[str, Any]:
+    client = fake_client(p)
+    assert client.completions.calls == []
+    assert len(client.responses.calls) == 1
+    return client.responses.calls[0]
+
+
+OPENROUTER_RESPONSES_USAGE: dict[str, Any] = {
+    "input_tokens": 120,
+    "output_tokens": 40,
+    "total_tokens": 160,
+    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "cost": 0.0001172292,
+}
+"""Responses API usage with a gateway's reported cost beside the OpenAI fields."""
+
+
+async def test_responses_basic_request() -> None:
+    p = responses_provider(responses_reply())
+    await p.complete(make_request("Decide.", system="POLICY"))
+    assert sent_responses(p) == {
+        "model": "gpt-test",
+        "instructions": "POLICY",
+        "input": [{"role": "user", "content": "Decide."}],
+        "max_output_tokens": 4096,
+        "store": False,
+    }
+
+
+async def test_responses_structured_output_temperature_effort_and_routing() -> None:
+    p = responses_provider(responses_reply(), provider_routing=ROUTING)
+    await p.complete(make_request(schema=DECISION_SCHEMA, temperature=0.0, effort="low"))
+    params = sent_responses(p)
+    assert params["text"] == {
+        "format": {
+            "type": "json_schema",
+            "name": "decision",
+            "schema": DECISION_SCHEMA,
+            "strict": True,
+        }
+    }
+    assert params["temperature"] == 0.0
+    assert params["reasoning"] == {"effort": "low"}
+    assert params["extra_body"] == {"provider": ROUTING}
+    assert "response_format" not in params and "reasoning_effort" not in params
+
+
+async def test_responses_drop_what_the_chat_path_drops(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    p = OpenAICompatProvider(
+        "o3",
+        api="responses",
+        reasoning_effort_param=False,
+        client=FakeOpenAIClient(responses_reply()),  # type: ignore[arg-type]
+    )
+    response = await p.complete(make_request(temperature=0.0, effort="high"))
+    params = sent_responses(p)
+    assert "temperature" not in params and "reasoning" not in params
+    assert response.raw is not None
+    assert response.raw["ignored_params"] == ["temperature", "effort"]
+
+
+async def test_responses_tools_and_tool_items() -> None:
+    messages = (
+        Message(Role.user, "Decide."),
+        Message(
+            Role.assistant,
+            "Looking up.",
+            tool_calls=(ToolCall("call_1", "get_identity", {"id": "U1"}),),
+        ),
+        Message(Role.tool, "U1 record", tool_call_id="call_1"),
+        Message(Role.assistant, "", tool_calls=(ToolCall("call_2", "get_identity", {}),)),
+        Message(Role.tool, "none", tool_call_id="call_2"),
+    )
+    p = responses_provider(responses_reply())
+    await p.complete(make_request(messages=messages, tools=(LOOKUP_TOOL,), system=""))
+    params = sent_responses(p)
+    assert "instructions" not in params
+    assert params["tools"] == [
+        {
+            "type": "function",
+            "name": "get_identity",
+            "description": "Look up an identity by id.",
+            "parameters": LOOKUP_TOOL.input_schema,
+            "strict": True,
+        }
+    ]
+    assert params["input"] == [
+        {"role": "user", "content": "Decide."},
+        {"role": "assistant", "content": "Looking up."},
+        {
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "get_identity",
+            "arguments": '{"id": "U1"}',
+        },
+        {"type": "function_call_output", "call_id": "call_1", "output": "U1 record"},
+        {"type": "function_call", "call_id": "call_2", "name": "get_identity", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "call_2", "output": "none"},
+    ]
+
+
+async def test_responses_text_parsed_usage_and_served_model() -> None:
+    p = responses_provider(responses_reply('{"decision": "DENY", "rules": ["LIFE-001"]}'))
+    response = await p.complete(make_request(schema=DECISION_SCHEMA))
+    assert response.ok
+    assert response.parsed == {"decision": "DENY", "rules": ["LIFE-001"]}
+    assert response.text == '{"decision": "DENY", "rules": ["LIFE-001"]}'
+    assert response.stop_reason == "stop"
+    assert response.served_model == "responses-model-2026"
+    usage = response.usage
+    assert (usage.input_tokens, usage.cache_read_tokens) == (400, 600)
+    assert (usage.output_tokens, usage.reasoning_tokens) == (300, 200)
+    assert response.raw == {"id": "resp_1"}
+
+
+async def test_responses_usage_without_details_or_at_all() -> None:
+    """The SDK builds replies without validation, so a server's missing details are absent
+    attributes, not defaults."""
+    bare = ResponseUsage.model_construct(input_tokens=10, output_tokens=5, total_tokens=15)
+    reply = responses_reply().model_copy(update={"usage": bare})
+    response = await responses_provider(reply).complete(make_request())
+    assert (response.usage.input_tokens, response.usage.output_tokens) == (10, 5)
+    assert response.usage.cache_read_tokens == 0
+    no_usage = responses_reply().model_copy(update={"usage": None})
+    response = await responses_provider(no_usage).complete(make_request())
+    assert response.usage.input_tokens == 0
+
+
+async def test_responses_answer_cut_at_the_output_cap_reads_as_length() -> None:
+    reply = responses_reply(None, status="incomplete", incomplete_reason="max_output_tokens")
+    response = await responses_provider(reply).complete(make_request(schema=DECISION_SCHEMA))
+    assert response.error is None
+    assert response.text is None and response.parsed is None
+    assert response.stop_reason == "length"
+    assert response.usage.output_tokens == 300
+
+
+async def test_responses_function_calls_are_tool_calls() -> None:
+    calls = [
+        {"call_id": "c1", "name": "get_identity", "arguments": '{"id": "U1"}'},
+        {"call_id": "c2", "name": "get_identity", "arguments": "{oops"},
+        {"call_id": "c3", "name": "get_identity", "arguments": ""},
+    ]
+    p = responses_provider(responses_reply(None, function_calls=calls))
+    response = await p.complete(make_request(tools=(LOOKUP_TOOL,)))
+    assert response.tool_calls == [
+        ToolCall("c1", "get_identity", {"id": "U1"}),
+        ToolCall("c2", "get_identity", {UNPARSED_ARGUMENTS_KEY: "{oops"}),
+        ToolCall("c3", "get_identity", {}),
+    ]
+    assert response.text is None
+    assert response.stop_reason == "tool_calls"
+
+
+async def test_responses_refusal_and_content_filter() -> None:
+    p = responses_provider(responses_reply(None, refusal="I can't help with that."))
+    response = await p.complete(make_request(schema=DECISION_SCHEMA))
+    assert response.refused and response.error is None
+    assert response.raw is not None
+    assert response.raw["refusal"] == "I can't help with that."
+    filtered = responses_reply(None, status="incomplete", incomplete_reason="content_filter")
+    response = await responses_provider(filtered).complete(make_request())
+    assert response.refused
+    assert response.stop_reason == "content_filter"
+
+
+async def test_responses_failed_status_is_an_error_that_keeps_accounting() -> None:
+    failed = responses_reply(
+        None,
+        status="failed",
+        error={"code": "server_error", "message": "upstream died"},
+        usage=OPENROUTER_RESPONSES_USAGE,
+    )
+    response = await responses_provider(failed).complete(make_request())
+    assert response.error == "openai_compatible: response failed (server_error: upstream died)"
+    assert response.reported_cost_usd == 0.0001172292
+    assert response.usage.output_tokens == 40
+
+
+async def test_responses_reported_cost_and_upstream_provider() -> None:
+    reply = responses_reply(usage=OPENROUTER_RESPONSES_USAGE, provider="Baidu")
+    response = await responses_provider(reply).complete(make_request())
+    assert response.reported_cost_usd == 0.0001172292
+    assert response.raw is not None and response.raw["upstream_provider"] == "Baidu"
+    response = await responses_provider(responses_reply()).complete(make_request())
+    assert response.reported_cost_usd is None
+
+
+async def test_responses_api_errors_and_malformed_replies_are_failed_calls() -> None:
+    request = httpx2.Request("POST", "https://gateway.example/v1/responses")
+    error = openai.BadRequestError(
+        "ModelProtocolUnsupported",
+        response=httpx2.Response(400, request=request, headers={"x-request-id": "req_9"}),
+        body=None,
+    )
+    response = await responses_provider(error).complete(make_request())
+    assert response.error is not None and "400" in response.error
+    assert response.raw == {"request_id": "req_9"}
+    shaped = responses_reply(usage=OPENROUTER_RESPONSES_USAGE)
+    broken = Response.model_construct(**{**dict(shaped), "output": [object()]})
+    response = await responses_provider(broken).complete(make_request())
+    assert response.error is not None and "malformed response" in response.error
+    assert response.usage.output_tokens == 40
+    assert response.reported_cost_usd == 0.0001172292
+
+
+def test_the_api_is_part_of_the_endpoint_identity(monkeypatch) -> None:
+    """The same model can answer differently on the other API; chat identities are unchanged."""
+    monkeypatch.setenv("GO_BASE_URL", "https://gateway.example/v1")
+    chat = OpenAICompatProvider("m", base_url_env="GO_BASE_URL")
+    explicit = OpenAICompatProvider("m", base_url_env="GO_BASE_URL", api="chat_completions")
+    responses = OpenAICompatProvider("m", base_url_env="GO_BASE_URL", api="responses")
+    assert chat.endpoint_identity() == hash_endpoint("https://gateway.example/v1", "m", None)
+    assert explicit.endpoint_identity() == chat.endpoint_identity()
+    assert responses.endpoint_identity() != chat.endpoint_identity()
+    assert responses.capabilities() == chat.capabilities()
+
+
+def test_rejects_unknown_api_and_a_max_tokens_param_it_cannot_use() -> None:
+    with pytest.raises(ValueError, match="unsupported api"):
+        OpenAICompatProvider("m", api="completions")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="max_tokens_param does not apply"):
+        OpenAICompatProvider("m", api="responses", max_tokens_param="max_tokens")

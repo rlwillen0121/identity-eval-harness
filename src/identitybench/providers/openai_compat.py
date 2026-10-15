@@ -1,8 +1,17 @@
-"""OpenAI Chat Completions provider (``openai_compatible``): OpenAI itself or any server that
-speaks the same API (vLLM, Ollama, LiteLLM and other gateways) via a base URL from the
-environment.
+"""OpenAI provider (``openai_compatible``): OpenAI itself or any server that speaks the same API
+(vLLM, Ollama, LiteLLM and other gateways) via a base URL from the environment.
 
-- **Structured output** uses ``response_format`` with a strict JSON schema.
+- **API.** Chat Completions by default; ``api="responses"`` uses the Responses API instead, for
+  models a server offers only there. The same request goes out either way: the system prompt as
+  ``instructions``, the conversation as ``input`` items (tool calls and results as
+  ``function_call``/``function_call_output`` items), structured output as ``text.format``,
+  effort as ``reasoning.effort``, and ``store: false`` so the endpoint keeps nothing. Replies
+  are read into the same response fields, with Chat Completions' stop reasons (``stop``,
+  ``length`` for an answer cut at ``max_output_tokens``, ``tool_calls``, ``content_filter``),
+  and a ``failed`` response is an error. The API is part of the endpoint identity.
+
+- **Structured output** uses ``response_format`` (``text.format`` on the Responses API) with a
+  strict JSON schema.
 - **Native tools** are strict function tools; tool results go back as ``tool`` messages.
 - **Reasoning effort** is sent as ``reasoning_effort`` when configured, unless the server
   doesn't understand it (``reasoning_effort_param=False``); a dropped effort is reported in
@@ -14,8 +23,10 @@ environment.
   endpoints get the temperature whatever the model is called: a self-hosted server can serve any
   name, and its own model decides what it accepts.
 - Usage: ``prompt_tokens`` includes cached tokens, so uncached input is
-  ``prompt_tokens - cached_tokens``; ``completion_tokens`` already includes reasoning tokens.
-- ``message.refusal`` or a ``content_filter`` finish reason come back as ``refused=True``.
+  ``prompt_tokens - cached_tokens``; ``completion_tokens`` already includes reasoning tokens
+  (likewise ``input_tokens`` and ``output_tokens`` on the Responses API).
+- ``message.refusal`` (a ``refusal`` content part) or a ``content_filter`` finish reason come
+  back as ``refused=True``.
 - **Reported cost.** A gateway that bills per call and says so in the response (OpenRouter puts
   the call's USD in ``usage.cost``) gets it recorded as ``reported_cost_usd``, so a
   ``cost_mode: reported`` entry is costed, and budgeted, from what the call actually cost. A
@@ -56,6 +67,7 @@ from urllib.parse import urlsplit
 import openai
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
+from openai.types.responses import Response
 
 from identitybench.providers._env import paired_api_key_env
 from identitybench.providers._json import load_object
@@ -93,14 +105,23 @@ a 400). A model matches when its ID is a family name or starts with one followed
 fine-tune prefix; ``gpt-50`` or ``o1x`` would not."""
 
 MaxTokensParam = Literal["max_completion_tokens", "max_tokens"]
+Api = Literal["chat_completions", "responses"]
+APIS: tuple[str, ...] = ("chat_completions", "responses")
+"""The OpenAI APIs a model can be called through (``extra.api``)."""
 
 _ROUTING_FLAGS = ("allow_fallbacks", "require_parameters")
 """Boolean keys of a routing preference. YAML ``allow_fallbacks: "false"`` is a truthy string
 that would let a request fall back to an unintended host, so these are type-checked."""
 
 
-def _usage(completion: ChatCompletion) -> Usage:
-    usage = completion.usage
+Reply = ChatCompletion | Response
+"""A parsed reply from either API."""
+
+
+def _usage(reply: Reply) -> Usage:
+    if isinstance(reply, Response):
+        return _responses_usage(reply)
+    usage = reply.usage
     if usage is None:
         return Usage()
     prompt_details = usage.prompt_tokens_details
@@ -112,6 +133,27 @@ def _usage(completion: ChatCompletion) -> Usage:
     return Usage(
         input_tokens=max(prompt - cached - cache_write, 0),
         output_tokens=usage.completion_tokens or 0,
+        cache_read_tokens=cached,
+        cache_write_tokens=cache_write,
+        reasoning_tokens=reasoning,
+    )
+
+
+def _responses_usage(response: Response) -> Usage:
+    """Usage from a Responses API reply. The SDK types every detail as required but builds
+    replies without validating them, and compatible servers leave details out (no
+    ``cache_write_tokens``, say), so each one is read as optional."""
+    usage = response.usage
+    if usage is None:
+        return Usage()
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    cached = getattr(input_details, "cached_tokens", None) or 0
+    cache_write = getattr(input_details, "cache_write_tokens", None) or 0
+    reasoning = getattr(output_details, "reasoning_tokens", None) or 0
+    return Usage(
+        input_tokens=max((getattr(usage, "input_tokens", None) or 0) - cached - cache_write, 0),
+        output_tokens=getattr(usage, "output_tokens", None) or 0,
         cache_read_tokens=cached,
         cache_write_tokens=cache_write,
         reasoning_tokens=reasoning,
@@ -134,18 +176,18 @@ def _usd(value: object) -> float | None:
     return usd if math.isfinite(usd) and usd >= 0 else None
 
 
-def _usage_extra(completion: ChatCompletion) -> dict[str, Any]:
+def _usage_extra(completion: Reply) -> dict[str, Any]:
     """The non-OpenAI fields of ``usage`` (where OpenRouter puts cost and BYOK details)."""
     usage = completion.usage
     return (usage.model_extra if usage is not None else None) or {}
 
 
-def _is_byok(completion: ChatCompletion) -> bool:
+def _is_byok(completion: Reply) -> bool:
     """Whether the call ran on the user's own upstream key (OpenRouter's ``usage.is_byok``)."""
     return _usage_extra(completion).get("is_byok") is True
 
 
-def _reported_cost(completion: ChatCompletion) -> float | None:
+def _reported_cost(completion: Reply) -> float | None:
     """USD the endpoint reports for this call (OpenRouter's ``usage.cost``), or None.
 
     With BYOK, ``cost`` is only OpenRouter's fee; the upstream host bills the user's own key
@@ -166,7 +208,7 @@ def _reported_cost(completion: ChatCompletion) -> float | None:
     return cost + upstream if upstream is not None else None
 
 
-def _gateway_raw(completion: ChatCompletion) -> dict[str, Any]:
+def _gateway_raw(completion: Reply) -> dict[str, Any]:
     """What a gateway says about how it served the call, for ``ModelResponse.raw``: the host it
     routed to (OpenRouter's top-level ``provider``; one model name can be served by hosts that
     answer differently) and whether the call ran on the user's own key (``is_byok``)."""
@@ -263,7 +305,7 @@ def default_api_key_env(base_url_env: str | None) -> str | None:
 
 
 class OpenAICompatProvider:
-    """OpenAI or an OpenAI-compatible server via Chat Completions."""
+    """OpenAI or an OpenAI-compatible server via Chat Completions or the Responses API."""
 
     kind = "openai_compatible"
 
@@ -278,12 +320,17 @@ class OpenAICompatProvider:
         max_tokens_param: MaxTokensParam = "max_completion_tokens",
         provider_routing: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
+        api: Api = "chat_completions",
         max_retries: int = 4,
         timeout_s: float = 600.0,
         client: AsyncOpenAI | None = None,
     ) -> None:
         if max_tokens_param not in ("max_completion_tokens", "max_tokens"):
             raise ValueError(f"unsupported max_tokens_param {max_tokens_param!r}")
+        if api not in APIS:
+            raise ValueError(f"unsupported api {api!r} (one of {list(APIS)})")
+        if api == "responses" and max_tokens_param != "max_completion_tokens":
+            raise ValueError("max_tokens_param does not apply to api 'responses'")
         if provider_routing is not None:
             problem = provider_routing_problem(provider_routing)
             if problem is not None:
@@ -300,6 +347,7 @@ class OpenAICompatProvider:
         self._cache_namespace = cache_namespace
         self._reasoning_effort_param = reasoning_effort_param
         self._max_tokens_param = max_tokens_param
+        self.api: Api = api
         # A JSON round trip gives a private copy (the caller's mapping can't change requests
         # after the identity was computed) and is the canonical text the identity hashes.
         self._routing_json = (
@@ -338,18 +386,24 @@ class OpenAICompatProvider:
 
     def endpoint_identity(self) -> str:
         """Hash of base URL, model and cache namespace, plus the routing preference when one is
-        set (a different host order can produce a different answer). Without routing the parts
+        set (a different host order can produce a different answer) and the API when it is the
+        Responses API (the same model can answer differently there). Without either the parts
         are exactly the earlier ones, so existing cache entries stay valid."""
         base = self._base_url or f"unset:{self._base_url_env}"
         parts = [base, self.model, self._cache_namespace]
         if self._routing_json is not None:
             parts.append(self._routing_json)
+        if self.api != "chat_completions":
+            parts.append(f"api={self.api}")
         return hash_endpoint(*parts)
 
     # ------------------------------------------------------------------ request construction
 
     def request_params(self, request: ModelRequest) -> dict[str, Any]:
-        """Keyword arguments for ``chat.completions.create``."""
+        """Keyword arguments for ``chat.completions.create`` (``responses.create`` when the
+        provider uses the Responses API)."""
+        if self.api == "responses":
+            return self._responses_params(request)
         messages: list[dict[str, Any]] = []
         if request.system:
             messages.append({"role": "system", "content": request.system})
@@ -389,6 +443,73 @@ class OpenAICompatProvider:
             # The SDK merges ``extra_body`` into the JSON body; ``provider`` isn't an SDK field.
             params["extra_body"] = {"provider": self._provider_routing}
         return params
+
+    def _responses_params(self, request: ModelRequest) -> dict[str, Any]:
+        """Keyword arguments for ``responses.create``: what ``request_params`` sends to Chat
+        Completions, in the Responses API's shape."""
+        params: dict[str, Any] = {"model": self.model}
+        if request.system:
+            params["instructions"] = request.system
+        params["input"] = [
+            item for message in request.messages for item in self._input_items(message)
+        ]
+        params["max_output_tokens"] = request.params.max_output_tokens
+        # Responses are stored server-side by default; Chat Completions' are not.
+        params["store"] = False
+        if request.output_schema is not None:
+            params["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": request.schema_name,
+                    "schema": request.output_schema,
+                    "strict": True,
+                }
+            }
+        if request.tools:
+            params["tools"] = [
+                {
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                    "strict": True,
+                }
+                for tool in request.tools
+            ]
+        if request.params.temperature is not None and not self._drops_temperature:
+            params["temperature"] = request.params.temperature
+        if request.params.effort is not None and self._reasoning_effort_param:
+            params["reasoning"] = {"effort": request.params.effort}
+        if self._provider_routing is not None:
+            params["extra_body"] = {"provider": self._provider_routing}
+        return params
+
+    @staticmethod
+    def _input_items(message: Message) -> list[dict[str, Any]]:
+        """A conversation message as Responses API input items."""
+        if message.role is Role.tool:
+            return [
+                {
+                    "type": "function_call_output",
+                    "call_id": message.tool_call_id,
+                    "output": message.content,
+                }
+            ]
+        if message.role is Role.assistant:
+            items: list[dict[str, Any]] = []
+            if message.content:
+                items.append({"role": "assistant", "content": message.content})
+            items.extend(
+                {
+                    "type": "function_call",
+                    "call_id": call.id,
+                    "name": call.name,
+                    "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                }
+                for call in message.tool_calls
+            )
+            return items
+        return [{"role": "user", "content": message.content}]
 
     @staticmethod
     def _api_message(message: Message) -> dict[str, Any]:
@@ -442,7 +563,11 @@ class OpenAICompatProvider:
         params = self.request_params(request)
         try:
             client = self._get_client()
-            completion = cast(ChatCompletion, await client.chat.completions.create(**params))
+            completion: Reply
+            if self.api == "responses":
+                completion = cast(Response, await client.responses.create(**params))
+            else:
+                completion = cast(ChatCompletion, await client.chat.completions.create(**params))
         except openai.APIStatusError as exc:
             return self._fail(
                 f"{type(exc).__name__} {exc.status_code}: {exc.message}",
@@ -458,6 +583,8 @@ class OpenAICompatProvider:
             # not a crash that ends the run.
             return self._fail(f"unparseable response body ({type(exc).__name__}: {exc})")
         try:
+            if isinstance(completion, Response):
+                return self._from_responses(completion, request)
             return self._to_response(completion, request)
         except (AttributeError, TypeError, ValueError, RecursionError) as exc:
             # A compatible server can return a shape the SDK accepted leniently but that lacks
@@ -488,7 +615,7 @@ class OpenAICompatProvider:
     # ------------------------------------------------------------------ response parsing
 
     @staticmethod
-    def _keep_accounting(response: ModelResponse, completion: ChatCompletion) -> None:
+    def _keep_accounting(response: ModelResponse, completion: Reply) -> None:
         """Copy usage, reported cost and upstream host onto a failed ``response`` as far as the
         malformed ``completion`` allows; whatever can't be read stays at its default."""
         with contextlib.suppress(AttributeError, TypeError, ValueError):
@@ -528,6 +655,60 @@ class OpenAICompatProvider:
         response.tool_calls = [
             call for call in (_tool_call(item) for item in message.tool_calls or []) if call
         ]
+        if request.output_schema is not None and response.text:
+            response.parsed = load_object(response.text)
+        return response
+
+    def _from_responses(self, reply: Response, request: ModelRequest) -> ModelResponse:
+        """A Responses API reply as a ``ModelResponse``, read like a chat completion: output text
+        from the ``message`` items (reasoning items are skipped), ``function_call`` items as tool
+        calls, and the status as a Chat Completions stop reason."""
+        response = ModelResponse(
+            usage=_usage(reply),
+            served_model=reply.model or None,
+            reported_cost_usd=_reported_cost(reply),
+            raw={"id": reply.id, **_gateway_raw(reply)},
+        )
+        if reply.status == "failed" or reply.error is not None:
+            error = reply.error
+            detail = f"{error.code}: {error.message}" if error is not None else "no error given"
+            response.error = redact(f"{self.kind}: response failed ({detail})")
+            return response
+
+        texts: list[str] = []
+        refusals: list[str] = []
+        calls: list[ToolCall] = []
+        for item in reply.output:
+            if item.type == "message":
+                for part in item.content:
+                    if part.type == "output_text":
+                        texts.append(part.text)
+                    elif part.type == "refusal":
+                        refusals.append(part.refusal)
+            elif item.type == "function_call":
+                raw_arguments = item.arguments or ""
+                arguments = load_object(raw_arguments) if raw_arguments.strip() else {}
+                if arguments is None:
+                    arguments = {UNPARSED_ARGUMENTS_KEY: raw_arguments}
+                calls.append(ToolCall(id=item.call_id, name=item.name, arguments=arguments))
+        response.text = "".join(texts) or None
+
+        reason = reply.incomplete_details.reason if reply.incomplete_details else None
+        if reply.status == "incomplete":
+            response.stop_reason = (
+                "length" if reason == "max_output_tokens" else reason or "incomplete"
+            )
+        else:
+            response.stop_reason = "tool_calls" if calls else "stop"
+        if refusals or reason == "content_filter":
+            response.refused = True
+            if reason == "content_filter":
+                response.stop_reason = "content_filter"
+            if refusals and response.raw is not None:
+                response.raw["refusal"] = "".join(refusals)
+            return response
+
+        response.tool_calls = calls
         if request.output_schema is not None and response.text:
             response.parsed = load_object(response.text)
         return response

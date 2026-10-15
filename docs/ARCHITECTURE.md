@@ -167,7 +167,9 @@ See [Data contracts](#data-contracts).
   environment variables named in the config, never from the config itself. A gateway that
   states each call's cost in its response (OpenRouter) has it recorded as the call's reported
   cost and scored as a billed API cost (`scoring.usage.reported_cost_of`), and routing
-  preferences given in a model entry are part of its endpoint identity.
+  preferences given in a model entry are part of its endpoint identity. `openai_compatible`
+  calls Chat Completions unless the entry sets `extra.api: responses`, for a model a server
+  offers only on the Responses API; the same request and response fields map onto it.
 - Subscription CLIs: `claude_cli`, `codex_cli`, `grok_cli`, `agy_cli` (Antigravity), `cursor_cli`,
   all on `providers._cli.CliProvider`, which runs each call in an empty temporary directory with
   a private home so a user's own CLI setup can't change the prompt. `agy_cli` has no
@@ -414,12 +416,12 @@ Every published number traces back to its inputs.
   `sample_idx` (so every repeat is a fresh inference), stored under `.cache/responses/`.
   Endpoint identity is non-secret (`hash_endpoint`). For the APIs it hashes the base URL, the
   model, the optional `cache_namespace` (bump it when a self-hosted deployment changes) and, for
-  `openai_compatible`, any `provider_routing` preference from the model entry's `extra`. For
-  the CLIs it hashes the kind, the CLI's version, the model, the default effort and
-  `CliProvider.setup_revision()`, which is derived from the call setup the harness controls
-  (argv, stdin, files and private home of template requests). So changing that setup
-  invalidates cached answers instead of serving them as if the new setup had produced them.
-  `--refresh` bypasses the cache.
+  `openai_compatible`, any `provider_routing` preference from the model entry's `extra` and
+  the API when it is `responses`. For the CLIs it hashes the kind, the CLI's version, the
+  model, the default effort and `CliProvider.setup_revision()`, which is derived from the call
+  setup the harness controls (argv, stdin, files and private home of template requests). So
+  changing that setup invalidates cached answers instead of serving them as if the new setup
+  had produced them. `--refresh` bypasses the cache.
 - **Replay.** Every model response is also appended to the run's `responses.jsonl` under
   `runner.run.replay_key`, so any run can be replayed through the `replay` provider without a
   model.
