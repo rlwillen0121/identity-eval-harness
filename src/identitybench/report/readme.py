@@ -1659,6 +1659,8 @@ def _cost_point(ref: ConfigRef, name: str, tasks: Sequence[Task]) -> CostPoint:
     estimate = usage.cli_estimate_usd_per_1k_decisions
     if basis == "estimate":
         note = f"≈{fmt.usd(estimate)} CLI estimate" if estimate is not None else "no estimate"
+    elif cost.kind == "unmetered":
+        note = "unmetered"
     elif basis is None:
         note = "cost basis not recorded"
     else:

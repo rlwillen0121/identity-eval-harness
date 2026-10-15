@@ -600,12 +600,12 @@ def decision_cost(ref: ConfigRef) -> DecisionCost:
     usage = ref.scores.usage
     basis = usage.cost_basis
     value = headline_api_usd(usage)
-    if basis in CHARGED_BASES and value is not None:
+    if basis in CHARGED_BASES and value is not None and value > 0:
         return DecisionCost("charge", value, basis=basis)
     equivalent = ref.run.api_equivalent.get(ref.config_id)
     if equivalent is not None and equivalent.usd_per_1k_decisions is not None:
         return DecisionCost("equivalent", equivalent.usd_per_1k_decisions, equivalent)
-    if basis == "unmetered":
+    if basis == "unmetered" or (basis in CHARGED_BASES and value == 0.0):
         return DecisionCost("unmetered", 0.0)
     estimate = usage.cli_estimate_usd_per_1k_decisions
     if basis == "estimate" and estimate is not None:
