@@ -47,7 +47,7 @@ def test_repo_pricing_file_rows() -> None:
         "gemini-4-argon": (2.0, 10.0, 0.10, 0.1875, 4.0, *catalog_oct14),
         "grok-4.7": (2.0, 6.0, 0.50, 2.0 * 1.25, 2.0 * 2.0, *catalog_oct14),
         "glm-5.3-flash": (0.036, 0.90, 0.01125, 0.036 * 1.25, 0.036 * 2.0, *catalog_oct14),
-        "muse-spark-1.3-contributor": (0.10, 0.20, 0.002, 0.125, 0.20, *catalog_oct15),
+        "muse-spark-1.3-contributor": (1.25, 4.25, 0.15, 1.25 * 1.25, 1.25 * 2.0, *catalog_oct15),
         "kimi-k3": (0.45, 15.0, 0.28, 0.45 * 1.25, 0.45 * 2.0, *catalog_oct15),
     }
     assert set(table.models) == set(expected)
