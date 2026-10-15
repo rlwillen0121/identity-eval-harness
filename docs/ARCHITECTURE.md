@@ -168,9 +168,11 @@ See [Data contracts](#data-contracts).
   states each call's cost in its response (OpenRouter) has it recorded as the call's reported
   cost and scored as a billed API cost (`scoring.usage.reported_cost_of`), and routing
   preferences given in a model entry are part of its endpoint identity.
-- Subscription CLIs: `claude_cli`, `codex_cli`, `grok_cli`, `cursor_cli`, all on
-  `providers._cli.CliProvider`, which runs each call in an empty temporary directory with a
-  private home so a user's own CLI setup can't change the prompt.
+- Subscription CLIs: `claude_cli`, `codex_cli`, `grok_cli`, `agy_cli` (Antigravity), `cursor_cli`,
+  all on `providers._cli.CliProvider`, which runs each call in an empty temporary directory with
+  a private home so a user's own CLI setup can't change the prompt. `agy_cli` has no
+  system-prompt or tool flags, so each call writes a custom agent definition (no tools, the
+  request's system prompt as its body) into that private home and runs it.
 - `providers.replay.ReplayProvider`: serves a run's recorded `responses.jsonl`, for CI and
   re-scoring.
 - `providers.baselines`: `make_baseline(name, ...)` and `BASELINE_NAMES`, the SPEC §14 baselines
@@ -435,8 +437,8 @@ header only, and the agent looks facts up through `render.tools.TOOL_SPECS` unti
 - **Protocols.** Providers with native tool calling get `native`: the request carries the tools.
   The subscription CLIs take neither tools nor transcripts, so they get the JSON `action`
   protocol: each turn the model returns one `{"tool", "arguments_json", "decision"}` object,
-  constrained by `ACTION_SCHEMAS` where the provider's structured output allows. `claude_cli`
-  and `grok_cli` enforce a schema through a tool of their own, which invites the model to call
+  constrained by `ACTION_SCHEMAS` where the provider's structured output allows. `claude_cli`,
+  `grok_cli` and `agy_cli` enforce a schema through a tool of their own, which invites the model to call
   the listed lookups natively, so they send action-protocol turns (`ACTION_SCHEMA_NAME`)
   without it, and `runner.tooluse` extracts and checks each action itself. A model's
   `extra.tool_protocol` can force either protocol. The manifest records each config's protocol.
