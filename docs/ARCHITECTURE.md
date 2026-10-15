@@ -270,6 +270,9 @@ Every file the panel audit publishes that holds test-split gold (`panel.json`, e
 
 - `report.markdown.write_markdown_report` and `report.html.write_html_report` render one shared
   `report.document.Document` built by `report.sections`, so both carry the same content.
+  `report.sections.paired_document` builds the page `compare --markdown` writes: one
+  comparison's pairs, which may come from different runs and agent modes, with both point
+  estimates.
 - `report.leaderboard`: `leaderboard_table`, `update_readme` (only between the
   `<!-- leaderboard:start -->` and `<!-- leaderboard:end -->` markers) and
   `IncomparableRunsError` for runs not measured on the same cases.
