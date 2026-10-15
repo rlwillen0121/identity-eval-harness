@@ -89,11 +89,15 @@ def test_leaderboard_matrix() -> None:
         ("codex_cli", "gpt-6-astra"),
         ("codex_cli", "gpt-6.1-sol"),
         ("codex_cli", "gpt-6-luna"),
+        ("agy_cli", "gemini-4-argon"),
     ]
     codex = [m for m in board.models if m.provider == "codex_cli"]
     assert all(m.to_spec(board.params).effort == "medium" for m in codex)
     assert all(m.concurrency == 3 for m in codex)
-    assert all(m.concurrency is not None and 2 <= m.concurrency <= 4 for m in board.models)
+    agy = [m for m in board.models if m.provider == "agy_cli"]
+    assert [(m.to_spec(board.params).effort, m.concurrency) for m in agy] == [("medium", 10)]
+    others = [m for m in board.models if m.provider != "agy_cli"]
+    assert all(m.concurrency is not None and 2 <= m.concurrency <= 4 for m in others)
     assert set(board.baselines) == BASELINES
     assert (board.repeats.k, board.repeats.subset) == (3, 100)
     assert board.budget_usd is None  # codex_cli reports no cost, so a budget can't be enforced
