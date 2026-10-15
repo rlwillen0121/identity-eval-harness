@@ -149,7 +149,9 @@ configurations only within a run, so the significance summary is left out.
 **Model names** are display names for the run's labels (:data:`MODEL_NAMES`, matched on the
 label after any ``provider:`` prefix, so ``claude_cli:claude-opus-5-5`` reads *Claude Opus
 5.5*). A label that is a known name plus a quantization suffix (``-4bit``, optionally after a
-format such as ``-awq``) keeps the disclosure: *Qwen3.8-27B (4-bit)*. An unknown label is
+format such as ``-awq``) keeps the disclosure: *Qwen3.8-27B (4-bit)*. A family named by
+version reads as one (``muse-spark-<version>-<variant>`` is *Muse Spark <version>
+(<variant>)*). An unknown label is
 shown as it is. Configurations whose names would collide get their prompt, mode or run ID
 appended.
 
@@ -312,6 +314,12 @@ MODEL_VENDORS: tuple[tuple[str, str], ...] = (
 """Vendors by model label prefix (after any ``provider:`` prefix), for the figures' small
 vendor labels; a label matching none has no vendor label."""
 
+_VERSIONED_NAMES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^muse-spark-(?P<version>\d+(?:\.\d+)*)(?:-(?P<variant>[a-z]+))?$"), "Muse Spark"),
+)
+"""Model families named by version (``<family>-<version>[-<variant>]``), so each release reads
+as ``<Family> <version> (<variant>)`` without a table entry of its own."""
+
 _QUANTIZED = re.compile(
     r"^(?P<base>.+?)(?:-(?:awq|exl2|exl3|gguf|gptq|mlx|nf4|int4|int8|fp8))?-(?P<bits>\d+)-?bit$"
 )
@@ -362,11 +370,18 @@ RobustKind = Literal["harmful_flip_rate", "flip_rate", "counterfactual_sensitivi
 
 
 def model_name(label: str) -> str:
-    """The display name of a run's model label (:data:`MODEL_NAMES`, keeping a quantization
-    suffix as ``(n-bit)``), or the label itself without its ``provider:`` prefix."""
+    """The display name of a run's model label (:data:`MODEL_NAMES`, then a versioned family
+    name, keeping a quantization suffix as ``(n-bit)``), or the label itself without its
+    ``provider:`` prefix."""
     tail = label.rsplit(":", 1)[-1]
     if tail in MODEL_NAMES:
         return MODEL_NAMES[tail]
+    for pattern, family in _VERSIONED_NAMES:
+        versioned = pattern.match(tail)
+        if versioned is not None:
+            variant = versioned["variant"]
+            name = f"{family} {versioned['version']}"
+            return f"{name} ({variant})" if variant else name
     quantized = _QUANTIZED.match(tail)
     if quantized is not None and quantized["base"] in MODEL_NAMES:
         return f"{MODEL_NAMES[quantized['base']]} ({quantized['bits']}-bit)"

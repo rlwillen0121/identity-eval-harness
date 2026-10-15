@@ -1006,6 +1006,19 @@ def test_every_planned_model_has_a_display_name_and_a_vendor() -> None:
         assert (model_name(label), model_vendor(label)) == (name, vendor), label
 
 
+def test_a_versioned_family_reads_as_its_name_version_and_variant() -> None:
+    """Muse Spark releases are named from the label, version and variant included."""
+    for label, name in {
+        "openai_compatible:muse-spark-2.4-contributor": "Muse Spark 2.4 (contributor)",
+        "muse-spark-3": "Muse Spark 3",
+        "muse-spark-2.10.1-preview": "Muse Spark 2.10.1 (preview)",
+    }.items():
+        assert (model_name(label), model_vendor(label)) == (name, "Meta"), label
+    # Not a version: left as it is.
+    assert model_name("muse-spark-latest") == "muse-spark-latest"
+    assert model_name("muse-spark-2.4-x-y") == "muse-spark-2.4-x-y"
+
+
 def test_a_quantized_label_keeps_its_disclosure() -> None:
     assert model_name("openai_compat:qwen3.8-27b-4bit") == "Qwen3.8-27B (4-bit)"
     assert model_name("qwen3.8-27b-exl3-4bit") == "Qwen3.8-27B (4-bit, self-hosted)"
