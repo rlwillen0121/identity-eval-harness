@@ -1,10 +1,10 @@
 """API-equivalent cost: a subscription CLI's recorded tokens at its model's dated list price
 (SPEC §11.4, §15).
 
-A subscription CLI (``claude_cli``, ``codex_cli``, ``grok_cli``, ``cursor_cli``) bills nobody
-per call, so its configurations have no API cost: the scorer's headline figure is n/a for them
-(``scoring.usage``), and a CLI's own figure, where it reports one, is kept apart as an
-estimate. That would leave "which model is cheapest" unanswerable for exactly the models people
+A subscription CLI (``claude_cli``, ``codex_cli``, ``grok_cli``, ``agy_cli``, ``cursor_cli``)
+bills nobody per call, so its configurations have no API cost: the scorer's headline figure is
+n/a for them (``scoring.usage``), and a CLI's own figure, where it reports one, is kept apart as
+an estimate. That would leave "which model is cheapest" unanswerable for exactly the models people
 run through a subscription. The *API-equivalent* answers it: every prediction's recorded tokens
 priced at the model's row in the dated pricing table (``pricing.yaml``, the table metered API
 cost uses). It is not a charge, so every surface labels it and draws it apart from billed

@@ -585,6 +585,7 @@ _CLI_NAMES: Mapping[str, str] = {
     "claude_cli": "Claude CLI",
     "codex_cli": "Codex CLI",
     "grok_cli": "Grok CLI",
+    "agy_cli": "Antigravity CLI",
     "cursor_cli": "Cursor CLI",
 }
 

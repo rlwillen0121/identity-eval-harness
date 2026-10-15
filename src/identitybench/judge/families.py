@@ -6,8 +6,9 @@ which family produced an output and which family a judge belongs to.
 
 A family is inferred from the provider kind when the kind pins the vendor (``anthropic`` and
 ``claude_cli`` only serve Claude, ``codex_cli`` OpenAI models, ``grok_cli`` Grok) and otherwise
-from the model name. ``openai_compatible``, ``anthropic_compatible``, ``replay`` and
-``cursor_cli`` can serve anything, so their family comes from the name alone. A name that
+from the model name. ``openai_compatible``, ``anthropic_compatible``, ``replay``, ``agy_cli``
+(Gemini, Claude and gpt-oss models) and ``cursor_cli`` can serve anything, so their family comes
+from the name alone. A name that
 matches no family, or more than one (a distilled ``deepseek-r1-distill-qwen``), is unknown, and
 the caller must state the family: guessing would let the guard pass on a wrong guess.
 

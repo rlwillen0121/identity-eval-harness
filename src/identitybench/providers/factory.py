@@ -30,6 +30,7 @@ from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from identitybench.providers.agy_cli import AgyCliProvider
 from identitybench.providers.anthropic_api import AnthropicProvider
 from identitybench.providers.base import GenerationParams, Provider
 from identitybench.providers.claude_cli import ClaudeCliProvider
@@ -51,6 +52,7 @@ ProviderKind = Literal[
     "claude_cli",
     "codex_cli",
     "grok_cli",
+    "agy_cli",
     "cursor_cli",
     "replay",
 ]
@@ -69,6 +71,7 @@ _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
     "claude_cli": frozenset({"binary"}),
     "codex_cli": frozenset({"binary"}),
     "grok_cli": frozenset({"binary"}),
+    "agy_cli": frozenset({"binary"}),
     "cursor_cli": frozenset({"binary"}),
     "replay": frozenset({"path"}),
 }
@@ -219,6 +222,8 @@ def make_provider(spec: ModelSpec) -> Provider:
         return CodexCliProvider(spec.model, effort=spec.effective_effort, **timeout, **binary)
     if kind == "grok_cli":
         return GrokCliProvider(spec.model, effort=spec.effort, **timeout, **binary)
+    if kind == "agy_cli":
+        return AgyCliProvider(spec.model, effort=spec.effort, **timeout, **binary)
     if kind == "cursor_cli":
         return CursorCliProvider(spec.model, **timeout, **binary)
     return ReplayProvider(extra["path"], model=spec.model)

@@ -963,6 +963,10 @@ def test_model_names_read_as_display_names() -> None:
     assert model_name("claude_cli:claude-opus-5-5") == "Claude Opus 5.5"
     assert model_name("codex_cli:gpt-6.1-sol") == "GPT-6.1 Sol"
     assert model_name("deepseek-v4-pro") == "DeepSeek V4 Pro"
+    assert (model_name("gemini-4-argon"), model_vendor("gemini-4-argon")) == (
+        "Gemini 4 Argon",
+        "Google",
+    )
     assert model_name("anthropic:some-new-model") == "some-new-model"
     assert all(":" not in name for name in MODEL_NAMES.values())
 
