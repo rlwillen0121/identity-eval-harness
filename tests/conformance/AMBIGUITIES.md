@@ -7,6 +7,10 @@ and a failing scenario prints those IDs. `test_tables.py` keeps the **Scenarios:
 sync with the YAML tags, and checks that every scenario relying on A1–A3, A12, A21, A23–A27 is
 tagged.
 
+This log belongs to the v1 `SPEC.md` and the v1 conformance suite on `main`. It does not record
+decisions made by the frozen v2 implementation behind the published
+[v2 protocol](../../reports/v2/METHOD.md).
+
 Some notes record a question that a later spec revision settled (A12, A17, A24 and A25 rest on
 SPEC 0.4.1). They stay in the log, marked **Resolved**, because the scenarios that pin the
 resolution are the ones a regression would break. Others were decided by the build's orchestrator
@@ -21,8 +25,8 @@ side was wrong.
 
 ## Open questions for the spec author
 
-These readings are decided and pinned, but SPEC 0.4.1 doesn't state them. Each needs a sentence
-in the spec, or a different decision and new scenarios.
+These readings are decided and pinned, but the current v1 spec doesn't state them. Each needs a
+sentence in the spec, or a different decision and new scenarios.
 
 - **HYG-001 on expired and future-dated items (A26).** The 0.4.1 record-scoped bullet names
   LIFE-001, LIFE-003, the ELIG rules and APPR-005 as the rules that judge an item whatever its

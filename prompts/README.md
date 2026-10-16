@@ -5,6 +5,11 @@ file stem (`prompts: [baseline, checklist]`), and the run manifest records each 
 hash. Tool-use mode sends the same role, policy, additions and output formats; few-shot variants
 are context-mode only, and tool-use mode refuses them.
 
+This page documents the v1 prompt loader and prompt files used by the runnable harness on
+`main`. The published [v2 protocol](../reports/v2/METHOD.md) used the baseline prompt from its
+frozen harness commit, `0ccd63db535c774ecbc0d3cfd360077bc03261d9`; the v2 implementation is
+not part of `main`, and the files described here should not be used to reconstruct a v2 call.
+
 | Variant | File | What it adds to the shared prompt |
 |---|---|---|
 | `baseline` | `baseline.md` | Nothing: role, policy pack, precedence and output format only. It defines the role and the output format the other variants inherit. |
