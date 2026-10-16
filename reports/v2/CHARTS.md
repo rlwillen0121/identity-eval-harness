@@ -1,6 +1,6 @@
 # IdentityBench v2 chart gallery
 
-The v1 visual style, applied to the frozen v2 test: large overview bars, task heatmaps and accuracy plots in light and dark themes. Seven completed model rows are shown. Fable and the ongoing supplemental open-weight evaluations are excluded until complete and reviewed.
+The v1 visual style, applied to the frozen v2 test: compact overview bars, task heatmaps and accuracy plots in light and dark themes. Seven completed model rows are shown. Fable and the ongoing supplemental open-weight evaluations are excluded until complete and reviewed.
 
 [Numerical results](report.md) · [Score data and uncertainty](summary.json) · [Method](METHOD.md) · [Development journey](JOURNEY.md) · [Original v1 charts](../../README.md#results)
 
@@ -8,7 +8,7 @@ Models that clear the bar appear first; each group is ordered by mean grounded a
 
 ## The overview
 
-The bars average request and review grounded accuracy equally, as in the v1 overview. They use 251 certificate requests and 652 certificate review items. This is a decision-grounding summary, not a combined score for all tasks. The shaded band spans models that clear the safety bar; Argon lies inside it but misses the bar.
+The bars average request and review grounded accuracy equally, as in the v1 overview. They use 251 certificate requests and 652 certificate review items. This is a decision-grounding summary, not a combined score for all tasks. Green bars identify models that pass all seven safety checks; charcoal bars identify models that miss at least one. Bar length measures grounding only.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="charts/readme-leaderboard-dark.svg">
@@ -86,4 +86,4 @@ From the repository root:
 uv run python reports/v2/build_charts.py
 ```
 
-The generator reads the published summary and safety bar and reuses the v1 chart renderers. It performs no inference and does not modify the frozen test or running evaluations. All charts contain accessible titles and value descriptions.
+The generator reads the published summary and safety bar and reuses the v1 chart renderers for task plots, with a compact v2 overview. It performs no inference and does not modify the frozen test or running evaluations. All charts contain accessible titles and value descriptions.
