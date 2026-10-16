@@ -2844,7 +2844,7 @@ def readme_leaderboard(
                 _text_table(groups, references, columns, tasks, safe, models),
             ),
             "",
-            *_details("More charts", more),
+            *_details("More charts", more, open_=True),
             "",
             *_details("Method and statistics", method),
             "",
