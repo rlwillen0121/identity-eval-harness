@@ -25,7 +25,7 @@ The `review` lane fans out independent read-only subagents across the hidden lan
 When requested by the user or required by a milestone gate (`M3.1`–`M3.6`), run an external adversarial review round using Codex CLI (`gpt-6-astra` with `model_reasoning_effort="xhigh"`):
 
 ```bash
-codex exec -m gpt-6-astra -c 'model_reasoning_effort="xhigh"' -s read-only -C /Users/ryanwillen/orca/projects/identity-eval-harness "<adversarial review prompt>"
+codex exec -m gpt-6-astra -c 'model_reasoning_effort="xhigh"' -s read-only -C . "<adversarial review prompt>"
 ```
 
 ### Adversarial Review Protocol

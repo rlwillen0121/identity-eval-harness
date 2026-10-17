@@ -2454,8 +2454,47 @@ def write_v3_dataset(
     return seal
 
 
+def verify_dataset_seal(dataset_dir: Path) -> DatasetSealV3:
+    """Verify `SEAL.json` SHA-256 hashes, episode count, and aggregate `dataset_sha256`."""
+    seal_path = dataset_dir / "SEAL.json"
+    if not seal_path.is_file():
+        raise FileNotFoundError(f"Missing SEAL.json in {dataset_dir}")
+    seal = DatasetSealV3.model_validate_json(seal_path.read_text(encoding="utf-8"))
+    for fname, expected_hash in sorted(seal.file_sha256.items()):
+        fpath = dataset_dir / fname
+        if not fpath.is_file():
+            raise ValueError(
+                f"Dataset SEAL.json verification failed: missing sealed file {fname}"
+            )
+        actual_hash = _sha256_bytes(fpath.read_bytes())
+        if actual_hash != expected_hash:
+            raise ValueError(
+                f"Dataset SEAL.json verification failed for {fname}: "
+                f"{actual_hash} != {expected_hash}"
+            )
+    manifest_str = "\n".join(f"{k}:{seal.file_sha256[k]}" for k in sorted(seal.file_sha256))
+    if _sha256_bytes(manifest_str.encode("utf-8")) != seal.dataset_sha256:
+        raise ValueError(
+            "Dataset SEAL.json verification failed: aggregate dataset_sha256 mismatch"
+        )
+    ep_file = dataset_dir / "episodes.jsonl"
+    if ep_file.is_file():
+        line_count = sum(
+            1 for line in ep_file.read_text(encoding="utf-8").splitlines() if line.strip()
+        )
+        if line_count != seal.episode_count:
+            raise ValueError(
+                f"Dataset SEAL.json verification failed: episode_count {line_count} "
+                f"!= {seal.episode_count}"
+            )
+    return seal
+
+
 def load_v3_episodes(dataset_dir: Path) -> list[EpisodeSpecV3]:
-    """Load all episodes from a v3 dataset directory (`episodes.jsonl`)."""
+    """Load all episodes from a v3 dataset directory (`episodes.jsonl`), verifying `SEAL.json`."""
+    seal: DatasetSealV3 | None = None
+    if (dataset_dir / "SEAL.json").is_file():
+        seal = verify_dataset_seal(dataset_dir)
     ep_file = dataset_dir / "episodes.jsonl"
     if not ep_file.is_file():
         raise FileNotFoundError(f"Missing episodes.jsonl in {dataset_dir}")
@@ -2463,6 +2502,10 @@ def load_v3_episodes(dataset_dir: Path) -> list[EpisodeSpecV3]:
     for line in ep_file.read_text(encoding="utf-8").splitlines():
         if line.strip():
             episodes.append(EpisodeSpecV3.model_validate_json(line))
+    if seal is not None and len(episodes) != seal.episode_count:
+        raise ValueError(
+            f"Dataset SEAL.json verification failed: loaded {len(episodes)} != {seal.episode_count}"
+        )
     return episodes
 
 
@@ -2478,25 +2521,21 @@ def validate_v3_dataset(
         raise FileNotFoundError(f"Missing SEAL.json in {dataset_dir}")
 
     seal = DatasetSealV3.model_validate_json(seal_path.read_text(encoding="utf-8"))
-    seal_valid = True
-
-    for fname, expected_hash in sorted(seal.file_sha256.items()):
-        fpath = dataset_dir / fname
-        if not fpath.is_file():
-            seal_valid = False
-            errors.append(f"Missing sealed file: {fname}")
-            continue
-        actual_hash = _sha256_bytes(fpath.read_bytes())
-        if actual_hash != expected_hash:
-            seal_valid = False
-            errors.append(f"SHA-256 mismatch for {fname}: {actual_hash} != {expected_hash}")
-
-    manifest_str = "\n".join(f"{k}:{seal.file_sha256[k]}" for k in sorted(seal.file_sha256))
-    if _sha256_bytes(manifest_str.encode("utf-8")) != seal.dataset_sha256:
+    try:
+        verify_dataset_seal(dataset_dir)
+        seal_valid = True
+    except ValueError as exc:
         seal_valid = False
-        errors.append("Dataset aggregate SHA-256 mismatch in SEAL.json")
+        errors.append(str(exc))
 
-    episodes = load_v3_episodes(dataset_dir)
+    ep_file = dataset_dir / "episodes.jsonl"
+    if not ep_file.is_file():
+        raise FileNotFoundError(f"Missing episodes.jsonl in {dataset_dir}")
+    episodes = [
+        EpisodeSpecV3.model_validate_json(line)
+        for line in ep_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     if len(episodes) != seal.episode_count:
         errors.append(f"Episode count mismatch: {len(episodes)} != {seal.episode_count}")
 

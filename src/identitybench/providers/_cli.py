@@ -369,6 +369,26 @@ class CliOptions(TypedDict, total=False):
     retry_base_delay_s: float
 
 
+COMMON_ENV_DROP: frozenset[str] = frozenset(
+    {
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "XAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LOCAL_LLM_API_KEY",
+        "OPENCODE_GO_API_KEY",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+    }
+)
+
+
 class CliProvider(ABC):
     """Base for subscription-CLI providers. Subclasses build the argv and parse the output."""
 
@@ -377,7 +397,7 @@ class CliProvider(ABC):
         native_structured_output=True, native_tools=False, supports_temperature=False
     )
     SUPPORTS_EFFORT: ClassVar[bool] = True
-    ENV_DROP: ClassVar[frozenset[str]] = frozenset()
+    ENV_DROP: ClassVar[frozenset[str]] = COMMON_ENV_DROP
     ENV_DROP_PREFIXES: ClassVar[tuple[str, ...]] = ()
     ENV_KEEP: ClassVar[frozenset[str]] = frozenset()
     ENV_SET: ClassVar[Mapping[str, str]] = MappingProxyType({})
@@ -528,7 +548,11 @@ class CliProvider(ABC):
     def _drops(self, name: str) -> bool:
         if name in self.ENV_KEEP:
             return False
-        return name in self.ENV_DROP or name.startswith(self.ENV_DROP_PREFIXES)
+        return (
+            name in self.ENV_DROP
+            or name in COMMON_ENV_DROP
+            or name.startswith(self.ENV_DROP_PREFIXES)
+        )
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
         response = await self._complete(request)

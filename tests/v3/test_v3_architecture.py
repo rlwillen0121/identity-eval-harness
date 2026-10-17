@@ -1266,6 +1266,15 @@ def test_m32_calibration_fixes_schema_name_safe_getattr_and_evidence_superset() 
     captured_requests: list[ModelRequest] = []
 
     class _FlakyThenSuccessModeBProvider(_MockTurnProvider):
+        def __init__(
+            self,
+            turns: list[list[tuple[str, dict[str, object]]]],
+            *,
+            native_tools: bool,
+        ) -> None:
+            super().__init__(turns, native_tools=native_tools)
+            self.kind = "agy_cli"
+
         async def complete(self, request: ModelRequest) -> ModelResponse:
             captured_requests.append(request)
             if len(captured_requests) == 1:

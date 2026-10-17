@@ -221,7 +221,19 @@ def _gateway_raw(completion: Reply) -> dict[str, Any]:
     return raw
 
 
-_CREDENTIAL_HEADERS = frozenset({"authorization", "api-key", "x-api-key"})
+_CREDENTIAL_HEADERS = frozenset(
+    {
+        "authorization",
+        "api-key",
+        "x-api-key",
+        "x-goog-api-key",
+        "cookie",
+        "set-cookie",
+        "proxy-authorization",
+        "x-auth-token",
+        "x-access-token",
+    }
+)
 
 
 def headers_problem(value: object) -> str | None:
