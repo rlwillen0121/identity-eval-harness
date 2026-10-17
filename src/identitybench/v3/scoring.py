@@ -463,6 +463,9 @@ def score_episode_results_v3(
     )
 
 
+score_v3_run = score_episode_results_v3
+
+
 def check_m32_dev_gates(
     baseline_summaries: Mapping[str, ModelScoreSummaryV3],
     *,
