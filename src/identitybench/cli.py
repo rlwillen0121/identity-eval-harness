@@ -3006,8 +3006,10 @@ def v3_run_cmd(
             f"running {cfg.name} ({cfg.suite.value}, {len(cfg.models)} model(s), "
             f"resume={resume}) into {target} ...",
         )
-        run_v3_experiment(cfg, target, resume=resume, repo_root=session.root)
+        artifact = run_v3_experiment(cfg, target, resume=resume, repo_root=session.root)
     _say(str(target / "v3_summary.json"))
+    if any(s.execution_valid_rate < 1.0 for s in artifact.summaries.values()):
+        raise typer.Exit(code=int(ExitCode.INCOMPLETE))
 
 
 @v3_app.command("report")
