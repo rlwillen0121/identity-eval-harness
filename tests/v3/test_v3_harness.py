@@ -248,7 +248,6 @@ def test_mode_b_claude_cli_schema_fenced_json_and_parse_retry() -> None:
             # Call 2 (retry of turn 1): return markdown-fenced JSON with parsed=None
             if len(captured_requests) == 2:
                 payload = {
-                    "thought": "Inspecting target API",
                     "tool_calls": [
                         {
                             "name": name,
@@ -271,5 +270,6 @@ def test_mode_b_claude_cli_schema_fenced_json_and_parse_retry() -> None:
     assert rec.execution_valid is True
     assert rec.parse_failure is False
     assert rec.verifier_result.s_ep == 1.0
-    assert all(req.schema_name == "v3_agent_turn" for req in captured_requests)
+    assert all(req.schema_name == "tool_action" for req in captured_requests)
+    assert "thought" not in captured_requests[0].system
     assert "Your previous response could not be parsed" in captured_requests[1].messages[-1].content
