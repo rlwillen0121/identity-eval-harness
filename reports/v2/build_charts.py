@@ -4,7 +4,10 @@ Reads only the published scores and bar. Uses the existing v1 WAR screen calcula
 which the frozen v2 harness also uses. No inference or edits to the frozen run.
 """
 
+import argparse
+import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import yaml
@@ -38,6 +41,21 @@ HEADS = [
 ]
 
 SOURCE = ["IdentityBench v2 · Oct 16, 2026 · Synthetic benchmark · Details in README"]
+
+
+def _render_b_style(*, export_png: bool = False) -> None:
+    """Write the standalone B-style story set alongside the legacy detail figures."""
+    spec = importlib.util.spec_from_file_location(
+        "identitybench_v2_b_style", ROOT / "b_style_charts.py"
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load reports/v2/b_style_charts.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    module.render_panel(
+        ROOT / "summary.json", ROOT / "charts", "original retest", False, export_png=export_png
+    )
 
 
 def grounded_mean(config):
@@ -349,7 +367,7 @@ def capabilities(rows, theme):
     return canvas.render(height, title=title, desc=". ".join(desc), key="v2-capability")
 
 
-def main():
+def main(*, export_png: bool = False):
     summary = json.loads((ROOT / "summary.json").read_text())
     bar = yaml.safe_load((ROOT / "safety-bar.yaml").read_text())["thresholds"]
     rows = []
@@ -376,7 +394,20 @@ def main():
             )
         for kind in ("scorecard", "lifecycle", "robustness"):
             (out / f"readme-{kind}-{theme.name}.svg").write_text(metric_map(rows, theme, kind))
+    # README dark-mode compatibility files intentionally use the same white chart
+    # treatment as light mode.  The B-style story set is generated below.
+    for light in out.glob("*-light.svg"):
+        dark = out / light.name.replace("-light.svg", "-dark.svg")
+        if dark.exists():
+            dark.write_text(light.read_text())
+    _render_b_style(export_png=export_png)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--png",
+        action="store_true",
+        help="also rasterize B-style PNG exports using sips or rsvg-convert",
+    )
+    main(export_png=parser.parse_args().png)

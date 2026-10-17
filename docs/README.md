@@ -7,8 +7,8 @@ published results, runnable-harness instructions and historical benchmark eviden
 
 | Topic | Read this | Scope |
 | :-- | :-- | :-- |
-| V2 retest | [Interim report](../reports/v2/report.md) | Seven completed rows from the original panel; Fable pending |
-| V2 supplement | [Supplemental report](../reports/v2/supplemental/report.md), [scores](../reports/v2/supplemental/summary.json) | Five later-selected models; descriptive results on the same frozen test |
+| V2 retest | [Interim report](../reports/v2/report.md) | Original panel: 7 completed rows, 3 pass; Fable pending |
+| V2 supplement | [Supplemental report](../reports/v2/supplemental/report.md), [scores](../reports/v2/supplemental/summary.json) | Later-selected post-hoc panel: 7 rows, 0 pass; descriptive results on the same frozen test |
 | V2 protocol | [Harness and tests](../reports/v2/METHOD.md) | Inputs, two-turn questions, scoring, safety bar, repeats and retries |
 | Why v2 was built | [Development journey](../reports/v2/JOURNEY.md) | Added reasoning requirements and the path to the frozen test |
 | V2 test composition | [Dataset card](../reports/v2/DATASET_CARD.md) | Frozen development/test counts and feature coverage |
@@ -25,7 +25,8 @@ v2 commands. Scores from the two benchmark versions are not directly comparable.
 
 | Goal | Documentation |
 | :-- | :-- |
-| Install and try the harness | [Quickstart](../README.md#quickstart) |
+| V1 archive and runnable harness | [Archive](archive/v1.md#results): historical leaderboard, charts, tool-use comparison, quickstart and method |
+| Install and try the v1 harness | [Quickstart](archive/v1.md#quickstart) |
 | Understand v1 policy and scientific contracts | [Specification](../SPEC.md) |
 | Find the implementation and data flow | [Architecture](ARCHITECTURE.md) |
 | Run, resume, score and publish a v1 experiment | [Release procedure](RELEASE.md) |
@@ -39,7 +40,7 @@ v2 commands. Scores from the two benchmark versions are not directly comparable.
   artifact. Read it with the [errata](../datasets/ERRATA.md), which corrects superseded claims
   and records known issues without changing the original dataset.
 - [V1 model-panel audit](../datasets/identitybench-v1.panel-audit/README.md): evidence from
-  the named 30-model run. Its model counts are historical provenance, not the current
+  the named 30-model run. Its model counts are historical provenance, not the published
   33-model leaderboard count. This is a model-panel audit, not independent human labels.
 - Generated report and audit tables describe their recorded runs. Newer README coverage does
   not retroactively change those runs or their evidence.
@@ -51,9 +52,9 @@ cards listed in checksums, case files, safety thresholds and raw run records are
 inputs or evidence; a documentation cleanup should not rewrite them. Dataset corrections
 belong in the errata or a versioned benchmark change.
 
-The v1 README leaderboard block is generated and marked with `leaderboard:start` and
-`leaderboard:end`; the [release guide](RELEASE.md) covers regeneration. The v2 charts are built
-from the published score summary and safety-bar file:
+The V1 archive leaderboard block is generated and marked with `leaderboard:start` and
+`leaderboard:end`; regenerate it with `identitybench report runs/$RUN --out reports/v1 --readme --readme-file docs/archive/v1.md`. The [release guide](RELEASE.md) covers the full procedure. The v2 charts
+are built from the published score summary and safety-bar file:
 
 ```sh
 uv run python reports/v2/build_charts.py
