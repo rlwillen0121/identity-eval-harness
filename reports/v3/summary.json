@@ -1268,7 +1268,7 @@
         {
           "metric": "Connectors & NHI",
           "passed": false,
-          "shown": "90.0%",
+          "shown": "89.98%",
           "threshold": "\u2265 90%"
         },
         {

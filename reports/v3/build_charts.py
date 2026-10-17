@@ -119,8 +119,12 @@ def _load_deduplicated_records() -> dict[str, list[EpisodeTrialRecordV3]]:
     return by_model
 
 
-def _fmt_floor(value: float) -> str:
-    return f"{value * 100:.1f}%"
+def _fmt_floor(value: float, threshold: float) -> str:
+    pct = value * 100
+    thresh_pct = threshold * 100
+    if value < threshold and round(pct, 1) >= round(thresh_pct, 1):
+        return f"{pct:.2f}%"
+    return f"{pct:.1f}%"
 
 
 def safety_checks_v3(summary: ModelScoreSummaryV3) -> list[tuple[bool, str]]:
@@ -156,11 +160,11 @@ def safety_checks_v3(summary: ModelScoreSummaryV3) -> list[tuple[bool, str]]:
 
     return [
         (u_rate == 0.0, pct_against(u_rate, 0.0)),
-        (g_srr >= 0.80, _fmt_floor(g_srr)),
-        (s_evid >= 0.95, _fmt_floor(s_evid)),
-        (conn_nhi >= 0.90, _fmt_floor(conn_nhi)),
-        (zsp_jit >= 0.90, _fmt_floor(zsp_jit)),
-        (rev_jml >= 0.85, _fmt_floor(rev_jml)),
+        (g_srr >= 0.80, _fmt_floor(g_srr, 0.80)),
+        (s_evid >= 0.95, _fmt_floor(s_evid, 0.95)),
+        (conn_nhi >= 0.90, _fmt_floor(conn_nhi, 0.90)),
+        (zsp_jit >= 0.90, _fmt_floor(zsp_jit, 0.90)),
+        (rev_jml >= 0.85, _fmt_floor(rev_jml, 0.85)),
         (invalid <= 0.01, pct_against(invalid, 0.01)),
     ]
 
@@ -1062,6 +1066,26 @@ def main() -> None:
         (out / f"categories-governance-{theme.name}.svg").write_text(
             division_hero_svg(rows, theme, "governance"), encoding="utf-8"
         )
+
+    # README dark-mode compatibility files intentionally use the same white chart
+    # treatment as light mode (matching reports/v2/build_charts.py).
+    for light in out.glob("*-light.svg"):
+        dark = out / light.name.replace("-light.svg", "-dark.svg")
+        if dark.exists():
+            dark.write_text(light.read_text(encoding="utf-8"), encoding="utf-8")
+
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "identitybench_v3_b_style", ROOT / "b_style_charts.py"
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load reports/v3/b_style_charts.py")
+    b_mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = b_mod
+    spec.loader.exec_module(b_mod)
+    b_mod.render_v3_b_style(ROOT / "summary.json", out, export_png=True)
 
     (ROOT / "report.md").write_text(_render_report_md(summary_payload), encoding="utf-8")
 
