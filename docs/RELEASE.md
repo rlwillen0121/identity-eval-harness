@@ -7,7 +7,7 @@ implemented; replace angle-bracket placeholders with real values and run
 `uv run identitybench <command> --help` for the full options.
 [`ARCHITECTURE.md`](ARCHITECTURE.md) explains the modules named here.
 
-The repository also publishes interim v2 results and selected protocol artifacts under
+The repository also publishes v2 results and selected protocol artifacts under
 [`reports/v2/`](../reports/v2/METHOD.md). Those results came from the frozen harness commit
 `0ccd63db535c774ecbc0d3cfd360077bc03261d9`. The v2 implementation and full dataset are not on
 `main`, so the `identitybench` CLI and the procedure on this page cannot regenerate, score or

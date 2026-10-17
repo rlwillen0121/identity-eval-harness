@@ -14,7 +14,7 @@ This guide documents the runnable **v1 harness on the public `main` branch**. Th
 dataset and its 33-model results are published in [`datasets/identitybench-v1/`](../datasets/identitybench-v1/)
 and [`reports/v1/`](../reports/v1/).
 
-The public repository also contains the interim v2 results and method artifacts in
+The public repository also contains the v2 results and method artifacts in
 [`reports/v2/`](../reports/v2/). Those files describe a frozen local implementation at commit
 `0ccd63db535c774ecbc0d3cfd360077bc03261d9`; the runnable v2 harness and full frozen v2 dataset
 are not on `main`. The package map below therefore describes v1. For the v2 protocol and its

@@ -53,8 +53,11 @@ def _render_b_style(*, export_png: bool = False) -> None:
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    module.render_panel(
-        ROOT / "summary.json", ROOT / "charts", "original retest", False, export_png=export_png
+    module.render_combined_panel(
+        ROOT / "summary.json",
+        ROOT / "supplemental" / "summary.json",
+        ROOT / "charts",
+        export_png=export_png,
     )
 
 
