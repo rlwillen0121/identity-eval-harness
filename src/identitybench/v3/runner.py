@@ -94,6 +94,7 @@ def compute_config_fingerprint(
     max_output_tokens: int,
     max_turns: int,
     endpoint_identity: str,
+    seed: int = 20260301,
 ) -> str:
     """Compute SHA-256 fingerprint of model execution parameters and endpoint identity."""
     payload = {
@@ -104,6 +105,7 @@ def compute_config_fingerprint(
         "max_output_tokens": max_output_tokens,
         "max_turns": max_turns,
         "endpoint_identity": endpoint_identity,
+        "seed": seed,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -658,10 +660,21 @@ def _append_durable_record(path: Path, rec: EpisodeTrialRecordV3) -> None:
 
 def _write_durable_lines(path: Path, lines: Sequence[str]) -> None:
     content = "\n".join(lines) + ("\n" if lines else "")
-    with path.open("w", encoding="utf-8") as f:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
         f.write(content)
         f.flush()
         os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+    if hasattr(os, "O_RDONLY"):
+        try:
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
 
 
 async def run_v3_experiment_async(
@@ -745,6 +758,7 @@ async def run_v3_experiment_async(
             max_output_tokens=params.max_output_tokens,
             max_turns=max_turns,
             endpoint_identity=endpoint_id,
+            seed=config.seed,
         )
 
         async def _run_one(

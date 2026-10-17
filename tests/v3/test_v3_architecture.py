@@ -1119,6 +1119,20 @@ def test_provider_error_vs_parse_failure_and_experiment_resume(tmp_path: Path) -
     )
     assert invalidate_prov.calls_by_episode.get(episodes[0].episode_id, 0) == 2
     assert invalidate_prov.calls_by_episode.get(episodes[1].episode_id, 0) == 2
+    assert not list(crash_dir.glob("*.tmp"))
+
+    # Resume after changing `seed` on experiment config: fingerprint changes -> cache invalidated
+    changed_seed_cfg = changed_effort_cfg.model_copy(update={"seed": 20260399})
+    seed_invalidate_prov = _EpisodeAwareMockProvider()
+    run_v3_experiment(
+        changed_seed_cfg,
+        crash_dir,
+        resume=True,
+        provider_overrides={"mock-agent": seed_invalidate_prov},
+    )
+    assert seed_invalidate_prov.calls_by_episode.get(episodes[0].episode_id, 0) == 2
+    assert seed_invalidate_prov.calls_by_episode.get(episodes[1].episode_id, 0) == 2
+    assert not list(crash_dir.glob("*.tmp"))
 
 
 def test_malformed_native_arguments_and_cli_exit_code_incomplete(
