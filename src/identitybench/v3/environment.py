@@ -105,6 +105,16 @@ def _collect_evidence_ids(val: Any, out: set[str]) -> None:
             _collect_evidence_ids(item, out)
 
 
+def _normalize_optional_id(val: object) -> str | None:
+    """Normalize nullable string arguments ('null', 'None', '', 'n/a') to None."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s.lower() in {"", "null", "none", "n/a"}:
+        return None
+    return s
+
+
 def render_agent_episode_prompt(episode: EpisodeSpecV3) -> str:
     """Render agent-visible Markdown prompt for an episode without oracle/verifier ground truth."""
     all_tools = sorted(
@@ -548,11 +558,7 @@ class IGAEnvironmentV3:
                 subject_binding=SubjectBinding(str(args["subject_binding"])),
                 accountability=Accountability(str(args["accountability"])),
                 workload_binding=WorkloadBinding(str(args["workload_binding"])),
-                resolved_owner_id=(
-                    str(args["resolved_owner_id"])
-                    if args.get("resolved_owner_id") is not None
-                    else None
-                ),
+                resolved_owner_id=_normalize_optional_id(args.get("resolved_owner_id")),
                 owner_resolution_source=OwnerResolutionSource(str(args["owner_resolution_source"])),
                 recommended_action=ClassificationAction(str(args["recommended_action"])),
             )
@@ -567,11 +573,7 @@ class IGAEnvironmentV3:
                         grant_id=str(item["grant_id"]),
                         target=ZSPConversionTarget(str(item["target"])),
                         flag_cooldown_violation=bool(item.get("flag_cooldown_violation") or False),
-                        proposed_role_id=(
-                            str(item["proposed_role_id"])
-                            if item.get("proposed_role_id") is not None
-                            else None
-                        ),
+                        proposed_role_id=_normalize_optional_id(item.get("proposed_role_id")),
                     )
                     self.submitted_role_proposals[prop.grant_id] = prop
             else:
@@ -579,11 +581,7 @@ class IGAEnvironmentV3:
                     grant_id=str(args["grant_id"]),
                     target=ZSPConversionTarget(str(args["target"])),
                     flag_cooldown_violation=bool(args.get("flag_cooldown_violation") or False),
-                    proposed_role_id=(
-                        str(args["proposed_role_id"])
-                        if args.get("proposed_role_id") is not None
-                        else None
-                    ),
+                    proposed_role_id=_normalize_optional_id(args.get("proposed_role_id")),
                 )
                 self.submitted_role_proposals[prop.grant_id] = prop
             return {"proposals_recorded": len(self.submitted_role_proposals)}
@@ -603,9 +601,7 @@ class IGAEnvironmentV3:
                 request_id=req_id,
                 decision=RequestDecision(str(args["decision"])),
                 approved_ttl_s=int(raw_ttl) if raw_ttl is not None else 0,
-                approver_id=(
-                    str(args["approver_id"]) if args.get("approver_id") is not None else None
-                ),
+                approver_id=_normalize_optional_id(args.get("approver_id")),
             )
             existing = self.submitted_jit_decisions.get(sub.request_id)
             if existing is not None and existing.decision != RequestDecision.REQUEST_INFO:
@@ -686,11 +682,8 @@ class IGAEnvironmentV3:
         raw_eng = args.get("expected_engagement_id")
         expected_eng = str(raw_eng) if raw_eng is not None else ""
         action_kind = LifecycleActionKind(str(args["action_kind"]))
-        raw_target = args.get("target_id")
-        target_id = str(raw_target) if raw_target is not None else principal_id
-        successor = (
-            str(args["successor_owner_id"]) if args.get("successor_owner_id") is not None else None
-        )
+        target_id = _normalize_optional_id(args.get("target_id")) or principal_id
+        successor = _normalize_optional_id(args.get("successor_owner_id"))
 
         # Commit-time generation and engagement fencing check against observable HRIS snapshots
         all_principal_snaps = [
@@ -710,9 +703,30 @@ class IGAEnvironmentV3:
             if latest_snap is None or snap.generation >= latest_snap.generation:
                 latest_snap = snap
 
-        if latest_snap is not None and (
-            expected_gen != latest_snap.generation or expected_eng != latest_snap.engagement_id
-        ):
+        fencing_matches = latest_snap is None or (
+            expected_gen == latest_snap.generation and expected_eng == latest_snap.engagement_id
+        )
+        if not fencing_matches and action_kind == LifecycleActionKind.ROTATE_CREDENTIALS:
+            for nhi in stream.owned_nhis:
+                if nhi.nhi_account_id == target_id and principal_id in {
+                    nhi.current_owner_id,
+                    nhi.designated_successor_id,
+                }:
+                    owner_obs = [
+                        s
+                        for s in stream.hr_snapshots
+                        if s.principal_id == nhi.current_owner_id
+                        and s.observable_epoch_s <= self.clock_epoch_s
+                    ]
+                    if owner_obs:
+                        owner_latest = max(owner_obs, key=lambda s: s.generation)
+                        if (
+                            expected_gen == owner_latest.generation
+                            and expected_eng == owner_latest.engagement_id
+                        ):
+                            fencing_matches = True
+
+        if not fencing_matches and latest_snap is not None:
             self.stale_write_attempts += 1
             if bool(args.get("force_unverified_write", False)):
                 self.stale_write_committed = True
@@ -730,12 +744,20 @@ class IGAEnvironmentV3:
                 and (s.session_id == target_id or s.principal_id == target_id)
                 for s in stream.active_sessions
             )
-        elif action_kind in (
-            LifecycleActionKind.TRANSFER_NHI_OWNERSHIP,
-            LifecycleActionKind.ROTATE_CREDENTIALS,
-        ):
+        elif action_kind == LifecycleActionKind.TRANSFER_NHI_OWNERSHIP:
             target_valid = any(
                 n.nhi_account_id == target_id and n.current_owner_id == principal_id
+                for n in stream.owned_nhis
+            )
+        elif action_kind == LifecycleActionKind.ROTATE_CREDENTIALS:
+            target_valid = any(
+                n.nhi_account_id == target_id
+                and principal_id
+                in {
+                    n.current_owner_id,
+                    n.designated_successor_id,
+                    self.nhi_current_owner.get(n.nhi_account_id, n.current_owner_id),
+                }
                 for n in stream.owned_nhis
             )
         elif action_kind == LifecycleActionKind.DISABLE_ACCOUNT:
