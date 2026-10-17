@@ -45,7 +45,13 @@ def test_repo_pricing_file_rows() -> None:
         "gpt-6.1-sol": (2.0, 10.0, 0.10, 2.5, 4.0, *catalog),
         "gpt-6-luna": (0.10, 0.50, 0.01, 0.125, 0.20, *catalog),
         "gemini-4-argon": (
-            4.0, 20.0, 0.20, 5.0, 8.0, date(2026, 10, 14), "Google Gemini API pricing"
+            4.0,
+            20.0,
+            0.20,
+            5.0,
+            8.0,
+            date(2026, 10, 14),
+            "Google Gemini API pricing",
         ),
         "grok-4.7": (2.0, 6.0, 0.50, 2.0 * 1.25, 2.0 * 2.0, *catalog_oct14),
         "glm-5.3-flash": (0.036, 0.90, 0.01125, 0.036 * 1.25, 0.036 * 2.0, *catalog_oct14),
