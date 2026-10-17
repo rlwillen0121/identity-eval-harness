@@ -1261,12 +1261,19 @@ def test_m32_calibration_fixes_schema_name_safe_getattr_and_evidence_superset() 
     assert ver_extra.s_ep == 1.0
     assert ver_extra.grounded_safely_resolved is True
 
-    # 4. Mode B passes schema_name == "tool_action" so agy_cli does not activate finish tool
+    # 4. Mode B passes schema_name == "tool_action", omits input_schema:, and retries malformed
+    # function-call errors up to 3 times with CRITICAL REMINDER
     captured_requests: list[ModelRequest] = []
 
-    class _CapturingModeBProvider(_MockTurnProvider):
+    class _FlakyThenSuccessModeBProvider(_MockTurnProvider):
         async def complete(self, request: ModelRequest) -> ModelResponse:
             captured_requests.append(request)
+            if len(captured_requests) == 1:
+                return ModelResponse(
+                    error="agy_cli: Malformed function call: Function call is empty",
+                    usage=Usage(input_tokens=0, output_tokens=0),
+                    latency_s=0.05,
+                )
             return await super().complete(request)
 
     read_step = [
@@ -1279,11 +1286,16 @@ def test_m32_calibration_fixes_schema_name_safe_getattr_and_evidence_superset() 
         for tc in conn_ep.reference_solution.tool_calls
         if tc.tool_name not in READ_TOOLS
     ]
-    cap_prov = _CapturingModeBProvider([read_step, write_step], native_tools=False)
+    cap_prov = _FlakyThenSuccessModeBProvider([read_step, write_step], native_tools=False)
     trial_rec = asyncio.run(run_v3_agent_episode(conn_ep, cap_prov, max_turns=4))
+    assert trial_rec.execution_valid is True
+    assert trial_rec.provider_error is False
     assert trial_rec.verifier_result.s_ep == 1.0
-    assert len(captured_requests) == 2
+    assert len(captured_requests) == 3
     assert all(req.schema_name == "tool_action" for req in captured_requests)
-    assert "do not invoke native CLI tools" in captured_requests[0].system
+    assert "input_schema:" not in captured_requests[0].system
+    assert "NEVER emit a native tool call or function call" in captured_requests[0].system
+    assert "CRITICAL REMINDER" in captured_requests[1].messages[-1].content
+
 
 

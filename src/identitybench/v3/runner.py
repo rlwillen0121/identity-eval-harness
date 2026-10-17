@@ -259,26 +259,72 @@ def _render_native_system_prompt() -> str:
     )
 
 
+def _format_prop_type(prop_schema: Mapping[str, Any]) -> str:
+    if "enum" in prop_schema and isinstance(prop_schema["enum"], list):
+        return f"one of {json.dumps(prop_schema['enum'])}"
+    raw_type = prop_schema.get("type", "any")
+    type_str = (
+        " or ".join(str(t) for t in raw_type)
+        if isinstance(raw_type, list)
+        else str(raw_type)
+    )
+    items = prop_schema.get("items")
+    if isinstance(items, Mapping):
+        if "properties" in items and isinstance(items["properties"], Mapping):
+            nested = _format_action_keys(items)
+            return f"array of objects with keys {nested} ({type_str})"
+        item_type = items.get("type", "any")
+        return f"array of {item_type} ({type_str})"
+    return type_str
+
+
+def _format_action_keys(schema: Mapping[str, Any]) -> str:
+    props = schema.get("properties")
+    if not isinstance(props, Mapping) or not props:
+        return '"{}"'
+    parts = [
+        f'"{k}": {_format_prop_type(v)}'
+        for k, v in props.items()
+        if isinstance(v, Mapping)
+    ]
+    return "{" + ", ".join(parts) + "}"
+
+
 def _render_cli_system_prompt(tool_specs: Sequence[ToolSpec]) -> str:
-    tools_doc = []
+    actions_doc = []
     for spec in tool_specs:
-        tools_doc.append(
-            f"- `{spec.name}`: {spec.description}\n"
-            f"  input_schema: {json.dumps(spec.input_schema, sort_keys=True)}"
+        keys_desc = _format_action_keys(spec.input_schema)
+        actions_doc.append(
+            f"- Action `{spec.name}`: {spec.description} | JSON keys: {keys_desc}"
         )
-    tools_block = "\n".join(tools_doc)
+    actions_block = "\n".join(actions_doc)
     return (
         "You are an autonomous Enterprise Identity Governance & Administration (IGA) engineer.\n"
         "You interact with the multi-system IGA simulation environment in turns.\n"
+        "This session has NO native tools or functions you can call: NEVER emit a native tool "
+        "call or function call (never invoke manage_task or any function).\n"
+        "The environment actions below are executed by the harness when you write them as plain "
+        "text JSON in your reply.\n"
         "Respond ONLY with a single raw JSON object matching the turn schema (do not invoke "
         "native CLI tools):\n"
-        '  {"thought": "<concise reasoning>", "tool_calls": [{"name": "<tool_name>", '
+        '  {"thought": "<concise reasoning>", "tool_calls": [{"name": "<action_name>", '
         '"arguments_json": "{\\"key\\": \\"value\\"}"}]}\n'
-        "Always inspect the authoritative systems using read tools before calling mutation tools. "
-        "When all actions are complete, call `submit_episode` with `rationale` and the exact "
-        "`evidence_ids` observed from your read tool responses.\n\n"
-        "Available Tools:\n"
-        f"{tools_block}"
+        "Always inspect the authoritative systems using read actions before requesting mutation "
+        "actions. When all actions are complete, request `submit_episode` with `rationale` and "
+        "the exact `evidence_ids` observed from your read responses.\n\n"
+        "### Environment Actions you can request in JSON\n"
+        f"{actions_block}"
+    )
+
+
+def _is_malformed_cli_function_call_error(error: str | None) -> bool:
+    if not error:
+        return False
+    lowered = error.lower()
+    return (
+        "malformed function call" in lowered
+        or "improperly formatted function call" in lowered
+        or "function call is empty" in lowered
     )
 
 
@@ -478,6 +524,37 @@ async def run_v3_agent_episode(
             total_latency_s += resp.latency_s
             if resp.reported_cost_usd is not None:
                 total_cost_usd = (total_cost_usd or 0.0) + resp.reported_cost_usd
+
+            retry_attempt = 0
+            while (
+                resp.error is not None
+                and not resp.refused
+                and _is_malformed_cli_function_call_error(resp.error)
+                and retry_attempt < 3
+            ):
+                retry_attempt += 1
+                retry_messages = list(messages)
+                last_msg = retry_messages[-1]
+                retry_messages[-1] = Message(
+                    role=last_msg.role,
+                    content=last_msg.content
+                    + (
+                        "\n\nCRITICAL REMINDER: Do NOT emit a native function call or tool call. "
+                        "Write your response ONLY as plain JSON text inside your message body."
+                    ),
+                )
+                retry_req = ModelRequest(
+                    system=system_prompt,
+                    messages=tuple(retry_messages),
+                    output_schema=V3_AGENT_TURN_SCHEMA,
+                    schema_name=ACTION_SCHEMA_NAME,
+                    params=effective_params,
+                )
+                resp = await provider.complete(retry_req)
+                total_usage.add(resp.usage)
+                total_latency_s += resp.latency_s
+                if resp.reported_cost_usd is not None:
+                    total_cost_usd = (total_cost_usd or 0.0) + resp.reported_cost_usd
 
             if resp.error is not None and not resp.refused:
                 ver_err = verify_episode_v3(episode, env)
