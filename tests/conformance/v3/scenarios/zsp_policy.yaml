@@ -1,0 +1,228 @@
+category: zsp_policy
+spec_section: "SPEC-v3.md §3.3, §3.5, §4.3 (Policy IGA-ZSP-003)"
+initial_clock_epoch_s: 1760000000
+role_candidates:
+  - role_id: "role_eng_birthright"
+    role_name: "Engineering Birthright Base"
+    role_kind: "birthright"
+    department: "Engineering"
+    included_entitlements:
+      - "ent_git_read"
+      - "ent_ci_view"
+  - role_id: "role_fin_bundle"
+    role_name: "Finance Reporting Requestable Bundle"
+    role_kind: "requestable_bundle"
+    department: "Finance"
+    included_entitlements:
+      - "ent_fin_report_export"
+sod_constraints:
+  - sod_id: "SOD-FIN-01"
+    entitlement_a: "ent_vendor_create"
+    entitlement_b: "ent_payment_approve"
+    static_prohibited: true
+    cooldown_s: 3600
+  - sod_id: "SOD-REL-02"
+    entitlement_a: "ent_code_author_prod"
+    entitlement_b: "ent_prod_deploy_approve"
+    static_prohibited: true
+    cooldown_s: 7200
+scenarios:
+  - scenario_id: ZSP-001
+    description: "Standing admin privilege grant with active episodic need converts to JIT eligible"
+    grant:
+      grant_id: "gr_zsp_001"
+      principal_id: "usr_sre_101"
+      department: "SRE"
+      job_title: "Staff SRE"
+      entitlement_id: "ent_prod_k8s_admin"
+      privilege_tier: "admin"
+      current_mode: "standing"
+      usage_days_90d: 14
+      peer_adoption_rate: 0.45
+      is_break_glass_account: false
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: null
+      expected_target: "CONVERT_TO_JIT_ELIGIBLE"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-001"
+
+  - scenario_id: ZSP-002
+    description: "Vaulted emergency break-glass recovery account retains standing privilege"
+    grant:
+      grant_id: "gr_zsp_002"
+      principal_id: "bg_idp_recovery_01"
+      department: "Security"
+      job_title: "Break-Glass Recovery"
+      entitlement_id: "ent_idp_root_recovery"
+      privilege_tier: "admin"
+      current_mode: "standing"
+      usage_days_90d: 0
+      peer_adoption_rate: 0.05
+      is_break_glass_account: true
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: null
+      expected_target: "KEEP_STANDING_BREAK_GLASS"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-002"
+
+  - scenario_id: ZSP-003
+    description: "Static SoD conflict (vendor create + payment approve) flags SoD violation and revokes excess toxic privilege"
+    grant:
+      grant_id: "gr_zsp_003"
+      principal_id: "usr_fin_103"
+      department: "Finance"
+      job_title: "AP Specialist"
+      entitlement_id: "ent_payment_approve"
+      privilege_tier: "write"
+      current_mode: "standing"
+      usage_days_90d: 20
+      peer_adoption_rate: 0.50
+      is_break_glass_account: false
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: "ent_vendor_create"
+      expected_target: "REVOKE_EXCESS"
+      expected_cooldown_violation: true
+      evidence_id: "EVID-ZSP-003"
+
+  - scenario_id: ZSP-004
+    description: "Temporal SoD cooldown violation: toxic counterpart activated 1800s ago (< 3600s cooldown) flags violation and revokes"
+    grant:
+      grant_id: "gr_zsp_004"
+      principal_id: "usr_fin_104"
+      department: "Finance"
+      job_title: "Treasury Analyst"
+      entitlement_id: "ent_payment_approve"
+      privilege_tier: "write"
+      current_mode: "standing"
+      usage_days_90d: 8
+      peer_adoption_rate: 0.40
+      is_break_glass_account: false
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: 1759998200
+      conflicting_entitlement_id: "ent_vendor_create"
+      expected_target: "REVOKE_EXCESS"
+      expected_cooldown_violation: true
+      evidence_id: "EVID-ZSP-004"
+
+  - scenario_id: ZSP-005
+    description: "Temporal SoD half-open interval boundary: toxic counterpart activated 7200s ago (== 7200s cooldown) has no cooldown violation"
+    grant:
+      grant_id: "gr_zsp_005"
+      principal_id: "usr_eng_105"
+      department: "Engineering"
+      job_title: "Release Engineer"
+      entitlement_id: "ent_prod_deploy_approve"
+      privilege_tier: "admin"
+      current_mode: "standing"
+      usage_days_90d: 12
+      peer_adoption_rate: 0.35
+      is_break_glass_account: false
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: 1759992800
+      conflicting_entitlement_id: "ent_code_author_prod"
+      expected_target: "CONVERT_TO_JIT_ELIGIBLE"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-005"
+
+  - scenario_id: ZSP-006
+    description: "Dormant standing admin grant with 0 usage days in 90d and no justification is revoked"
+    grant:
+      grant_id: "gr_zsp_006"
+      principal_id: "usr_eng_106"
+      department: "Engineering"
+      job_title: "Backend Engineer"
+      entitlement_id: "ent_prod_db_superuser"
+      privilege_tier: "admin"
+      current_mode: "standing"
+      usage_days_90d: 0
+      peer_adoption_rate: 0.10
+      is_break_glass_account: false
+      has_active_prod_justification: false
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: null
+      expected_target: "REVOKE_EXCESS"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-006"
+
+  - scenario_id: ZSP-007
+    description: "Read-tier department-wide entitlement with 92% peer adoption maps to PROPOSE_BIRTHRIGHT_ROLE"
+    grant:
+      grant_id: "gr_zsp_007"
+      principal_id: "usr_eng_107"
+      department: "Engineering"
+      job_title: "Software Engineer"
+      entitlement_id: "ent_git_read"
+      privilege_tier: "read"
+      current_mode: "standing"
+      usage_days_90d: 65
+      peer_adoption_rate: 0.92
+      is_break_glass_account: false
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: null
+      expected_target: "PROPOSE_BIRTHRIGHT_ROLE"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-007"
+
+  - scenario_id: ZSP-008
+    description: "Write-tier functional entitlement with 55% peer adoption maps to PROPOSE_REQUESTABLE_BUNDLE"
+    grant:
+      grant_id: "gr_zsp_008"
+      principal_id: "usr_fin_108"
+      department: "Finance"
+      job_title: "Financial Analyst"
+      entitlement_id: "ent_fin_report_export"
+      privilege_tier: "write"
+      current_mode: "standing"
+      usage_days_90d: 30
+      peer_adoption_rate: 0.55
+      is_break_glass_account: false
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: null
+      expected_target: "PROPOSE_REQUESTABLE_BUNDLE"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-008"
+
+  - scenario_id: ZSP-009
+    description: "Low-adoption write privilege (< 30% peer adoption) with active prod justification converts to JIT eligible"
+    grant:
+      grant_id: "gr_zsp_009"
+      principal_id: "usr_sre_109"
+      department: "Engineering"
+      job_title: "Infrastructure Engineer"
+      entitlement_id: "ent_terraform_state_write"
+      privilege_tier: "write"
+      current_mode: "standing"
+      usage_days_90d: 6
+      peer_adoption_rate: 0.15
+      is_break_glass_account: false
+      has_active_prod_justification: true
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: null
+      expected_target: "CONVERT_TO_JIT_ELIGIBLE"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-009"
+
+  - scenario_id: ZSP-010
+    description: "Dormant outlier write privilege with 0 usage days and no active prod justification is revoked as excess"
+    grant:
+      grant_id: "gr_zsp_010"
+      principal_id: "usr_mkt_110"
+      department: "Marketing"
+      job_title: "Content Manager"
+      entitlement_id: "ent_aws_billing_write"
+      privilege_tier: "write"
+      current_mode: "standing"
+      usage_days_90d: 0
+      peer_adoption_rate: 0.04
+      is_break_glass_account: false
+      has_active_prod_justification: false
+      last_toxic_pair_activation_epoch_s: null
+      conflicting_entitlement_id: null
+      expected_target: "REVOKE_EXCESS"
+      expected_cooldown_violation: false
+      evidence_id: "EVID-ZSP-010"

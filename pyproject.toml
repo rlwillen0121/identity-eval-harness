@@ -35,6 +35,8 @@ dev = [
   "hypothesis>=6.120",
   "ruff>=0.9",
   "pyright>=1.1.390",
+  "mypy>=1.14",
+  "types-pyyaml>=6.0",
 ]
 
 [build-system]
@@ -75,6 +77,26 @@ pythonVersion = "3.12"
 typeCheckingMode = "standard"
 strict = ["src/identitybench/policy", "src/identitybench/scoring"]
 reportMissingTypeStubs = false
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+  "identitybench.audit",
+  "identitybench.judge.*",
+  "identitybench.panel.*",
+  "identitybench.probe.*",
+  "identitybench.providers.*",
+  "identitybench.render.*",
+  "identitybench.report.*",
+  "identitybench.runner.*",
+  "identitybench.scoring.*",
+  "identitybench.tasks.*",
+]
+ignore_errors = true
 
 [tool.coverage.run]
 source = ["identitybench"]
