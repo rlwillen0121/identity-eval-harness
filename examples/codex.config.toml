@@ -1,0 +1,4 @@
+# Follow AGENTS.md.
+# Contributors use orchestrate -> implement -> review (free local checks only).
+# Live model benchmark trials are run exclusively via bench-operator when requested by the user.
+# Strictly Enterprise IGA (humans + standard NHIs + Zero-Trust/ZSP/JIT/CAE); no SOC/SIEM drift or AI-agent governance.

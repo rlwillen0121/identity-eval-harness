@@ -1,0 +1,50 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "orchestrate",
+  "agent": {
+    "orchestrate": {
+      "description": "IdentityBench contributor coordinator. No direct source edits and no live model runs.",
+      "mode": "primary",
+      "permission": {
+        "edit": "deny",
+        "task": {
+          "*": "deny",
+          "implement": "allow",
+          "review": "allow",
+          "lane-blind-conformance": "allow"
+        }
+      }
+    },
+    "implement": {
+      "description": "IdentityBench implementer. Edits named files and runs free local verification only. Never calls live models.",
+      "mode": "subagent",
+      "permission": {
+        "edit": "allow",
+        "task": "deny"
+      }
+    },
+    "review": {
+      "description": "IdentityBench review composer. Fans out hidden blind lanes; no source edits.",
+      "mode": "subagent",
+      "permission": {
+        "edit": "deny",
+        "task": {
+          "*": "deny",
+          "lane-rules": "allow",
+          "lane-security": "allow",
+          "lane-oracle": "allow",
+          "lane-blind-conformance": "allow",
+          "lane-stats": "allow"
+        }
+      }
+    },
+    "bench-operator": {
+      "description": "IdentityBench operator. Runs live model evaluations and reports when explicitly requested; no repo edits.",
+      "mode": "primary",
+      "permission": {
+        "edit": "deny",
+        "task": "deny"
+      }
+    }
+  }
+}
