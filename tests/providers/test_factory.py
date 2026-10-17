@@ -36,6 +36,7 @@ def test_provider_kinds() -> None:
         "grok_cli",
         "agy_cli",
         "cursor_cli",
+        "muse_cli",
         "replay",
     )
 

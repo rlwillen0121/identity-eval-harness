@@ -14,6 +14,7 @@ from identitybench.providers.baselines import BASELINE_NAMES
 from identitybench.render.prompt import PROMPT_VARIANTS
 from identitybench.runner.config import BASELINES, ExperimentConfig, load_config
 from identitybench.schemas.enums import Split, Suite
+from identitybench.v3.runner import load_v3_experiment_config
 
 REPO = Path(__file__).resolve().parents[2]
 EXPERIMENTS = REPO / "experiments"
@@ -23,6 +24,12 @@ CONFIGS = (
     "v1-leaderboard-openai-compatible.example",
     "v1-ablation",
     "local-model.example",
+)
+V3_CONFIGS = (
+    "v3-dev-baselines",
+    "v3-dev-pilot",
+    "v3-lite",
+    "v3-full",
 )
 ALL_SUITES = list(Suite)
 
@@ -37,6 +44,13 @@ def test_every_experiment_loads_without_warnings(name: str) -> None:
     assert loaded.name == name.removesuffix(".example")
     assert loaded.dataset == Path("datasets/identitybench-v1")
     assert loaded.warnings() == []
+
+
+@pytest.mark.parametrize("name", V3_CONFIGS)
+def test_every_v3_experiment_loads_cleanly(name: str) -> None:
+    loaded = load_v3_experiment_config(EXPERIMENTS / f"{name}.yaml")
+    assert loaded.name == name
+    assert (REPO / "datasets" / loaded.suite.value / "SEAL.json").is_file()
 
 
 @pytest.mark.parametrize("name", CONFIGS)
@@ -60,6 +74,7 @@ def test_the_committed_files_are_exactly_these() -> None:
     names = sorted(p.name for p in EXPERIMENTS.glob("*.yaml"))
     expected = [
         *(f"{n}.yaml" for n in CONFIGS),
+        *(f"{n}.yaml" for n in V3_CONFIGS),
         "judges.yaml",
         "judges-consensus.example.yaml",
         "panel-adjudication.example.yaml",

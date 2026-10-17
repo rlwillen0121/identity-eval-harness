@@ -2976,6 +2976,40 @@ def v3_score(
     _say(str(summary_path))
 
 
+@v3_app.command("run")
+def v3_run_cmd(
+    ctx: typer.Context,
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", help="v3 experiment YAML config file."),
+    ],
+    out: Annotated[
+        Path,
+        typer.Option("--out", "-o", help="Output run directory (e.g., runs/v3-dev-pilot)."),
+    ],
+    resume: Annotated[
+        bool,
+        typer.Option("--resume", help="Resume an interrupted run, keeping valid trial records."),
+    ] = False,
+) -> None:
+    """Run an IdentityBench v3 experiment (baselines and/or live models) from a YAML config."""
+    session = _session(ctx)
+    with _errors("v3 run"):
+        from identitybench.v3.runner import load_v3_experiment_config, run_v3_experiment
+
+        if not config.is_file():
+            raise CliError(f"experiment config not found: {config}")
+        cfg = load_v3_experiment_config(config)
+        target = _under_root(session, out, Path("runs") / cfg.name)
+        _note(
+            session,
+            f"running {cfg.name} ({cfg.suite.value}, {len(cfg.models)} model(s), "
+            f"resume={resume}) into {target} ...",
+        )
+        run_v3_experiment(cfg, target, resume=resume, repo_root=session.root)
+    _say(str(target / "v3_summary.json"))
+
+
 @v3_app.command("report")
 def v3_report_cmd(
     ctx: typer.Context,

@@ -39,6 +39,8 @@ from identitybench.providers.codex_cli import DEFAULT_EFFORT as CODEX_DEFAULT_EF
 from identitybench.providers.codex_cli import CodexCliProvider
 from identitybench.providers.cursor_cli import CursorCliProvider
 from identitybench.providers.grok_cli import GrokCliProvider
+from identitybench.providers.muse_cli import DEFAULT_EFFORT as MUSE_DEFAULT_EFFORT
+from identitybench.providers.muse_cli import MuseCliProvider
 from identitybench.providers.openai_compat import (
     APIS,
     OpenAICompatProvider,
@@ -56,6 +58,7 @@ ProviderKind = Literal[
     "grok_cli",
     "agy_cli",
     "cursor_cli",
+    "muse_cli",
     "replay",
 ]
 PROVIDER_KINDS: tuple[str, ...] = get_args(ProviderKind)
@@ -82,6 +85,7 @@ _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
     "grok_cli": frozenset({"binary"}),
     "agy_cli": frozenset({"binary"}),
     "cursor_cli": frozenset({"binary"}),
+    "muse_cli": frozenset({"binary"}),
     "replay": frozenset({"path"}),
 }
 """Provider constructor options accepted in ``ModelSpec.extra``, per kind."""
@@ -112,7 +116,10 @@ def _extra_problem(name: str, value: object) -> str | None:
     return None
 
 
-DEFAULT_EFFORT: dict[str, str] = {"codex_cli": CODEX_DEFAULT_EFFORT}
+DEFAULT_EFFORT: dict[str, str] = {
+    "codex_cli": CODEX_DEFAULT_EFFORT,
+    "muse_cli": MUSE_DEFAULT_EFFORT,
+}
 """Effort a provider kind runs at when the spec sets none (kinds not listed use the model's own
 default, which the provider reports nothing about)."""
 
@@ -237,6 +244,8 @@ def make_provider(spec: ModelSpec) -> Provider:
         return GrokCliProvider(spec.model, effort=spec.effort, **timeout, **binary)
     if kind == "agy_cli":
         return AgyCliProvider(spec.model, effort=spec.effort, **timeout, **binary)
+    if kind == "muse_cli":
+        return MuseCliProvider(spec.model, effort=spec.effective_effort, **timeout, **binary)
     if kind == "cursor_cli":
         return CursorCliProvider(spec.model, **timeout, **binary)
     return ReplayProvider(extra["path"], model=spec.model)
