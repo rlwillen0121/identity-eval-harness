@@ -18,22 +18,9 @@ models:
     model: surface_heuristic
   - provider: baseline
     model: random_valid
-  - provider: claude_cli
-    model: claude-opus-5-5
-    label: claude-opus-5-5
-    concurrency: 2
-  - provider: claude_cli
-    model: claude-sonnet-5-5
-    label: claude-sonnet-5-5
-    concurrency: 3
   - provider: codex_cli
     model: gpt-6-astra
     label: gpt-6-astra
-    effort: medium
-    concurrency: 3
-  - provider: codex_cli
-    model: gpt-6.1-sol
-    label: gpt-6.1-sol
     effort: medium
     concurrency: 3
   - provider: agy_cli
@@ -41,8 +28,4 @@ models:
     label: gemini-4-argon
     effort: medium
     concurrency: 6
-  - provider: muse_cli
-    model: muse-wonder-full-1.0
-    label: muse-wonder-full-1.0
-    effort: medium
-    concurrency: 2
+
