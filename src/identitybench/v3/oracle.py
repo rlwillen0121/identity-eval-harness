@@ -567,7 +567,7 @@ def derive_lifecycle_actions(
     step_counter = 1
 
     # 1. Immediate CAE session revocations at t_compromise_s
-    for sess in stream.active_sessions:
+    for sess in sorted(stream.active_sessions, key=lambda s: s.t_compromise_s):
         sess_snap = latest_snap[sess.principal_id]
         actions.append(
             LifecycleActionSpec(
@@ -643,7 +643,7 @@ def derive_lifecycle_actions(
             step_counter += 1
 
     # 3. Out-of-band drift remediation for invalid tickets
-    for drift in stream.drift_grants:
+    for drift in sorted(stream.drift_grants, key=lambda d: d.detected_epoch_s):
         if not drift.ticket_valid:
             drift_snap = latest_snap[drift.principal_id]
             actions.append(
