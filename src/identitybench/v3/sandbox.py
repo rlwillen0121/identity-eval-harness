@@ -45,7 +45,6 @@ FORBIDDEN_CALL_NAMES: frozenset[str] = frozenset(
         "delattr",
         "eval",
         "exec",
-        "getattr",
         "globals",
         "input",
         "locals",
@@ -249,12 +248,19 @@ def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
     raise ImportError(f"Import of {name!r} is forbidden in connector sandbox")
 
 
+def _safe_getattr(obj, name, *default):
+    if not isinstance(name, str) or name.startswith("_") or name in FORBIDDEN_FRAME_ATTRS:
+        raise AttributeError("Forbidden attribute access")
+    return builtins.getattr(obj, name, *default)
+
+
 SAFE_BUILTINS = {
     k: getattr(builtins, k)
     for k in (
         "abs",
         "all",
         "any",
+        "AttributeError",
         "bool",
         "bytes",
         "callable",
@@ -268,6 +274,7 @@ SAFE_BUILTINS = {
         "frozenset",
         "hash",
         "hex",
+        "IndexError",
         "int",
         "isinstance",
         "issubclass",
@@ -275,6 +282,7 @@ SAFE_BUILTINS = {
         "KeyError",
         "len",
         "list",
+        "LookupError",
         "map",
         "max",
         "min",
@@ -291,12 +299,14 @@ SAFE_BUILTINS = {
         "set",
         "slice",
         "sorted",
+        "StopIteration",
         "str",
         "sum",
         "tuple",
         "type",
         "TypeError",
         "ValueError",
+        "ZeroDivisionError",
         "zip",
         "True",
         "False",
@@ -305,6 +315,7 @@ SAFE_BUILTINS = {
     if hasattr(builtins, k)
 }
 SAFE_BUILTINS["__import__"] = _safe_import
+SAFE_BUILTINS["getattr"] = _safe_getattr
 
 
 class MockTargetAPIClient:

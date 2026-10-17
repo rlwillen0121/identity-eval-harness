@@ -88,6 +88,8 @@ def _evidence_f1(
     if not req_set or not sub_set:
         return 0.0
     overlap = len(sub_set & req_set)
+    if observed_evidence_ids is not None:
+        return overlap / float(len(req_set))
     return (2.0 * overlap) / float(len(sub_set) + len(req_set))
 
 

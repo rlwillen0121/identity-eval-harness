@@ -53,7 +53,7 @@ models:
     model: gemini-4-argon
     label: gemini-4-argon
     effort: medium
-    concurrency: 8
+    concurrency: 3
   - provider: muse_cli
     model: muse-wonder-full-1.0
     label: muse-wonder-full-1.0

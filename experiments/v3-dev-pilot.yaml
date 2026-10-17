@@ -27,5 +27,5 @@ models:
     model: gemini-4-argon
     label: gemini-4-argon
     effort: medium
-    concurrency: 6
+    concurrency: 3
 
