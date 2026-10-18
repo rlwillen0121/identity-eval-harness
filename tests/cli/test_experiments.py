@@ -15,6 +15,7 @@ from identitybench.render.prompt import PROMPT_VARIANTS
 from identitybench.runner.config import BASELINES, ExperimentConfig, load_config
 from identitybench.schemas.enums import Split, Suite
 from identitybench.v3.runner import load_v3_experiment_config
+from identitybench.v4.runner import load_v4_experiment_config
 
 REPO = Path(__file__).resolve().parents[2]
 EXPERIMENTS = REPO / "experiments"
@@ -30,6 +31,14 @@ V3_CONFIGS = (
     "v3-dev-pilot",
     "v3-lite",
     "v3-full",
+    "v3-full-muse",
+    "v3-full-openrouter",
+    "v3-full-qwen",
+)
+V4_CONFIGS = (
+    "v4-dev-baselines",
+    "v4-dev-pilot",
+    "v4-lite",
 )
 ALL_SUITES = list(Suite)
 
@@ -49,6 +58,13 @@ def test_every_experiment_loads_without_warnings(name: str) -> None:
 @pytest.mark.parametrize("name", V3_CONFIGS)
 def test_every_v3_experiment_loads_cleanly(name: str) -> None:
     loaded = load_v3_experiment_config(EXPERIMENTS / f"{name}.yaml")
+    assert loaded.name == name
+    assert (REPO / "datasets" / loaded.suite.value / "SEAL.json").is_file()
+
+
+@pytest.mark.parametrize("name", V4_CONFIGS)
+def test_every_v4_experiment_loads_cleanly(name: str) -> None:
+    loaded = load_v4_experiment_config(EXPERIMENTS / f"{name}.yaml")
     assert loaded.name == name
     assert (REPO / "datasets" / loaded.suite.value / "SEAL.json").is_file()
 
@@ -75,6 +91,7 @@ def test_the_committed_files_are_exactly_these() -> None:
     expected = [
         *(f"{n}.yaml" for n in CONFIGS),
         *(f"{n}.yaml" for n in V3_CONFIGS),
+        *(f"{n}.yaml" for n in V4_CONFIGS),
         "judges.yaml",
         "judges-consensus.example.yaml",
         "panel-adjudication.example.yaml",
