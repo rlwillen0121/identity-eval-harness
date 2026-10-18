@@ -3,6 +3,7 @@
 name: v4-dev-pilot
 suite: v4_dev
 seed: 20260401
+review_lanes_cleared: true
 trials: 1
 max_turns: 20
 concurrency: 4

@@ -85,9 +85,6 @@ class IdentityTeamSteeringOracle:
                 not targets or conflict.target_entity_id in targets
             ):
                 return conflict
-        for conflict in self.oracle.source_conflicts:
-            if conflict.wave_id == wave_id:
-                return conflict
         return None
 
     def _emit_response(
@@ -169,6 +166,7 @@ class IdentityTeamSteeringOracle:
 
         cited_ev_ids = {c.evidence_id for c in brief.citations}
         conflict = self._find_wave_conflict(brief.wave_id, brief.target_entity_ids)
+        stage = runtime.stages.get(brief.stage_id) if brief.stage_id is not None else None
 
         # Step 1: REJECTED_INSUFFICIENT_EVIDENCE (+1.5 IEAU_used, +1.5 IEAU_waste)
         missing_read = not brief.citations or not cited_ev_ids.issubset(all_read_evidence)
@@ -179,7 +177,9 @@ class IdentityTeamSteeringOracle:
                 or not set(conflict.tied_evidence_ids).issubset(cited_ev_ids)
             )
         )
-        unknown_stage = brief.stage_id is not None and brief.stage_id not in runtime.stages
+        unknown_stage = brief.stage_id is not None and (
+            stage is None or stage.wave_id != brief.wave_id
+        )
         if missing_read or missing_conflict_ties or unknown_stage:
             return self._emit_response(
                 brief,
@@ -193,7 +193,6 @@ class IdentityTeamSteeringOracle:
                 ),
             )
 
-        stage = runtime.stages.get(brief.stage_id) if brief.stage_id is not None else None
         if stage is not None:
             violated_rules, missing_ev, stage_hazards = (
                 runtime._detect_stage_semantic_defects(stage.mutations)
@@ -304,7 +303,11 @@ class IdentityTeamSteeringOracle:
             )
             if gate_needed:
                 prev = self.minted_tokens_by_stage.get(stage.stage_id)
-                is_orthogonal_remint = prev is not None and prev[0] == stage.stage_digest
+                is_orthogonal_remint = (
+                    prev is not None
+                    and prev[0] == stage.stage_digest
+                    and prev[1] == current_dep_digest
+                )
                 cost = 0.0 if is_orthogonal_remint else 1.0
                 token = sign_steer_token(
                     stage.stage_id,

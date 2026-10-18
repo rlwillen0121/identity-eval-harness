@@ -38,6 +38,7 @@ V3_CONFIGS = (
 V4_CONFIGS = (
     "v4-dev-baselines",
     "v4-dev-pilot",
+    "v4-dev-subset6",
     "v4-lite",
 )
 ALL_SUITES = list(Suite)
