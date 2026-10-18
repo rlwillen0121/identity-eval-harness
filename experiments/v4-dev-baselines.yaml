@@ -4,7 +4,7 @@ name: v4-dev-baselines
 suite: v4_dev
 seed: 20260401
 trials: 1
-max_turns: 20
+max_turns: 36
 concurrency: 4
 n_boot: 1000
 models:

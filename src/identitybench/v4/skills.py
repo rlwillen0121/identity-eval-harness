@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -560,29 +561,29 @@ class SkillRegistryV4:
             payload_dict.setdefault("drifted_skill_active", True)
 
         validator_path = self.skills_dir / skill_id / "validator.py"
-        self.validated_skill_ids_by_wave.setdefault(wave_id, set()).add(skill_id)
-
         if not validator_path.is_file():
             return SkillValidatorResultV4(
                 skill_id=skill_id,
-                valid=True,
-                status="PASS",
-                violations=(),
-                checked_items=int(payload_dict.get("checked_items", 1)),
+                valid=False,
+                status="VALIDATOR_UNAVAILABLE",
+                violations=("Validator script missing",),
+                checked_items=0,
             )
 
+        self.validated_skill_ids_by_wave.setdefault(wave_id, set()).add(skill_id)
         stdin_bytes = json.dumps(payload_dict, sort_keys=True).encode("utf-8")[:65536]
         try:
-            proc = subprocess.run(
-                [sys.executable, "-I", "-S", str(validator_path)],
-                input=stdin_bytes,
-                capture_output=True,
-                timeout=2.0,
-                cwd=str(validator_path.parent),
-                env={"PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0"},
-                preexec_fn=_posix_sandbox_limits if sys.platform != "win32" else None,
-                check=False,
-            )
+            with tempfile.TemporaryDirectory(prefix="ib_v4_skill_val_") as tmp_dir:
+                proc = subprocess.run(
+                    [sys.executable, "-I", "-S", str(validator_path)],
+                    input=stdin_bytes,
+                    capture_output=True,
+                    timeout=2.0,
+                    cwd=tmp_dir,
+                    env={"PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0"},
+                    preexec_fn=_posix_sandbox_limits if sys.platform != "win32" else None,
+                    check=False,
+                )
             stdout_raw = proc.stdout[:65536].decode("utf-8", errors="replace").strip()
             if proc.returncode != 0 or not stdout_raw:
                 return SkillValidatorResultV4(

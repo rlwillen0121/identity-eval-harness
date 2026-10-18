@@ -5,7 +5,7 @@ suite: v4_dev
 seed: 20260401
 review_lanes_cleared: true
 trials: 1
-max_turns: 20
+max_turns: 36
 concurrency: 4
 n_boot: 5000
 models:

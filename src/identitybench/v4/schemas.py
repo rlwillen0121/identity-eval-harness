@@ -699,6 +699,7 @@ class WorldStateV4(_FrozenModelV4):
     frozen_application_ids: tuple[str, ...] = ()
     excluded_scope_ids: tuple[str, ...] = ()
     revoked_control_ids: tuple[str, ...] = ()
+    effective_e_max_seconds: int = Field(default=60, ge=1)
     authenticated_steer_log: dict[str, str] = Field(default_factory=dict)
     policy_rules: dict[str, str] = Field(default_factory=dict)
     available_evidence_by_entity: dict[str, tuple[str, ...]] = Field(default_factory=dict)
