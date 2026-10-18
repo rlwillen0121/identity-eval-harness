@@ -646,7 +646,11 @@ def generate_v4_episode(
             SteerTriggerReason.MANDATORY_APPROVAL_GATE,
             SteerTriggerReason.QUORUM_RECOVERY_CO_SIGN,
         ),
-        attention_budget_ieau=6.0,
+        attention_budget_ieau=(
+            3.5
+            if archetype_id == ProgramArchetypeId.P6_END_TO_END_IGA_BACKLOG
+            else 6.0
+        ),
     )
 
     episode_spec = ProgramEpisodeSpecV4(

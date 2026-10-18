@@ -1160,6 +1160,7 @@ class OrchestrationRuntimeV4:
                     and mut.payload == ob.drifted_fragile_payload
                 ):
                     self.skill_precedence_obeyed = False
+                    self.u_exec = 1
                 if ob.drops_quorum_without_custodian and ob.application_id in quorum_pools:
                     pool = quorum_pools[ob.application_id]
                     if ob.target_entity_id in pool:
