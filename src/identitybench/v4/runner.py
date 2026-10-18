@@ -2008,10 +2008,20 @@ def _extract_v4_turn_tool_calls(resp: ModelResponse, turn_idx: int) -> list[Tool
         elif isinstance(item.get("arguments_json"), str):
             raw_json = item["arguments_json"].strip()
             if raw_json:
+                loaded_args: Any = None
                 try:
                     loaded_args = json.loads(raw_json)
                 except ValueError:
-                    return []
+                    loaded_args = load_object(raw_json)
+                    if not isinstance(loaded_args, dict):
+                        loaded_args = extract_json_object(
+                            raw_json,
+                            required_keys=(),
+                            schema_keys=(),
+                        )
+                if isinstance(loaded_args, str):
+                    with contextlib.suppress(ValueError):
+                        loaded_args = json.loads(loaded_args)
                 if not isinstance(loaded_args, dict):
                     return []
                 arguments = loaded_args
@@ -2353,14 +2363,16 @@ async def run_v4_agent_episode(
             calls = _extract_v4_turn_tool_calls(resp, turn_idx)
             if not calls:
                 consecutive_parse_failures += 1
-                if consecutive_parse_failures <= 1 and turn_idx + 1 < max_turns:
+                if consecutive_parse_failures <= 2 and turn_idx + 1 < max_turns:
                     messages.append(Message(role=Role.assistant, content=resp.text or ""))
                     messages.append(
                         Message(
                             role=Role.user,
                             content=(
                                 "Your previous response could not be parsed as valid JSON "
-                                "matching `{thought, actions}`. Return ONLY a valid JSON object."
+                                "matching `{thought, actions}` where each item in `actions` has "
+                                "`action` (string) and `arguments_json` (a valid JSON object "
+                                'string, e.g. `"{}"`). Return ONLY a valid JSON object.'
                             ),
                         )
                     )
