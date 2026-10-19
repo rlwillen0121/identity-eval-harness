@@ -13,12 +13,18 @@ import time
 import pytest
 
 from identitybench.providers._subprocess import (
+    TRUNCATION_MARKER,
     Command,
     is_transient_error,
+    kill_all_live,
+    live_groups,
     redact,
+    register_group,
     retry_transient,
     run_command,
     tail,
+    unregister_group,
+    url_hostname,
 )
 
 
@@ -270,3 +276,186 @@ def test_tail_keeps_the_end() -> None:
     assert tail("short") == "short"
     long = "x" * 50 + "END"
     assert tail(long, 10) == "…" + long[-10:]
+
+
+# --------------------------------------------------------------------------- output caps
+
+
+async def test_captured_output_is_capped_with_a_marker(monkeypatch) -> None:
+    monkeypatch.setattr("identitybench.providers._subprocess.MAX_CAPTURE_BYTES", 1000)
+    code = "import sys; sys.stdout.write('o' * 5000); sys.stderr.write('e' * 5000)"
+    result = await run_command(python(code))
+    assert result.returncode == 0
+    assert not result.timed_out
+    assert result.stdout == "o" * 1000 + TRUNCATION_MARKER
+    assert result.stderr == "e" * 1000 + TRUNCATION_MARKER
+
+
+async def test_output_within_the_cap_is_untouched(monkeypatch) -> None:
+    monkeypatch.setattr("identitybench.providers._subprocess.MAX_CAPTURE_BYTES", 1000)
+    result = await run_command(python("import sys; sys.stdout.write('o' * 1000)"))
+    assert result.stdout == "o" * 1000
+    assert TRUNCATION_MARKER not in result.stdout
+
+
+async def test_a_child_that_floods_output_before_reading_stdin_does_not_deadlock() -> None:
+    # Pipes hold 64 KiB: the child fills stdout before it would read stdin, while the parent has
+    # more stdin than fits in the pipe. Draining both streams alongside the write keeps it moving.
+    code = "import sys; sys.stdout.write('x' * 300000); sys.stdout.flush(); sys.stdin.read()"
+    result = await run_command(python(code, stdin="s" * 300000, timeout_s=30))
+    assert result.returncode == 0
+    assert len(result.stdout) == 300000
+
+
+# --------------------------------------------------------------------------- live process groups
+
+
+def test_live_group_registry_and_kill_all(monkeypatch) -> None:
+    assert not live_groups()
+    killed: list[tuple[int, int]] = []
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        killed.append((pgid, sig))
+        if pgid == 70002:
+            raise ProcessLookupError  # already gone: not an error
+
+    monkeypatch.setattr(os, "killpg", fake_killpg)
+    for pgid in (70001, 70002, 70003):
+        register_group(pgid)
+    unregister_group(70003)
+    assert live_groups() == {70001, 70002}
+    assert kill_all_live() == 2
+    assert killed == [(70001, signal.SIGKILL), (70002, signal.SIGKILL)]
+    assert not live_groups()
+    assert kill_all_live() == 0
+
+
+async def test_run_command_registers_the_group_while_the_child_runs() -> None:
+    assert not live_groups()
+    task = asyncio.create_task(run_command(python("import time; time.sleep(1)", timeout_s=30)))
+    for _ in range(200):
+        if live_groups():
+            break
+        await asyncio.sleep(0.02)
+    else:
+        task.cancel()
+        pytest.fail("the child's process group was never registered")
+    (pgid,) = live_groups()
+    assert pgid > 0
+    result = await task
+    assert result.returncode == 0
+    assert not live_groups()
+
+
+async def test_cancellation_kills_the_group_and_reaps_the_child(tmp_path) -> None:
+    pid_file = tmp_path / "child.pid"
+    code = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(30)"
+    task = asyncio.create_task(run_command(python(code, timeout_s=60)))
+    for _ in range(200):
+        if pid_file.is_file() and pid_file.read_text():
+            break
+        await asyncio.sleep(0.02)
+    else:
+        task.cancel()
+        pytest.fail("the child never started")
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    child = int(pid_file.read_text())
+    for _ in range(50):
+        try:
+            os.kill(child, 0)  # succeeds for a zombie too, so this also checks the reap
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.05)
+    else:
+        os.kill(child, signal.SIGKILL)
+        pytest.fail("the child survived cancellation")
+    assert not live_groups()
+
+
+# --------------------------------------------------------------------------- endpoint redaction
+
+
+def test_redact_masks_endpoint_named_values_and_their_json_escaped_form() -> None:
+    env = {
+        "OPENCODE_GO_BASE_URL": "https://go.opencode.example/v1",
+        "CURSOR_API_ENDPOINT": "https://gw.cursor.example:8443",
+        "ISC_TENANT_URL": "https://tenant.identitynow.example",
+        "DB_HOST": "db.internal.example",
+        "SVC_AUTH": "basic-auth-blob",
+        "API_BASE": "https://base.example/api",
+    }
+    text = (
+        'url=https://go.opencode.example/v1 json="https:\\/\\/go.opencode.example\\/v1" '
+        "ep=https://gw.cursor.example:8443 tenant=https://tenant.identitynow.example "
+        "host=db.internal.example auth=basic-auth-blob base=https://base.example/api"
+    )
+    redacted = redact(text, env)
+    for value in env.values():
+        assert value not in redacted
+    assert "https:\\/\\/go.opencode.example\\/v1" not in redacted
+    assert "go.opencode.example" not in redacted
+    assert redacted.count("<redacted>") == 7
+
+
+def test_redact_masks_the_hostname_of_an_endpoint_named_variable_and_its_escaped_form() -> None:
+    env = {
+        "LOCAL_LLM_BASE_URL": "https://gateway.corp.example/v1/chat",
+        "LOCAL_URL": "http://localhost:8000/v1",
+        "LOOPBACK_URL": "http://127.0.0.1:11434",
+        "SHORT_URL": "http://ab/x",
+        "DEV_ENDPOINT": "http://app.localhost:3000",
+        "PATH": "/usr/bin:/bin",
+    }
+    text = (
+        "failed: gateway.corp.example refused; "
+        'json="https:\\/\\/gateway.corp.example\\/other\\/path"; '
+        "cname gateway.corp.example.internal; "
+        "localhost ok; 127.0.0.1 ok; ab ok; app.localhost ok; /usr/bin"
+    )
+    redacted = redact(text, env)
+    assert "gateway.corp.example" not in redacted
+    assert redacted.startswith("failed: <redacted> refused; ")
+    assert 'json="https:\\/\\/<redacted>\\/other\\/path"' in redacted  # the host inside another URL
+    assert "cname <redacted>.internal" in redacted
+    assert "localhost ok; 127.0.0.1 ok; ab ok; app.localhost ok; /usr/bin" in redacted
+
+
+def test_redact_leaves_the_host_of_a_url_whose_variable_is_not_endpoint_named() -> None:
+    """Masking the host of every URL-valued variable turned a stray ``WORD=http://test:8080``
+    into a mask over every ``test`` in a message; only endpoint-named variables count."""
+    env = {"SOME_SETTING": "https://gateway.corp.example/v1/chat", "WORD": "http://test:8080"}
+    text = "the test suite tested gateway.corp.example"
+    assert redact(text, env) == text
+
+
+def test_redact_masks_hosts_as_whole_words_and_never_an_all_digit_host() -> None:
+    env = {"WORD_URL": "http://test:8080", "PORTISH_URL": "http://1234:80"}
+    text = 'the test suite tested {"count": 1234} testing contest'
+    redacted = redact(text, env)
+    assert redacted == 'the <redacted> suite tested {"count": 1234} testing contest'
+    assert redact("endpoint http://1234:80 down", env) == "endpoint <redacted> down"
+
+
+@pytest.mark.parametrize(
+    ("value", "host"),
+    [
+        ("https://gateway.corp.example/v1", "gateway.corp.example"),
+        ("http://user:pw@host.example:8080/path", "host.example"),
+        ("  https://padded.example  ", "padded.example"),
+        ("http://localhost:8000", None),
+        ("http://localhost.localdomain:8000", None),
+        ("http://app.localhost:3000", None),
+        ("http://127.0.0.1", None),
+        ("http://[::1]:8000", None),
+        ("http://ab/", None),
+        ("http://1234:80", None),
+        ("http://10.0.0.5:8000", "10.0.0.5"),
+        ("/usr/bin:/bin", None),
+        ("not a url", None),
+        ("http://[bad", None),
+    ],
+)
+def test_url_hostname(value: str, host: str | None) -> None:
+    assert url_hostname(value) == host

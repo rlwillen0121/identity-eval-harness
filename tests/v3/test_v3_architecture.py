@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -61,7 +63,9 @@ from identitybench.v3.schemas import (
     AccountSubkind,
     CategoryId,
     ClassificationAction,
+    DatasetSealV3,
     DirectoryAccountRecord,
+    EpisodeSpecV3,
     OwnerResolutionSource,
     PrincipalKind,
     ReviewCampaignItem,
@@ -82,6 +86,45 @@ from identitybench.v3.verifier import verify_episode_v3
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 V3_DEV_DIR = REPO_ROOT / "datasets" / "v3_dev"
+
+
+def write_mini_v3_dataset(
+    dataset_dir: Path,
+    episodes: Sequence[EpisodeSpecV3],
+    *,
+    suite: SplitRing = SplitRing.v3_dev,
+    seed: int = 20260301,
+) -> DatasetSealV3:
+    """Write `episodes.jsonl` plus a matching `SEAL.json` (same hashing as `write_v3_dataset`).
+
+    `load_v3_episodes` and the v3 runner refuse unsealed directories, so test fixtures that
+    subset the frozen dataset must seal themselves.
+    """
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    lines = [
+        json.dumps(ep.model_dump(mode="json", by_alias=True), sort_keys=True) for ep in episodes
+    ]
+    raw = ("\n".join(lines) + "\n").encode("utf-8")
+    (dataset_dir / "episodes.jsonl").write_bytes(raw)
+    file_sha256 = {"episodes.jsonl": hashlib.sha256(raw).hexdigest()}
+    manifest_str = "\n".join(f"{k}:{file_sha256[k]}" for k in sorted(file_sha256))
+    category_counts: dict[str, int] = {}
+    for ep in episodes:
+        category_counts[ep.category.value] = category_counts.get(ep.category.value, 0) + 1
+    seal = DatasetSealV3(
+        suite=suite,
+        version="3.0.0",
+        seed=seed,
+        episode_count=len(episodes),
+        category_counts=category_counts,
+        file_sha256=file_sha256,
+        dataset_sha256=hashlib.sha256(manifest_str.encode("utf-8")).hexdigest(),
+    )
+    (dataset_dir / "SEAL.json").write_text(
+        json.dumps(seal.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return seal
 
 
 def test_domain_boundary_and_enum_invariants() -> None:
@@ -969,15 +1012,7 @@ def test_provider_error_vs_parse_failure_and_experiment_resume(tmp_path: Path) -
 
     # 4. Experiment runner + `--resume` recovery when Run 1 has a provider_error
     mini_dir = tmp_path / "mini_suite"
-    mini_dir.mkdir(parents=True)
-    (mini_dir / "episodes.jsonl").write_text(
-        "\n".join(
-            json.dumps(ep.model_dump(mode="json", by_alias=True), sort_keys=True)
-            for ep in episodes[:2]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    write_mini_v3_dataset(mini_dir, episodes[:2])
 
     exp_cfg = V3ExperimentConfig(
         name="test-resume",
@@ -1134,6 +1169,28 @@ def test_provider_error_vs_parse_failure_and_experiment_resume(tmp_path: Path) -
     assert seed_invalidate_prov.calls_by_episode.get(episodes[1].episode_id, 0) == 2
     assert not list(crash_dir.glob("*.tmp"))
 
+    # Resume after changing either action/tool-call cap: fingerprint changes -> cache invalidated
+    # (records produced under different caps must never be mixed into one run).
+    for cap_update in (
+        {"max_actions_per_turn": 8},
+        {"max_actions_per_turn": 8, "max_tool_calls_per_episode": 200},
+    ):
+        changed_caps_cfg = changed_seed_cfg.model_copy(update=cap_update)
+        caps_invalidate_prov = _EpisodeAwareMockProvider()
+        run_v3_experiment(
+            changed_caps_cfg,
+            crash_dir,
+            resume=True,
+            provider_overrides={"mock-agent": caps_invalidate_prov},
+        )
+        assert caps_invalidate_prov.calls_by_episode.get(episodes[0].episode_id, 0) == 2, (
+            cap_update
+        )
+        assert caps_invalidate_prov.calls_by_episode.get(episodes[1].episode_id, 0) == 2, (
+            cap_update
+        )
+        assert not list(crash_dir.glob("*.tmp"))
+
 
 def test_malformed_native_arguments_and_cli_exit_code_incomplete(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1164,11 +1221,7 @@ def test_malformed_native_arguments_and_cli_exit_code_incomplete(
 
     # CLI exit code check: when execution_valid_rate < 1.0, `identitybench v3 run` exits with 4
     mini_dir = tmp_path / "mini_cli_suite"
-    mini_dir.mkdir(parents=True)
-    (mini_dir / "episodes.jsonl").write_text(
-        json.dumps(ep0.model_dump(mode="json", by_alias=True), sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_mini_v3_dataset(mini_dir, [ep0])
     cfg_path = tmp_path / "exp_incomplete.yaml"
     cfg_path.write_text(
         json.dumps(

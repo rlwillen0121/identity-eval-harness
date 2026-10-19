@@ -170,13 +170,13 @@ async def test_effort_none_omits_the_config_override() -> None:
 async def test_env_drops_openai_endpoint_and_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_BASE_URL", "https://proxy.example/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "kept")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "another-providers-key")
     runner = FakeRunner(codex_run("hi", *STANDARD_EVENTS))
     await provider(runner).complete(make_request())
     env = runner.command.env
     assert "OPENAI_BASE_URL" not in env
     assert "OPENAI_API_KEY" not in env
-    assert env["ANTHROPIC_API_KEY"] == "kept"
+    assert "ANTHROPIC_API_KEY" not in env  # another provider's key is not allow-listed
 
 
 async def test_parses_output_file_and_verified_usage() -> None:

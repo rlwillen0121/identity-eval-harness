@@ -5,7 +5,14 @@ Everything a CLI provider does with the OS goes through a ``ProcessRunner`` (a c
 fake runner, so no test ever spawns a real model CLI.
 
 ``run_command`` never raises for process-level failures: a missing binary, a crash or a timeout
-all come back as a ``ProcessResult`` the provider turns into ``ModelResponse.error``.
+all come back as a ``ProcessResult`` the provider turns into ``ModelResponse.error``. Captured
+output is capped at ``MAX_CAPTURE_BYTES`` per stream (a CLI stuck in a logging loop must not
+exhaust the harness's memory); a truncated stream ends in ``TRUNCATION_MARKER``.
+
+Every child runs in its own session (process group), and the group is registered in a
+module-level registry for as long as it lives (``live_groups``). ``kill_all_live`` empties that
+registry with SIGKILL: the shutdown handlers in ``_cli`` call it when the harness receives
+SIGTERM/SIGHUP or exits, so a dying harness doesn't leave CLIs still talking to a model.
 """
 
 from __future__ import annotations
@@ -16,14 +23,21 @@ import logging
 import os
 import re
 import signal
+import threading
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("identitybench.providers")
 
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_DELAY_S = 2.0
+
+MAX_CAPTURE_BYTES = 16 * 1024 * 1024
+"""Most bytes kept per captured stream; the rest of the stream is read and discarded."""
+TRUNCATION_MARKER = "\n[identitybench: output truncated at 16 MiB]"
+_READ_CHUNK = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -49,6 +63,47 @@ class ProcessResult:
 ProcessRunner = Callable[[Command], Awaitable[ProcessResult]]
 
 
+# --------------------------------------------------------------------------- live process groups
+
+_LIVE_GROUPS: set[int] = set()
+_LIVE_GROUPS_LOCK = threading.RLock()
+"""Reentrant: a signal handler runs on the main thread, which may hold the lock already."""
+
+
+def register_group(pgid: int) -> None:
+    with _LIVE_GROUPS_LOCK:
+        _LIVE_GROUPS.add(pgid)
+
+
+def unregister_group(pgid: int) -> None:
+    with _LIVE_GROUPS_LOCK:
+        _LIVE_GROUPS.discard(pgid)
+
+
+def live_groups() -> frozenset[int]:
+    """Process groups of the CLI children that are running right now."""
+    with _LIVE_GROUPS_LOCK:
+        return frozenset(_LIVE_GROUPS)
+
+
+def kill_all_live() -> int:
+    """SIGKILL every registered process group and forget it; returns how many were signalled.
+
+    For emergency shutdown (a signal or interpreter exit): nothing waits for the children, since
+    the event loop that would reap them may already be gone.
+    """
+    with _LIVE_GROUPS_LOCK:
+        groups = sorted(_LIVE_GROUPS)
+        _LIVE_GROUPS.clear()
+    for pgid in groups:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(pgid, signal.SIGKILL)
+    return len(groups)
+
+
+# --------------------------------------------------------------------------- running a command
+
+
 def _kill_group(proc: asyncio.subprocess.Process) -> None:
     """Kill the child and everything it spawned.
 
@@ -72,8 +127,68 @@ def _kill_stragglers(pgid: int) -> None:
         os.killpg(pgid, signal.SIGKILL)
 
 
+@dataclass(frozen=True)
+class _Capture:
+    data: bytes
+    truncated: bool
+
+    def text(self) -> str:
+        decoded = self.data.decode(errors="replace")
+        return decoded + TRUNCATION_MARKER if self.truncated else decoded
+
+
+async def _drain(stream: asyncio.StreamReader | None, limit: int) -> _Capture:
+    """Read ``stream`` to EOF, keeping the first ``limit`` bytes."""
+    if stream is None:
+        return _Capture(b"", False)
+    chunks: list[bytes] = []
+    size = 0
+    truncated = False
+    while chunk := await stream.read(_READ_CHUNK):
+        if size >= limit:
+            truncated = True
+            continue
+        keep = chunk[: limit - size]
+        if len(keep) < len(chunk):
+            truncated = True
+        chunks.append(keep)
+        size += len(keep)
+    return _Capture(b"".join(chunks), truncated)
+
+
+async def _feed(proc: asyncio.subprocess.Process, data: bytes) -> None:
+    stdin = proc.stdin
+    assert stdin is not None
+    try:
+        stdin.write(data)
+        await stdin.drain()
+    except (BrokenPipeError, ConnectionResetError):
+        pass  # the child exited (or closed stdin) before reading it all: its output says why
+    finally:
+        stdin.close()
+
+
+async def _communicate(
+    proc: asyncio.subprocess.Process, stdin_bytes: bytes | None
+) -> tuple[_Capture, _Capture]:
+    """``communicate()`` with bounded buffers: both streams are drained concurrently with the
+    stdin write, so a child that fills a pipe before reading stdin can't deadlock the call."""
+    feeders = [_feed(proc, stdin_bytes)] if stdin_bytes is not None else []
+    stdout, stderr, *_ = await asyncio.gather(
+        _drain(proc.stdout, MAX_CAPTURE_BYTES), _drain(proc.stderr, MAX_CAPTURE_BYTES), *feeders
+    )
+    await proc.wait()
+    return stdout, stderr
+
+
+async def _reap(proc: asyncio.subprocess.Process) -> None:
+    """Wait for a child that was just killed, so it doesn't linger as a zombie."""
+    with contextlib.suppress(Exception):
+        await proc.wait()
+
+
 async def run_command(command: Command) -> ProcessResult:
-    """Run ``command`` with captured output and a hard timeout."""
+    """Run ``command`` with captured (capped) output and a hard timeout."""
     start = time.perf_counter()
     stdin = asyncio.subprocess.PIPE if command.stdin is not None else asyncio.subprocess.DEVNULL
     try:
@@ -95,37 +210,46 @@ async def run_command(command: Command) -> ProcessResult:
             launch_error=f"could not start {command.argv[0]!r}: {exc.strerror or exc}",
         )
 
+    register_group(proc.pid)  # start_new_session: the child's pid is its process group id
     stdin_bytes = command.stdin.encode() if command.stdin is not None else None
     try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(stdin_bytes), timeout=command.timeout_s
-        )
-    except TimeoutError:
-        _kill_group(proc)
-        with contextlib.suppress(Exception):
-            await proc.wait()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                _communicate(proc, stdin_bytes), timeout=command.timeout_s
+            )
+        except TimeoutError:
+            _kill_group(proc)
+            await _reap(proc)
+            return ProcessResult(
+                returncode=proc.returncode if proc.returncode is not None else -9,
+                stdout="",
+                stderr="",
+                duration_s=time.perf_counter() - start,
+                timed_out=True,
+            )
+        except asyncio.CancelledError:
+            _kill_group(proc)
+            with contextlib.suppress(asyncio.CancelledError):
+                await _reap(proc)
+            raise
+        _kill_stragglers(proc.pid)
         return ProcessResult(
-            returncode=proc.returncode if proc.returncode is not None else -9,
-            stdout="",
-            stderr="",
+            returncode=proc.returncode if proc.returncode is not None else -1,
+            stdout=stdout.text(),
+            stderr=stderr.text(),
             duration_s=time.perf_counter() - start,
-            timed_out=True,
         )
-    except asyncio.CancelledError:
-        _kill_group(proc)
-        raise
-    _kill_stragglers(proc.pid)
-    return ProcessResult(
-        returncode=proc.returncode if proc.returncode is not None else -1,
-        stdout=stdout.decode(errors="replace"),
-        stderr=stderr.decode(errors="replace"),
-        duration_s=time.perf_counter() - start,
-    )
+    finally:
+        unregister_group(proc.pid)
+
+
+# --------------------------------------------------------------------------- retries
 
 
 _TRANSIENT_RE = re.compile(
-    r"rate[ _-]?limit|too many requests|\b429\b|overloaded|\b529\b|\b50[234]\b"
+    r"rate[ _-]?limit|too many requests|\b429\b|overloaded|at capacity|\b529\b|\b50[234]\b"
     r"|temporarily unavailable|service unavailable|bad gateway|gateway timeout"
+    r"|stream idle timeout|context deadline exceeded"
     r"|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|fetch failed"
     r"|network error|connection (?:reset|refused|error|closed|aborted)",
     re.IGNORECASE,
@@ -182,9 +306,11 @@ async def retry_transient[T](
     return result
 
 
+# --------------------------------------------------------------------------- redaction
+
+
 _SECRET_NAME_RE = re.compile(
-    r"(?:(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?)|"
-    r"(?:LOCAL_LLM|OPENROUTER|OPENAI|ANTHROPIC)_BASE_URL)$",
+    r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|_URL|_ENDPOINT|_HOST|_AUTH|_BASE)$",
     re.IGNORECASE,
 )
 _SECRET_VALUE_RE = re.compile(
@@ -197,18 +323,66 @@ _SECRET_VALUE_RE = re.compile(
     r"|\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
 )
 _REDACTED = "<redacted>"
+_LOCAL_HOSTS = frozenset({"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"})
+_MIN_SECRET_CHARS = 8
+_MIN_HOST_CHARS = 4
+
+
+def url_hostname(value: str) -> str | None:
+    """The host of ``value`` when it is a URL worth masking: at least ``_MIN_HOST_CHARS`` long,
+    not all digits (masking ``1234`` would mask numbers everywhere) and not a loopback name or
+    address (which names no private endpoint)."""
+    if "://" not in value:
+        return None
+    try:
+        host = urlsplit(value.strip()).hostname
+    except ValueError:
+        return None
+    if (
+        not host
+        or len(host) < _MIN_HOST_CHARS
+        or host.isdigit()
+        or host in _LOCAL_HOSTS
+        or host.endswith(".localhost")
+    ):
+        return None
+    return host
 
 
 def redact(text: str, env: Mapping[str, str] | None = None) -> str:
     """Mask secrets before text reaches a log, an error message or ``ModelResponse.raw``.
 
-    Masks the values of credential-looking environment variables (names ending in KEY, TOKEN,
-    SECRET, PASSWORD, CREDENTIAL(S)) plus common key and bearer-token shapes.
+    Masks, in order:
+
+    - the values of credential- and endpoint-looking environment variables (names ending in
+      KEY, TOKEN, SECRET, PASSWORD, CREDENTIAL(S), _URL, _ENDPOINT, _HOST, _AUTH or _BASE), and
+      the JSON-escaped form of any such value holding a ``/`` (``https:\\/\\/...``), as a CLI's
+      JSON error output would spell it;
+    - the hostname of every such endpoint-named value that is a URL (``url_hostname``), as a
+      whole word, so the host alone (or inside another URL, escaped or not) can't surface
+      either. Only those variables: masking the host of any URL-valued variable turned a
+      ``WORD_URL=http://test:8080`` into a mask over every ``test`` in a message;
+    - common key and bearer-token shapes.
+
+    Longer values go first, so a value that contains another is masked whole.
     """
     source = os.environ if env is None else env
+    values: set[str] = set()
+    hosts: set[str] = set()
     for name, value in source.items():
-        if len(value) >= 8 and _SECRET_NAME_RE.search(name) and value in text:
-            text = text.replace(value, _REDACTED)
+        if not _SECRET_NAME_RE.search(name):
+            continue
+        if len(value) >= _MIN_SECRET_CHARS:
+            values.add(value)
+            if "/" in value:
+                values.add(value.replace("/", "\\/"))
+        host = url_hostname(value)
+        if host is not None:
+            hosts.add(host)
+    for value in sorted(values, key=len, reverse=True):
+        text = text.replace(value, _REDACTED)
+    for host in sorted(hosts, key=len, reverse=True):
+        text = re.sub(rf"\b{re.escape(host)}\b", _REDACTED, text)
     return _SECRET_VALUE_RE.sub(_REDACTED, text)
 
 

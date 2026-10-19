@@ -305,7 +305,7 @@ async def test_routing_and_credential_variables_are_dropped(monkeypatch) -> None
     ):
         monkeypatch.setenv(name, "/elsewhere")
     monkeypatch.setenv("AGY_CLI_DISABLE_AUTO_UPDATE", "false")
-    monkeypatch.setenv("UNRELATED", "kept")
+    monkeypatch.setenv("UNRELATED", "not-allow-listed")
     runner = FakeRunner(stream())
     await provider(runner).complete(make_request())
     env = runner.command.env
@@ -314,7 +314,7 @@ async def test_routing_and_credential_variables_are_dropped(monkeypatch) -> None
         "AGY_CLI_DISABLE_AUTO_UPDATE"
     }
     assert env["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
-    assert env["UNRELATED"] == "kept"
+    assert "UNRELATED" not in env  # not on the allow-list, so not inherited either
 
 
 async def test_failing_to_build_the_private_home_is_an_error_not_a_crash(monkeypatch) -> None:

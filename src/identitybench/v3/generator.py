@@ -4776,6 +4776,12 @@ def verify_dataset_seal(dataset_dir: Path) -> DatasetSealV3:
     if not seal_path.is_file():
         raise FileNotFoundError(f"Missing SEAL.json in {dataset_dir}")
     seal = DatasetSealV3.model_validate_json(seal_path.read_text(encoding="utf-8"))
+    # The loader reads `episodes.jsonl`, so a seal that does not cover it covers nothing that
+    # matters: refuse it rather than "verifying" zero files.
+    if "episodes.jsonl" not in seal.file_sha256:
+        raise ValueError(
+            "Dataset SEAL.json verification failed: file_sha256 does not cover episodes.jsonl"
+        )
     for fname, expected_hash in sorted(seal.file_sha256.items()):
         fpath = dataset_dir / fname
         if not fpath.is_file():
@@ -4793,24 +4799,35 @@ def verify_dataset_seal(dataset_dir: Path) -> DatasetSealV3:
         raise ValueError(
             "Dataset SEAL.json verification failed: aggregate dataset_sha256 mismatch"
         )
+    # `episodes.jsonl` is sealed (checked above), so it exists and its bytes match the seal.
     ep_file = dataset_dir / "episodes.jsonl"
-    if ep_file.is_file():
-        line_count = sum(
-            1 for line in ep_file.read_text(encoding="utf-8").splitlines() if line.strip()
+    line_count = sum(1 for line in ep_file.read_text(encoding="utf-8").splitlines() if line.strip())
+    if line_count != seal.episode_count:
+        raise ValueError(
+            f"Dataset SEAL.json verification failed: episode_count {line_count} "
+            f"!= {seal.episode_count}"
         )
-        if line_count != seal.episode_count:
-            raise ValueError(
-                f"Dataset SEAL.json verification failed: episode_count {line_count} "
-                f"!= {seal.episode_count}"
-            )
     return seal
 
 
-def load_v3_episodes(dataset_dir: Path) -> list[EpisodeSpecV3]:
-    """Load all episodes from a v3 dataset directory (`episodes.jsonl`), verifying `SEAL.json`."""
+def load_v3_episodes(dataset_dir: Path, *, require_seal: bool = True) -> list[EpisodeSpecV3]:
+    """Load all episodes from a v3 dataset directory (`episodes.jsonl`), verifying `SEAL.json`.
+
+    `SEAL.json` is mandatory: a missing seal raises `FileNotFoundError` and a seal that does
+    not match the on-disk JSONL bytes raises `ValueError`. Only an explicit
+    `require_seal=False` (for an unsealed in-progress build) skips the check when the file
+    is absent; a present `SEAL.json` is always verified.
+    """
     seal: DatasetSealV3 | None = None
-    if (dataset_dir / "SEAL.json").is_file():
+    seal_path = dataset_dir / "SEAL.json"
+    if seal_path.is_file():
         seal = verify_dataset_seal(dataset_dir)
+    elif require_seal:
+        raise FileNotFoundError(
+            f"Missing SEAL.json in {dataset_dir}: refusing to load an unsealed v3 dataset "
+            "(regenerate with `identitybench v3 generate`, or pass require_seal=False only "
+            "for an unsealed in-progress build)"
+        )
     ep_file = dataset_dir / "episodes.jsonl"
     if not ep_file.is_file():
         raise FileNotFoundError(f"Missing episodes.jsonl in {dataset_dir}")

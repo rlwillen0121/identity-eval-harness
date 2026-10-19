@@ -3,42 +3,67 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import signal
 import stat
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 from identitybench.providers import _cli, claude_cli, codex_cli, grok_cli
 from identitybench.providers._cli import (
+    COMMON_ENV_KEEP,
     MAX_ARG_BYTES,
     NEUTRAL_SYSTEM,
+    OWNER_FILE,
+    STDERR_EXCERPT_CHARS,
     SYSTEM_BEGIN,
     SYSTEM_END,
     SYSTEM_POINTER,
     as_float,
     as_int,
+    base_child_env,
+    call_dir,
+    env_items,
+    install_shutdown_handlers,
     link_credentials,
+    live_call_dirs,
+    owner_alive,
     parse_json_payload,
     parse_jsonl,
     prepend_system,
     probe_version,
+    register_call_dir,
+    remove_live_call_dirs,
     render_transcript,
+    scrub_stderr,
     served_models,
     structured_text,
+    sweep_stale_call_dirs,
     sync_back,
     system_override,
+    unregister_call_dir,
     valid_effort,
 )
-from identitybench.providers._subprocess import Command, ProcessResult
+from identitybench.providers._subprocess import (
+    Command,
+    ProcessResult,
+    live_groups,
+    register_group,
+)
 from identitybench.providers.agy_cli import AgyCliProvider
 from identitybench.providers.base import Message, Provider, Role, ToolCall
 from identitybench.providers.claude_cli import ClaudeCliProvider
 from identitybench.providers.codex_cli import CodexCliProvider
 from identitybench.providers.cursor_cli import CursorCliProvider
 from identitybench.providers.grok_cli import GrokCliProvider
+from identitybench.providers.muse_cli import MuseCliProvider
 from tests.providers.fakes import LOOKUP_TOOL, FakeRunner, make_request, ok
 
 SUCCESS = {
@@ -112,6 +137,18 @@ def test_parse_json_payload() -> None:
     assert parse_json_payload("") is None
     assert parse_json_payload("not json") is None
     assert parse_json_payload("[1, 2]") is None
+
+
+def test_parse_json_payload_prefers_the_result_object() -> None:
+    # A progress or event object printed after the result must not be taken for it.
+    lines = (
+        '{"type": "system", "subtype": "init"}\n'
+        '{"type": "result", "subtype": "success", "result": "hello"}\n'
+        '{"type": "event", "name": "shutdown"}\n'
+    )
+    assert parse_json_payload(lines) == {"type": "result", "subtype": "success", "result": "hello"}
+    two = '{"type": "result", "n": 1}\n{"type": "result", "n": 2}\n{"type": "other"}'
+    assert parse_json_payload(two) == {"type": "result", "n": 2}
 
 
 def test_parse_jsonl_skips_noise() -> None:
@@ -599,3 +636,546 @@ async def test_secrets_in_stderr_are_redacted(monkeypatch) -> None:
     assert response.error is not None
     assert "supersecretvalue123" not in response.error
     assert "<redacted>" in response.error
+
+
+# --------------------------------------------------------------------------- child environment
+
+PARENT_ENV = {
+    # The common allow-list.
+    "PATH": "/usr/bin:/bin",
+    "HOME": "/Users/someone",
+    "TMPDIR": "/tmp/x",
+    "LANG": "en_US.UTF-8",
+    "LC_ALL": "C",
+    "TERM": "xterm",
+    "SHELL": "/bin/zsh",
+    "USER": "someone",
+    "XDG_CONFIG_HOME": "/xdg",
+    # What .env exports for the API providers, and other credentials of the harness's user.
+    "LOCAL_LLM_BASE_URL": "https://llm.example.invalid/v1",
+    "LOCAL_LLM_API_KEY": "placeholder-secret-for-tests",
+    "OPENAI_API_KEY": "placeholder",
+    "ANTHROPIC_API_KEY": "placeholder",
+    "ISC_TENANT_URL": "https://tenant.example.invalid",
+    "GITHUB_TOKEN": "placeholder",
+    "AWS_SECRET_ACCESS_KEY": "placeholder",
+    "SOME_RANDOM_SETTING": "x",
+    # Code loading, CA and proxy overrides.
+    "NODE_OPTIONS": "--require evil.js",
+    "NODE_EXTRA_CA_CERTS": "/ca.pem",
+    "SSL_CERT_FILE": "/ca.pem",
+    "HTTPS_PROXY": "http://proxy.example",
+    "https_proxy": "http://proxy.example",
+    "ALL_PROXY": "socks5://proxy.example",
+    "NO_PROXY": "a",
+    "GIT_SSH_COMMAND": "ssh -i key",
+    "PYTHONPATH": "/evil",
+    "PYTHONSTARTUP": "/evil.py",
+    "DYLD_INSERT_LIBRARIES": "/evil.dylib",
+    "LD_PRELOAD": "/evil.so",
+}
+ALLOWED = {"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM", "SHELL", "USER", "XDG_CONFIG_HOME"}
+ALL_PROVIDERS = [
+    ClaudeCliProvider,
+    CodexCliProvider,
+    GrokCliProvider,
+    AgyCliProvider,
+    CursorCliProvider,
+    MuseCliProvider,
+]
+
+
+@pytest.mark.parametrize("provider_cls", ALL_PROVIDERS)
+def test_child_env_is_an_allow_list(provider_cls) -> None:
+    """Nothing outside the common base reaches a CLI: not .env's keys and URLs, not another
+    CLI's login, not code-loading, CA or proxy overrides."""
+    kept = {name for name in PARENT_ENV if provider_cls.keeps(name)}
+    assert kept <= ALLOWED
+    assert {"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM", "SHELL", "USER"} <= kept
+
+
+def test_base_child_env_is_the_common_allow_list_minus_the_common_drops() -> None:
+    env = base_child_env({**PARENT_ENV, "LC_CTYPE": "UTF-8", "PYTHONPATH": "/x"})
+    assert set(env) == ALLOWED | {"LC_CTYPE"}
+    assert all(name in COMMON_ENV_KEEP or name.startswith("LC_") for name in env)
+
+
+def test_child_env_applies_env_keep_and_env_set_on_top() -> None:
+    parent = {**PARENT_ENV, "DISABLE_AUTOUPDATER": "0", "CLAUDE_CODE_OAUTH_TOKEN": "login"}
+    env = ClaudeCliProvider("m", version="1").child_env(parent)
+    assert env["DISABLE_AUTOUPDATER"] == "1"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "login"
+    assert set(env) == ALLOWED | {"DISABLE_AUTOUPDATER", "CLAUDE_CODE_OAUTH_TOKEN"}
+
+
+@pytest.mark.parametrize(
+    ("provider_cls", "dropped", "kept"),
+    [
+        (
+            ClaudeCliProvider,
+            (
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_BASE_URL",
+                "ANTHROPIC_AUTH_TOKEN",
+                "ANTHROPIC_MODEL",
+                "CLAUDECODE",
+                "CLAUDE_CODE_SESSION_ID",
+                "CLAUDE_CODE_ENTRYPOINT",
+                "CLAUDE_EFFORT",
+                "CLAUDE_PID",
+                "CLAUDE_SOMETHING_NEW",
+            ),
+            ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"),
+        ),
+        (
+            CodexCliProvider,
+            ("OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORG_ID", "CODEX_HOME", "CODEX_SANDBOX"),
+            (),
+        ),
+        (
+            CursorCliProvider,
+            ("CURSOR_API_ENDPOINT", "CURSOR_API_KEY", "CURSOR_DATA_DIR", "CURSOR_SOMETHING"),
+            ("CURSOR_CONFIG_DIR",),
+        ),
+        (GrokCliProvider, ("GROK_HOME", "GROK_XAI_API_BASE_URL", "GROK_CONFIG", "XAI_API_KEY"), ()),
+        (
+            AgyCliProvider,
+            (
+                "GEMINI_API_KEY",
+                "AGY_LLM_GATEWAY_URL",
+                "GOOGLE_API_KEY",
+                "GOOGLE_CLOUD_PROJECT",
+                "GOOGLE_SOMETHING",
+                "ANTIGRAVITY_X",
+                "JETSKI_X",
+            ),
+            (),
+        ),
+        (
+            MuseCliProvider,
+            (
+                "META_API_KEY",
+                "MUSE_BASE_URL",
+                "OPENAI_API_KEY",
+                "ANTHROPIC_API_KEY",
+                "XDG_CONFIG_HOME",
+            ),
+            (),
+        ),
+    ],
+)
+def test_each_cli_drops_its_own_variables_by_prefix_and_keeps_only_its_login(
+    provider_cls, dropped: tuple[str, ...], kept: tuple[str, ...]
+) -> None:
+    for name in dropped:
+        assert not provider_cls.keeps(name), name
+    for name in kept:
+        assert provider_cls.keeps(name), name
+
+
+def test_env_keep_cannot_reopen_a_denied_name(monkeypatch) -> None:
+    """A future ENV_KEEP edit may lift a prefix drop (that is how the login survives it) but
+    never an exact-name drop, the common drops or the proxy/code-loading rules."""
+    monkeypatch.setattr(
+        ClaudeCliProvider,
+        "ENV_KEEP",
+        frozenset(
+            {
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_SESSION_ID",
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_BASE_URL",
+                "CLAUDECODE",
+                "GITHUB_TOKEN",
+                "HTTPS_PROXY",
+                "NODE_OPTIONS",
+                "LD_PRELOAD",
+            }
+        ),
+    )
+    assert ClaudeCliProvider.keeps("CLAUDE_CODE_OAUTH_TOKEN")
+    assert ClaudeCliProvider.keeps("CLAUDE_CODE_SESSION_ID")
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "CLAUDECODE",
+        "GITHUB_TOKEN",
+        "HTTPS_PROXY",
+        "NODE_OPTIONS",
+        "LD_PRELOAD",
+    ):
+        assert not ClaudeCliProvider.keeps(name), name
+
+
+async def test_secrets_in_the_harness_environment_never_reach_a_cli(monkeypatch) -> None:
+    for name, value in PARENT_ENV.items():
+        monkeypatch.setenv(name, value)
+    runner = FakeRunner(ok(SUCCESS))
+    await claude(runner).complete(make_request())
+    env = runner.command.env
+    allowed = COMMON_ENV_KEEP | ClaudeCliProvider.ENV_KEEP | set(ClaudeCliProvider.ENV_SET)
+    assert {name for name in env if not name.startswith("LC_")} <= allowed
+    for value in ("placeholder-secret-for-tests", "https://llm.example.invalid/v1", "/evil"):
+        assert value not in env.values()
+
+
+def test_probe_version_runs_in_a_private_directory_with_the_child_environment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    script = tmp_path / "fake-cli"
+    script.write_text('#!/bin/sh\necho "cwd=$PWD key=$LOCAL_LLM_API_KEY marker=$MARKER"\n')
+    script.chmod(0o755)
+    monkeypatch.setenv("LOCAL_LLM_API_KEY", "placeholder-secret-for-tests")
+    monkeypatch.setenv("MARKER", "from-the-harness")
+    probe_version.cache_clear()
+
+    default = probe_version(str(script))
+    assert "placeholder-secret-for-tests" not in default
+    assert "from-the-harness" not in default  # not allow-listed either
+    cwd = default.split()[0].removeprefix("cwd=")
+    assert "identitybench-probe-" in cwd
+    assert not Path(cwd).exists()  # removed after the probe
+    assert cwd != os.getcwd()
+
+    explicit = probe_version(
+        str(script), env_items({"PATH": os.environ["PATH"], "MARKER": "from-the-provider"})
+    )
+    assert explicit.endswith("key= marker=from-the-provider")
+
+
+# --------------------------------------------------------------------------- stderr excerpts
+
+
+def test_scrub_stderr_drops_prompt_lines_and_caps_the_excerpt() -> None:
+    system = "You are an access reviewer.\nApply the policy strictly.\n"
+    user = "Decide REQ-1 for Dana Reyes, who holds ent_gl_je_approve.\nSecond line of the case."
+    request = make_request(user, system=system)
+    stderr = "\n".join(
+        [
+            "usage: fake-cli [options] <prompt>",
+            'error: unexpected argument "You are an access reviewer."',  # quotes the first line
+            "Apply the policy strictly.",  # a prompt line verbatim
+            "Decide REQ-1 for Dana Reyes, who holds ent_gl_je_approve.",
+            "Second line of the case.",
+            "exit status 2",
+        ]
+    )
+    assert scrub_stderr(stderr, request) == "usage: fake-cli [options] <prompt>\nexit status 2"
+    long = "x" * 1000
+    assert scrub_stderr(long, request) == "…" + "x" * STDERR_EXCERPT_CHARS
+    assert scrub_stderr(long, None) == "…" + "x" * STDERR_EXCERPT_CHARS
+    assert scrub_stderr("   \n", request) == ""
+    # Short prompt lines are not used as marks: they would match ordinary error text.
+    assert scrub_stderr("error: no", make_request("no", system="")) == "error: no"
+
+
+SHORT_SYSTEM = "Be strict.\nBe brief.\nBe fair."
+"""Three short lines: none is long enough to be a mark, so nothing in the opening of the
+prompt helps the scrub."""
+SHORT_HEADED_CASE = (
+    "Case: REQ-1\nActor: Dana\nTarget: GL\n"
+    "Dana Reyes requests ent_gl_je_approve for quarter-end journal entry approval.\n"
+    "Her manager has not countersigned the request yet."
+)
+
+
+def test_scrub_stderr_drops_a_rewrapped_echo_of_the_prompt() -> None:
+    """A CLI that re-wraps and re-indents the prompt in its error prints no line of it
+    verbatim; what every fragment shares with the prompt is a run of text."""
+    request = make_request(SHORT_HEADED_CASE, system=SHORT_SYSTEM)
+    stderr = "\n".join(
+        [
+            "error: could not parse the prompt:",
+            "    Dana Reyes requests ent_gl_je_approve for",
+            "    quarter-end journal entry approval. Her",
+            "    manager has not countersigned the request yet.",
+            "exit status 2",
+        ]
+    )
+    assert scrub_stderr(stderr, request) == "error: could not parse the prompt:\nexit status 2"
+
+
+def test_scrub_stderr_drops_an_escaped_argv_echo_whose_first_lines_are_short() -> None:
+    """An argv echo quotes the whole prompt on one line with ``\\n`` for its line breaks; the
+    prompt's first lines are too short to be marks, so the case text sits past them."""
+    request = make_request(SHORT_HEADED_CASE, system=SHORT_SYSTEM)
+    echo = "\\n".join([*SHORT_SYSTEM.splitlines(), "", *SHORT_HEADED_CASE.splitlines()])
+    stderr = f"error: unexpected argument '{echo}'\nusage: fake-cli [options] <prompt>"
+    assert "Dana Reyes" in stderr and "\\n" in stderr  # the echo is one line
+    assert scrub_stderr(stderr, request) == "usage: fake-cli [options] <prompt>"
+    windows_only = "error: argument too long: ...uarter-end journal entry approv..."
+    assert scrub_stderr(windows_only, request) == ""
+
+
+def test_scrub_stderr_keeps_benign_lines_that_share_less_than_a_window() -> None:
+    request = make_request(SHORT_HEADED_CASE, system=SHORT_SYSTEM)
+    stderr = "\n".join(
+        [
+            "usage: fake-cli [options] <prompt>",
+            "error: journal entry approval needs --json",  # 22 shared characters, not an echo
+            'warning: use "\\n" to separate lines',
+            "Dana Reyes requests ent_gl_je_approve for quarter-end journal entry approval.",
+            "exit status 2",
+        ]
+    )
+    assert scrub_stderr(stderr, request) == "\n".join(
+        [
+            "usage: fake-cli [options] <prompt>",
+            "error: journal entry approval needs --json",
+            'warning: use "\\n" to separate lines',
+            "exit status 2",
+        ]
+    )
+
+
+def test_scrub_stderr_takes_marks_from_every_prompt_line_up_to_a_cap() -> None:
+    lines = [f"Policy clause number {n:04d} applies to the request." for n in range(500)]
+    request = make_request("\n".join(lines), system="")
+    assert scrub_stderr("error: 'Policy clause number 0450 applies to the request.'", request) == ""
+    assert scrub_stderr("error: 'Policy clause number 0003 applies to the request.'", request) == ""
+    assert scrub_stderr("error: nothing like the prompt here", request) == (
+        "error: nothing like the prompt here"
+    )
+
+
+async def test_error_excerpts_do_not_echo_the_prompt() -> None:
+    request = make_request("Decide REQ-1 for Dana Reyes, who holds ent_gl_je_approve.")
+    stderr = (
+        "usage error: bad prompt 'Decide REQ-1 for Dana Reyes, who holds ent_gl_je_approve.'\n"
+        "You are an access reviewer.\n" + "x" * 500 + "\nexit 2"
+    )
+    runner = FakeRunner(ok("", stderr=stderr, returncode=2))
+    response = await claude(runner).complete(request)
+    assert response.error is not None
+    assert "Dana Reyes" not in response.error
+    assert "access reviewer" not in response.error
+    assert response.error.endswith("exit 2)")
+    assert "x" * 500 not in response.error  # capped at STDERR_EXCERPT_CHARS
+
+
+# --------------------------------------------------------------------------- call directories
+
+
+def test_call_dir_is_registered_while_it_exists_and_removed_after() -> None:
+    with call_dir("identitybench-test_cli-") as root:
+        assert root.is_dir()
+        assert stat.S_IMODE(root.stat().st_mode) == 0o700
+        assert str(root) in {os.path.realpath(path) for path in live_call_dirs()}
+        assert (root / OWNER_FILE).read_text(encoding="utf-8") == str(os.getpid())
+        assert owner_alive(str(root)) is True
+    assert not root.exists()
+    assert str(root) not in {os.path.realpath(path) for path in live_call_dirs()}
+
+
+def reaped_pid() -> int:
+    """The pid of a process that has already exited and been waited for."""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    assert proc.wait() == 0
+    return proc.pid
+
+
+def test_owner_alive(tmp_path: Path) -> None:
+    def marked(name: str, content: str | None) -> str:
+        path = tmp_path / name
+        path.mkdir()
+        if content is not None:
+            (path / OWNER_FILE).write_text(content, encoding="utf-8")
+        return str(path)
+
+    assert owner_alive(marked("mine", f"{os.getpid()}\n")) is True
+    assert owner_alive(marked("dead", str(reaped_pid()))) is False
+    assert owner_alive(marked("none", None)) is None
+    assert owner_alive(marked("garbled", "not a pid")) is None
+    assert owner_alive(marked("empty", "")) is None
+    assert owner_alive(marked("zero", "0")) is None  # would signal the whole group
+    assert owner_alive(marked("negative", "-1")) is None
+    assert owner_alive(str(tmp_path / "missing")) is None
+
+
+def test_sweep_spares_a_directory_whose_owner_is_alive_whatever_its_age(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A call keeps its directory for an unbounded timeout across every retry, and any
+    ``identitybench`` command in another shell sweeps; the owner pid tells a call in progress
+    from a leak. Only a directory whose owner is dead or unknown is swept, and only when old."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    old = time.time() - 3 * 3600
+
+    def make(name: str, owner: str | None, *, age: float = old) -> Path:
+        path = tmp_path / name
+        path.mkdir(mode=0o700)
+        path.chmod(0o700)
+        (path / "work").mkdir()
+        if owner is not None:
+            (path / OWNER_FILE).write_text(owner, encoding="utf-8")
+        os.utime(path, (age, age))
+        return path
+
+    mine = make("identitybench-claude_cli-mine1234", str(os.getpid()))
+    mine_probe = make("identitybench-probe-mine1234", str(os.getpid()))
+    dead = make("identitybench-claude_cli-dead1234", str(reaped_pid()))
+    dead_setup = make("identitybench-codex_cli-setup-dead1234", str(reaped_pid()))
+    legacy = make("identitybench-grok_cli-none1234", None)  # from before owner files
+    garbled = make("identitybench-agy_cli-junk1234", "not a pid")
+    fresh_dead = make("identitybench-claude_cli-fresh123", str(reaped_pid()), age=time.time())
+    fresh_legacy = make("identitybench-grok_cli-fresh123", None, age=time.time())
+
+    assert sweep_stale_call_dirs() == 4
+    for path in (dead, dead_setup, legacy, garbled):
+        assert not path.exists(), path
+    for path in (mine, mine_probe, fresh_dead, fresh_legacy):
+        assert path.exists(), path
+    # Age never overrides a live owner.
+    assert sweep_stale_call_dirs(max_age_s=0) == 2  # the two fresh ones, now past the age
+    assert mine.exists() and mine_probe.exists()
+    assert not fresh_dead.exists() and not fresh_legacy.exists()
+
+
+def test_remove_live_call_dirs(tmp_path: Path) -> None:
+    leaked = tmp_path / "leaked"
+    leaked.mkdir()
+    (leaked / "io").mkdir()
+    (leaked / "io" / "prompt.md").write_text("case text", encoding="utf-8")
+    register_call_dir(str(leaked))
+    assert remove_live_call_dirs() == 1
+    assert not leaked.exists()
+    assert not live_call_dirs()
+    assert remove_live_call_dirs() == 0
+
+
+def test_sweep_removes_only_stale_private_call_dirs(tmp_path: Path, monkeypatch, caplog) -> None:
+    """What a SIGKILLed harness left behind is removed at the next start; a running call's
+    directory, anything fresh, shared, differently named, or not a real directory is not."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    old = time.time() - 3 * 3600
+
+    def make(name: str, *, mode: int = 0o700, age: float = old) -> Path:
+        path = tmp_path / name
+        path.mkdir()
+        (path / "work").mkdir()
+        path.chmod(mode)
+        os.utime(path, (age, age))
+        return path
+
+    stale = make("identitybench-claude_cli-abc12345")
+    stale_setup = make("identitybench-codex_cli-setup-abc12345")
+    stale_probe = make("identitybench-probe-abc12345")
+    fresh = make("identitybench-grok_cli-abc12345", age=time.time())
+    shared = make("identitybench-agy_cli-abc12345", mode=0o755)
+    other = make("identitybench-sandbox-abc12345")
+    file = tmp_path / "identitybench-muse_cli-abc12345"
+    file.write_text("", encoding="utf-8")
+    os.utime(file, (old, old))
+    link = tmp_path / "identitybench-cursor_cli-abc12345"
+    link.symlink_to(shared)
+    live = make("identitybench-claude_cli-live1234")
+    register_call_dir(str(live))
+    try:
+        with caplog.at_level(logging.INFO, logger="identitybench.providers"):
+            assert sweep_stale_call_dirs() == 3
+    finally:
+        unregister_call_dir(str(live))
+    for path in (stale, stale_setup, stale_probe):
+        assert not path.exists(), path
+    for path in (fresh, shared, other, file, link, live):
+        assert path.exists(), path
+    assert "removed 3 stale CLI call directories" in caplog.text
+    # Once its call is over (unregistered above) a stale directory is fair game.
+    assert sweep_stale_call_dirs() == 1
+    assert not live.exists()
+
+
+def test_sweep_age_is_configurable_and_a_fresh_dir_survives_the_default(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    recent = tmp_path / "identitybench-claude_cli-recent12"
+    recent.mkdir(mode=0o700)
+    recent.chmod(0o700)
+    minute_ago = time.time() - 60
+    os.utime(recent, (minute_ago, minute_ago))
+    assert sweep_stale_call_dirs() == 0
+    assert recent.is_dir()
+    assert sweep_stale_call_dirs(max_age_s=30) == 1
+    assert not recent.exists()
+
+
+# --------------------------------------------------------------------------- shutdown
+
+
+def test_install_shutdown_handlers_is_idempotent_and_main_thread_only(monkeypatch) -> None:
+    monkeypatch.setattr(_cli, "_atexit_registered", False)
+    monkeypatch.setattr(_cli, "_signals_installed", False)
+    registered: list[object] = []
+    installed: list[tuple[int, object]] = []
+    monkeypatch.setattr(_cli.atexit, "register", lambda fn: registered.append(fn))
+    monkeypatch.setattr(_cli.signal, "getsignal", lambda signum: signal.SIG_DFL)
+    monkeypatch.setattr(
+        _cli.signal, "signal", lambda signum, handler: installed.append((signum, handler))
+    )
+    assert install_shutdown_handlers() is True
+    assert registered == [_cli.emergency_cleanup]
+    assert installed == [
+        (signal.SIGTERM, _cli._on_shutdown_signal),
+        (signal.SIGHUP, _cli._on_shutdown_signal),
+    ]
+    assert install_shutdown_handlers() is False
+    assert len(registered) == 1 and len(installed) == 2
+
+    # Off the main thread only the atexit fallback can be registered; the handlers wait for a
+    # call from the main thread.
+    monkeypatch.setattr(_cli, "_atexit_registered", False)
+    monkeypatch.setattr(_cli, "_signals_installed", False)
+    registered.clear()
+    installed.clear()
+    outcome: list[bool] = []
+    thread = threading.Thread(target=lambda: outcome.append(install_shutdown_handlers()))
+    thread.start()
+    thread.join()
+    assert outcome == [False]
+    assert registered == [_cli.emergency_cleanup] and installed == []
+    assert install_shutdown_handlers() is True
+    assert len(registered) == 1 and len(installed) == 2
+
+
+def test_install_shutdown_handlers_leaves_another_handler_alone(monkeypatch) -> None:
+    monkeypatch.setattr(_cli, "_atexit_registered", True)
+    monkeypatch.setattr(_cli, "_signals_installed", False)
+    installed: list[tuple[int, object]] = []
+    theirs = lambda signum, frame: None  # noqa: E731
+    monkeypatch.setattr(
+        _cli.signal, "getsignal", lambda signum: theirs if signum == signal.SIGHUP else None
+    )
+    monkeypatch.setattr(
+        _cli.signal, "signal", lambda signum, handler: installed.append((signum, handler))
+    )
+    assert install_shutdown_handlers() is True
+    assert installed == [(signal.SIGTERM, _cli._on_shutdown_signal)]
+
+
+def test_a_shutdown_signal_kills_live_groups_removes_dirs_then_terminates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    killed: list[tuple[int, int]] = []
+    sent: list[tuple[int, int]] = []
+    reset: list[tuple[int, object]] = []
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+    monkeypatch.setattr(os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    monkeypatch.setattr(signal, "signal", lambda signum, handler: reset.append((signum, handler)))
+    leaked = tmp_path / "identitybench-claude_cli-live5678"
+    leaked.mkdir()
+    (leaked / "io").mkdir()
+    register_call_dir(str(leaked))
+    register_group(70010)
+
+    _cli._on_shutdown_signal(signal.SIGTERM, None)
+
+    assert killed == [(70010, signal.SIGKILL)]
+    assert not leaked.exists()
+    assert reset == [(signal.SIGTERM, signal.SIG_DFL)]
+    assert sent == [(os.getpid(), signal.SIGTERM)]
+    assert not live_groups() and not live_call_dirs()
+
+
+def test_emergency_cleanup_is_a_safe_no_op_when_nothing_is_live() -> None:
+    assert _cli.emergency_cleanup() == (0, 0)

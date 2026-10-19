@@ -2015,7 +2015,18 @@ class _Reopened:
 
 
 def _reopen(runs_root: Path, resume: str) -> _Reopened:
+    # ``resume`` is a run ID (a single directory name under ``runs_root``), never a path:
+    # reject separators, ``..``, absolute paths and anything that resolves outside the root.
+    if not resume or Path(resume).name != resume or resume in (".", ".."):
+        raise RunError(f"cannot resume {resume!r}: a run ID must be a plain directory name")
     run_dir = runs_root / resume
+    try:
+        inside = run_dir.resolve().is_relative_to(runs_root.resolve())
+    except (OSError, ValueError) as exc:
+        # e.g. an embedded NUL (``ValueError`` from ``lstat``) or a symlink loop.
+        raise RunError(f"cannot resume {resume!r}: not a usable run ID ({exc})") from exc
+    if not inside:
+        raise RunError(f"cannot resume {resume!r}: it does not name a run inside {runs_root}")
     if not (run_dir / MANIFEST_FILE).is_file():
         raise RunError(f"cannot resume {resume}: no {MANIFEST_FILE} in {run_dir}")
     return _Reopened(run_dir, RunManifest.load(run_dir / MANIFEST_FILE))

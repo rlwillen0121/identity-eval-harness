@@ -27,17 +27,77 @@ An empty value (``KEY=``) means "not filled in", as in ``.env.example`` ("fill i
 have"), so it is skipped rather than set: an empty ``ANTHROPIC_API_KEY`` or
 ``IDENTITYBENCH_PRICING`` in the environment would read as configured and fail later, far from
 the cause. Write ``KEY=""`` to set an empty string on purpose.
+
+**Only commands that call models get the secrets.** The file's values are exported into the
+process environment, because that is where the API providers read their key and base-URL
+variables (``openai_compat``, ``anthropic_api``) and the simplest place for them to keep doing
+so. But a process environment is inherited by every child process, so the export is limited to
+what a command can need: ``env_names_for`` lets a command that makes model calls (``run``,
+``judge``, the ``audit`` commands, ``v3 run`` and ``v4 run``) load every name, and every other
+command (``generate``, ``validate``, ``score``, ``report``, ``compare``, and the same under
+``v3`` and ``v4``) only the harness's own ``IDENTITYBENCH_*`` settings, never a key or an
+endpoint. The decision is by the full command path (``LIVE_COMMANDS``): the root callback
+decides for a top-level command, and for the ``v3`` and ``v4`` groups (``LEAF_GROUPS``) leaves
+it to the group's own callback, which sees the leaf. The CLI providers don't rely on this (their
+child environment is an allow-list, ``providers._cli.COMMON_ENV_KEEP``); it keeps the harness's
+own environment clean for everything else it starts.
 """
 
 from __future__ import annotations
 
 import os
 import re
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["EnvFile", "load_env_file", "parse_env"]
+__all__ = [
+    "LEAF_GROUPS",
+    "LIVE_COMMANDS",
+    "EnvFile",
+    "env_names_for",
+    "is_live_command",
+    "load_env_file",
+    "parse_env",
+]
+
+LIVE_COMMANDS: frozenset[tuple[str, ...]] = frozenset(
+    {("run",), ("judge",), ("audit",), ("v3", "run"), ("v4", "run")}
+)
+"""Command paths that call model endpoints and so get the whole ``.env``: a top-level command,
+a group every subcommand of which may (``audit``: its panel commands do), or the one live
+subcommand of a group whose others don't (``v3 run``, ``v4 run``). A path below one of these
+(``audit panel``) is live too; a group on its own (``v3``) is not: its leaf decides."""
+LEAF_GROUPS = frozenset({"v3", "v4"})
+"""Top-level groups whose subcommands differ in whether they call models: the root callback
+loads nothing for them and the group's own callback loads for its leaf."""
+HARNESS_PREFIX = "IDENTITYBENCH_"
+"""The harness's own settings (``IDENTITYBENCH_PRICING``...): loaded for every command."""
+
+CommandPath = str | Sequence[str | None] | None
+"""A command as the root callback or a group callback sees it: the top-level name, or the path
+from the top (``("v3", "score")``); ``None`` elements (no subcommand) make nothing live."""
+
+
+def _as_path(command: CommandPath) -> tuple[str | None, ...]:
+    if isinstance(command, str):
+        return (command,)
+    return tuple(command) if command is not None else ()
+
+
+def is_live_command(command: CommandPath) -> bool:
+    """Whether ``command`` (or a command it is under) is in ``LIVE_COMMANDS``."""
+    path = _as_path(command)
+    return any(path[:n] in LIVE_COMMANDS for n in range(1, len(path) + 1))
+
+
+def env_names_for(command: CommandPath) -> Callable[[str], bool]:
+    """Which ``.env`` names ``command`` may export: every name for a live command
+    (``is_live_command``), only ``HARNESS_PREFIX`` names otherwise."""
+    if is_live_command(command):
+        return lambda name: True
+    return lambda name: name.startswith(HARNESS_PREFIX)
+
 
 _KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _EXPORT = re.compile(r"export\s+")
@@ -135,17 +195,20 @@ def load_env_file(
     path: Path | str,
     *,
     environ: MutableMapping[str, str] | None = None,
+    wanted: Callable[[str], bool] | None = None,
 ) -> tuple[list[str], tuple[str, ...]]:
     """Set the variables of the ``.env`` file at ``path`` that ``environ`` doesn't have yet.
 
-    ``environ`` defaults to ``os.environ``. Returns the names that were set (sorted) and the
-    file's problems; a missing file sets nothing and is not a problem, since ``.env`` is
-    optional (tests, generation, baselines and replay runs need no endpoint). A file that
-    can't be read as UTF-8 sets nothing and is one problem, which names the error class only
-    (a decode error's message would quote the offending bytes). Values are never returned, so
-    nothing downstream can print one.
+    ``environ`` defaults to ``os.environ``. ``wanted`` (default: every name) says which names
+    to export at all (``env_names_for``); the others are left out as if the file didn't hold
+    them. Returns the names that were set (sorted) and the file's problems; a missing file sets
+    nothing and is not a problem, since ``.env`` is optional (tests, generation, baselines and
+    replay runs need no endpoint). A file that can't be read as UTF-8 sets nothing and is one
+    problem, which names the error class only (a decode error's message would quote the
+    offending bytes). Values are never returned, so nothing downstream can print one.
     """
     target = os.environ if environ is None else environ
+    keep = wanted if wanted is not None else (lambda name: True)
     file = Path(path)
     if not file.is_file():
         return [], ()
@@ -158,7 +221,7 @@ def load_env_file(
     parsed = parse_env(text)
     loaded: list[str] = []
     for key, value in parsed.values.items():
-        if key not in target:
+        if key not in target and keep(key):
             target[key] = value
             loaded.append(key)
     return sorted(loaded), parsed.problems

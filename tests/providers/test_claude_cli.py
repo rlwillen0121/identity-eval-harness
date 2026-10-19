@@ -150,7 +150,7 @@ async def test_env_drops_api_credentials_and_parent_session_vars(monkeypatch) ->
         monkeypatch.setenv(name, "x")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription-login")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/tmp/cfg")
-    monkeypatch.setenv("OPENAI_API_KEY", "unrelated")
+    monkeypatch.setenv("OPENAI_API_KEY", "another-providers-key")
     monkeypatch.setenv("DISABLE_AUTOUPDATER", "0")
     runner = FakeRunner(ok(VERIFIED))
     await provider(runner).complete(make_request())
@@ -168,7 +168,7 @@ async def test_env_drops_api_credentials_and_parent_session_vars(monkeypatch) ->
         assert name not in env, name
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "subscription-login"
     assert env["CLAUDE_CONFIG_DIR"] == "/tmp/cfg"
-    assert env["OPENAI_API_KEY"] == "unrelated"
+    assert "OPENAI_API_KEY" not in env  # another provider's key is not allow-listed
     assert "PATH" in env
     # The self-updater is off for every call, so the probed version is the one that runs.
     assert env["DISABLE_AUTOUPDATER"] == "1"

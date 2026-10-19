@@ -30,7 +30,8 @@ fail every call. ``--no-auto-update`` keeps the CLI from updating itself during 
 checker, and nothing else in the call turns it off. The flag is session-scoped and writes no
 config.
 
-Every ``GROK_*`` variable of the parent environment is removed from the child's. Grok 1.0.46
+The child environment is the common allow-list (``_cli.COMMON_ENV_KEEP``) and nothing of the
+CLI's own: every ``GROK_*`` variable of the parent environment is dropped by prefix. Grok 1.0.46
 reads well over a hundred of them, among them ones that route requests elsewhere
 (``GROK_XAI_API_BASE_URL``, ``GROK_WS_URL``, ``GROK_MODELS_BASE_URL``), point it back at the
 user's real configuration (``GROK_CONFIG``, ``GROK_CONFIG_PATH``, ``GROK_MANAGED_CONFIG_URL``),

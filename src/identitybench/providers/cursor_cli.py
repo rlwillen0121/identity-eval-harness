@@ -6,8 +6,10 @@ system text is prepended to the prompt and the runner extracts the JSON object f
 The prompt has to be the final argv element (the CLI doesn't read it from stdin), so prompts over
 the argv limit fail with an error instead of being truncated.
 
-``CURSOR_API_ENDPOINT`` and ``CURSOR_API_KEY`` are removed from the child environment so the CLI
-uses its own login and endpoint rather than a gateway configured for something else.
+The child environment is the common allow-list (``_cli.COMMON_ENV_KEEP``) plus
+``CURSOR_CONFIG_DIR``, which locates the login. Every other ``CURSOR_*`` variable is dropped by
+prefix, and ``CURSOR_API_ENDPOINT`` and ``CURSOR_API_KEY`` also by name, so the CLI uses its own
+login and endpoint rather than a gateway configured for something else.
 
 The CLI keeps per-workspace state outside the workspace: a project directory under
 ``$CURSOR_DATA_DIR/projects`` (trust marker, worker log and socket, and a transcript holding the
@@ -109,6 +111,8 @@ class CursorCliProvider(CliProvider):
     )
     SUPPORTS_EFFORT = False
     ENV_DROP = frozenset({"CURSOR_API_ENDPOINT", "CURSOR_API_KEY"})
+    ENV_DROP_PREFIXES = ("CURSOR_",)
+    ENV_KEEP = frozenset({"CURSOR_CONFIG_DIR"})
 
     def __init__(
         self,

@@ -28,8 +28,11 @@ Codex has no way to replace its own system prompt, so the request's system text 
 the prompt between delimiter lines. That makes Codex rows a slightly different prompt setup from
 API rows; reports should say so.
 
-``OPENAI_BASE_URL`` and ``OPENAI_API_KEY`` are removed from the child environment so the CLI uses
-its own login and endpoint instead of whatever OpenAI-compatible server the harness points at.
+The child environment is the common allow-list (``_cli.COMMON_ENV_KEEP``) and nothing of the
+CLI's own: every ``CODEX_*`` and ``OPENAI_*`` variable is dropped by prefix, and
+``OPENAI_BASE_URL``, ``OPENAI_API_KEY`` and ``CODEX_HOME`` also by name, so the CLI uses the
+private home's login and its own endpoint instead of whatever OpenAI-compatible server the
+harness points at. ``HOME`` and ``CODEX_HOME`` are then set to the private home.
 """
 
 from __future__ import annotations
@@ -141,6 +144,7 @@ def _agent_message(event: dict[str, Any]) -> str | None:
 class CodexCliProvider(CliProvider):
     KIND = "codex_cli"
     ENV_DROP = frozenset({"OPENAI_BASE_URL", "OPENAI_API_KEY", "CODEX_HOME"})
+    ENV_DROP_PREFIXES = ("CODEX_", "OPENAI_")
 
     def __init__(
         self,

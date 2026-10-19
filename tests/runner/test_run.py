@@ -488,6 +488,41 @@ async def test_the_experiment_file_records_the_sample_used(tmp_path: Path) -> No
     assert resumed.written == 0 and resumed.resumed == 2
 
 
+@pytest.mark.parametrize(
+    "resume",
+    ["../outside", "sub/run", "/abs/run", "..", ".", "", "a/../b", "run\x00id"],
+)
+async def test_resume_rejects_run_ids_that_are_not_plain_directory_names(
+    tmp_path: Path, resume: str
+) -> None:
+    """``resume`` is a run ID, not a path: anything with a directory part, ``..`` or an absolute
+    form is refused before any call, even when the target exists."""
+    write_dataset(tmp_path, request_cases(2))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / MANIFEST_FILE).write_text("{}", encoding="utf-8")
+    provider = FakeProvider()
+    with pytest.raises(RunError, match="cannot resume"):
+        await run(tmp_path, experiment(), provider, resume=resume)
+    assert provider.calls == []
+
+
+async def test_resume_rejects_a_symlink_that_escapes_the_runs_root(tmp_path: Path) -> None:
+    """A plain name that resolves outside ``runs/`` (a symlink) is refused too."""
+    write_dataset(tmp_path, request_cases(2))
+    first = await run(tmp_path, experiment(), FakeProvider())
+    escaped = tmp_path / "elsewhere"
+    shutil.copytree(first.run_dir, escaped)
+    (tmp_path / "runs" / "linked").symlink_to(escaped, target_is_directory=True)
+    provider = FakeProvider()
+    with pytest.raises(RunError, match="cannot resume 'linked'"):
+        await run(tmp_path, experiment(), provider, resume="linked")
+    assert provider.calls == []
+    # The real run ID still resumes.
+    resumed = await run(tmp_path, experiment(), provider, resume=first.run_id)
+    assert resumed.resumed == 2 and resumed.written == 0
+
+
 async def test_run_ids_never_collide(tmp_path: Path) -> None:
     write_dataset(tmp_path, request_cases(1))
     first = await run(tmp_path, experiment(), FakeProvider())

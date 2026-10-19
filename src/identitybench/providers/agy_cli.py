@@ -45,10 +45,12 @@ command. Effort goes in as ``--effort``: the CLI resolves a model alias such as
 resolved model is read from the CLI's log (``--log-file`` in the call's directory) as the served
 model; the log is never stored, since it also names the account.
 
-Every ``GEMINI_*``, ``AGY_*``, ``ANTIGRAVITY_*`` and ``JETSKI_*`` variable is removed from the
-child's environment, as are Google API and Cloud credentials and endpoints: with
-``GEMINI_API_KEY`` (and ``GOOGLE_GEMINI_BASE_URL``) the CLI can run against the Gemini API or a
-proxy instead of the subscription login, and ``AGY_LLM_GATEWAY_*`` routes it through a gateway.
+The child environment is the common allow-list (``_cli.COMMON_ENV_KEEP``) and nothing of the
+CLI's own: every ``GEMINI_*``, ``AGY_*``, ``ANTIGRAVITY_*``, ``JETSKI_*`` and ``GOOGLE_*``
+variable is dropped by prefix, and the Google API and Cloud credentials and endpoints also by
+name: with ``GEMINI_API_KEY`` (and ``GOOGLE_GEMINI_BASE_URL``) the CLI can run against the
+Gemini API or a proxy instead of the subscription login, and ``AGY_LLM_GATEWAY_*`` routes it
+through a gateway.
 ``AGY_CLI_DISABLE_AUTO_UPDATE=true`` is set so the CLI can't update itself during a run, after
 ``endpoint_identity`` recorded the version.
 
@@ -135,7 +137,7 @@ class AgyCliProvider(CliProvider):
             "CLOUD_CODE_URL",
         }
     )
-    ENV_DROP_PREFIXES = ("GEMINI_", "AGY_", "ANTIGRAVITY_", "JETSKI_")
+    ENV_DROP_PREFIXES = ("GEMINI_", "AGY_", "ANTIGRAVITY_", "JETSKI_", "GOOGLE_")
     ENV_SET = MappingProxyType({"AGY_CLI_DISABLE_AUTO_UPDATE": "true"})
 
     def __init__(

@@ -89,7 +89,7 @@ from pydantic import BaseModel, ValidationError
 from typer.core import TyperGroup
 
 from identitybench import __version__
-from identitybench.envfile import load_env_file
+from identitybench.envfile import LEAF_GROUPS, env_names_for, load_env_file
 from identitybench.schemas.enums import Split, Suite
 
 if TYPE_CHECKING:
@@ -244,6 +244,8 @@ class _Session:
 
     root: Path
     quiet: bool = False
+    env_file: Path | None = None
+    """The ``.env`` to load (``_load_env``); None with ``--no-env-file``."""
 
 
 def _session(ctx: typer.Context) -> _Session:
@@ -529,14 +531,41 @@ def main(
     """IdentityBench: generate datasets, run models, score, judge, report and audit."""
     session = _Session(root=(root or find_repo_root(Path.cwd())).resolve(), quiet=quiet)
     ctx.obj = session
+    # A dying harness must not leave CLI calls running or their directories behind; what a
+    # SIGKILL left last time is swept now (both idempotent and cheap; the sweep leaves the
+    # directories of calls another harness is still running alone).
+    from identitybench.providers._cli import install_shutdown_handlers, sweep_stale_call_dirs
+
+    install_shutdown_handlers()
+    sweep_stale_call_dirs()
     if no_env_file:
         return
-    path = env_file if env_file is not None else session.root / ".env"
     if env_file is not None and not env_file.is_file():
         _exit(f"--env-file {env_file} does not exist", ExitCode.INPUT)
-    _, problems = load_env_file(path)
+    session.env_file = env_file if env_file is not None else session.root / ".env"
+    if ctx.invoked_subcommand in LEAF_GROUPS:
+        return  # the group's callback loads for its leaf, which decides what it may get
+    _load_env(session, (ctx.invoked_subcommand,))
+
+
+def _load_env(session: _Session, command: tuple[str | None, ...]) -> None:
+    """Load the session's ``.env`` for the command path ``command``: only a command that calls
+    models gets the file's keys and endpoints (envfile docstring)."""
+    if session.env_file is None:
+        return
+    _, problems = load_env_file(session.env_file, wanted=env_names_for(command))
     for problem in problems:
-        _warn(f"{path}: {problem}")
+        _warn(f"{session.env_file}: {problem}")
+
+
+@v3_app.callback()
+def _v3_group(ctx: typer.Context) -> None:
+    _load_env(_session(ctx), ("v3", ctx.invoked_subcommand))
+
+
+@v4_app.callback()
+def _v4_group(ctx: typer.Context) -> None:
+    _load_env(_session(ctx), ("v4", ctx.invoked_subcommand))
 
 
 # --------------------------------------------------------------------------------------------

@@ -21,13 +21,16 @@ internal turns a plain answer takes). Without the schema the CLI exposes no tool
 the model replies with the action as text, which ``runner.tooluse`` extracts and checks like
 any other action; a malformed one gets the protocol's error result.
 
-``ANTHROPIC_API_KEY``, ``ANTHROPIC_BASE_URL`` and ``ANTHROPIC_AUTH_TOKEN`` are removed from the
-child environment so the CLI can't silently switch from the subscription login to an API key or
-a different endpoint. So are the parent Claude Code session's variables (``CLAUDECODE``,
-``CLAUDE_CODE_*``, ``CLAUDE_EFFORT``): when the harness itself runs inside Claude Code they would
-otherwise tie the child to that session or override ``--effort``. ``CLAUDE_CODE_OAUTH_TOKEN`` is
-kept because it *is* a subscription login. ``DISABLE_AUTOUPDATER=1`` is set so the CLI can't
-update itself during a run, after ``endpoint_identity`` recorded the version.
+The child environment is the common allow-list (``_cli.COMMON_ENV_KEEP``) plus
+``CLAUDE_CODE_OAUTH_TOKEN`` (it *is* a subscription login) and ``CLAUDE_CONFIG_DIR`` (where the
+login lives when the user moved it). Every other ``ANTHROPIC_*`` and ``CLAUDE_*`` variable is
+dropped by prefix, and the ones that matter most are also dropped by name so no keep can
+reopen them: ``ANTHROPIC_API_KEY``, ``ANTHROPIC_BASE_URL`` and ``ANTHROPIC_AUTH_TOKEN``, which
+would silently switch the CLI from the subscription login to an API key or a different
+endpoint, and the parent Claude Code session's variables (``CLAUDECODE``, ``CLAUDE_CODE_*``,
+``CLAUDE_EFFORT``, ``CLAUDE_PID``), which, when the harness itself runs inside Claude Code,
+would tie the child to that session or override ``--effort``. ``DISABLE_AUTOUPDATER=1`` is set
+so the CLI can't update itself during a run, after ``endpoint_identity`` recorded the version.
 
 Sampling temperature can't be set through the CLI (and current Claude models reject it anyway);
 ``max_output_tokens`` is not configurable either. The CLI's ``--fallback-model`` is never passed:
@@ -73,8 +76,8 @@ class ClaudeCliProvider(CliProvider):
             "CLAUDE_EFFORT",
         }
     )
-    ENV_DROP_PREFIXES = ("CLAUDE_CODE_",)
-    ENV_KEEP = frozenset({"CLAUDE_CODE_OAUTH_TOKEN"})
+    ENV_DROP_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
+    ENV_KEEP = frozenset({"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"})
     ENV_SET = MappingProxyType({"DISABLE_AUTOUPDATER": "1"})
 
     def __init__(

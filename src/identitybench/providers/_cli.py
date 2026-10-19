@@ -3,9 +3,23 @@ Cursor).
 
 Each CLI call runs in a fresh, empty temporary working directory so the agent has nothing to
 read, no project instructions to pick up and nowhere useful to write. Prompt, schema and output
-files live in a sibling directory that is never the agent's cwd. Credentials the CLI shouldn't
-see (API keys that would switch it off its subscription login, parent-session variables) are
-removed from the child environment.
+files live in a sibling directory that is never the agent's cwd.
+
+The child environment is built from an allow-list, not by subtraction (``CliProvider.child_env``):
+a small common base (``COMMON_ENV_KEEP``: PATH, HOME, the temp and locale variables, the user's
+name and shell, the XDG config directories) plus the few names a CLI needs for its own login or
+configuration (``ENV_KEEP``). Nothing else in the harness's environment reaches a CLI: not the
+API keys and endpoint URLs loaded from ``.env`` for the API providers, not another CLI's login,
+not the parent Claude Code session. Deny-lists (``COMMON_ENV_DROP`` and its prefixes, each
+provider's ``ENV_DROP`` and ``ENV_DROP_PREFIXES``) stay on top as defense in depth: an exact
+name on a deny-list is dropped even if a later ``ENV_KEEP`` edit names it, so a key that would
+switch a CLI off its subscription login can't be reopened by accident. ``ENV_SET`` and
+``Isolation.env`` are applied last.
+
+Shutdown: every live CLI process group and every live per-call directory is registered in a
+module-level registry; ``install_shutdown_handlers`` kills and removes them on SIGTERM/SIGHUP
+(then lets the signal terminate the process) and at interpreter exit, and
+``sweep_stale_call_dirs`` removes at start-up what a SIGKILLed harness couldn't.
 
 A CLI that loads the user's own setup from its home directory whatever the cwd (global rules,
 skills, MCP servers, hooks, memory) also gets a private, empty home for the call
@@ -26,6 +40,8 @@ instead of serving them as if the new setup had produced them.
 
 from __future__ import annotations
 
+import atexit
+import contextlib
 import functools
 import hashlib
 import json
@@ -33,11 +49,16 @@ import logging
 import math
 import os
 import re
+import shutil
+import signal
+import stat
 import subprocess
 import tempfile
+import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -51,6 +72,7 @@ from identitybench.providers._subprocess import (
     ProcessResult,
     ProcessRunner,
     is_transient_error,
+    kill_all_live,
     redact,
     retry_transient,
     run_command,
@@ -161,9 +183,12 @@ def valid_effort(effort: str) -> bool:
 
 
 def parse_json_payload(stdout: str) -> dict[str, Any] | None:
-    """The CLI's JSON result object: the whole stdout, or else its last line that is one.
+    """The CLI's JSON result object: the whole stdout, or else one of its lines that is one.
 
-    Some CLIs print warnings or progress lines before the result; the result comes last.
+    Some CLIs print warnings or progress lines (JSON ones included) before the result. When
+    several lines are objects, the last whose ``type`` is ``"result"`` wins, so a progress or
+    event object printed after the result can't be mistaken for it; without one, the last object
+    is the result.
     """
     text = stdout.strip()
     if not text:
@@ -171,11 +196,15 @@ def parse_json_payload(stdout: str) -> dict[str, Any] | None:
     whole = load_object(text)
     if whole is not None:
         return whole
-    for line in reversed(text.splitlines()):
-        line = line.strip()
+    candidates: list[dict[str, Any]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
         if line.startswith("{") and (value := load_object(line)) is not None:
-            return value
-    return None
+            candidates.append(value)
+    if not candidates:
+        return None
+    results = [value for value in candidates if value.get("type") == "result"]
+    return (results or candidates)[-1]
 
 
 def parse_jsonl(stdout: str) -> list[dict[str, Any]]:
@@ -239,23 +268,40 @@ def structured_text(
     return json.dumps(structured, ensure_ascii=False), cli_text
 
 
+EnvItems = tuple[tuple[str, str], ...]
+"""An environment as a hashable, sorted tuple of items (``env_items``), so it can key a cache."""
+
+
+def env_items(env: Mapping[str, str]) -> EnvItems:
+    return tuple(sorted(env.items()))
+
+
 @functools.cache
-def probe_version(binary: str) -> str:
-    """``<binary> --version`` (first line), cached per binary for the life of the process.
+def probe_version(binary: str, env: EnvItems | None = None) -> str:
+    """``<binary> --version`` (first line), cached per binary and environment for the life of
+    the process.
 
     Part of a CLI provider's endpoint identity (SPEC §11.4): upgrading the CLI changes the system
     prompt and agent scaffolding around the model, so cached responses from an older CLI must not
     be reused.
+
+    The probe runs the way a call does: in an empty temporary directory, with the provider's
+    child environment (``env``; the common allow-list, ``base_child_env``, when none is given)
+    rather than the harness's own, so even ``--version`` sees no secret and no project files.
     """
+    environment = dict(env) if env is not None else base_child_env()
     try:
-        proc = subprocess.run(
-            [binary, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
+        with call_dir("identitybench-probe-") as cwd:
+            proc = subprocess.run(
+                [binary, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                stdin=subprocess.DEVNULL,
+                cwd=str(cwd),
+                env=environment,
+            )
     except FileNotFoundError:
         return "not-installed"
     except (OSError, subprocess.SubprocessError):
@@ -265,6 +311,296 @@ def probe_version(binary: str) -> str:
             if line.strip():
                 return line.strip()
     return "unknown"
+
+
+# --------------------------------------------------------------------------- stderr excerpts
+
+_CURRENT_REQUEST: ContextVar[ModelRequest | None] = ContextVar(
+    "identitybench_current_request", default=None
+)
+"""The request a CLI call is serving, for the duration of ``CliProvider._complete`` (per task,
+so concurrent calls on one provider don't see each other's)."""
+
+STDERR_EXCERPT_CHARS = 300
+"""Most characters of stderr quoted in an error message."""
+_MARK_CHARS = 60
+_MIN_MARK_CHARS = 16
+_MAX_MARKS = 400
+"""Most prompt lines whose opening is used as a mark; the window check covers the rest."""
+_WINDOW_CHARS = 24
+"""Length of the prompt fragments a stderr line may not share with the prompt."""
+_ESCAPED_WHITESPACE = (("\\r\\n", "\n"), ("\\n", "\n"), ("\\r", "\n"), ("\\t", " "))
+"""How a quoted argv echo spells the prompt's line breaks and tabs (``'...\\n...'``)."""
+
+
+def _normalize(text: str) -> str:
+    """``text`` with every run of whitespace (line breaks included) collapsed to one space, so a
+    re-wrapped or re-indented echo compares equal to the prompt."""
+    return " ".join(text.split())
+
+
+def _unescape(line: str) -> str:
+    """A stderr line with ``\\n``-style escapes turned back into the whitespace they stand for."""
+    for escaped, plain in _ESCAPED_WHITESPACE:
+        line = line.replace(escaped, plain)
+    return line
+
+
+def _windows(text: str) -> set[str]:
+    """Every ``_WINDOW_CHARS``-long substring of ``text``."""
+    return {text[i : i + _WINDOW_CHARS] for i in range(len(text) - _WINDOW_CHARS + 1)}
+
+
+def scrub_stderr(
+    stderr: str, request: ModelRequest | None, limit: int = STDERR_EXCERPT_CHARS
+) -> str:
+    """The end of ``stderr`` for an error message, without the prompt and capped at ``limit``.
+
+    A CLI's usage error can echo its arguments, prompt included, and a benchmark prompt holds a
+    test-split case that must not land in a run's error log. So a stderr line is dropped when
+    it echoes the prompt (system text or any message) in any of these ways, and only the last
+    ``limit`` characters of what remains are kept:
+
+    - it is a line of the prompt verbatim, or holds one once its ``\\n`` escapes are undone (an
+      argv echo quotes the whole prompt on one line);
+    - it contains the opening (``_MARK_CHARS``) of a prompt line, from any line of the prompt
+      (the first ``_MAX_MARKS`` of them);
+    - it shares any ``_WINDOW_CHARS``-long run of text with the prompt once both have their
+      whitespace normalized, which catches an echo that re-wraps, re-indents or quotes a
+      fragment of the prompt.
+
+    Prompt lines shorter than ``_MIN_MARK_CHARS`` are not used as lines or marks: they would
+    match ordinary error text.
+    """
+    if not stderr.strip():
+        return ""
+    if request is None:
+        return tail(stderr, limit)
+    texts = (request.system, *(message.content for message in request.messages))
+    verbatim: set[str] = set()
+    marks: set[str] = set()
+    for text in texts:
+        for line in (line.strip() for line in text.splitlines()):
+            if len(line) < _MIN_MARK_CHARS:
+                continue
+            verbatim.add(line)
+            if len(marks) < _MAX_MARKS:
+                marks.add(line[:_MARK_CHARS])
+    windows = _windows(_normalize("\n".join(texts)))
+
+    def echoes_prompt(raw: str) -> bool:
+        line = _unescape(raw)
+        if any(part.strip() in verbatim for part in line.splitlines()):
+            return True
+        if any(mark in line for mark in marks):
+            return True
+        normalized = _normalize(line)
+        return any(
+            normalized[i : i + _WINDOW_CHARS] in windows
+            for i in range(len(normalized) - _WINDOW_CHARS + 1)
+        )
+
+    kept = [line for line in stderr.splitlines() if not echoes_prompt(line)]
+    return tail("\n".join(kept), limit)
+
+
+# --------------------------------------------------------------------------- call directories
+
+_LIVE_CALL_DIRS: set[str] = set()
+_LIVE_CALL_DIRS_LOCK = threading.RLock()
+
+
+def register_call_dir(path: str) -> None:
+    with _LIVE_CALL_DIRS_LOCK:
+        _LIVE_CALL_DIRS.add(path)
+
+
+def unregister_call_dir(path: str) -> None:
+    with _LIVE_CALL_DIRS_LOCK:
+        _LIVE_CALL_DIRS.discard(path)
+
+
+def live_call_dirs() -> frozenset[str]:
+    """The per-call temporary directories of the calls running right now."""
+    with _LIVE_CALL_DIRS_LOCK:
+        return frozenset(_LIVE_CALL_DIRS)
+
+
+def remove_live_call_dirs() -> int:
+    """Remove every registered call directory and forget it; returns how many were removed."""
+    with _LIVE_CALL_DIRS_LOCK:
+        paths = sorted(_LIVE_CALL_DIRS)
+        _LIVE_CALL_DIRS.clear()
+    removed = 0
+    for path in paths:
+        shutil.rmtree(path, ignore_errors=True)
+        if not os.path.lexists(path):
+            removed += 1
+    return removed
+
+
+OWNER_FILE = ".owner"
+"""File at the top of every call directory holding the pid of the harness that created it, so
+``sweep_stale_call_dirs`` in another harness can tell a call in progress from a leak."""
+
+
+def _write_owner(path: str) -> None:
+    try:
+        Path(path, OWNER_FILE).write_text(str(os.getpid()), encoding="utf-8")
+    except OSError as exc:  # the directory still works; a sweep then goes by age alone
+        logger.warning("could not record the owner of call directory %s: %s", path, exc)
+
+
+def owner_alive(path: str) -> bool | None:
+    """Whether the harness that owns the call directory at ``path`` is still running.
+
+    True or False by the pid in its ``OWNER_FILE`` (a pid that can't be signalled for lack of
+    permission counts as alive: it exists), None when the file is missing or unreadable (a
+    directory from before owner files, or a marker a crash left half-written).
+    """
+    try:
+        pid = int(Path(path, OWNER_FILE).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:  # PermissionError: another user's process, alive
+        return True
+    return True
+
+
+@contextlib.contextmanager
+def call_dir(prefix: str) -> Iterator[Path]:
+    """A fresh private temporary directory (mode 0700), marked with this process's pid
+    (``OWNER_FILE``), registered for emergency removal while it exists and removed afterwards.
+
+    Yields the resolved path, so paths handed to a CLI match what it sees (macOS ``/var`` ->
+    ``/private/var``). Removal errors are ignored: a CLI can leave read-only files or a
+    straggling writer in the directory, and that must not turn a finished call into an
+    exception; what remains is caught by the next ``sweep_stale_call_dirs``.
+    """
+    tmp = tempfile.mkdtemp(prefix=prefix)
+    _write_owner(tmp)
+    register_call_dir(tmp)
+    try:
+        yield Path(tmp).resolve()
+    finally:
+        unregister_call_dir(tmp)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+STALE_CALL_DIR_AGE_S = 2 * 60 * 60
+"""Age past which a call directory whose owner is gone counts as a leak. Age alone never
+decides: a call's timeout is unbounded and a call keeps its directory across every retry, so a
+directory whose owner process is still alive is left alone however old it is."""
+_CALL_DIR_RE = re.compile(r"^identitybench-(?:[a-z0-9]+_cli-(?:setup-)?|probe-)[A-Za-z0-9_]+$")
+"""Names ``call_dir`` creates: ``identitybench-<kind>-<random>``, the setup-revision and
+version-probe variants. Nothing else under the temp directory is touched."""
+
+
+def sweep_stale_call_dirs(max_age_s: float = STALE_CALL_DIR_AGE_S) -> int:
+    """Remove call directories older than ``max_age_s`` from the temp directory; returns the
+    count (also logged at INFO).
+
+    For what the shutdown handlers can't reach: a harness that was SIGKILLed (or lost power)
+    leaves its calls' directories behind, and the next harness start removes them. Only
+    directories that look exactly like ours are removed: a ``call_dir`` name, owned by the
+    current user, mode 0700 (what ``mkdtemp`` creates), not a symlink, not a directory of a
+    call running in this process, and not one whose ``OWNER_FILE`` names a live process (a
+    call in progress in another harness, whatever its age). A directory without an owner file
+    (from before owner files) goes by age alone. Safe to call from any command.
+    """
+    root = tempfile.gettempdir()
+    cutoff = time.time() - max_age_s
+    uid = os.getuid()
+    live = live_call_dirs()
+    removed = 0
+    try:
+        entries = list(os.scandir(root))
+    except OSError as exc:
+        logger.warning("could not scan %s for stale CLI call directories: %s", root, exc)
+        return 0
+    for entry in entries:
+        if not _CALL_DIR_RE.match(entry.name):
+            continue
+        try:
+            info = entry.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != uid
+            or stat.S_IMODE(info.st_mode) != 0o700
+            or info.st_mtime > cutoff
+            or entry.path in live
+            or os.path.realpath(entry.path) in live
+            or owner_alive(entry.path) is True
+        ):
+            continue
+        shutil.rmtree(entry.path, ignore_errors=True)
+        if not os.path.lexists(entry.path):
+            removed += 1
+    logger.info("removed %d stale CLI call directories under %s", removed, root)
+    return removed
+
+
+# --------------------------------------------------------------------------- shutdown
+
+SHUTDOWN_SIGNALS: tuple[signal.Signals, ...] = (signal.SIGTERM, signal.SIGHUP)
+_atexit_registered = False
+_signals_installed = False
+
+
+def emergency_cleanup() -> tuple[int, int]:
+    """Kill every live CLI process group and remove every live call directory; returns the
+    counts. Safe to call more than once and when there is nothing to do."""
+    return kill_all_live(), remove_live_call_dirs()
+
+
+def _on_shutdown_signal(signum: int, frame: object) -> None:
+    killed, removed = emergency_cleanup()
+    if killed or removed:
+        with contextlib.suppress(Exception):
+            logger.warning(
+                "signal %d: killed %d live CLI process group(s), removed %d call directory(ies)",
+                signum,
+                killed,
+                removed,
+            )
+    # Then the signal's own effect: the default action terminates the process with it, so the
+    # exit status (and anything waiting on it) sees the signal, not a normal exit.
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+def install_shutdown_handlers() -> bool:
+    """Make a dying harness clean up after its CLI calls. Returns True if the signal handlers
+    were installed by this call.
+
+    Registers ``emergency_cleanup`` to run at interpreter exit (once), and on the main thread
+    installs it as the SIGTERM and SIGHUP handler, after which the signal terminates the process
+    as it would have. A handler someone else installed is left alone. Idempotent, and a no-op
+    for the signals when called off the main thread (Python allows handlers only there); a
+    later call from the main thread still installs them.
+    """
+    global _atexit_registered, _signals_installed
+    if not _atexit_registered:
+        atexit.register(emergency_cleanup)
+        _atexit_registered = True
+    if _signals_installed or threading.current_thread() is not threading.main_thread():
+        return False
+    for signum in SHUTDOWN_SIGNALS:
+        try:
+            if signal.getsignal(signum) in (signal.SIG_DFL, None):
+                signal.signal(signum, _on_shutdown_signal)
+        except (ValueError, OSError):  # not the main thread after all, or an unsupported signal
+            return False
+    _signals_installed = True
+    return True
 
 
 @dataclass(frozen=True)
@@ -369,6 +705,33 @@ class CliOptions(TypedDict, total=False):
     retry_base_delay_s: float
 
 
+COMMON_ENV_KEEP: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "LANG",
+        "TERM",
+        "COLORTERM",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TZ",
+        "XDG_RUNTIME_DIR",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+    }
+)
+"""The only parent variables any CLI inherits (plus ``COMMON_ENV_KEEP_PREFIXES`` and the
+provider's ``ENV_KEEP``): what a process needs to find its binaries, home, temp directory,
+locale and terminal. The XDG config variables are kept so a CLI without a private home still
+finds its own login; ``HOME_RELATIVE_VARS`` removes them again when a call gets one."""
+
+COMMON_ENV_KEEP_PREFIXES: tuple[str, ...] = ("LC_",)
+
 COMMON_ENV_DROP: frozenset[str] = frozenset(
     {
         "GEMINI_API_KEY",
@@ -385,8 +748,41 @@ COMMON_ENV_DROP: frozenset[str] = frozenset(
         "DYLD_LIBRARY_PATH",
         "LD_PRELOAD",
         "LD_LIBRARY_PATH",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
     }
 )
+"""Never passed to any CLI, whatever its ``ENV_KEEP`` says (defense in depth under the
+allow-list): other providers' credentials, and variables that would load code into the child."""
+
+COMMON_ENV_DROP_PREFIXES: tuple[str, ...] = ("NODE_", "SSL_CERT_", "GIT_", "PYTHON", "DYLD_", "LD_")
+"""Likewise by prefix: Node options and CA overrides, git hooks and helpers, Python start-up
+code, and dynamic-loader injection."""
+
+COMMON_ENV_DROP_SUFFIXES: tuple[str, ...] = ("_PROXY",)
+"""Likewise by suffix, case-insensitively (``HTTPS_PROXY``, ``https_proxy``, ``ALL_PROXY``,
+``NO_PROXY``): a proxy variable would route a CLI's traffic through an endpoint the endpoint
+identity doesn't know about."""
+
+
+def always_dropped(name: str) -> bool:
+    """True for a variable no provider may pass on, whatever its own rules say."""
+    return (
+        name in COMMON_ENV_DROP
+        or name.startswith(COMMON_ENV_DROP_PREFIXES)
+        or name.upper().endswith(COMMON_ENV_DROP_SUFFIXES)
+    )
+
+
+def base_child_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The common allow-list applied to ``base`` (default ``os.environ``), no provider rules."""
+    source = os.environ if base is None else base
+    return {
+        name: value
+        for name, value in source.items()
+        if (name in COMMON_ENV_KEEP or name.startswith(COMMON_ENV_KEEP_PREFIXES))
+        and not always_dropped(name)
+    }
 
 
 class CliProvider(ABC):
@@ -397,9 +793,14 @@ class CliProvider(ABC):
         native_structured_output=True, native_tools=False, supports_temperature=False
     )
     SUPPORTS_EFFORT: ClassVar[bool] = True
-    ENV_DROP: ClassVar[frozenset[str]] = COMMON_ENV_DROP
+    ENV_DROP: ClassVar[frozenset[str]] = frozenset()
+    """Names this CLI must never see even if ``ENV_KEEP`` later names them (an exact-name drop
+    beats a keep): the API keys and endpoint variables that would switch it off its login."""
     ENV_DROP_PREFIXES: ClassVar[tuple[str, ...]] = ()
+    """Prefixes of this CLI's own variables (``CLAUDE_``, ``GROK_``...): dropped unless a name
+    is in ``ENV_KEEP``, which is how a login or config-dir variable survives its prefix."""
     ENV_KEEP: ClassVar[frozenset[str]] = frozenset()
+    """Names this CLI needs beyond ``COMMON_ENV_KEEP``: its login token or config directory."""
     ENV_SET: ClassVar[Mapping[str, str]] = MappingProxyType({})
     """Variables set for every call whatever the parent environment holds (e.g. switching the
     CLI's self-updater off, so the version in the endpoint identity stays the one that runs)."""
@@ -437,7 +838,7 @@ class CliProvider(ABC):
         unset; a request's own effort is part of the cache key already.
         """
         if self._version is None:
-            self._version = probe_version(self.binary)
+            self._version = probe_version(self.binary, env_items(self.child_env()))
         return hash_endpoint(
             self.kind, self._version, self.model, self.setup_revision(), self.effort
         )
@@ -493,10 +894,7 @@ class CliProvider(ABC):
                 None,
             ),
         )
-        with tempfile.TemporaryDirectory(
-            prefix=f"identitybench-{self.kind}-setup-", ignore_cleanup_errors=True
-        ) as tmp:
-            root = Path(tmp).resolve()
+        with call_dir(f"identitybench-{self.kind}-setup-") as root:
             invocations: list[dict[str, Any]] = []
             for number, (request, effort) in enumerate(templates):
                 io_dir = root / f"t{number}" / "io"
@@ -526,6 +924,11 @@ class CliProvider(ABC):
                 "invocations": invocations,
                 "isolation": {"env": dict(isolation.env), "files": _files(home)},
                 "env": {
+                    "allow": sorted(COMMON_ENV_KEEP),
+                    "allow_prefixes": list(COMMON_ENV_KEEP_PREFIXES),
+                    "common_drop": sorted(COMMON_ENV_DROP),
+                    "common_drop_prefixes": list(COMMON_ENV_DROP_PREFIXES),
+                    "common_drop_suffixes": list(COMMON_ENV_DROP_SUFFIXES),
                     "drop": sorted(self.ENV_DROP),
                     "drop_prefixes": list(self.ENV_DROP_PREFIXES),
                     "keep": sorted(self.ENV_KEEP),
@@ -538,21 +941,32 @@ class CliProvider(ABC):
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
     def child_env(self, base: Mapping[str, str] | None = None) -> dict[str, str]:
-        """The environment for the CLI process: ``base`` (default ``os.environ``) minus the
-        variables this CLI must not inherit, plus ``ENV_SET``."""
+        """The environment for the CLI process: the variables of ``base`` (default
+        ``os.environ``) that ``keeps`` allows, plus ``ENV_SET``."""
         source = os.environ if base is None else base
-        env = {name: value for name, value in source.items() if not self._drops(name)}
+        env = {name: value for name, value in source.items() if self.keeps(name)}
         env.update(self.ENV_SET)
         return env
 
-    def _drops(self, name: str) -> bool:
-        if name in self.ENV_KEEP:
+    @classmethod
+    def keeps(cls, name: str) -> bool:
+        """Whether a parent variable named ``name`` reaches this CLI, in order of precedence:
+
+        1. never when ``always_dropped`` (``COMMON_ENV_DROP`` and its prefixes and suffixes) or
+           in ``ENV_DROP``, whatever ``ENV_KEEP`` says;
+        2. otherwise yes when in ``ENV_KEEP`` (this beats the CLI's ``ENV_DROP_PREFIXES``: the
+           login variable usually shares the CLI's prefix);
+        3. otherwise no when it matches ``ENV_DROP_PREFIXES``;
+        4. otherwise only when in the common allow-list (``COMMON_ENV_KEEP`` and
+           ``COMMON_ENV_KEEP_PREFIXES``).
+        """
+        if always_dropped(name) or name in cls.ENV_DROP:
             return False
-        return (
-            name in self.ENV_DROP
-            or name in COMMON_ENV_DROP
-            or name.startswith(self.ENV_DROP_PREFIXES)
-        )
+        if name in cls.ENV_KEEP:
+            return True
+        if name.startswith(cls.ENV_DROP_PREFIXES):
+            return False
+        return name in COMMON_ENV_KEEP or name.startswith(COMMON_ENV_KEEP_PREFIXES)
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
         response = await self._complete(request)
@@ -595,13 +1009,7 @@ class CliProvider(ABC):
         if effort is not None and not valid_effort(effort):
             return self._fail(f"invalid effort value {effort!r}")
 
-        # Cleanup errors are ignored: a CLI can leave read-only files or a straggling writer in
-        # the directory, and that must not turn a finished call into an exception.
-        with tempfile.TemporaryDirectory(
-            prefix=f"identitybench-{self.kind}-", ignore_cleanup_errors=True
-        ) as tmp:
-            # Resolved, so paths handed to the CLI match what it sees (macOS /var -> /private/var).
-            root = Path(tmp).resolve()
+        with call_dir(f"identitybench-{self.kind}-") as root:
             io_dir = root / "io"
             work_dir = root / "work"
             home_dir = root / "home"
@@ -652,6 +1060,9 @@ class CliProvider(ABC):
                 return response
 
             started = time.perf_counter()
+            # The request the call is for, so ``_error_text`` can keep its prompt out of a
+            # stderr excerpt; a context variable, since ``_parse`` calls ``_fail`` without it.
+            marker = _CURRENT_REQUEST.set(request)
             try:
                 response = await retry_transient(
                     attempt,
@@ -664,6 +1075,7 @@ class CliProvider(ABC):
                     describe=lambda response: response.error or "",
                 )
             finally:
+                _CURRENT_REQUEST.reset(marker)
                 sync_back(isolation.links)
                 self._after_call(work_dir, env)
             if len(attempts) > 1:
@@ -695,8 +1107,9 @@ class CliProvider(ABC):
         text = f"{self.kind}: {message}"
         if result is not None:
             details = [f"exit {result.returncode}"]
-            if result.stderr.strip():
-                details.append(f"stderr: {tail(result.stderr, 1000)}")
+            excerpt = scrub_stderr(result.stderr, _CURRENT_REQUEST.get())
+            if excerpt:
+                details.append(f"stderr: {excerpt}")
             text += f" ({'; '.join(details)})"
         return redact(text)
 

@@ -283,7 +283,7 @@ async def test_grok_variables_api_keys_and_home_relative_variables_are_dropped(
     # Auto-update is pinned off by --no-auto-update; a user switch could only re-enable it.
     monkeypatch.setenv("GROK_AUTO_UPDATE", "true")
     monkeypatch.setenv("GROK_DISABLE_AUTOUPDATER", "1")
-    monkeypatch.setenv("UNRELATED", "kept")
+    monkeypatch.setenv("UNRELATED", "not-allow-listed")
     runner = FakeRunner(ok(VERIFIED))
     await provider(runner).complete(make_request())
     env = runner.command.env
@@ -296,7 +296,7 @@ async def test_grok_variables_api_keys_and_home_relative_variables_are_dropped(
         "GROK_WEB_FETCH",
     }
     assert "--no-auto-update" in runner.command.argv
-    assert env["UNRELATED"] == "kept"
+    assert "UNRELATED" not in env  # not on the allow-list, so not inherited either
 
 
 async def test_default_grok_home_is_under_the_user_home(tmp_path: Path, monkeypatch) -> None:
