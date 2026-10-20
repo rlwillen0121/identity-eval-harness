@@ -19,7 +19,11 @@ from grantt_v41 import ICONS, V41_CAT_KEYS
 def _build_payload(arms: Sequence[dict[str, Any]]) -> dict[str, Any]:
     rows = sorted(
         arms,
-        key=lambda a: (int(a["tasks_failed_total_360"]), int(a["tasks_unsafe_360"]), float(a["cost_usd"])),
+        key=lambda a: (
+            int(a["tasks_failed_total_360"]),
+            int(a["tasks_unsafe_360"]),
+            float(a["cost_usd"]),
+        ),
     )
     suite_rows: list[dict[str, Any]] = []
     for r in rows:
@@ -43,7 +47,9 @@ def _build_payload(arms: Sequence[dict[str, Any]]) -> dict[str, Any]:
             }
         )
     return {
-        "cats": [{"id": c_id, "title": title, "subtitle": sub} for c_id, title, sub, _ in V41_CAT_KEYS],
+        "cats": [
+            {"id": c_id, "title": title, "subtitle": sub} for c_id, title, sub, _ in V41_CAT_KEYS
+        ],
         "suites": {"full": suite_rows},
     }
 
@@ -51,7 +57,9 @@ def _build_payload(arms: Sequence[dict[str, Any]]) -> dict[str, Any]:
 def render_v41_figures_html(arms: Sequence[dict[str, Any]]) -> str:
     payload_json = json.dumps(_build_payload(arms))
     icons_json = json.dumps(ICONS)
-    return _HTML_TEMPLATE.replace("__PAYLOAD_JSON__", payload_json).replace("__ICONS_JSON__", icons_json)
+    return _HTML_TEMPLATE.replace("__PAYLOAD_JSON__", payload_json).replace(
+        "__ICONS_JSON__", icons_json
+    )
 
 
 def write_v41_html_files(arms: Sequence[dict[str, Any]], out_dir: Path) -> list[Path]:

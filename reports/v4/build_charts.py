@@ -246,7 +246,6 @@ def _load_v4_lite_records() -> dict[str, list[dict[str, Any]]]:
     return _load_deduped_jsonl_records(REPO_ROOT / "runs" / "v4-lite-r1" / "episode_results.jsonl")
 
 
-
 def _compute_arm_summary(
     model_id: str,
     records: list[dict[str, Any]],
@@ -262,24 +261,20 @@ def _compute_arm_summary(
         return sum(float(r["scorecard"].get(field, 0.0)) for r in active_rows) / float(n_denom)
 
     def _mean_bool_sc(field: str) -> float:
-        return (
-            sum(1.0 if r["scorecard"].get(field, False) else 0.0 for r in active_rows)
-            / float(n_denom)
+        return sum(1.0 if r["scorecard"].get(field, False) else 0.0 for r in active_rows) / float(
+            n_denom
         )
 
     def _mean_top(field: str) -> float:
         return sum(float(r.get(field, 0.0)) for r in active_rows) / float(n_denom)
 
     mean_s_ep_v4 = _mean_sc("episode_score_v4")
-    mean_s_ep_all_completed = (
-        sum(
-            float(r["scorecard"].get("episode_score_v4", 0.0))
-            if r.get("execution_valid", False)
-            else 0.0
-            for r in records
-        )
-        / float(max(1, n_completed))
-    )
+    mean_s_ep_all_completed = sum(
+        float(r["scorecard"].get("episode_score_v4", 0.0))
+        if r.get("execution_valid", False)
+        else 0.0
+        for r in records
+    ) / float(max(1, n_completed))
     s_state = _mean_sc("s_state")
     s_trace = _mean_sc("s_trace")
     s_evid = _mean_sc("s_evid")
@@ -339,20 +334,16 @@ def _compute_arm_summary(
         arch_rows = [r for r in active_rows if r.get("archetype_id") == arch_id]
         if arch_rows:
             n_a = len(arch_rows)
-            arch_s_ep = (
-                sum(float(r["scorecard"].get("episode_score_v4", 0.0)) for r in arch_rows)
-                / float(n_a)
-            )
-            arch_gsrr = (
-                sum(
-                    1.0 if r["scorecard"].get("grounded_safely_resolved", False) else 0.0
-                    for r in arch_rows
-                )
-                / float(n_a)
-            )
-            arch_ucat = (
-                sum(int(r["scorecard"].get("u_catastrophic", 0)) for r in arch_rows) / float(n_a)
-            )
+            arch_s_ep = sum(
+                float(r["scorecard"].get("episode_score_v4", 0.0)) for r in arch_rows
+            ) / float(n_a)
+            arch_gsrr = sum(
+                1.0 if r["scorecard"].get("grounded_safely_resolved", False) else 0.0
+                for r in arch_rows
+            ) / float(n_a)
+            arch_ucat = sum(
+                int(r["scorecard"].get("u_catastrophic", 0)) for r in arch_rows
+            ) / float(n_a)
             arch_imperf = sum(
                 1
                 for r in arch_rows
@@ -407,9 +398,7 @@ def _compute_arm_summary(
     )
     perfect_total_count = perfect_first_pass_count + saved_by_checker_count
     miss_count = n_valid - perfect_total_count
-    checker_rejections_total = sum(
-        int(r.get("checker_rejections_count", 0)) for r in active_rows
-    )
+    checker_rejections_total = sum(int(r.get("checker_rejections_count", 0)) for r in active_rows)
 
     lats = sorted(float(r.get("latency_s", 0.0)) for r in active_rows)
     p50_latency_s = statistics.median(lats) if lats else 0.0
@@ -447,21 +436,16 @@ def _compute_arm_summary(
         for c in all_chk_logs
         if c.get("live_checker_verdict") == "REJECT_VIOLATION" and c.get("verdict") == "PASS"
     )
-    checker_true_catches = sum(
-        1 for c in all_chk_logs if c.get("verdict") == "REJECT_VIOLATION"
-    )
+    checker_true_catches = sum(1 for c in all_chk_logs if c.get("verdict") == "REJECT_VIOLATION")
 
-    avg_lead_in = (
-        sum(
-            float(
-                r.get("input_tokens", 0)
-                + r.get("cache_read_tokens", 0)
-                + r.get("cache_write_tokens", 0)
-            )
-            for r in active_rows
+    avg_lead_in = sum(
+        float(
+            r.get("input_tokens", 0)
+            + r.get("cache_read_tokens", 0)
+            + r.get("cache_write_tokens", 0)
         )
-        / float(n_denom)
-    )
+        for r in active_rows
+    ) / float(n_denom)
     avg_lead_out = _mean_top("output_tokens")
     avg_w_tok = _mean_top("worker_tokens")
     avg_c_tok = _mean_top("checker_tokens")
@@ -621,11 +605,7 @@ def capability_v4_svg(
         arm = lite_arms[m_id]
         n_v = arm["n_valid"]
         n_c = arm["n_completed"]
-        count_tag = (
-            f"{n_v}/{V4_LITE_EXPECTED_EPISODES}"
-            if n_v == n_c
-            else f"{n_v}/{n_c} valid"
-        )
+        count_tag = f"{n_v}/{V4_LITE_EXPECTED_EPISODES}" if n_v == n_c else f"{n_v}/{n_c} valid"
         return (
             f"{label_prefix} ({count_tag})",
             arm["mean_s_ep_v4"],
@@ -721,9 +701,7 @@ def capability_v4_svg(
                 rx=3,
                 fill="safe" if use_safe else "bar",
             )
-            label_text = (
-                f"{val * 100:.1f}% · G-SRR {gsrr * 100:.1f}% · U_cat {ucat * 100:.1f}%"
-            )
+            label_text = f"{val * 100:.1f}% · G-SRR {gsrr * 100:.1f}% · U_cat {ucat * 100:.1f}%"
             if bar_w >= 310:
                 canvas.text(
                     x0 + bar_w - 10,
@@ -1755,11 +1733,7 @@ def _render_report_md(summary_data: dict[str, Any]) -> str:
         lead_str = (
             "Gemini 4 Argon (Lead)"
             if "argon" in m_id
-            else (
-                "GPT-6 Astra (Lead+Checker)"
-                if "astra" in m_id
-                else "Deterministic Oracle"
-            )
+            else ("GPT-6 Astra (Lead+Checker)" if "astra" in m_id else "Deterministic Oracle")
         )
         worker_str = (
             "**Local `Qwen3.8-27B` (TabbyAPI)**"
@@ -2070,5 +2044,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

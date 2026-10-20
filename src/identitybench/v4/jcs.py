@@ -68,9 +68,7 @@ def _jcs_serialize(obj: Any) -> str:
                 raise TypeError(msg)
             normalized_items.append((key_str, val))
         normalized_items.sort(key=lambda kv: _utf16_sort_key(kv[0]))
-        parts = [
-            f"{_jcs_serialize(k)}:{_jcs_serialize(v)}" for k, v in normalized_items
-        ]
+        parts = [f"{_jcs_serialize(k)}:{_jcs_serialize(v)}" for k, v in normalized_items]
         return "{" + ",".join(parts) + "}"
     msg = f"Unsupported type for RFC 8785 JCS serialization: {type(obj).__name__}"
     raise TypeError(msg)
@@ -94,8 +92,7 @@ def compute_stage_digest(
 ) -> str:
     """Compute canonical `stage_digest` over sorted mutations (SPEC-v4.md §3.1.4)."""
     sorted_mutations = [
-        m.model_dump(mode="json")
-        for m in sorted(mutations, key=lambda item: item.mutation_id)
+        m.model_dump(mode="json") for m in sorted(mutations, key=lambda item: item.mutation_id)
     ]
     payload = {
         "base_world_rev": base_world_rev,
@@ -280,9 +277,7 @@ class _DocstringStripper(ast.NodeTransformer):
     """AST transformer that removes module, class, and function docstrings."""
 
     @staticmethod
-    def _strip_body_docstring(
-        body: list[ast.stmt], *, ensure_non_empty: bool
-    ) -> list[ast.stmt]:
+    def _strip_body_docstring(body: list[ast.stmt], *, ensure_non_empty: bool) -> list[ast.stmt]:
         if (
             body
             and isinstance(body[0], ast.Expr)

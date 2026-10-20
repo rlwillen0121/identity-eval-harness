@@ -68,8 +68,14 @@ def test_probe_ledger_etag_rules() -> None:
 
 def test_session_end_post_revocation_leak_and_clean_revocation() -> None:
     leak = HistoricalSessionRecordV4_1(
-        session_id="sess_1", account_id="acct_a", entitlement_id="role_x", start_s=0,
-        scheduled_end_s=100, revoked_at_s=50, audit_events_count=2, last_audit_event_s=70,
+        session_id="sess_1",
+        account_id="acct_a",
+        entitlement_id="role_x",
+        start_s=0,
+        scheduled_end_s=100,
+        revoked_at_s=50,
+        audit_events_count=2,
+        last_audit_event_s=70,
         evidence_id="ev_sess_1",
     )
     assert session_end(leak) == 100  # last_audit > revoked -> max(scheduled, last)
@@ -78,19 +84,43 @@ def test_session_end_post_revocation_leak_and_clean_revocation() -> None:
 
 
 def test_cae_union_and_flags() -> None:
-    inc = CAEIncidentRecordV4_1.model_validate({
-        "incident_id": "inc_01", "account_id": "acct_a", "hr_effective_at_s": 1000,
-        "event_received_at_s": 1010, "sla_max_exposure_s": 100, "etag": "e", "evidence_id": "ev",
-        "tokens": [
-            {"token_id": "tok_1", "app_id": "a", "issued_at_s": 900, "token_exp_s": 2000,
-             "connector_supports_push_revoke": True, "revoke_ack_at_s": 1050,
-             "idp_global_block_at_s": 1011, "next_spoke_poll_sync_at_s": 1500,
-             "edge_cache_ttl_s": 10, "clock_skew_allowance_s": 5, "evidence_id": "ev1"},
-            {"token_id": "tok_2", "app_id": "a", "issued_at_s": 1060, "token_exp_s": 1100,
-             "connector_supports_push_revoke": False, "next_spoke_poll_sync_at_s": 1200,
-             "edge_cache_ttl_s": 0, "clock_skew_allowance_s": 0, "evidence_id": "ev2"},
-        ],
-    })
+    inc = CAEIncidentRecordV4_1.model_validate(
+        {
+            "incident_id": "inc_01",
+            "account_id": "acct_a",
+            "hr_effective_at_s": 1000,
+            "event_received_at_s": 1010,
+            "sla_max_exposure_s": 100,
+            "etag": "e",
+            "evidence_id": "ev",
+            "tokens": [
+                {
+                    "token_id": "tok_1",
+                    "app_id": "a",
+                    "issued_at_s": 900,
+                    "token_exp_s": 2000,
+                    "connector_supports_push_revoke": True,
+                    "revoke_ack_at_s": 1050,
+                    "idp_global_block_at_s": 1011,
+                    "next_spoke_poll_sync_at_s": 1500,
+                    "edge_cache_ttl_s": 10,
+                    "clock_skew_allowance_s": 5,
+                    "evidence_id": "ev1",
+                },
+                {
+                    "token_id": "tok_2",
+                    "app_id": "a",
+                    "issued_at_s": 1060,
+                    "token_exp_s": 1100,
+                    "connector_supports_push_revoke": False,
+                    "next_spoke_poll_sync_at_s": 1200,
+                    "edge_cache_ttl_s": 0,
+                    "clock_skew_allowance_s": 0,
+                    "evidence_id": "ev2",
+                },
+            ],
+        }
+    )
     # [1010, 1065) U [1060, 1100) = [1010, 1100) -> 90 s.
     assert cae_outcome(inc) == (True, 90, False)
 
@@ -98,28 +128,47 @@ def test_cae_union_and_flags() -> None:
 def test_connector_429_tombstone_and_version_rollback() -> None:
     conn = ConnectorSchemaV4_1(connector_id="conn_01", etag="e", evidence_id="ev_c")
 
-    def page(idx: int, cin: str, status: int, cout: str, recs: list[dict[str, object]]) -> (
-        ConnectorPageRecordV4_1
-    ):
+    def page(
+        idx: int, cin: str, status: int, cout: str, recs: list[dict[str, object]]
+    ) -> ConnectorPageRecordV4_1:
         rows = []
         for r in recs:
             full = {"login_email": "x@y.z", "etag": "w", **r}
             rows.append(tuple(full.items()))
-        return ConnectorPageRecordV4_1.model_validate({
-            "connector_id": "conn_01", "page_index": idx, "cursor_in": cin, "cursor_out": cout,
-            "http_status": status, "records": rows, "evidence_id": f"ev_p{idx}",
-        })
+        return ConnectorPageRecordV4_1.model_validate(
+            {
+                "connector_id": "conn_01",
+                "page_index": idx,
+                "cursor_in": cin,
+                "cursor_out": cout,
+                "http_status": status,
+                "records": rows,
+                "evidence_id": f"ev_p{idx}",
+            }
+        )
 
     pages = [
         page(0, "cursor_0", 429, "cursor_0", []),
-        page(1, "cursor_0", 200, "c1", [
-            {"account_id": "acct_x1", "status": "ACTIVE", "version": 2},
-            {"account_id": "acct_x2", "status": "ACTIVE"},
-        ]),
-        page(2, "c1", 200, "cursor_end", [
-            {"account_id": "acct_x2", "status": "TOMBSTONE"},
-            {"account_id": "acct_x1", "status": "ACTIVE", "version": 1},
-        ]),
+        page(
+            1,
+            "cursor_0",
+            200,
+            "c1",
+            [
+                {"account_id": "acct_x1", "status": "ACTIVE", "version": 2},
+                {"account_id": "acct_x2", "status": "ACTIVE"},
+            ],
+        ),
+        page(
+            2,
+            "c1",
+            200,
+            "cursor_end",
+            [
+                {"account_id": "acct_x2", "status": "TOMBSTONE"},
+                {"account_id": "acct_x1", "status": "ACTIVE", "version": 1},
+            ],
+        ),
     ]
     halted, recon, inspected = connector_outcome(conn, pages)
     assert halted is True

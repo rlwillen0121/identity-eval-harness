@@ -166,9 +166,7 @@ def render_v4_grantt_html(summary_data: dict[str, Any]) -> str:
                 "imperf_pct": round(
                     100.0 * float(a["imperfect_safe_count"]) / float(max(1, n_eps)), 1
                 ),
-                "unsafe_pct": round(
-                    100.0 * float(a["u_cat_count"]) / float(max(1, n_eps)), 1
-                ),
+                "unsafe_pct": round(100.0 * float(a["u_cat_count"]) / float(max(1, n_eps)), 1),
                 "sep": round(float(a["mean_s_ep_v4"]) * 100.0, 1),
                 "lat_mean": round(float(a["avg_latency_s"]), 1),
                 "lat_boss": round(float(a.get("avg_lead_latency_s", a["avg_latency_s"])), 1),

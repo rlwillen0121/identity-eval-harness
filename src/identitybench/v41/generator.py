@@ -82,7 +82,7 @@ G_TOK_01_POLICY_PACK_CAP = 2_000
 def tokenizer_is_exact() -> bool:
     """True iff `tiktoken` o200k_base is importable (else the harness bytes/4 fallback is used)."""
     try:
-        import tiktoken
+        import tiktoken  # pyright: ignore[reportMissingImports]
 
         tiktoken.get_encoding("o200k_base")
     except Exception:

@@ -34,9 +34,7 @@ HYPOTHESIS_FAMILIES_V4: dict[str, tuple[str, ...]] = {
         "H3a_CHECKPOINT_vs_UNSTEERED",
         "H3b_FULL_LIVE_vs_CHECKPOINT",
     ),
-    "F4_COUPLING": (
-        "H4a_COUPLED_vs_DIAGNOSTIC_RESET",
-    ),
+    "F4_COUPLING": ("H4a_COUPLED_vs_DIAGNOSTIC_RESET",),
 }
 
 
@@ -114,12 +112,10 @@ def summarize_suite_v4(
     n_ep = len(scorecards)
     mean_ep_score = sum(sc.episode_score_v4 for sc in scorecards) / float(n_ep)
     srr = sum(1.0 if sc.safely_resolved else 0.0 for sc in scorecards) / float(n_ep)
-    g_srr = sum(1.0 if sc.grounded_safely_resolved else 0.0 for sc in scorecards) / float(
+    g_srr = sum(1.0 if sc.grounded_safely_resolved else 0.0 for sc in scorecards) / float(n_ep)
+    auto_g_srr = sum(1.0 if sc.auto_grounded_safely_resolved else 0.0 for sc in scorecards) / float(
         n_ep
     )
-    auto_g_srr = sum(
-        1.0 if sc.auto_grounded_safely_resolved else 0.0 for sc in scorecards
-    ) / float(n_ep)
     u_exec_rate = sum(float(sc.u_exec) for sc in scorecards) / float(n_ep)
     u_cat_rate = sum(float(sc.u_catastrophic) for sc in scorecards) / float(n_ep)
 
@@ -127,9 +123,7 @@ def summarize_suite_v4(
     family_failures: dict[str, int] = {}
     for sc in scorecards:
         fam_id = _infer_family_id(sc, episodes_by_id)
-        family_failures[fam_id] = max(
-            family_failures.get(fam_id, 0), int(sc.u_catastrophic)
-        )
+        family_failures[fam_id] = max(family_failures.get(fam_id, 0), int(sc.u_catastrophic))
     n_families = len(family_failures)
     k_failed_families = sum(1 for v in family_failures.values() if v > 0)
     cp95_upper = clopper_pearson_upper_95(k_failed_families, n_families)
@@ -140,9 +134,7 @@ def summarize_suite_v4(
     total_mat = sum(sc.materialized_hazard_slots for sc in scorecards)
 
     gar_denom = total_mat
-    gar_agent = (
-        round(total_caught_agent / float(gar_denom), 6) if gar_denom > 0 else None
-    )
+    gar_agent = round(total_caught_agent / float(gar_denom), 6) if gar_denom > 0 else None
     gar_total = (
         round((total_caught_agent + total_caught_human) / float(gar_denom), 6)
         if gar_denom > 0
@@ -157,9 +149,7 @@ def summarize_suite_v4(
         )
     else:
         total_seeded = n_ep
-    haz_mat_rate = (
-        round(min(1.0, total_mat / float(total_seeded)), 6) if total_seeded > 0 else None
-    )
+    haz_mat_rate = round(min(1.0, total_mat / float(total_seeded)), 6) if total_seeded > 0 else None
 
     mean_ieau_used = sum(sc.ieau_used for sc in scorecards) / float(n_ep)
     mean_ieau_waste = sum(sc.ieau_waste for sc in scorecards) / float(n_ep)
@@ -189,9 +179,7 @@ def summarize_suite_v4(
             if sc.episode_id in unsteered_scorecards_by_id
         ]
         base_matched_mean = (
-            sum(paired_un) / float(len(paired_un))
-            if paired_un
-            else baseline_matched_unsteered_mean
+            sum(paired_un) / float(len(paired_un)) if paired_un else baseline_matched_unsteered_mean
         )
     else:
         base_matched_mean = baseline_matched_unsteered_mean
@@ -336,12 +324,10 @@ def family_cluster_ratio_bca_bootstrap_ci(
         return 0.0, 0.0, 0.0
 
     cluster_nums = [
-        sum(numerators_by_family[k]) / float(len(numerators_by_family[k]))
-        for k in family_keys
+        sum(numerators_by_family[k]) / float(len(numerators_by_family[k])) for k in family_keys
     ]
     cluster_dens = [
-        sum(denominators_by_family[k]) / float(len(denominators_by_family[k]))
-        for k in family_keys
+        sum(denominators_by_family[k]) / float(len(denominators_by_family[k])) for k in family_keys
     ]
 
     def _ratio(nums: Sequence[float], dens: Sequence[float]) -> float:
@@ -356,9 +342,7 @@ def family_cluster_ratio_bca_bootstrap_ci(
     boot_ratios: list[float] = []
     for _ in range(n_resamples):
         idxs = [rng.randrange(m) for _ in range(m)]
-        boot_ratios.append(
-            _ratio([cluster_nums[i] for i in idxs], [cluster_dens[i] for i in idxs])
-        )
+        boot_ratios.append(_ratio([cluster_nums[i] for i in idxs], [cluster_dens[i] for i in idxs]))
     boot_ratios.sort()
 
     if max(boot_ratios) == min(boot_ratios):
@@ -474,9 +458,7 @@ def paired_sign_flip_permutation_pvalue(
     rng = random.Random(seed)
     extreme = 1
     for _ in range(n_permutations):
-        s = sum(
-            (1.0 if rng.getrandbits(1) else -1.0) * d for d in cluster_diffs
-        )
+        s = sum((1.0 if rng.getrandbits(1) else -1.0) * d for d in cluster_diffs)
         if abs(s / float(m)) >= obs - 1e-12:
             extreme += 1
     return round(extreme / float(n_permutations + 1), 6)

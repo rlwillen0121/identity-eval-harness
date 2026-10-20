@@ -479,4 +479,3 @@ def _run_surface_heuristic(episode: EpisodeSpecV3, env: IGAEnvironmentV3) -> Non
             "evidence_ids": partial_evid[:1],
         },
     )
-

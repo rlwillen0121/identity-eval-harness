@@ -300,9 +300,7 @@ def _format_prop_type(prop_schema: Mapping[str, Any]) -> str:
         return f"one of {json.dumps(prop_schema['enum'])}"
     raw_type = prop_schema.get("type", "any")
     type_str = (
-        " or ".join(str(t) for t in raw_type)
-        if isinstance(raw_type, list)
-        else str(raw_type)
+        " or ".join(str(t) for t in raw_type) if isinstance(raw_type, list) else str(raw_type)
     )
     items = prop_schema.get("items")
     if isinstance(items, Mapping):
@@ -318,11 +316,7 @@ def _format_action_keys(schema: Mapping[str, Any]) -> str:
     props = schema.get("properties")
     if not isinstance(props, Mapping) or not props:
         return '"{}"'
-    parts = [
-        f'"{k}": {_format_prop_type(v)}'
-        for k, v in props.items()
-        if isinstance(v, Mapping)
-    ]
+    parts = [f'"{k}": {_format_prop_type(v)}' for k, v in props.items() if isinstance(v, Mapping)]
     return "{" + ", ".join(parts) + "}"
 
 
@@ -330,9 +324,7 @@ def _render_cli_system_prompt(tool_specs: Sequence[ToolSpec]) -> str:
     actions_doc = []
     for spec in tool_specs:
         keys_desc = _format_action_keys(spec.input_schema)
-        actions_doc.append(
-            f"- Action `{spec.name}`: {spec.description} | JSON keys: {keys_desc}"
-        )
+        actions_doc.append(f"- Action `{spec.name}`: {spec.description} | JSON keys: {keys_desc}")
     actions_block = "\n".join(actions_doc)
     return (
         "You are an autonomous Enterprise Identity Governance & Administration (IGA) engineer.\n"
@@ -1009,9 +1001,7 @@ async def run_v3_experiment_async(
     if not episodes:
         raise ValueError(f"No episodes loaded from {dataset_path}")
 
-    episode_sha_map: dict[str, str] = {
-        ep.episode_id: compute_episode_sha256(ep) for ep in episodes
-    }
+    episode_sha_map: dict[str, str] = {ep.episode_id: compute_episode_sha256(ep) for ep in episodes}
 
     out_dir.mkdir(parents=True, exist_ok=True)
     records_path = out_dir / "episode_results.jsonl"
@@ -1043,14 +1033,10 @@ async def run_v3_experiment_async(
 
     def _build_current_artifact() -> V3RunArtifact:
         ordered_summaries = {
-            m_id: raw_summaries[m_id]
-            for m_id in ordered_model_ids
-            if m_id in raw_summaries
+            m_id: raw_summaries[m_id] for m_id in ordered_model_ids if m_id in raw_summaries
         }
         ordered_per_ep = {
-            m_id: raw_per_episode[m_id]
-            for m_id in ordered_model_ids
-            if m_id in raw_per_episode
+            m_id: raw_per_episode[m_id] for m_id in ordered_model_ids if m_id in raw_per_episode
         }
         has_all_baselines = {b.value for b in BaselineNameV3}.issubset(
             set(ordered_summaries.keys())
@@ -1092,9 +1078,7 @@ async def run_v3_experiment_async(
             else GenerationParams(max_output_tokens=m_cfg.max_output_tokens)
         )
         endpoint_id = (
-            provider.endpoint_identity()
-            if provider is not None
-            else f"baseline:{m_cfg.model}"
+            provider.endpoint_identity() if provider is not None else f"baseline:{m_cfg.model}"
         )
         expected_fp = compute_config_fingerprint(
             provider_kind=m_cfg.provider,
@@ -1175,11 +1159,7 @@ async def run_v3_experiment_async(
                     _append_durable_record(records_path, rec)
                 return rec
 
-        tasks = [
-            _run_one(ep, t_idx)
-            for t_idx in range(config.trials)
-            for ep in episodes
-        ]
+        tasks = [_run_one(ep, t_idx) for t_idx in range(config.trials) for ep in episodes]
         executed = await asyncio.gather(*tasks)
         model_records.extend(executed)
 
@@ -1226,9 +1206,7 @@ async def run_v3_experiment_async(
             key=lambda r: (r.trial_index, r.episode_id),
         )
     ]
-    records_lines = [
-        json.dumps(r.model_dump(mode="json"), sort_keys=True) for r in flat_records
-    ]
+    records_lines = [json.dumps(r.model_dump(mode="json"), sort_keys=True) for r in flat_records]
     _write_durable_lines(records_path, records_lines)
     _write_durable_lines(legacy_records_path, records_lines)
 
@@ -1270,9 +1248,7 @@ async def run_v3_experiment_async(
     for m in config.models:
         m_dict = m.model_dump(mode="json")
         if isinstance(m_dict.get("extra"), dict) and "headers" in m_dict["extra"]:
-            m_dict["extra"] = {
-                k: v for k, v in m_dict["extra"].items() if k != "headers"
-            }
+            m_dict["extra"] = {k: v for k, v in m_dict["extra"].items() if k != "headers"}
         sanitized_models.append(m_dict)
 
     manifest = {

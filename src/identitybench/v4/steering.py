@@ -113,9 +113,7 @@ class IdentityTeamSteeringOracle:
         )
         new_log = dict(runtime.world.authenticated_steer_log)
         new_log[directive_id] = sig
-        runtime.world = runtime.world.model_copy(
-            update={"authenticated_steer_log": new_log}
-        )
+        runtime.world = runtime.world.model_copy(update={"authenticated_steer_log": new_log})
 
         resp = SteerResponseV4(
             steer_directive_id=directive_id,
@@ -182,9 +180,7 @@ class IdentityTeamSteeringOracle:
         all_read_evidence: set[str] = set()
         for ev_set in runtime.actor_read_evidence_ids.values():
             all_read_evidence.update(ev_set)
-        all_read_evidence.update(
-            runtime.revealed_oracle_evidence_ids.get(brief.wave_id, set())
-        )
+        all_read_evidence.update(runtime.revealed_oracle_evidence_ids.get(brief.wave_id, set()))
 
         cited_ev_ids = {c.evidence_id for c in brief.citations}
         conflict = self._find_wave_conflict(brief.wave_id, brief.target_entity_ids)
@@ -194,10 +190,7 @@ class IdentityTeamSteeringOracle:
         missing_read = not brief.citations or not cited_ev_ids.issubset(all_read_evidence)
         missing_conflict_ties = (
             brief.trigger_reason == SteerTriggerReason.SOURCE_AUTHORITY_CONFLICT
-            and (
-                conflict is None
-                or not set(conflict.tied_evidence_ids).issubset(cited_ev_ids)
-            )
+            and (conflict is None or not set(conflict.tied_evidence_ids).issubset(cited_ev_ids))
         )
         unknown_stage = brief.stage_id is not None and (
             stage is None or stage.wave_id != brief.wave_id
@@ -216,8 +209,8 @@ class IdentityTeamSteeringOracle:
             )
 
         if stage is not None:
-            violated_rules, missing_ev, stage_hazards = (
-                runtime._detect_stage_semantic_defects(stage.mutations)
+            violated_rules, missing_ev, stage_hazards = runtime._detect_stage_semantic_defects(
+                stage.mutations
             )
             stage_is_clean = len(violated_rules) == 0 and len(missing_ev) == 0
             current_dep_digest: str | None = compute_dependency_digest(
@@ -238,9 +231,7 @@ class IdentityTeamSteeringOracle:
         ):
             revealed = conflict.revealed_vault_evidence_ids
             runtime.actor_read_evidence_ids.setdefault("lead", set()).update(revealed)
-            runtime.revealed_oracle_evidence_ids.setdefault(brief.wave_id, set()).update(
-                revealed
-            )
+            runtime.revealed_oracle_evidence_ids.setdefault(brief.wave_id, set()).update(revealed)
             self.resolved_conflict_ids.add(conflict.conflict_id)
 
             if stage is not None and current_dep_digest is not None:
@@ -291,9 +282,7 @@ class IdentityTeamSteeringOracle:
             if used_redirects < 1:
                 self.redirects_used_in_wave[brief.wave_id] = used_redirects + 1
                 runtime.human_redirected_hazard_slot_ids.update(stage_hazards)
-                red_cat = _classify_redirect_category(
-                    violated_rules, stage_hazards, self.oracle
-                )
+                red_cat = _classify_redirect_category(violated_rules, stage_hazards, self.oracle)
                 return self._emit_response(
                     brief,
                     runtime,

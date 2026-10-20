@@ -141,7 +141,13 @@ def _rounded_right_path(x: float, y: float, w: float, h: float, r: float) -> str
 
 
 def _draw_logo_and_name(
-    parts: list[str], name: str, x: float, cy: float, is_top: bool, t: dict[str, str], scale: float = 1.0
+    parts: list[str],
+    name: str,
+    x: float,
+    cy: float,
+    is_top: bool,
+    t: dict[str, str],
+    scale: float = 1.0,
 ) -> None:
     lab = _lab_of(name)
     size = 16.0 * scale
@@ -165,7 +171,14 @@ def build_grantt_fig1_svg(
 ) -> str:
     t = THEMES[theme_name]
     target_n = 360
-    rows = sorted(arms, key=lambda a: (-int(a["tasks_passed_360"]), int(a["tasks_unsafe_360"]), float(a["cost_usd"])))
+    rows = sorted(
+        arms,
+        key=lambda a: (
+            -int(a["tasks_passed_360"]),
+            int(a["tasks_unsafe_360"]),
+            float(a["cost_usd"]),
+        ),
+    )
     W = int(1120 * scale)
     pad = 24 * scale
     name_w = 206 * scale
@@ -250,9 +263,13 @@ def build_grantt_fig1_svg(
 
         pass_fill = t["accent"] if is_top else t["pass_fill"]
         if miss_count == 0 and w_p > 0:
-            parts.append(f'<path d="{_rounded_right_path(bx, top, w_p, bar_h, 4 * scale)}" fill="{pass_fill}"/>')
+            parts.append(
+                f'<path d="{_rounded_right_path(bx, top, w_p, bar_h, 4 * scale)}" fill="{pass_fill}"/>'
+            )
         elif w_p > 0:
-            parts.append(f'<rect x="{bx:.1f}" y="{top:.1f}" width="{w_p:.1f}" height="{bar_h:.1f}" fill="{pass_fill}"/>')
+            parts.append(
+                f'<rect x="{bx:.1f}" y="{top:.1f}" width="{w_p:.1f}" height="{bar_h:.1f}" fill="{pass_fill}"/>'
+            )
 
         cur_x = bx + w_p
         segs = [(w, c) for w, c in ((w_s, t["mark_muted"]), (w_u, t["denied"])) if w > 0]
@@ -304,7 +321,9 @@ def build_grantt_fig2_svg(
     ]
 
     leg_y = 66 * scale
-    parts.append(f'<circle cx="{pad_x + 6 * scale:.1f}" cy="{leg_y - 4 * scale:.1f}" r="{5 * scale:.1f}" fill="{t["accent"]}"/>')
+    parts.append(
+        f'<circle cx="{pad_x + 6 * scale:.1f}" cy="{leg_y - 4 * scale:.1f}" r="{5 * scale:.1f}" fill="{t["accent"]}"/>'
+    )
     parts.append(
         f'<text x="{pad_x + 16 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">≤1% unsafe actions</text>'
     )
@@ -389,16 +408,27 @@ def build_grantt_fig2_svg(
     pts = [
         (
             r,
-            (pad_l + 4 * scale + (lane_w - 14 * scale) / 2.0) if r["cost_basis"] == "local" else lx(float(r["cost_usd"])),
+            (pad_l + 4 * scale + (lane_w - 14 * scale) / 2.0)
+            if r["cost_basis"] == "local"
+            else lx(float(r["cost_usd"])),
             ly(int(r["tasks_failed_total_360"])),
         )
         for r in arms
     ]
-    for r, px, py in sorted(pts, key=lambda item: 1 if (float(item[0]["u_comm_rate"]) <= 0.01 and int(item[0]["tasks_passed_360"]) >= 90) else 0):
+    for r, px, py in sorted(
+        pts,
+        key=lambda item: (
+            1
+            if (float(item[0]["u_comm_rate"]) <= 0.01 and int(item[0]["tasks_passed_360"]) >= 90)
+            else 0
+        ),
+    ):
         safe = float(r["u_comm_rate"]) <= 0.01 and int(r["tasks_passed_360"]) >= 90
         col = t["accent"] if safe else t["mark_muted"]
         rad = (6 if safe else 5) * scale
-        parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad + 2 * scale:.1f}" fill="{t["surface_raised"]}"/>')
+        parts.append(
+            f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad + 2 * scale:.1f}" fill="{t["surface_raised"]}"/>'
+        )
         if r["cost_basis"] == "est":
             parts.append(
                 f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad - 1 * scale:.1f}" fill="{t["surface_raised"]}" stroke="{col}" stroke-width="{2.5 * scale:.1f}"/>'
@@ -418,7 +448,15 @@ def build_grantt_fig2_svg(
                 return True
         return False
 
-    for r, px, py in sorted(pts, key=lambda item: (0 if (float(item[0]["u_comm_rate"]) <= 0.01 and int(item[0]["tasks_passed_360"]) >= 90) else 1, int(item[0]["tasks_failed_total_360"]))):
+    for r, px, py in sorted(
+        pts,
+        key=lambda item: (
+            0
+            if (float(item[0]["u_comm_rate"]) <= 0.01 and int(item[0]["tasks_passed_360"]) >= 90)
+            else 1,
+            int(item[0]["tasks_failed_total_360"]),
+        ),
+    ):
         safe = float(r["u_comm_rate"]) <= 0.01 and int(r["tasks_passed_360"]) >= 90
         s = (
             f"{_short_name(str(r['label']))} · {str(r['cost_label']).replace('Local · $0', '$0 local')}"
@@ -445,7 +483,11 @@ def build_grantt_fig2_svg(
                 continue
             pick = cands[0]
         placed.append((pick[0], pick[1], w, h))
-        tx = pick[0] if pick[2] == "start" else (pick[0] + w if pick[2] == "end" else pick[0] + w / 2)
+        tx = (
+            pick[0]
+            if pick[2] == "start"
+            else (pick[0] + w if pick[2] == "end" else pick[0] + w / 2)
+        )
         fill = t["ink"] if safe else t["ink_3"]
         weight = 500 if safe else 400
         parts.append(
@@ -460,7 +502,14 @@ def build_grantt_fig3_svg(
     arms: list[dict[str, Any]], theme_name: str = "light", scale: float = 2.0
 ) -> str:
     t = THEMES[theme_name]
-    rows = sorted(arms, key=lambda a: (-int(a["tasks_passed_360"]), int(a["tasks_unsafe_360"]), float(a["cost_usd"])))
+    rows = sorted(
+        arms,
+        key=lambda a: (
+            -int(a["tasks_passed_360"]),
+            int(a["tasks_unsafe_360"]),
+            float(a["cost_usd"]),
+        ),
+    )
     W = int(1120 * scale)
     pad = 24 * scale
     name_w = 200 * scale
@@ -548,7 +597,15 @@ def build_grantt_fig3_svg(
 
     for r_i, r in enumerate(rows):
         y = card_top + top_h + r_i * (row_h + gap)
-        _draw_logo_and_name(parts, str(r["label"]), pad, y + row_h / 2.0, int(r["tasks_passed_360"]) >= 353, t, scale)
+        _draw_logo_and_name(
+            parts,
+            str(r["label"]),
+            pad,
+            y + row_h / 2.0,
+            int(r["tasks_passed_360"]) >= 353,
+            t,
+            scale,
+        )
         for c_i, (c_id, _, _, _) in enumerate(V41_CAT_KEYS):
             v = int(r["cat_fail_60"][c_id])
             x = cx(c_i)
@@ -579,7 +636,9 @@ def write_png(svg_path: Path) -> None:
         )
 
 
-def render_grantt_v41_suite(arms: list[dict[str, Any]], out_dir: Path, *, export_png: bool = True) -> None:
+def render_grantt_v41_suite(
+    arms: list[dict[str, Any]], out_dir: Path, *, export_png: bool = True
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for theme_name in ("light", "dark"):
         fig1_2x = build_grantt_fig1_svg(arms, theme_name, scale=2.0)

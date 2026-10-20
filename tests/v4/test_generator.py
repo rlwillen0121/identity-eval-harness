@@ -129,9 +129,7 @@ def test_conditional_wave_oracle_coupled_vs_diagnostic_reset_and_r2_11() -> None
 
     # If the orchestrator repairs the missing upstream W1 dependency during W2
     # (include_upstream_repairs=True), W2 achieves 1.0!
-    repair_muts = build_gold_mutations_for_wave(
-        ep, w0, oracle, "W2", include_upstream_repairs=True
-    )
+    repair_muts = build_gold_mutations_for_wave(ep, w0, oracle, "W2", include_upstream_repairs=True)
     assert len(repair_muts) > len(build_gold_mutations_for_wave(ep, w1_gold, oracle, "W2"))
 
     # In DIAGNOSTIC_RESET mode, the harness restores w1_gold before W2 begins,

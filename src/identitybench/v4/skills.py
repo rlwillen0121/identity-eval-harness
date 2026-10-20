@@ -34,7 +34,7 @@ def _resolve_tokenizer() -> Callable[[str], int]:
     if _TOKENIZER_FN is not None:
         return _TOKENIZER_FN
     try:
-        import tiktoken
+        import tiktoken  # pyright: ignore[reportMissingImports]
 
         enc = tiktoken.get_encoding("o200k_base")
 
@@ -474,9 +474,7 @@ class SkillRegistryV4:
             refs_dir = skill_dir / "references"
             if refs_dir.is_dir():
                 for ref_file in sorted(refs_dir.glob("*.md")):
-                    references[f"references/{ref_file.name}"] = ref_file.read_text(
-                        encoding="utf-8"
-                    )
+                    references[f"references/{ref_file.name}"] = ref_file.read_text(encoding="utf-8")
             else:
                 references["references/edge_cases.md"] = (
                     f"# {entry.name} Edge Cases\n\nNo privileged IGA state mutations required.\n"

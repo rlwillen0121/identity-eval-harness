@@ -813,9 +813,7 @@ async def run_v41_experiment_async(
     for m in config.models:
         if m.provider != "baseline":
             q_key = (
-                f"{m.provider}:{m.display_id}"
-                if m.provider == "openai_compatible"
-                else m.provider
+                f"{m.provider}:{m.display_id}" if m.provider == "openai_compatible" else m.provider
             )
             queues.setdefault(q_key, []).append(m)
 

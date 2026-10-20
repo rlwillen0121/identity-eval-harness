@@ -362,9 +362,7 @@ def test_statistical_inference_clopper_pearson_bca_tost_and_bh_fdr() -> None:
     assert 0.80 <= pt <= 0.86
 
     fam_dens = {f"fam_{i:02d}": [1.5 + 0.05 * (i % 4), 1.6 + 0.05 * (i % 4)] for i in range(12)}
-    r_pt, r_lo, r_hi = family_cluster_ratio_bca_bootstrap_ci(
-        fam_vals, fam_dens, n_resamples=1000
-    )
+    r_pt, r_lo, r_hi = family_cluster_ratio_bca_bootstrap_ci(fam_vals, fam_dens, n_resamples=1000)
     assert r_lo <= r_pt <= r_hi
     assert r_pt > 0.0
 
@@ -377,9 +375,7 @@ def test_statistical_inference_clopper_pearson_bca_tost_and_bh_fdr() -> None:
     assert lo_12 < -0.02 and hi_12 > 0.02
 
     # Non-zero small variance across M=36 families achieves TOST equivalence at default 0.03
-    small_var_36 = {
-        f"fam_full_{i:02d}": [0.002 if i % 2 == 0 else -0.002] for i in range(36)
-    }
+    small_var_36 = {f"fam_full_{i:02d}": [0.002 if i % 2 == 0 else -0.002] for i in range(36)}
     eq_36_small, mean_36_s, lo_36_s, hi_36_s = paired_tost_equivalence_v4(small_var_36)
     assert eq_36_small is True
     assert mean_36_s == pytest.approx(0.0)
@@ -395,9 +391,7 @@ def test_statistical_inference_clopper_pearson_bca_tost_and_bh_fdr() -> None:
     p_val = paired_sign_flip_permutation_pvalue(pos_diffs)
     assert p_val == pytest.approx(2.0 / 4096.0, abs=1e-5)
 
-    q_vals = bh_fdr_adjust_v4(
-        {"H1a_T1_vs_T0": 0.004, "H1b_T2_vs_T1": 0.020, "H1c_T3_vs_T1": 0.150}
-    )
+    q_vals = bh_fdr_adjust_v4({"H1a_T1_vs_T0": 0.004, "H1b_T2_vs_T1": 0.020, "H1c_T3_vs_T1": 0.150})
     assert q_vals["H1a_T1_vs_T0"] <= q_vals["H1b_T2_vs_T1"] <= q_vals["H1c_T3_vs_T1"]
     assert math.isclose(q_vals["H1a_T1_vs_T0"], 0.012, abs_tol=1e-6)
     assert "F1_TOPOLOGY" in HYPOTHESIS_FAMILIES_V4
@@ -490,6 +484,4 @@ def test_summarize_suite_v4_s_roa_gar_and_grw_per_ieau() -> None:
     assert summary.s_roa_suite == pytest.approx(0.80 / expected_denom, abs=1e-5)
     assert summary.s_roa_matched_suite == pytest.approx(0.60 / expected_denom, abs=1e-5)
     # GRW/IEAU counts 3 grounded waves / max(1.0, total_ieau) (P1-3)
-    assert summary.grw_per_ieau == pytest.approx(
-        3.0 / max(1.0, sc_steered.ieau_used), abs=1e-5
-    )
+    assert summary.grw_per_ieau == pytest.approx(3.0 / max(1.0, sc_steered.ieau_used), abs=1e-5)

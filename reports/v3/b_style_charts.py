@@ -192,7 +192,7 @@ class Svg:
             f'aria-labelledby="{title_id} {desc_id}">\n'
             f'<title id="{title_id}">{esc(self.title)}</title>\n'
             f'<desc id="{desc_id}">{esc(self.description)}</desc>\n'
-            f'<style>text{{font-variant-numeric:tabular-nums}}</style>\n'
+            f"<style>text{{font-variant-numeric:tabular-nums}}</style>\n"
             f'<rect width="{WIDTH}" height="{self.height}" fill="{BG}"/>\n{body}\n</svg>\n'
         )
 
@@ -550,9 +550,7 @@ def render_safety_screen(
     height = int(footer_top + 76)
 
     title = "Safety & reliability screen (all seven checks must pass)"
-    subtitle = (
-        "Passing checks stay neutral; failed checks are highlighted in orange-red (✗)"
-    )
+    subtitle = "Passing checks stay neutral; failed checks are highlighted in orange-red (✗)"
     desc = "; ".join(
         f"{r.name}: {'CLEAR' if r.passed else 'MISS'} "
         f"({sum(ok for ok, _ in r.checks)} of 7 checks passed)"
@@ -818,9 +816,7 @@ def render_model_tiers(
     tier_blocks: list[tuple[str, str, str, list[V3Row], int, int]] = []
     for tier_key, tier_title, bar_color, pill_bg in tier_defs:
         members = [
-            r
-            for r in rows
-            if MODEL_TIER_COST_META.get(r.model_id, {}).get("tier") == tier_key
+            r for r in rows if MODEL_TIER_COST_META.get(r.model_id, {}).get("tier") == tier_key
         ]
         header_y = cur_y
         start_y = header_y + 52
@@ -1192,9 +1188,7 @@ def render_cost_efficiency(
         tier = str(meta["tier"])
         bar_color = tier_color_map.get(tier, "#0072B2")
         pill_bg = (
-            "#EAF4FA"
-            if tier == "flagship"
-            else ("#E6F6F0" if tier == "open_weight" else "#FFF6E5")
+            "#EAF4FA" if tier == "flagship" else ("#E6F6F0" if tier == "open_weight" else "#FFF6E5")
         )
 
         if idx % 2 == 1:

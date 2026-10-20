@@ -638,14 +638,14 @@ class SCIMConnector:
     def empty_helper(self) -> None:
         """Docstring-only function body must become pass."""
 '''
-    source_clean = '''class SCIMConnector:
+    source_clean = """class SCIMConnector:
     def sync_page(self, cursor: str | None = None) -> list[dict[str, str]]:
         headers = {'If-Match': 'v1'}
         return [{'id': 'acc_01', 'etag': headers['If-Match']}]
 
     def empty_helper(self) -> None:
         pass
-'''
+"""
     code_a, sha_a = strip_python_comments_and_docstrings(source_with_prose)
     code_b, sha_b = strip_python_comments_and_docstrings(source_clean)
     assert code_a == code_b

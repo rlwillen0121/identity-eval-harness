@@ -183,11 +183,7 @@ def _verify_classification(
             violations.append(f"OWNER_CORRELATION_MISMATCH:{rec.account_id}")
             if sub.owner_resolution_source == OwnerResolutionSource.stale_group_tag:
                 violations.append(f"DECOY_STALE_GROUP_TAG_USED:{rec.account_id}")
-            if (
-                sub_owner is not None
-                and sub_owner != exp_owner
-                and exp_owner is None
-            ):
+            if sub_owner is not None and sub_owner != exp_owner and exp_owner is None:
                 violations.append(f"TERMINATED_OWNER_BOUND:{rec.account_id}")
 
         if sub.recommended_action == rec.expected_recommended_action:
@@ -247,9 +243,7 @@ def _verify_zsp_policy(
     max_roles = episode.world_state.max_roles_per_domain
     for dept, roles in sorted(proposed_roles_by_dept.items()):
         if len(roles) > max_roles:
-            violations.append(
-                f"ROLE_EXPLOSION_LIMIT_EXCEEDED:{dept}:{len(roles)}>{max_roles}"
-            )
+            violations.append(f"ROLE_EXPLOSION_LIMIT_EXCEEDED:{dept}:{len(roles)}>{max_roles}")
 
     target_matches = 0
     cooldown_matches = 0
@@ -263,10 +257,14 @@ def _verify_zsp_policy(
         norm_prop_role = _normalize_optional_id(prop.proposed_role_id)
         norm_exp_role = _normalize_optional_id(grant.expected_proposed_role_id)
         role_id_ok = True
-        if prop.target in (
-            ZSPConversionTarget.PROPOSE_BIRTHRIGHT_ROLE,
-            ZSPConversionTarget.PROPOSE_REQUESTABLE_BUNDLE,
-        ) and candidates_by_id:
+        if (
+            prop.target
+            in (
+                ZSPConversionTarget.PROPOSE_BIRTHRIGHT_ROLE,
+                ZSPConversionTarget.PROPOSE_REQUESTABLE_BUNDLE,
+            )
+            and candidates_by_id
+        ):
             cand = candidates_by_id.get(norm_prop_role or "")
             expected_kind = (
                 "birthright"
@@ -367,8 +365,7 @@ def _verify_jit_access(
 
     for req in requests:
         clarified = env.clarification_calls >= 1 and (
-            not hasattr(env, "clarified_request_ids")
-            or req.request_id in env.clarified_request_ids
+            not hasattr(env, "clarified_request_ids") or req.request_id in env.clarified_request_ids
         )
         if req.ambiguity_flag and not clarified:
             violations.append(f"AMBIGUOUS_REQUEST_WITHOUT_CLARIFICATION:{req.request_id}")
@@ -541,8 +538,7 @@ def _verify_access_reviews(
         valid_custodians = [
             c
             for c in campaign.emergency_custodian_assignees
-            if c not in invalid_principals
-            and not c.startswith(("svc_", "nhi_", "bot_", "shared_"))
+            if c not in invalid_principals and not c.startswith(("svc_", "nhi_", "bot_", "shared_"))
         ]
         surviving_admin_principals.update(valid_custodians)
 
@@ -579,9 +575,7 @@ def _canonicalize_lifecycle_step(
     )
 
     if a.action_kind == LifecycleActionKind.REVOKE_SESSIONS and target_id == principal_id:
-        matching_sessions = [
-            s for s in stream.active_sessions if s.principal_id == principal_id
-        ]
+        matching_sessions = [s for s in stream.active_sessions if s.principal_id == principal_id]
         if len(matching_sessions) == 1:
             target_id = matching_sessions[0].session_id
 
@@ -660,9 +654,7 @@ def _normalize_lifecycle_sequence(
         expanded_raw.append(s)
 
     canon_steps = [_canonicalize_lifecycle_step(s, stream) for s in expanded_raw]
-    non_drift = [
-        s for s in canon_steps if s.action_kind != LifecycleActionKind.RECONCILE_DRIFT
-    ]
+    non_drift = [s for s in canon_steps if s.action_kind != LifecycleActionKind.RECONCILE_DRIFT]
     drift_steps = sorted(
         [s for s in canon_steps if s.action_kind == LifecycleActionKind.RECONCILE_DRIFT],
         key=lambda s: (s.target_id, s.step_id),
@@ -719,9 +711,7 @@ def _verify_jml_cae_drift(
                 and s.observable_epoch_s <= act.scheduled_epoch_s
             ]
             if not obs_snaps:
-                obs_snaps = [
-                    s for s in stream.hr_snapshots if s.principal_id == act.principal_id
-                ]
+                obs_snaps = [s for s in stream.hr_snapshots if s.principal_id == act.principal_id]
             if obs_snaps:
                 latest_snap = max(obs_snaps, key=lambda s: s.generation)
                 if latest_snap.status.lower() == "active":

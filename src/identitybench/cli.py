@@ -901,11 +901,7 @@ def validate(
             from identitybench.v4.generator import validate_v4_dataset
             from identitybench.v4.schemas import SplitRingV4
 
-            target_dir = (
-                dataset
-                if dataset is not None
-                else session.root / "datasets" / str(suite)
-            )
+            target_dir = dataset if dataset is not None else session.root / "datasets" / str(suite)
             if dataset is not None and not target_dir.is_dir():
                 raise CliError(f"dataset directory not found: {target_dir}")
             suite_enum = SplitRingV4(suite) if suite in v4_suites else SplitRingV4.v4_dev
@@ -946,11 +942,7 @@ def validate(
         with _errors("v3 dataset"):
             from identitybench.v3.generator import validate_v3_dataset
 
-            target_dir = (
-                dataset
-                if dataset is not None
-                else session.root / "datasets" / str(suite)
-            )
+            target_dir = dataset if dataset is not None else session.root / "datasets" / str(suite)
             if not target_dir.is_dir():
                 raise CliError(f"dataset directory not found: {target_dir}")
             _note(session, f"validating v3 dataset {target_dir} ...")
@@ -3180,9 +3172,7 @@ def v4_generate(
             help="v4 split ring to generate (v4_dev, v4_lite, v4_full, v4_fresh).",
         ),
     ] = "v4_dev",
-    seed: Annotated[
-        int, typer.Option("--seed", help="Deterministic generation seed.")
-    ] = 20260401,
+    seed: Annotated[int, typer.Option("--seed", help="Deterministic generation seed.")] = 20260401,
     out: Annotated[
         Path | None,
         typer.Option("--out", "-o", help="Output directory (default: datasets/<suite>)."),
@@ -3276,13 +3266,9 @@ def v4_score(
     ] = None,
     out: Annotated[
         Path | None,
-        typer.Option(
-            "--out", "-o", help="Output run directory (default: runs/<suite>-baselines)."
-        ),
+        typer.Option("--out", "-o", help="Output run directory (default: runs/<suite>-baselines)."),
     ] = None,
-    n_boot: Annotated[
-        int, typer.Option("--n-boot", min=10, help="Bootstrap resamples.")
-    ] = 1000,
+    n_boot: Annotated[int, typer.Option("--n-boot", min=10, help="Bootstrap resamples.")] = 1000,
 ) -> None:
     """Run and score deterministic v4 baselines and check M4.5 gates."""
     session = _session(ctx)
@@ -3318,9 +3304,7 @@ def v4_run_cmd(
     ],
     resume: Annotated[
         bool,
-        typer.Option(
-            "--resume", help="Resume an interrupted run, keeping valid trial records."
-        ),
+        typer.Option("--resume", help="Resume an interrupted run, keeping valid trial records."),
     ] = False,
 ) -> None:
     """Run an IdentityBench v4 experiment (baselines and/or live models) from a YAML config."""
@@ -3357,9 +3341,7 @@ def v4_report_cmd(
         Path | None,
         typer.Option("--out", "-o", help="Report output directory (default: reports/v4)."),
     ] = None,
-    n_boot: Annotated[
-        int, typer.Option("--n-boot", min=10, help="Bootstrap resamples.")
-    ] = 1000,
+    n_boot: Annotated[int, typer.Option("--n-boot", min=10, help="Bootstrap resamples.")] = 1000,
 ) -> None:
     """Render Markdown and JSON scorecard reports for an IdentityBench v4 run."""
     session = _session(ctx)
@@ -3379,7 +3361,6 @@ def v4_report_cmd(
         target = _under_root(session, out, Path("reports") / "v4")
         report_md = write_v4_report(artifact, target)
     _say(str(report_md))
-
 
 
 # --------------------------------------------------------------------------------------------
@@ -3489,9 +3470,7 @@ def v41_score(
     ] = None,
     out: Annotated[
         Path | None,
-        typer.Option(
-            "--out", "-o", help="Output run directory (default: runs/<suite>-baselines)."
-        ),
+        typer.Option("--out", "-o", help="Output run directory (default: runs/<suite>-baselines)."),
     ] = None,
     n_boot: Annotated[int, typer.Option("--n-boot", min=10, help="Bootstrap resamples.")] = 1000,
 ) -> None:

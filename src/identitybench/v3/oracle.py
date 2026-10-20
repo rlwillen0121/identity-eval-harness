@@ -539,8 +539,7 @@ def derive_review_campaign_decisions(
         if c not in invalid_principals and not c.startswith(("svc_", "nhi_", "bot_", "shared_"))
     ]
     need_emergency_custodian = (
-        _count_surviving_admins() < campaign.min_admins_per_service
-        and len(valid_custodians) > 0
+        _count_surviving_admins() < campaign.min_admins_per_service and len(valid_custodians) > 0
     )
 
     return [
@@ -750,9 +749,7 @@ def run_oracle_on_environment(
         actual_env.execute_tool("query_hris", {})
         tickets_resp = actual_env.execute_tool("query_tickets", {})
         actual_env.execute_tool("query_telemetry", {})
-        jit_dicts: list[dict[str, Any]] = [
-            dict(r) for r in tickets_resp.get("jit_requests", ())
-        ]
+        jit_dicts: list[dict[str, Any]] = [dict(r) for r in tickets_resp.get("jit_requests", ())]
         for req_dict in jit_dicts:
             for ev_id in req_dict.get("evidence_ids", ()):
                 discovered_evid.append(str(ev_id))

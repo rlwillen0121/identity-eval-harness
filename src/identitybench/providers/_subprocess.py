@@ -178,6 +178,7 @@ async def _communicate(
         _drain(proc.stdout, MAX_CAPTURE_BYTES), _drain(proc.stderr, MAX_CAPTURE_BYTES), *feeders
     )
     await proc.wait()
+    assert stdout is not None and stderr is not None
     return stdout, stderr
 
 

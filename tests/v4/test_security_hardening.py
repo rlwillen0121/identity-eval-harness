@@ -786,9 +786,7 @@ def test_run_refuses_unsealed_dataset_unless_explicitly_opted_out(tmp_path: Path
 
     # The explicit opt-out is the only unsealed path, and the manifest records it.
     run_v4_experiment(cfg, tmp_path / "out_unsealed", repo_root=REPO, require_seal=False)
-    manifest = json.loads(
-        (tmp_path / "out_unsealed" / "manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((tmp_path / "out_unsealed" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["sealed"] is False
     assert manifest["dataset_sha256_pin"] is None
 

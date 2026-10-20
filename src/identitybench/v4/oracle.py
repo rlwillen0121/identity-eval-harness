@@ -112,9 +112,7 @@ def derive_conditional_wave_obligations(
     del world
     ob_ids = oracle.wave_obligation_ids.get(wave_id, ())
     return tuple(
-        oracle.obligations_by_id[ob_id]
-        for ob_id in ob_ids
-        if ob_id in oracle.obligations_by_id
+        oracle.obligations_by_id[ob_id] for ob_id in ob_ids if ob_id in oracle.obligations_by_id
     )
 
 
@@ -249,9 +247,7 @@ def build_gold_mutations_for_wave(
                     category_id=ob.category_id,
                     operation=MutationOperation.GRANT_EMERGENCY_CUSTODIAN,
                     target_entity_id=cust_id,
-                    resource_preconditions=(
-                        _refresh_preconditions((cust_fence,), world)[0],
-                    ),
+                    resource_preconditions=(_refresh_preconditions((cust_fence,), world)[0],),
                     payload=cust_payload,
                     citations=(
                         EvidenceCitationV4(
@@ -429,9 +425,7 @@ def evaluate_wave_state_v4(
 
     for cat in categories:
         cat_obs = [ob for ob in wave_obs if ob.category_id == cat]
-        active_obs = [
-            ob for ob in cat_obs if is_obligation_active_under_interrupts(ob, world)
-        ]
+        active_obs = [ob for ob in cat_obs if is_obligation_active_under_interrupts(ob, world)]
         deferred_obs = [
             ob for ob in cat_obs if not is_obligation_active_under_interrupts(ob, world)
         ]
@@ -466,9 +460,8 @@ def evaluate_wave_state_v4(
             committed = world.committed_payloads_by_obligation.get(ob.obligation_id)
             if committed is None:
                 committed = world.committed_mutations_by_entity.get(ob.target_entity_id)
-            not_drifted_or_corrupt = (
-                committed is None
-                or payload_satisfies_obligation(committed, ob, world)
+            not_drifted_or_corrupt = committed is None or payload_satisfies_obligation(
+                committed, ob, world
             )
             pres_checks.append(not_drifted_or_corrupt)
 

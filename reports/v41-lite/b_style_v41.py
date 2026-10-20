@@ -81,7 +81,10 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "muse-wonder-1.0-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "grok-4.7-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "kimi-k3-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (MoE)"},
-    "deepseek-v4.1-flash-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight Fast (MoE)"},
+    "deepseek-v4.1-flash-t0-medium": {
+        "tier": "open_weight",
+        "class_label": "Open-Weight Fast (MoE)",
+    },
     "glm-5.3-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (MoE)"},
     "deepseek-v4-pro-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (~671B MoE)"},
     "minimax-m3-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (MoE)"},
@@ -115,12 +118,18 @@ def add_header_v41(svg: Svg, title: str, subtitle: str, date_label: str = "19 OC
     svg.text(100, 198, subtitle, 22, MUTED)
 
 
-def draw_model_label_v41(svg: Svg, row: V41BStyleRow, y: float, *, show_badge: bool = False) -> None:
+def draw_model_label_v41(
+    svg: Svg, row: V41BStyleRow, y: float, *, show_badge: bool = False
+) -> None:
     lowered = row.name.lower()
     if "kimi" in lowered and "kimi" in ICONS:
-        svg.add(f'<g transform="translate(100,{y - 22:g}) scale(1.8333)" color="{INK}">{ICONS["kimi"]}</g>')
+        svg.add(
+            f'<g transform="translate(100,{y - 22:g}) scale(1.8333)" color="{INK}">{ICONS["kimi"]}</g>'
+        )
     elif "minimax" in lowered and "minimax" in ICONS:
-        svg.add(f'<g transform="translate(100,{y - 22:g}) scale(1.8333)" color="{INK}">{ICONS["minimax"]}</g>')
+        svg.add(
+            f'<g transform="translate(100,{y - 22:g}) scale(1.8333)" color="{INK}">{ICONS["minimax"]}</g>'
+        )
     else:
         draw_icon(svg, row.name, y, x=100)
     svg.text(160, y + 8, row.name, 22, INK, weight=600 if row.passed else 500)
@@ -163,7 +172,10 @@ def load_v41_b_rows(arms: Sequence[dict[str, Any]]) -> list[V41BStyleRow]:
         passed = all(ok for ok, _ in checks)
 
         ta_all = arm.get("task_accuracy_all", {})
-        opt_rates_all = {col_key: float((ta_all.get(col_key) or {}).get("rate") or 0.0) for _, col_key, _ in OPT_COLUMNS_V41}
+        opt_rates_all = {
+            col_key: float((ta_all.get(col_key) or {}).get("rate") or 0.0)
+            for _, col_key, _ in OPT_COLUMNS_V41
+        }
 
         rows.append(
             V41BStyleRow(
@@ -226,10 +238,22 @@ def render_v41_safety_screen(rows: Sequence[V41BStyleRow]) -> str:
             cx = col_x[j]
             if ok:
                 svg.rect(cx, cy - 23, col_w, 50, PASS_CELL_BG, rx=6, stroke=GRID, width=1)
-                svg.text(cx + col_w / 2, cy + 9, shown, 20, PASS_CELL_INK, weight=500, anchor="middle")
+                svg.text(
+                    cx + col_w / 2, cy + 9, shown, 20, PASS_CELL_INK, weight=500, anchor="middle"
+                )
             else:
-                svg.rect(cx, cy - 23, col_w, 50, MISS_CELL_BG, rx=6, stroke=MISS_CELL_BORDER, width=1.5)
-                svg.text(cx + col_w / 2, cy + 9, f"✗ {shown}", 20, MISS_CELL_INK, bold=True, anchor="middle")
+                svg.rect(
+                    cx, cy - 23, col_w, 50, MISS_CELL_BG, rx=6, stroke=MISS_CELL_BORDER, width=1.5
+                )
+                svg.text(
+                    cx + col_w / 2,
+                    cy + 9,
+                    f"✗ {shown}",
+                    20,
+                    MISS_CELL_INK,
+                    bold=True,
+                    anchor="middle",
+                )
 
     add_footer(
         svg,
@@ -250,14 +274,18 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
     row_step, cur_y = 64, 290
     tier_blocks: list[tuple[str, str, str, list[V41BStyleRow], int, int]] = []
     for tier_key, tier_title, bar_color, pill_bg in tier_defs:
-        members = [r for r in rows if MODEL_TIER_META_V41.get(r.model_id, {}).get("tier") == tier_key]
+        members = [
+            r for r in rows if MODEL_TIER_META_V41.get(r.model_id, {}).get("tier") == tier_key
+        ]
         header_y, start_y = cur_y, cur_y + 52
         tier_blocks.append((tier_title, bar_color, pill_bg, members, header_y, start_y))
         cur_y = start_y + len(members) * row_step + 44
 
     footer_top = cur_y + 12
     title = "Category Task Score by Model Class (Flagship vs. Open-Weight vs. Fast/Small)"
-    subtitle = "Percentage of 360 category tasks solved across 6 governance areas, grouped by model tier."
+    subtitle = (
+        "Percentage of 360 category tasks solved across 6 governance areas, grouped by model tier."
+    )
     svg = Svg(title, subtitle, "b-model-tiers", int(footer_top + 76))
     add_header_v41(svg, title, subtitle)
 
@@ -266,18 +294,32 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
     svg.text(perf_col_x, 256, "Solved Tasks", 17, INK, bold=True, anchor="middle")
     svg.text(unsafe_col_x, 256, "Unsafe Rate", 17, INK, bold=True, anchor="middle")
 
-    for block_idx, (tier_title, bar_color, pill_bg, members, header_y, start_y) in enumerate(tier_blocks):
+    for block_idx, (tier_title, bar_color, pill_bg, members, header_y, start_y) in enumerate(
+        tier_blocks
+    ):
         avg_sc = sum(r.cat_avg_score * 100.0 for r in members) / max(len(members), 1)
         if block_idx > 0:
             svg.line(100, header_y - 32, WIDTH - 100, header_y - 32, GRID, 1.5)
         svg.text(100, header_y, f"{tier_title} ({len(members)} models)", 21, bar_color, bold=True)
-        svg.text(bar_x0 + bar_span, header_y, f"Class avg score: {avg_sc:.1f}%", 17, MUTED, bold=True, anchor="end")
+        svg.text(
+            bar_x0 + bar_span,
+            header_y,
+            f"Class avg score: {avg_sc:.1f}%",
+            17,
+            MUTED,
+            bold=True,
+            anchor="end",
+        )
 
         for idx, row in enumerate(members):
             cy = start_y + idx * row_step
             draw_model_label_v41(svg, row, cy)
-            class_label = str(MODEL_TIER_META_V41.get(row.model_id, {}).get("class_label", "Proprietary"))
-            svg.rect(class_col_x - 122, cy - 17, 244, 34, pill_bg, rx=17, stroke=bar_color, width=1.2)
+            class_label = str(
+                MODEL_TIER_META_V41.get(row.model_id, {}).get("class_label", "Proprietary")
+            )
+            svg.rect(
+                class_col_x - 122, cy - 17, 244, 34, pill_bg, rx=17, stroke=bar_color, width=1.2
+            )
             svg.text(class_col_x, cy + 6, class_label, 14, bar_color, bold=True, anchor="middle")
 
             svg.rect(bar_x0, cy - 18, bar_span, 38, "#F3F5F8", rx=6)
@@ -285,18 +327,47 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
             svg.rect(bar_x0, cy - 18, bar_w, 38, bar_color, rx=6)
             pct_str = f"{row.cat_avg_score * 100.0:.1f}%"
             if row.cat_avg_score >= 0.12:
-                svg.text(bar_x0 + bar_w - 14, cy + 8, pct_str, 19, "#FFFFFF", bold=True, anchor="end")
+                svg.text(
+                    bar_x0 + bar_w - 14, cy + 8, pct_str, 19, "#FFFFFF", bold=True, anchor="end"
+                )
             else:
                 svg.text(bar_x0 + bar_w + 12, cy + 8, pct_str, 19, INK2, bold=True, anchor="start")
 
             svg.rect(perf_col_x - 66, cy - 18, 132, 38, PASS_CELL_BG, rx=6, stroke=GRID, width=1.0)
-            svg.text(perf_col_x, cy + 8, f"{row.tasks_passed_360}/360", 18, INK2, weight=600, anchor="middle")
+            svg.text(
+                perf_col_x,
+                cy + 8,
+                f"{row.tasks_passed_360}/360",
+                18,
+                INK2,
+                weight=600,
+                anchor="middle",
+            )
 
             u_ok = row.u_comm_rate <= 0.015
-            svg.rect(unsafe_col_x - 84, cy - 18, 168, 38, PASS_CELL_BG if u_ok else MISS_CELL_BG, rx=6, stroke=GRID if u_ok else MISS_CELL_BORDER, width=1.0 if u_ok else 1.5)
-            svg.text(unsafe_col_x, cy + 8, fmt_pct(row.u_comm_rate), 17, INK if u_ok else MISS_CELL_INK, weight=600, anchor="middle")
+            svg.rect(
+                unsafe_col_x - 84,
+                cy - 18,
+                168,
+                38,
+                PASS_CELL_BG if u_ok else MISS_CELL_BG,
+                rx=6,
+                stroke=GRID if u_ok else MISS_CELL_BORDER,
+                width=1.0 if u_ok else 1.5,
+            )
+            svg.text(
+                unsafe_col_x,
+                cy + 8,
+                fmt_pct(row.u_comm_rate),
+                17,
+                INK if u_ok else MISS_CELL_INK,
+                weight=600,
+                anchor="middle",
+            )
 
-    add_footer(svg, "Category task solve rate (%) out of 360 tasks grouped by model tier.", 4, footer_top)
+    add_footer(
+        svg, "Category task solve rate (%) out of 360 tasks grouped by model tier.", 4, footer_top
+    )
     return svg.output()
 
 
@@ -317,7 +388,15 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
     svg.text(100, legend_y + 18, "Points short of 100%:", 18, INK2, bold=True)
     sw, lx = 68.0, 315.0
     for i, label in enumerate(BIN_LABELS):
-        svg.rect(lx + i * (sw + 6), legend_y - 2, sw, 24, HEAT_FILLS[i], rx=4, stroke=RULE if i == 0 else None)
+        svg.rect(
+            lx + i * (sw + 6),
+            legend_y - 2,
+            sw,
+            24,
+            HEAT_FILLS[i],
+            rx=4,
+            stroke=RULE if i == 0 else None,
+        )
         svg.text(lx + i * (sw + 6) + sw / 2, legend_y + 44, label, 16, MUTED, anchor="middle")
 
     grid_x0, col_w, col_gap, group_gap = 585.0, 240.0, 10.0, 36.0
@@ -328,9 +407,25 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
         cursor += col_w + col_gap + (group_gap - col_gap if idx == 3 else 0.0)
 
     head_y = 324
-    svg.text((col_x[0] + col_x[3] + col_w) / 2, head_y, "4 Standalone Policy Math Tasks ↑", 20, INK, bold=True, anchor="middle")
+    svg.text(
+        (col_x[0] + col_x[3] + col_w) / 2,
+        head_y,
+        "4 Standalone Policy Math Tasks ↑",
+        20,
+        INK,
+        bold=True,
+        anchor="middle",
+    )
     svg.line(col_x[0] + 4, head_y + 12, col_x[3] + col_w - 4, head_y + 12, RULE, 2)
-    svg.text((col_x[4] + col_x[5] + col_w) / 2, head_y, "2 Cross-Step Sync & Review Tasks ↑", 20, INK, bold=True, anchor="middle")
+    svg.text(
+        (col_x[4] + col_x[5] + col_w) / 2,
+        head_y,
+        "2 Cross-Step Sync & Review Tasks ↑",
+        20,
+        INK,
+        bold=True,
+        anchor="middle",
+    )
     svg.line(col_x[4] + 4, head_y + 12, col_x[5] + col_w - 4, head_y + 12, RULE, 2)
 
     for j, (_, _, label) in enumerate(OPT_COLUMNS_V41):
@@ -343,14 +438,38 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
             val = row.opt_rates_all.get(ck, 0.0)
             cx = col_x[j]
             step = shortfall_bin(shortfall(val, 1.0))
-            svg.rect(cx, cy - 23, col_w, 50, HEAT_FILLS[step], rx=6, stroke=RULE if step == 0 else None, width=1)
-            svg.text(cx + col_w / 2, cy + 8, fmt_pct(val), 21, HEAT_INKS[step], weight=700 if step >= 3 else 500, anchor="middle")
+            svg.rect(
+                cx,
+                cy - 23,
+                col_w,
+                50,
+                HEAT_FILLS[step],
+                rx=6,
+                stroke=RULE if step == 0 else None,
+                width=1,
+            )
+            svg.text(
+                cx + col_w / 2,
+                cy + 8,
+                fmt_pct(val),
+                21,
+                HEAT_INKS[step],
+                weight=700 if step >= 3 else 500,
+                anchor="middle",
+            )
 
-    add_footer(svg, "Unconditional solve rate (0–100%) across all 60 scenarios for each optimization and sync task.", 5, footer_top)
+    add_footer(
+        svg,
+        "Unconditional solve rate (0–100%) across all 60 scenarios for each optimization and sync task.",
+        5,
+        footer_top,
+    )
     return svg.output()
 
 
-def render_v41_b_style_suite(arms: Sequence[dict[str, Any]], out_dir: Path, *, export_png: bool = True) -> None:
+def render_v41_b_style_suite(
+    arms: Sequence[dict[str, Any]], out_dir: Path, *, export_png: bool = True
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = load_v41_b_rows(arms)
 

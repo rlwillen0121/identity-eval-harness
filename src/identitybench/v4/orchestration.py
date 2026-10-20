@@ -440,9 +440,9 @@ class OrchestrationRuntimeV4:
                 cited_tuples = {
                     (c.target_entity_id, c.rule_id, c.evidence_id) for c in mut.citations
                 }
-                actor_has_read_tracking = any(
-                    self.actor_read_evidence_ids.values()
-                ) or bool(self.revealed_oracle_evidence_ids)
+                actor_has_read_tracking = any(self.actor_read_evidence_ids.values()) or bool(
+                    self.revealed_oracle_evidence_ids
+                )
                 actor_read = self.causal_evidence_for_actor(mut.actor_id, mut.wave_id)
                 for req_cit in ob.required_citations:
                     req_tuple = (
@@ -633,8 +633,7 @@ class OrchestrationRuntimeV4:
             base_world_rev=self.world.world_rev,
             report=(
                 None
-                if self.run_config.topology_id
-                == OrchestrationTopologyId.T4_PARALLEL_SWARM_FENCED
+                if self.run_config.topology_id == OrchestrationTopologyId.T4_PARALLEL_SWARM_FENCED
                 else report
             ),
         )
@@ -740,9 +739,7 @@ class OrchestrationRuntimeV4:
         self._advance_clock("inspect_staged_mutations")
         stage = self.stages[stage_id]
         dep = build_dependency_manifest(stage_id, stage.mutations, self.world, self.oracle)
-        updated = stage.model_copy(
-            update={"dependency_digest": compute_dependency_digest(dep)}
-        )
+        updated = stage.model_copy(update={"dependency_digest": compute_dependency_digest(dep)})
         self.stages[stage_id] = updated
         return updated
 
@@ -759,8 +756,7 @@ class OrchestrationRuntimeV4:
         drop_set = set(drop_mutation_ids)
         kept = [m for m in stage.mutations if m.mutation_id not in drop_set]
         added = [
-            m.model_copy(update={"actor_id": "lead", "stage_id": stage_id})
-            for m in add_mutations
+            m.model_copy(update={"actor_id": "lead", "stage_id": stage_id}) for m in add_mutations
         ]
         merged = tuple(kept + added)
 
@@ -770,9 +766,7 @@ class OrchestrationRuntimeV4:
             if hid not in self.human_redirected_hazard_slot_ids:
                 self.agent_amended_hazard_slot_ids.add(hid)
 
-        s_digest = compute_stage_digest(
-            stage_id, stage.wave_id, stage.base_world_rev, merged
-        )
+        s_digest = compute_stage_digest(stage_id, stage.wave_id, stage.base_world_rev, merged)
         dep = build_dependency_manifest(stage_id, merged, self.world, self.oracle)
         d_digest = compute_dependency_digest(dep)
 
@@ -921,16 +915,12 @@ class OrchestrationRuntimeV4:
         for mut in stage.mutations:
             if not mut.resource_preconditions:
                 return False
-            if not any(
-                pre.entity_id == mut.target_entity_id for pre in mut.resource_preconditions
-            ):
+            if not any(pre.entity_id == mut.target_entity_id for pre in mut.resource_preconditions):
                 return False
             for pre in mut.resource_preconditions:
                 if not pre.if_match_etag or pre.account_gen is None:
                     return False
-                p_kind = self.world.entity_principal_kind.get(
-                    pre.entity_id, PrincipalKind.human
-                )
+                p_kind = self.world.entity_principal_kind.get(pre.entity_id, PrincipalKind.human)
                 if p_kind == PrincipalKind.human and (
                     pre.person_lifecycle_gen is None or not pre.engagement_id
                 ):
@@ -1003,9 +993,7 @@ class OrchestrationRuntimeV4:
                         for intr in unfired:
                             if self._stage_intersects_interrupt(stg, intr):
                                 self.stages[sid] = stg.model_copy(
-                                    update={
-                                        "status": StageStatus.REQUIRES_INTERRUPT_RECONCILIATION
-                                    }
+                                    update={"status": StageStatus.REQUIRES_INTERRUPT_RECONCILIATION}
                                 )
                 return CommitResultV4(
                     stage_id=stage_id,
@@ -1146,9 +1134,7 @@ class OrchestrationRuntimeV4:
         etags = dict(self.world.resource_etag)
         quorum_pools = {k: list(v) for k, v in self.world.quorum_pools.items()}
 
-        violated_rules, _, matched_hazards = self._detect_stage_semantic_defects(
-            stage.mutations
-        )
+        violated_rules, _, matched_hazards = self._detect_stage_semantic_defects(stage.mutations)
         for mut in stage.mutations:
             committed_by_ent[mut.target_entity_id] = mut.payload
             etags[mut.target_entity_id] = f"etag_r{next_rev}_{mut.target_entity_id}"
@@ -1165,9 +1151,8 @@ class OrchestrationRuntimeV4:
                     pool = quorum_pools[ob.application_id]
                     if ob.target_entity_id in pool:
                         pool.remove(ob.target_entity_id)
-                if (
-                    ob.cae_e_max_seconds is not None
-                    or isinstance(mut.payload, JMLCAEActionPayloadV4)
+                if ob.cae_e_max_seconds is not None or isinstance(
+                    mut.payload, JMLCAEActionPayloadV4
                 ):
                     self.cae_obligations_total += 1
                     effective_e_max = (
@@ -1175,16 +1160,12 @@ class OrchestrationRuntimeV4:
                         if ob.cae_e_max_seconds is not None
                         else self.world.effective_e_max_seconds
                     )
-                    for intr in self.oracle.scheduled_interrupts_by_wave.get(
-                        stage.wave_id, ()
-                    ):
+                    for intr in self.oracle.scheduled_interrupts_by_wave.get(stage.wave_id, ()):
                         if (
                             intr.interrupt_id in self.world.fired_interrupt_ids
                             and intr.updated_e_max_seconds is not None
                         ):
-                            effective_e_max = min(
-                                effective_e_max, intr.updated_e_max_seconds
-                            )
+                            effective_e_max = min(effective_e_max, intr.updated_e_max_seconds)
                     if (
                         isinstance(mut.payload, JMLCAEActionPayloadV4)
                         and mut.payload.revoke_active_sessions is True
@@ -1273,7 +1254,7 @@ class OrchestrationRuntimeV4:
         unfired = (
             [
                 intr
-                for intr in self.oracle.scheduled_interrupts_by_wave.get(wave_id, ())
+                for intr in (self.oracle.scheduled_interrupts_by_wave.get(wave_id) or ())
                 if intr.interrupt_id not in self.world.fired_interrupt_ids
             ]
             if self.run_config.steering_mode == SteeringMode.FULL_LIVE_STEERED
@@ -1298,9 +1279,7 @@ class OrchestrationRuntimeV4:
                     for intr in unfired:
                         if self._stage_intersects_interrupt(stg, intr):
                             self.stages[sid] = stg.model_copy(
-                                update={
-                                    "status": StageStatus.REQUIRES_INTERRUPT_RECONCILIATION
-                                }
+                                update={"status": StageStatus.REQUIRES_INTERRUPT_RECONCILIATION}
                             )
             self._try_clear_pending_interrupts_if_reconciled()
             if self.world.pending_interrupt_ids:
@@ -1358,9 +1337,7 @@ class OrchestrationRuntimeV4:
             # Restore environment to deterministic gold post-wave state (SPEC-v4.md §2.3)
             gold_world = self.initial_world
             for wid in wave_ids[: idx + 1]:
-                gold_world = apply_gold_wave_to_world(
-                    self.episode, gold_world, self.oracle, wid
-                )
+                gold_world = apply_gold_wave_to_world(self.episode, gold_world, self.oracle, wid)
             preserved_seq = self.world.runtime_event_seq
             self.world = gold_world.model_copy(
                 update={
@@ -1375,9 +1352,7 @@ class OrchestrationRuntimeV4:
                     StageStatus.VERIFIED_BY_CHECKER,
                     StageStatus.REQUIRES_INTERRUPT_RECONCILIATION,
                 ):
-                    self.stages[sid] = stg.model_copy(
-                        update={"status": StageStatus.SUPERSEDED}
-                    )
+                    self.stages[sid] = stg.model_copy(update={"status": StageStatus.SUPERSEDED})
             notice = WaveResetNoticeV4(
                 wave_id=next_wave_id,
                 restored_world_rev=self.world.world_rev,

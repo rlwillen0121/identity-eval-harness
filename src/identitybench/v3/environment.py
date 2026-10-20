@@ -73,9 +73,7 @@ def _should_redact_key(key: str) -> bool:
 
 def _redact_value(val: Any) -> Any:
     if isinstance(val, dict):
-        return {
-            str(k): _redact_value(v) for k, v in val.items() if not _should_redact_key(str(k))
-        }
+        return {str(k): _redact_value(v) for k, v in val.items() if not _should_redact_key(str(k))}
     if isinstance(val, list):
         return [_redact_value(item) for item in val]
     if isinstance(val, tuple):
@@ -364,10 +362,7 @@ class IGAEnvironmentV3:
                     "clock_epoch_s": self.clock_epoch_s,
                     "records": self.world.cmdb_records,
                     "owned_nhis": (
-                        [
-                            n.model_dump(mode="json")
-                            for n in self.world.lifecycle_stream.owned_nhis
-                        ]
+                        [n.model_dump(mode="json") for n in self.world.lifecycle_stream.owned_nhis]
                         if self.world.lifecycle_stream is not None
                         else []
                     ),
@@ -638,9 +633,7 @@ class IGAEnvironmentV3:
             rev = ReviewDecisionSubmission(
                 item_id=str(args["item_id"]),
                 decision=ReviewDecision(str(args["decision"])),
-                request_emergency_custodian=bool(
-                    args.get("request_emergency_custodian") or False
-                ),
+                request_emergency_custodian=bool(args.get("request_emergency_custodian") or False),
             )
             if rev.request_emergency_custodian:
                 self.emergency_custodian_requested = True
@@ -686,9 +679,7 @@ class IGAEnvironmentV3:
         successor = _normalize_optional_id(args.get("successor_owner_id"))
 
         # Commit-time generation and engagement fencing check against observable HRIS snapshots
-        all_principal_snaps = [
-            s for s in stream.hr_snapshots if s.principal_id == principal_id
-        ]
+        all_principal_snaps = [s for s in stream.hr_snapshots if s.principal_id == principal_id]
         observable_snaps = [
             s for s in all_principal_snaps if s.observable_epoch_s <= self.clock_epoch_s
         ]
@@ -1159,9 +1150,7 @@ _CATEGORY_MUTATION_TOOLS: dict[CategoryId, frozenset[str]] = {
     CategoryId.classification: frozenset({"update_classification"}),
     CategoryId.zsp_policy: frozenset({"propose_role_model"}),
     CategoryId.jit_access: frozenset({"decide_jit_request", "ask_clarification"}),
-    CategoryId.access_reviews: frozenset(
-        {"record_review_decision", "request_emergency_custodian"}
-    ),
+    CategoryId.access_reviews: frozenset({"record_review_decision", "request_emergency_custodian"}),
     CategoryId.jml_cae_drift: frozenset({"execute_lifecycle_step", "advance_clock"}),
 }
 
@@ -1176,4 +1165,3 @@ def get_v3_tool_specs(category: CategoryId | None = None) -> tuple[ToolSpec, ...
         | {"advance_clock", "ask_clarification", "submit_episode"}
     )
     return tuple(spec for spec in _ALL_V3_TOOL_SPECS if spec.name in allowed)
-
