@@ -72,10 +72,10 @@
 <circle cx="686.6" cy="1049.2" r="10.0" fill="#5c5c5c"/>
 <circle cx="1416.4" cy="725.9" r="14.0" fill="#2a2a2a"/>
 <circle cx="1416.4" cy="725.9" r="8.0" fill="#2a2a2a" stroke="#5c5c5c" stroke-width="5.0"/>
-<circle cx="1486.8" cy="639.8" r="14.0" fill="#2a2a2a"/>
-<circle cx="1486.8" cy="639.8" r="8.0" fill="#2a2a2a" stroke="#5c5c5c" stroke-width="5.0"/>
-<circle cx="194.0" cy="927.3" r="14.0" fill="#2a2a2a"/>
-<circle cx="194.0" cy="927.3" r="10.0" fill="#5c5c5c"/>
+<circle cx="1486.8" cy="658.0" r="14.0" fill="#2a2a2a"/>
+<circle cx="1486.8" cy="658.0" r="8.0" fill="#2a2a2a" stroke="#5c5c5c" stroke-width="5.0"/>
+<circle cx="194.0" cy="925.0" r="14.0" fill="#2a2a2a"/>
+<circle cx="194.0" cy="925.0" r="10.0" fill="#5c5c5c"/>
 <circle cx="194.0" cy="908.0" r="14.0" fill="#2a2a2a"/>
 <circle cx="194.0" cy="908.0" r="10.0" fill="#5c5c5c"/>
 <circle cx="1655.4" cy="408.6" r="16.0" fill="#2a2a2a"/>
@@ -87,7 +87,7 @@
 <text x="1793.4" y="562.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Opus 5.5</text>
 <text x="1570.2" y="604.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Gemini Argon</text>
 <text x="1536.7" y="645.5" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Sonnet 5.5</text>
-<text x="1466.8" y="647.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="end">Muse Wonder</text>
+<text x="1466.8" y="666.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="end">Muse Wonder</text>
 <text x="1436.4" y="733.9" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Muse Spark</text>
 <text x="1281.0" y="788.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Haiku 5.5</text>
 <text x="1187.0" y="840.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Kimi K3</text>
@@ -95,7 +95,7 @@
 <text x="214.0" y="916.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Qwen 3.8 Flash</text>
 <text x="1450.0" y="927.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Grok 4.7</text>
 <text x="1078.5" y="896.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="middle">Gemini Flash</text>
-<text x="210.0" y="961.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Qwen 3.8 27B</text>
+<text x="210.0" y="959.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Qwen 3.8 27B</text>
 <text x="889.9" y="938.9" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="end">GLM 5.3 Flash</text>
 <text x="1248.4" y="950.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">GLM 5.3</text>
 <text x="1377.9" y="986.9" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="middle">DS V4 Pro</text>
