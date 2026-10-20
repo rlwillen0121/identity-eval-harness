@@ -16,6 +16,7 @@ from identitybench.runner.config import BASELINES, ExperimentConfig, load_config
 from identitybench.schemas.enums import Split, Suite
 from identitybench.v3.runner import load_v3_experiment_config
 from identitybench.v4.runner import load_v4_experiment_config
+from identitybench.v41.runner import load_v41_experiment_config
 
 REPO = Path(__file__).resolve().parents[2]
 EXPERIMENTS = REPO / "experiments"
@@ -41,6 +42,7 @@ V4_CONFIGS = (
     "v4-dev-subset6",
     "v4-lite",
 )
+V41_CONFIGS = ("v41-dev-baselines", "v41-dev-pilot")
 ALL_SUITES = list(Suite)
 
 
@@ -70,6 +72,15 @@ def test_every_v4_experiment_loads_cleanly(name: str) -> None:
     assert (REPO / "datasets" / loaded.suite.value / "SEAL.json").is_file()
 
 
+@pytest.mark.parametrize("name", V41_CONFIGS)
+def test_every_v41_experiment_loads_cleanly(name: str) -> None:
+    loaded = load_v41_experiment_config(EXPERIMENTS / f"{name}.yaml")
+    assert loaded.name == name
+    live = [m for m in loaded.models if m.provider != "baseline"]
+    assert all(m.effort == "medium" for m in live)
+    assert all(m.timeout_s == 1800 for m in live if m.provider == "agy_cli")
+
+
 @pytest.mark.parametrize("name", CONFIGS)
 def test_every_prompt_and_baseline_named_exists(name: str) -> None:
     """``load_config`` checks the shape of names, not that a prompt or baseline exists, so a
@@ -93,6 +104,7 @@ def test_the_committed_files_are_exactly_these() -> None:
         *(f"{n}.yaml" for n in CONFIGS),
         *(f"{n}.yaml" for n in V3_CONFIGS),
         *(f"{n}.yaml" for n in V4_CONFIGS),
+        *(f"{n}.yaml" for n in V41_CONFIGS),
         "judges.yaml",
         "judges-consensus.example.yaml",
         "panel-adjudication.example.yaml",

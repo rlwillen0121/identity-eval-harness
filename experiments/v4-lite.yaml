@@ -91,7 +91,7 @@ models:
     skill_condition: S1_CURATED_GOLD_SKILLS
     steering_mode: FULL_LIVE_STEERED
     effort: medium
-    concurrency: 6
+    concurrency: 4
   - provider: claude_cli
     model: claude-sonnet-5-5
     label: claude-sonnet-5-5-t3-s1-steered
