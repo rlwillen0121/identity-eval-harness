@@ -121,6 +121,8 @@ def _short_name(n: str) -> str:
         ("DeepSeek V4.1 Flash", "DS V4.1 Flash"),
         ("DeepSeek V4 Pro", "DS V4 Pro"),
         ("Gemini 3.8 Flash", "Gemini Flash"),
+        ("Qwen 3.8 Max Prime", "Qwen Max Prime"),
+        ("MiniMax M3.1 Flash", "MiniMax M3.1"),
     ]:
         if s.startswith(pfx):
             s = rep + s[len(pfx) :]

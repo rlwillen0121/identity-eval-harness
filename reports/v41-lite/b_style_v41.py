@@ -92,8 +92,15 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "qwen3.8-27b-exl3-4bit-local": {"tier": "open_weight", "class_label": "Local GPU (27B 4-bit)"},
     "gemini-3.8-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Flash"},
     "claude-haiku-5-5-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
+    "claude-fable-5-1-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "glm-5.3-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small (MoE)"},
     "gpt-6-luna-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
+    "mistral-large-4-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
+    "qwen3.8-max-prime-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
+    "gpt-oss-120b-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (120B)"},
+    "minimax-m3.1-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Flash (MoE)"},
+    "muse-spark-open-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (MoE)"},
+    "beam-1.0-501b-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (501B MoE)"},
 }
 
 

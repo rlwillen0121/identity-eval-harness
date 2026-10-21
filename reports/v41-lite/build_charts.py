@@ -190,6 +190,55 @@ MODEL_METADATA: dict[str, dict[str, str]] = {
         "provider": "openai_compatible",
         "vendor": "qwen",
     },
+    "claude-fable-5-1-t0-medium": {
+        "display_name": "Claude Fable 5.1 (T0 · Medium)",
+        "short_name": "Claude Fable 5.1 (T0)",
+        "tier": "fast",
+        "provider": "claude_cli",
+        "vendor": "anthropic",
+    },
+    "mistral-large-4-t0-medium": {
+        "display_name": "Mistral Large 4 (T0 · Medium)",
+        "short_name": "Mistral Large 4 (T0)",
+        "tier": "frontier",
+        "provider": "openai_compatible",
+        "vendor": "mistral",
+    },
+    "qwen3.8-max-prime-t0-medium": {
+        "display_name": "Qwen 3.8 Max Prime (T0 · Medium)",
+        "short_name": "Qwen 3.8 Max Prime (T0)",
+        "tier": "frontier",
+        "provider": "openai_compatible",
+        "vendor": "qwen",
+    },
+    "gpt-oss-120b-t0-medium": {
+        "display_name": "GPT-OSS 120B (T0 · Medium)",
+        "short_name": "GPT-OSS 120B (T0)",
+        "tier": "mid",
+        "provider": "openai_compatible",
+        "vendor": "openai",
+    },
+    "minimax-m3.1-flash-t0-medium": {
+        "display_name": "MiniMax M3.1 Flash (T0 · Medium)",
+        "short_name": "MiniMax M3.1 Flash (T0)",
+        "tier": "fast",
+        "provider": "openai_compatible",
+        "vendor": "minimax",
+    },
+    "muse-spark-open-t0-medium": {
+        "display_name": "Muse Spark Open (T0 · Medium)",
+        "short_name": "Muse Spark Open (T0)",
+        "tier": "mid",
+        "provider": "openai_compatible",
+        "vendor": "muse",
+    },
+    "beam-1.0-501b-t0-medium": {
+        "display_name": "Beam 1.0 501B (T0 · Medium)",
+        "short_name": "Beam 1.0 501B (T0)",
+        "tier": "mid",
+        "provider": "openai_compatible",
+        "vendor": "other",
+    },
 }
 
 BASELINE_ORDER: tuple[tuple[str, str, str], ...] = (
@@ -263,7 +312,7 @@ def _load_records_by_model() -> dict[str, list[dict[str, Any]]]:
                 if line.strip():
                     _merge_rec(json.loads(line))
 
-        # Restore muse-spark-1.3-t0-medium.jsonl if it was truncated below 60 lines
+        # Restore muse-spark-1.3-t0-medium.jsonl if it was truncated or has fewer valid rows than merged
         muse_id = "muse-spark-1.3-t0-medium"
         muse_path = RUN_RECORDS_DIR / f"{muse_id}.jsonl"
         if muse_id in by_model_ep and len(by_model_ep[muse_id]) == V41_LITE_EXPECTED_EPISODES:
@@ -272,7 +321,17 @@ def _load_records_by_model() -> dict[str, list[dict[str, Any]]]:
                 if muse_path.exists()
                 else []
             )
-            if len(existing_lines) < V41_LITE_EXPECTED_EPISODES:
+            valid_in_file = sum(
+                1
+                for ln in existing_lines
+                if (d := json.loads(ln)).get("execution_valid") and not d.get("provider_error")
+            )
+            valid_merged = sum(
+                1
+                for r in by_model_ep[muse_id].values()
+                if r.get("execution_valid") and not r.get("provider_error")
+            )
+            if len(existing_lines) < V41_LITE_EXPECTED_EPISODES or valid_merged > valid_in_file:
                 ordered = [by_model_ep[muse_id][k] for k in sorted(by_model_ep[muse_id])]
                 muse_path.write_text(
                     "".join(json.dumps(r) + "\n" for r in ordered), encoding="utf-8"
@@ -717,6 +776,13 @@ def _compute_arm_summary(
         "minimax-m3-t0-medium": ("MiniMax M3", 0.08, "$0.08", "billed"),
         "qwen3.8-flash-next-local": ("Qwen 3.8 Flash", 0.00, "Local · $0", "local"),
         "qwen3.8-27b-exl3-4bit-local": ("Qwen 3.8 27B", 0.00, "Local · $0", "local"),
+        "claude-fable-5-1-t0-medium": ("Claude Fable 5.1", 0.95, "~$0.95", "est"),
+        "mistral-large-4-t0-medium": ("Mistral Large 4", 1.80, "$1.80", "billed"),
+        "qwen3.8-max-prime-t0-medium": ("Qwen 3.8 Max Prime", 1.40, "$1.40", "billed"),
+        "gpt-oss-120b-t0-medium": ("GPT-OSS 120B", 0.28, "$0.28", "billed"),
+        "minimax-m3.1-flash-t0-medium": ("MiniMax M3.1 Flash", 0.00, "Free · $0", "billed"),
+        "muse-spark-open-t0-medium": ("Muse Spark Open", 0.65, "$0.65", "billed"),
+        "beam-1.0-501b-t0-medium": ("Beam 1.0 501B", 0.90, "$0.90", "billed"),
     }
     meta = MODEL_METADATA.get(model_id, {})
     baseline_map = {b_id: (b_name, b_desc) for b_id, b_name, b_desc in BASELINE_ORDER}

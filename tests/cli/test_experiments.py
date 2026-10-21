@@ -49,6 +49,7 @@ V41_CONFIGS = (
     "v41-lite-or-resume",
     "v41-lite-sub",
     "v41-lite-wave2",
+    "v41-lite-wave3",
 )
 ALL_SUITES = list(Suite)
 
