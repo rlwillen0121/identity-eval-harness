@@ -523,8 +523,7 @@ class OpenAICompatProvider:
             return items
         return [{"role": "user", "content": message.content}]
 
-    @staticmethod
-    def _api_message(message: Message) -> dict[str, Any]:
+    def _api_message(self, message: Message) -> dict[str, Any]:
         if message.role is Role.tool:
             return {
                 "role": "tool",
@@ -545,6 +544,9 @@ class OpenAICompatProvider:
                     }
                     for call in message.tool_calls
                 ]
+                if "reflection/" in self.model or "beam-1.0" in self.model:
+                    api["reasoning_content"] = message.content or " "
+                    api["reasoning"] = message.content or " "
             return api
         return {"role": "user", "content": message.content}
 

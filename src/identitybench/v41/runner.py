@@ -72,6 +72,15 @@ _PARSE_REPROMPT = (
 )
 _NATIVE_REPROMPT = "Your previous response contained no tool call. Respond with tool calls only."
 
+V4_AGENT_TURN_SCHEMA_NO_THOUGHT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "actions": V4_AGENT_TURN_SCHEMA["properties"]["actions"],
+    },
+    "required": ["actions"],
+    "additionalProperties": False,
+}
+
 
 def _default_v41_seed() -> int:
     try:
@@ -334,13 +343,17 @@ async def run_v41_agent_episode(
             results.append(env.execute_tool(tc.name, args))
         return results
 
+    is_fable = not native and "fable" in provider.model
     if native:
         system_prompt = render.render_native_system_prompt()
         tool_specs = render.get_v41_tool_specs()
     else:
         system_prompt = render.render_cli_system_prompt()
+        if is_fable:
+            system_prompt = system_prompt.replace('"thought"', '"note"')
         tool_specs = ()
     messages: list[Message] = [Message(role=Role.user, content=user_prompt)]
+    cli_schema = V4_AGENT_TURN_SCHEMA_NO_THOUGHT if is_fable else V4_AGENT_TURN_SCHEMA
 
     def make_request(msgs: Sequence[Message]) -> ModelRequest:
         if native:
@@ -350,7 +363,7 @@ async def run_v41_agent_episode(
         return ModelRequest(
             system=system_prompt,
             messages=tuple(msgs),
-            output_schema=V4_AGENT_TURN_SCHEMA,
+            output_schema=cli_schema,
             schema_name=ACTION_SCHEMA_NAME,
             params=eff_params,
         )
@@ -424,7 +437,7 @@ async def run_v41_agent_episode(
         results = execute_turn(turn_idx, calls)
         if native:
             messages.append(
-                Message(role=Role.assistant, content=resp.text or "", tool_calls=tuple(calls))
+                Message(role=Role.assistant, content=resp.text or " ", tool_calls=tuple(calls))
             )
             for tc, out in zip(calls, results, strict=True):
                 messages.append(
@@ -812,9 +825,14 @@ async def run_v41_experiment_async(
     queues: dict[str, list[V41ModelEntryConfig]] = {}
     for m in config.models:
         if m.provider != "baseline":
-            q_key = (
-                f"{m.provider}:{m.display_id}" if m.provider == "openai_compatible" else m.provider
-            )
+            if m.provider == "openai_compatible":
+                q_key = (
+                    f"openai_compatible:{m.display_id}"
+                    if ":free" in m.model
+                    else "openai_compatible:paid"
+                )
+            else:
+                q_key = m.provider
             queues.setdefault(q_key, []).append(m)
 
     async def run_queue(q: Sequence[V41ModelEntryConfig]) -> None:
