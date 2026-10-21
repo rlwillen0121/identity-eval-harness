@@ -43,6 +43,7 @@ TOKEN_PRICING_PER_M: dict[str, tuple[float, float, str]] = {
     "gemini-3.8-flash": (0.15, 0.60, "est"),
     "gpt-6-astra": (2.50, 12.00, "est"),
     "gpt-6.1-sol": (1.75, 8.00, "est"),
+    "gpt-6-luna": (0.20, 0.80, "est"),
     "kimi-k3": (0.60, 2.50, "billed"),
 }
 
@@ -54,6 +55,7 @@ MODEL_DISPLAY: dict[str, dict[str, str]] = {
     "gemini-3.8-flash": {"name": "Gemini 3.8 Flash", "vendor": "google", "tier": "Fast / Cheap"},
     "gpt-6.1-sol": {"name": "GPT-6.1 Sol", "vendor": "openai", "tier": "Frontier"},
     "gpt-6-astra": {"name": "GPT-6 Astra", "vendor": "openai", "tier": "Frontier"},
+    "gpt-6-luna": {"name": "GPT-6 Luna", "vendor": "openai", "tier": "Fast / Cheap"},
     "kimi-k3": {"name": "Kimi K3", "vendor": "moonshot", "tier": "Open-Weight API"},
 }
 
@@ -87,6 +89,30 @@ ARM_DISPLAY: dict[str, dict[str, str]] = {
         "badge": "Boss + Fast Worker + Reviewer",
         "color": "#7c3aed",
         "desc": "Seat 2 (Fast Worker + SKILL.md) drafts each wave; Seat 3 (Reviewer) checks it; Seat 1 (Frontier Boss) is called ONLY on rejected waves.",
+    },
+    "A6_dynamic_noskill_orch": {
+        "short": "Setup 6 · Dynamic Self-Orchestration (No SKILL.md)",
+        "badge": "Dynamic Routing · No Skill",
+        "color": "#dc2626",
+        "desc": "Lead Orchestrator dynamically chooses worker model + reasoning effort (low/med/high) per wave, but without SKILL.md.",
+    },
+    "A7_dynamic_skill_orch": {
+        "short": "Setup 7 · Dynamic Self-Orchestration + SKILL.md",
+        "badge": "Dynamic Model & Effort + SKILL.md",
+        "color": "#0284c7",
+        "desc": "Lead Orchestrator dynamically selects worker model (or self) + reasoning effort (low/med/high) per wave with SKILL.md.",
+    },
+    "A8_10_agent_swarm": {
+        "short": "Setup 8 · 10-Subagent Parallel Task Swarm + Consolidator",
+        "badge": "10-Subagent Swarm + Consolidator",
+        "color": "#9333ea",
+        "desc": "Orchestrator splits each scenario across 10 parallel subagent task shards (S01..S10), consolidates, checks, and repairs.",
+    },
+    "A9_ultra_swarm": {
+        "short": "Setup 9 · Multi-Layer Hierarchical 'Ultra Swarm'",
+        "badge": "3-Layer Ultra Swarm",
+        "color": "#0f766e",
+        "desc": "Layer 1 (10 Parallel Leaf Subagents) -> Layer 2 (Mid-Tier Wave Coalescer Swarm) -> Layer 3 (Frontier Executive Gatekeeper).",
     },
 }
 
@@ -153,8 +179,8 @@ def _analyze_cell(
     n = max(1, len(records))
     scale_12 = 12.0 / float(n)
 
-    is_team = cell_id.startswith("team_")
-    if is_team:
+    is_team = cell_id.startswith(("team_", "dyn_", "swarm10_", "ultraswarm_"))
+    if cell_id.startswith("team_"):
         body = cell_id[len("team_") :]
         boss_part, rest = body.split("_boss__", 1)
         worker_part, arm_id = rest.split("_worker__", 1)
@@ -162,6 +188,47 @@ def _analyze_cell(
         boss_name = MODEL_DISPLAY.get(boss_part, {}).get("name", boss_part)
         worker_name = MODEL_DISPLAY.get(worker_part, {}).get("name", worker_part)
         display_title = f"{boss_name} (Boss) + {worker_name} (Worker)"
+        vendor = MODEL_DISPLAY.get(boss_part, {}).get("vendor", "openai")
+    elif cell_id.startswith("dyn_"):
+        body = cell_id[len("dyn_") :]
+        boss_part, rest = body.split("_boss__", 1)
+        pool_part, arm_id = rest.split("_pool__", 1)
+        worker_part = (
+            pool_part.split("_")[-1]
+            if "claude-" not in pool_part and "gpt-" not in pool_part
+            else (
+                "claude-sonnet-5-5"
+                if "claude-sonnet-5-5" in pool_part
+                else ("gpt-6.1-sol" if "gpt-6.1-sol" in pool_part else pool_part)
+            )
+        )
+        model_key = boss_part
+        boss_name = MODEL_DISPLAY.get(boss_part, {}).get("name", boss_part)
+        worker_name = f"Dynamic ({pool_part.replace('_', ' / ')})"
+        a_badge = ARM_DISPLAY.get(arm_id, {}).get("badge", arm_id)
+        display_title = f"{boss_name} · {a_badge}"
+        vendor = MODEL_DISPLAY.get(boss_part, {}).get("vendor", "openai")
+    elif cell_id.startswith("swarm10_"):
+        body = cell_id[len("swarm10_") :]
+        boss_part, rest = body.split("_boss__", 1)
+        worker_part, arm_id = rest.split("_subagents__", 1)
+        model_key = boss_part
+        boss_name = MODEL_DISPLAY.get(boss_part, {}).get("name", boss_part)
+        sub_name = MODEL_DISPLAY.get(worker_part, {}).get("name", worker_part)
+        worker_name = f"10x {sub_name} Swarm"
+        display_title = f"{boss_name} (Consolidator) + 10x {sub_name} Swarm"
+        vendor = MODEL_DISPLAY.get(boss_part, {}).get("vendor", "openai")
+    elif cell_id.startswith("ultraswarm_"):
+        body = cell_id[len("ultraswarm_") :]
+        boss_part, rest = body.split("_exec__", 1)
+        lead_part, rest2 = rest.split("_lead__", 1)
+        worker_part, arm_id = rest2.split("_swarm__", 1)
+        model_key = boss_part
+        boss_name = MODEL_DISPLAY.get(boss_part, {}).get("name", boss_part)
+        lead_name = MODEL_DISPLAY.get(lead_part, {}).get("name", lead_part)
+        sub_name = MODEL_DISPLAY.get(worker_part, {}).get("name", worker_part)
+        worker_name = f"{lead_name} (L2) + 10x {sub_name} (L1)"
+        display_title = f"Ultra Swarm: {boss_name} <- {lead_name} <- 10x {sub_name}"
         vendor = MODEL_DISPLAY.get(boss_part, {}).get("vendor", "openai")
     else:
         model_key, arm_id = cell_id.split("__", 1)
@@ -276,7 +343,7 @@ def _analyze_cell(
         "uar": _cat_rate(("UAR_CAMPAIGN_MUTATION", "uar_rightsizing")),
         "jml": _cat_rate(("ACCOUNT_RECON_MUTATION",)),
     }
-    cat_pass_12 = {k: round(v * 12) for k, v in cat_rates.items()}
+    cat_pass_12 = {k: (12 if v >= 0.9999 else min(11, round(v * 12))) for k, v in cat_rates.items()}
     cat_fail_12 = {k: 12 - p for k, p in cat_pass_12.items()}
     tasks_total = 72
     tasks_passed = sum(cat_pass_12.values())
@@ -302,18 +369,45 @@ def _analyze_cell(
         w_out = round(sum(int(m.get("worker_output_tokens", 0)) for m in t_logs) * t_scale)
         b_in = round(sum(int(m.get("boss_input_tokens", 0)) for m in t_logs) * t_scale)
         b_out = round(sum(int(m.get("boss_output_tokens", 0)) for m in t_logs) * t_scale)
-        worker_cost_usd, _ = _estimate_cost(worker_part, w_in, w_out, None)
+        if cell_id.startswith("ultraswarm_"):
+            shard_cache_path = STUDY_DIR / "subagent_shard_cache.jsonl"
+            l1_in_raw = 0
+            l1_out_raw = 0
+            if shard_cache_path.exists():
+                ep_set = {str(m["episode_id"]) for m in t_logs}
+                for sline in shard_cache_path.read_text(encoding="utf-8").splitlines():
+                    if not sline.strip():
+                        continue
+                    sr = json.loads(sline)
+                    slbl = str(sr.get("subagent_label", "")).split("@")[0]
+                    if slbl == worker_part and str(sr.get("episode_id")) in ep_set:
+                        l1_in_raw += int(sr.get("input_tokens", 0))
+                        l1_out_raw += int(sr.get("output_tokens", 0))
+            l1_in = round(l1_in_raw * t_scale)
+            l1_out = round(l1_out_raw * t_scale)
+            l2_in = max(0, w_in - l1_in)
+            l2_out = max(0, w_out - l1_out)
+            c_l1, _ = _estimate_cost(worker_part, l1_in, l1_out, None)
+            c_l2, _ = _estimate_cost(lead_part, l2_in, l2_out, None)
+            worker_cost_usd = round(c_l1 + c_l2, 2)
+        else:
+            worker_cost_usd, _ = _estimate_cost(worker_part, w_in, w_out, None)
         boss_cost_usd, basis = _estimate_cost(boss_part, b_in, b_out, None)
         cost_usd = round(worker_cost_usd + boss_cost_usd, 2)
         worker_direct_commits = round(
-            sum(int(m.get("worker_direct_commits_count", 0)) for m in t_logs) * t_scale
+            sum(
+                int(m.get("worker_direct_commits_count", 0)) + int(m.get("l2_coalesced_count", 0))
+                for m in t_logs
+            )
+            * t_scale
         )
         boss_escalations = round(
             sum(int(m.get("boss_escalations_count", 0)) for m in t_logs) * t_scale
         )
-        worker_lat_mean = sum(float(m.get("worker_latency_s", 0.0)) for m in t_logs) / float(
-            len(t_logs)
-        )
+        worker_lat_mean = sum(
+            float(m.get("worker_latency_s", 0.0)) + float(m.get("mid_latency_s", 0.0))
+            for m in t_logs
+        ) / float(len(t_logs))
         boss_lat_mean = sum(float(m.get("boss_latency_s", 0.0)) for m in t_logs) / float(
             len(t_logs)
         )
