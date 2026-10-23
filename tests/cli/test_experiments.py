@@ -45,6 +45,7 @@ V4_CONFIGS = (
 V41_CONFIGS = (
     "v41-dev-baselines",
     "v41-dev-pilot",
+    "v41-full-claude",
     "v41-full-codex",
     "v41-lite-muse-wonder",
     "v41-lite-or-resume",
