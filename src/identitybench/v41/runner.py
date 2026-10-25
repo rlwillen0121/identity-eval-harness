@@ -80,6 +80,16 @@ V4_AGENT_TURN_SCHEMA_NO_THOUGHT: dict[str, Any] = {
     "required": ["actions"],
     "additionalProperties": False,
 }
+# Tag hashed into the config fingerprint for no-thought entries, so resume never reuses
+# records written under the older "thought" turn protocol.
+NO_THOUGHT_TURN_PROTOCOL = "no_thought_v1"
+
+
+def _uses_no_thought_schema(provider: Provider) -> bool:
+    """CLI (non-native-tools) Claude/Fable entries use the turn schema without `thought`."""
+    return not provider.capabilities().native_tools and (
+        provider.kind == "claude_cli" or "fable" in provider.model
+    )
 
 
 def _default_v41_seed() -> int:
@@ -343,9 +353,7 @@ async def run_v41_agent_episode(
             results.append(env.execute_tool(tc.name, args))
         return results
 
-    use_no_thought_schema = not native and (
-        provider.kind == "claude_cli" or "fable" in provider.model
-    )
+    use_no_thought_schema = _uses_no_thought_schema(provider)
     if native:
         system_prompt = render.render_native_system_prompt()
         tool_specs = render.get_v41_tool_specs()
@@ -450,27 +458,16 @@ async def run_v41_agent_episode(
                     )
                 )
         else:
+            replay: dict[str, Any] = {
+                "actions": [
+                    {"action": c.name, "arguments_json": json.dumps(c.arguments)} for c in calls
+                ],
+            }
             if use_no_thought_schema:
-                assistant_text = json.dumps(
-                    {
-                        "actions": [
-                            {"action": c.name, "arguments_json": json.dumps(c.arguments)}
-                            for c in calls
-                        ],
-                    },
-                    sort_keys=True,
-                )
+                assistant_text = json.dumps(replay, sort_keys=True)
             else:
-                assistant_text = resp.text or json.dumps(
-                    {
-                        "thought": "",
-                        "actions": [
-                            {"action": c.name, "arguments_json": json.dumps(c.arguments)}
-                            for c in calls
-                        ],
-                    },
-                    sort_keys=True,
-                )
+                replay["thought"] = ""
+                assistant_text = resp.text or json.dumps(replay, sort_keys=True)
             messages.append(Message(role=Role.assistant, content=assistant_text))
             observations = [
                 {"tool_call_id": tc.id, "name": tc.name, "result": out}
@@ -656,16 +653,20 @@ def compute_v41_config_fingerprint(
     seed: int,
     dataset_sha256: str,
     endpoint_identity: str,
+    turn_protocol: str | None = None,
 ) -> str:
     """JCS SHA-256 of the effective entry config (label / concurrency excluded: they only name
-    the row and schedule work)."""
-    payload = {
+    the row and schedule work). `turn_protocol` is hashed only when set, so entries on the
+    default turn protocol keep their existing fingerprints."""
+    payload: dict[str, Any] = {
         "entry": entry.model_dump(mode="json", exclude={"label", "concurrency"}),
         "run_config": run_config.model_dump(mode="json"),
         "seed": seed,
         "dataset_sha256": dataset_sha256,
         "endpoint_identity": endpoint_identity,
     }
+    if turn_protocol is not None:
+        payload["turn_protocol"] = turn_protocol
     return jcs_sha256(payload)
 
 
@@ -754,6 +755,7 @@ async def run_v41_experiment_async(
         )
         rec_path = records_dir / f"{_safe(m_id)}.jsonl"
         provider: Provider | None = None
+        turn_protocol: str | None = None
         if m.provider == "baseline":
             params: GenerationParams | None = None
             endpoint = f"baseline:{m.model}"
@@ -762,12 +764,15 @@ async def run_v41_experiment_async(
             provider = make_provider(spec)
             params = spec.generation_params()
             endpoint = provider.endpoint_identity()
+            if _uses_no_thought_schema(provider):
+                turn_protocol = NO_THOUGHT_TURN_PROTOCOL
         fp = compute_v41_config_fingerprint(
             m,
             run_cfg,
             seed=config.seed,
             dataset_sha256=seal.episodes_sha256,
             endpoint_identity=endpoint,
+            turn_protocol=turn_protocol,
         )
 
         cached: dict[tuple[str, int], EpisodeTrialRecordV41] = {}
