@@ -16,9 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from grantt_v41 import ICONS, write_png
-
-from identitybench.report.scorecard import shortfall, shortfall_bin
+from grantt_v41 import ICONS, _lab_of, write_png
 
 ROOT = Path(__file__).resolve().parent
 V3_BSTYLE_PATH = ROOT.parent / "v3" / "b_style_charts.py"
@@ -128,14 +126,10 @@ def add_header_v41(svg: Svg, title: str, subtitle: str, date_label: str = "19 OC
 def draw_model_label_v41(
     svg: Svg, row: V41BStyleRow, y: float, *, show_badge: bool = False
 ) -> None:
-    lowered = row.name.lower()
-    if "kimi" in lowered and "kimi" in ICONS:
+    lab = _lab_of(row.name)
+    if lab and lab in ICONS:
         svg.add(
-            f'<g transform="translate(100,{y - 22:g}) scale(1.8333)" color="{INK}">{ICONS["kimi"]}</g>'
-        )
-    elif "minimax" in lowered and "minimax" in ICONS:
-        svg.add(
-            f'<g transform="translate(100,{y - 22:g}) scale(1.8333)" color="{INK}">{ICONS["minimax"]}</g>'
+            f'<svg x="106" y="{y - 15:g}" width="30" height="30" viewBox="0 0 24 24" fill="{INK}">{ICONS[lab]}</svg>'
         )
     else:
         draw_icon(svg, row.name, y, x=100)
@@ -378,6 +372,33 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
     return svg.output()
 
 
+BIN_LABELS_V41: tuple[str, ...] = (
+    "100%",
+    "95–99%",
+    "85–95%",
+    "70–85%",
+    "50–70%",
+    "20–50%",
+    "<20%",
+)
+
+
+def _v41_opt_bin(val: float) -> int:
+    if val >= 0.9995:
+        return 0
+    if val >= 0.95:
+        return 1
+    if val >= 0.85:
+        return 2
+    if val >= 0.70:
+        return 3
+    if val >= 0.50:
+        return 4
+    if val >= 0.20:
+        return 5
+    return 6
+
+
 def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
     """Clean 6-column policy math & sync breakdown across all 60 scenarios (`b-optimization-tasks`)."""
     row_step = 64
@@ -392,9 +413,9 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
     add_header_v41(svg, title, subtitle)
 
     legend_y = 242
-    svg.text(100, legend_y + 18, "Points short of 100%:", 18, INK2, bold=True)
-    sw, lx = 68.0, 315.0
-    for i, label in enumerate(BIN_LABELS):
+    svg.text(100, legend_y + 18, "Task accuracy:", 18, INK2, bold=True)
+    sw, lx = 82.0, 260.0
+    for i, label in enumerate(BIN_LABELS_V41):
         svg.rect(
             lx + i * (sw + 6),
             legend_y - 2,
@@ -404,7 +425,7 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
             rx=4,
             stroke=RULE if i == 0 else None,
         )
-        svg.text(lx + i * (sw + 6) + sw / 2, legend_y + 44, label, 16, MUTED, anchor="middle")
+        svg.text(lx + i * (sw + 6) + sw / 2, legend_y + 44, label, 15, MUTED, anchor="middle")
 
     grid_x0, col_w, col_gap, group_gap = 585.0, 240.0, 10.0, 36.0
     col_x: list[float] = []
@@ -444,7 +465,7 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
         for j, (_, ck, _) in enumerate(OPT_COLUMNS_V41):
             val = row.opt_rates_all.get(ck, 0.0)
             cx = col_x[j]
-            step = shortfall_bin(shortfall(val, 1.0))
+            step = _v41_opt_bin(val)
             svg.rect(
                 cx,
                 cy - 23,

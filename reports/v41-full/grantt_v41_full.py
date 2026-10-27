@@ -353,7 +353,7 @@ def build_grantt_fig2_svg(
 
     priced = [r for r in arms if r["cost_basis"] != "local" and float(r["cost_usd"]) > 0]
     costs = [float(r["cost_usd"]) for r in priced] or [1.0]
-    lo = 10 ** math.floor(math.log10(min(costs)))
+    lo = 0.5 if min(costs) >= 0.5 else 10 ** math.floor(math.log10(min(costs)))
     hi = 10 ** math.ceil(math.log10(max(costs) * 1.15))
 
     def lx(v: float) -> float:
@@ -380,20 +380,22 @@ def build_grantt_fig2_svg(
         f'<text x="{pad_x:.1f}" y="{y_top - 12 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}">Failed tasks (of 1,080)</text>'
     )
 
-    p_exp = round(math.log10(lo))
+    p_exp = math.floor(math.log10(lo))
     hi_exp = round(math.log10(hi))
+    tick_vals: list[float] = [0.5] if abs(lo - 0.5) < 1e-9 else []
     for p in range(p_exp, hi_exp + 1):
         for mult in (1, 3):
-            v = (10**p) * mult
-            if v < lo - 1e-9 or v > hi + 1e-9:
-                continue
-            parts.append(
-                f'<line x1="{lx(v):.1f}" x2="{lx(v):.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>'
-            )
-            lbl = "$" + (f"{v:.2f}" if v < 0.1 else (f"{v:.1f}" if v < 1 else f"{int(v)}"))
-            parts.append(
-                f'<text x="{lx(v):.1f}" y="{y_bot + 16 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["ink_3"]}" text-anchor="middle">{lbl}</text>'
-            )
+            v = float((10**p) * mult)
+            if v >= lo - 1e-9 and v <= hi + 1e-9 and all(abs(v - tv) > 1e-9 for tv in tick_vals):
+                tick_vals.append(v)
+    for v in sorted(tick_vals):
+        parts.append(
+            f'<line x1="{lx(v):.1f}" x2="{lx(v):.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>'
+        )
+        lbl = "$" + (f"{v:.2f}" if v < 0.1 else (f"{v:.1f}" if v < 1 else f"{int(v)}"))
+        parts.append(
+            f'<text x="{lx(v):.1f}" y="{y_bot + 16 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["ink_3"]}" text-anchor="middle">{lbl}</text>'
+        )
 
     parts.append(
         f'<line x1="{x0:.1f}" x2="{x1:.1f}" y1="{y_bot:.1f}" y2="{y_bot:.1f}" stroke="{t["border_strong"]}" stroke-width="{1 * scale:.1f}"/>'
