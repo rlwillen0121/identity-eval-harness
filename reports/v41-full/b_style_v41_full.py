@@ -298,9 +298,7 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
 
     footer_top = cur_y + 12
     title = "Category Task Score by Model Class (Flagship vs. Open-Weight vs. Fast/Small)"
-    subtitle = (
-        "Percentage of 1,080 category tasks solved across 6 governance areas, grouped by model tier."
-    )
+    subtitle = "Percentage of 1,080 category tasks solved across 6 governance areas, grouped by model tier."
     svg = Svg(title, subtitle, "b-model-tiers", int(footer_top + 76))
     add_header_v41_full(svg, title, subtitle)
 
