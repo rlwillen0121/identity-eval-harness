@@ -279,7 +279,7 @@ const ICONS = __ICONS_JSON__;
     return null;
   }
   function short(n) {
-    return n.replace(/\\s*\\(\\d+\\/180\\)$/, "").replace(/^Claude /, "").replace(/^Gemini 4 /, "Gemini ").replace(/^GPT-6\\.1 /, "").replace(/^GPT-6 /, "").replace(/ 1\\.3$| 1\\.0$/, "").replace("DeepSeek V4.1 Flash", "DS V4.1 Flash").replace("DeepSeek V4 Pro", "DS V4 Pro").replace("Gemini 3.8 Flash", "Gemini Flash").replace("Qwen 3.8 Max Prime", "Qwen Max Prime").replace("MiniMax M3.1 Flash", "MiniMax M3.1");
+    return n.replace(/\\s*\\(\\d+\\/180\\)$/, "").replace(/^Claude /, "").replace(/^Gemini 4 /, "Gemini ").replace("GPT-6.1 Sol", "Sol 6.1").replace("GPT-6 Sol", "Sol 6").replace("GPT Daybreak Blue", "Daybreak Blue").replace(/^GPT-6\\.1 /, "").replace(/^GPT-6 /, "").replace(/ 1\\.3$| 1\\.0$/, "").replace("DeepSeek V4.1 Flash", "DS V4.1 Flash").replace("DeepSeek V4 Pro", "DS V4 Pro").replace("Gemini 3.8 Flash", "Gemini Flash").replace("Qwen 3.8 Max Prime", "Qwen Max Prime").replace("MiniMax M3.1 Flash", "MiniMax M3.1");
   }
   function nameWithLogo(svg, m, y, cls, narrow) {
     const size = narrow ? 14 : 16, lab = labOf(m.name);

@@ -117,6 +117,9 @@ def _short_name(n: str) -> str:
     for pfx, rep in [
         ("Claude ", ""),
         ("Gemini 4 ", "Gemini "),
+        ("GPT-6.1 Sol", "Sol 6.1"),
+        ("GPT-6 Sol", "Sol 6"),
+        ("GPT Daybreak Blue", "Daybreak Blue"),
         ("GPT-6.1 ", ""),
         ("GPT-6 ", ""),
         ("DeepSeek V4.1 Flash", "DS V4.1 Flash"),
