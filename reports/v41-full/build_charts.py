@@ -954,7 +954,7 @@ def build_summary_data() -> dict[str, Any]:
         summary = _compute_arm_summary(model_id, recs, oracles, opt_kind_map, adapter)
         if model_id in baseline_ids:
             baseline_summaries[model_id] = summary
-        elif model_id in MODEL_METADATA and summary["n_valid"] >= 5:
+        elif model_id in MODEL_METADATA and summary["n_valid"] >= V41_FULL_EXPECTED_EPISODES:
             live_summaries[model_id] = summary
 
     return {
