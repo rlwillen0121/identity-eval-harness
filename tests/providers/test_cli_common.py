@@ -487,7 +487,7 @@ async def test_invalid_effort_is_rejected() -> None:
 
 async def test_oversized_argument_is_rejected_not_truncated() -> None:
     runner = FakeRunner(ok(SUCCESS))
-    huge = "x" * (MAX_ARG_BYTES + 1)
+    huge = "x" * (CursorCliProvider.MAX_ARG_BYTES + 1)
     response = await CursorCliProvider(runner=runner, version="1").complete(make_request(huge))
     assert response.error is not None
     assert "argv limit" in response.error

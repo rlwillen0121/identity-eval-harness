@@ -110,6 +110,7 @@ class CursorCliProvider(CliProvider):
         native_structured_output=False, native_tools=False, supports_temperature=False
     )
     SUPPORTS_EFFORT = False
+    MAX_ARG_BYTES = 250_000
     ENV_DROP = frozenset({"CURSOR_API_ENDPOINT", "CURSOR_API_KEY"})
     ENV_DROP_PREFIXES = ("CURSOR_",)
     ENV_KEEP = frozenset({"CURSOR_CONFIG_DIR"})

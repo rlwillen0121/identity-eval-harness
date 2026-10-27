@@ -10,16 +10,16 @@ concurrency: 8
 n_boot: 10000
 models:
   - provider: cursor_cli
-    model: grok-4.7-medium
-    label: grok-4.7-t0-medium
-    topology_id: T0_SINGLE_MONOLITH
-    steering_mode: UNSTEERED
-    timeout_s: 900
-    concurrency: 4
-  - provider: cursor_cli
     model: composer-2.5
     label: composer-2.5-t0-medium
     topology_id: T0_SINGLE_MONOLITH
     steering_mode: UNSTEERED
     timeout_s: 900
-    concurrency: 4
+    concurrency: 6
+  - provider: cursor_cli
+    model: grok-4.7-medium
+    label: grok-4.7-t0-medium
+    topology_id: T0_SINGLE_MONOLITH
+    steering_mode: UNSTEERED
+    timeout_s: 900
+    concurrency: 6

@@ -804,6 +804,8 @@ class CliProvider(ABC):
     ENV_SET: ClassVar[Mapping[str, str]] = MappingProxyType({})
     """Variables set for every call whatever the parent environment holds (e.g. switching the
     CLI's self-updater off, so the version in the endpoint identity stays the one that runs)."""
+    MAX_ARG_BYTES: ClassVar[int] = MAX_ARG_BYTES
+    """Per-argument argv byte ceiling enforced in ``_complete`` (defaults to ``MAX_ARG_BYTES``)."""
 
     def __init__(
         self,
@@ -1016,11 +1018,13 @@ class CliProvider(ABC):
             for directory in (io_dir, work_dir, home_dir):
                 directory.mkdir()
             built = self._build(request, effort, io_dir, work_dir)
-            too_long = next((arg for arg in built.argv if exceeds_arg_limit(arg)), None)
+            too_long = next(
+                (arg for arg in built.argv if len(arg.encode()) > self.MAX_ARG_BYTES), None
+            )
             if too_long is not None:
                 return self._fail(
                     f"an argument is {len(too_long.encode())} bytes, over the "
-                    f"{MAX_ARG_BYTES}-byte argv limit"
+                    f"{self.MAX_ARG_BYTES}-byte argv limit"
                 )
             try:
                 isolation = self._isolate(home_dir)
