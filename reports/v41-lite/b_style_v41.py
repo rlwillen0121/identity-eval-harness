@@ -47,6 +47,7 @@ BIN_LABELS: tuple[str, ...] = _v3b.BIN_LABELS
 
 Svg = _v3b.Svg
 draw_icon = _v3b.draw_icon
+shortfall_bin = _v3b.shortfall_bin
 add_footer = _v3b.add_footer
 fmt_pct = _v3b.fmt_pct
 

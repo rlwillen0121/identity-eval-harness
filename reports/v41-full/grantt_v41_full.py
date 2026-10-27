@@ -184,9 +184,10 @@ def build_grantt_fig1_svg(
     )
     W = int(1120 * scale)
     pad = 24 * scale
-    name_w = 226 * scale
-    ground_w = 78 * scale
-    rate_w = 90 * scale
+    name_w = 216 * scale
+    ground_w = 72 * scale
+    rate_w = 88 * scale
+    cost_w = 92 * scale
     row_h = 30 * scale
     bar_h = 14 * scale
     card_top = 92 * scale
@@ -196,9 +197,10 @@ def build_grantt_fig1_svg(
 
     top_models = [r for r in rows if int(r["tasks_passed_1080"]) >= 1058]
     bx = pad + name_w + 8 * scale
-    bw = W - bx - ground_w - rate_w - pad - 16 * scale
+    bw = W - bx - ground_w - rate_w - cost_w - pad - 16 * scale
     ground_x = bx + bw + ground_w
-    rate_x = W - pad
+    rate_x = ground_x + rate_w
+    cost_x = W - pad
 
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
@@ -233,6 +235,9 @@ def build_grantt_fig1_svg(
     )
     parts.append(
         f'<text x="{rate_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Solved</text>'
+    )
+    parts.append(
+        f'<text x="{cost_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Cost</text>'
     )
 
     for f in (0.0, 0.25, 0.5, 0.75, 1.0):
@@ -301,6 +306,13 @@ def build_grantt_fig1_svg(
         parts.append(
             f'<text x="{rate_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{13 * scale:.1f}" '
             f'font-weight="500" fill="{solved_col}" text-anchor="end">{passed}/{target_n}</text>'
+        )
+
+        cost_lbl = html.escape(str(r.get("cost_label", "")))
+        cost_col = t["ink"] if is_top else t["ink_2"]
+        parts.append(
+            f'<text x="{cost_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.5 * scale:.1f}" '
+            f'font-weight="500" fill="{cost_col}" text-anchor="end">{cost_lbl}</text>'
         )
 
     parts.append("</svg>")
