@@ -119,6 +119,8 @@ def _short_name(n: str) -> str:
         ("Gemini 4 ", "Gemini "),
         ("GPT-6.1 Sol", "Sol 6.1"),
         ("GPT-6 Sol", "Sol 6"),
+        ("GPT-6.1 Terra", "Terra 6.1"),
+        ("GPT-5.6 Terra", "Terra 5.6"),
         ("GPT Daybreak Blue", "Daybreak Blue"),
         ("GPT-6.1 ", ""),
         ("GPT-6 ", ""),

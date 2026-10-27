@@ -48,16 +48,6 @@ models:
     timeout_s: 600
     concurrency: 6
   - provider: openai_compatible
-    model: reflection/beam-1.0-501b-a23b
-    label: beam-1.0-501b-t0-medium
-    topology_id: T0_SINGLE_MONOLITH
-    steering_mode: UNSTEERED
-    base_url_env: OPENROUTER_BASE_URL
-    api_key_env: OPENROUTER_API_KEY
-    max_output_tokens: 8192
-    timeout_s: 600
-    concurrency: 6
-  - provider: openai_compatible
     model: z-ai/glm-5.3
     label: glm-5.3-t0-medium
     topology_id: T0_SINGLE_MONOLITH
