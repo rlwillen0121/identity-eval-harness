@@ -253,7 +253,8 @@ def validate_connector_ast(code: str) -> tuple[bool, tuple[str, ...]]:
             if id(node) not in safe_format_attr_ids and (
                 node.attr in FORBIDDEN_DUNDER_ATTRS
                 or node.attr in FORBIDDEN_FRAME_ATTRS
-                or node.attr in (
+                or node.attr
+                in (
                     "format",
                     "format_map",
                     "get_field",

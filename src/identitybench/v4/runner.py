@@ -3467,9 +3467,7 @@ async def run_v4_experiment_async(
         m_dump = m.model_dump(mode="json")
         for extra_key in ("extra", "worker_extra", "checker_extra"):
             if isinstance(m_dump.get(extra_key), dict) and "headers" in m_dump[extra_key]:
-                m_dump[extra_key] = {
-                    k: v for k, v in m_dump[extra_key].items() if k != "headers"
-                }
+                m_dump[extra_key] = {k: v for k, v in m_dump[extra_key].items() if k != "headers"}
         manifest_models.append(m_dump)
     manifest = {
         "name": config.name,
