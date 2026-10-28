@@ -56,6 +56,8 @@
 <circle cx="804.7" cy="938.2" r="10.0" fill="#b3b3b3"/>
 <circle cx="1227.5" cy="937.0" r="14.0" fill="#ffffff"/>
 <circle cx="1227.5" cy="937.0" r="10.0" fill="#b3b3b3"/>
+<circle cx="1634.7" cy="672.4" r="14.0" fill="#ffffff"/>
+<circle cx="1634.7" cy="672.4" r="8.0" fill="#ffffff" stroke="#b3b3b3" stroke-width="5.0"/>
 <circle cx="1634.7" cy="799.3" r="14.0" fill="#ffffff"/>
 <circle cx="1634.7" cy="799.3" r="8.0" fill="#ffffff" stroke="#b3b3b3" stroke-width="5.0"/>
 <circle cx="1308.0" cy="992.3" r="14.0" fill="#ffffff"/>
@@ -88,8 +90,9 @@
 <text x="1467.6" y="593.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Terra 6.1</text>
 <text x="1654.7" y="617.5" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Sol 6</text>
 <text x="1590.2" y="639.5" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Sonnet 5.5</text>
-<text x="1638.7" y="676.7" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Gemini Argon</text>
+<text x="1654.7" y="712.7" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="middle">Gemini Argon</text>
 <text x="1693.3" y="678.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Daybreak Blue</text>
+<text x="1614.7" y="680.4" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Sol 5.6</text>
 <text x="1290.8" y="784.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Haiku 5.5</text>
 <text x="1654.7" y="807.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Terra 5.6</text>
 <text x="1515.1" y="842.4" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Grok 4.7</text>
