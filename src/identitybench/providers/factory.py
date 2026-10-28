@@ -150,6 +150,13 @@ class ModelSpec(BaseModel):
 
     @model_validator(mode="after")
     def _check_fields_apply(self) -> ModelSpec:
+        if self.model.startswith("-") or any(ord(c) < 32 or ord(c) == 127 for c in self.model):
+            raise ValueError(f"invalid model name {self.model!r}")
+        if self.effort is not None and (
+            self.effort.startswith("-")
+            or any(ord(c) < 32 or ord(c) == 127 for c in self.effort)
+        ):
+            raise ValueError(f"invalid effort value {self.effort!r}")
         kind = self.provider
         if kind not in _API_KINDS:
             for name in ("base_url_env", "api_key_env", "cache_namespace"):

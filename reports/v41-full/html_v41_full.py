@@ -55,7 +55,14 @@ def _build_payload(arms: Sequence[dict[str, Any]]) -> dict[str, Any]:
 
 
 def render_v41_full_figures_html(arms: Sequence[dict[str, Any]]) -> str:
-    payload_json = json.dumps(_build_payload(arms))
+    payload_json = (
+        json.dumps(_build_payload(arms), separators=(",", ":"))
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
     icons_json = json.dumps(ICONS)
     return _HTML_TEMPLATE.replace("__PAYLOAD_JSON__", payload_json).replace(
         "__ICONS_JSON__", icons_json
@@ -467,9 +474,10 @@ const ICONS = __ICONS_JSON__;
   }
 
   function drawTable(rows) {
+    const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     const t = document.getElementById("dataTable");
     const head = "<thead><tr><th>Model</th><th>Solved</th><th>Failed</th><th>Unsafe</th><th>Score</th>" + CAT_SHORT.map(c => `<th>${c}</th>`).join("") + "<th>Run cost</th><th>Mean turns</th></tr></thead>";
-    t.innerHTML = head + "<tbody>" + rows.map(m => `<tr><td>${m.name}</td><td>${m.passed} / ${m.n}</td><td>${m.fail}</td><td>${m.u} (${m.u_comm.toFixed(1)}%)</td><td>${m.sep.toFixed(1)}%</td>${m.miss.map(v => `<td>${v}</td>`).join("")}<td>${money(m)}</td><td>${m.turns}</td></tr>`).join("") + "</tbody>";
+    t.innerHTML = head + "<tbody>" + rows.map(m => `<tr><td>${esc(m.name)}</td><td>${m.passed} / ${m.n}</td><td>${m.fail}</td><td>${m.u} (${m.u_comm.toFixed(1)}%)</td><td>${m.sep.toFixed(1)}%</td>${m.miss.map(v => `<td>${v}</td>`).join("")}<td>${esc(money(m))}</td><td>${m.turns}</td></tr>`).join("") + "</tbody>";
   }
 
   let lastW = 0;

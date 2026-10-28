@@ -3462,6 +3462,15 @@ async def run_v4_experiment_async(
     except OSError:
         pass
 
+    manifest_models: list[dict[str, Any]] = []
+    for m in config.models:
+        m_dump = m.model_dump(mode="json")
+        for extra_key in ("extra", "worker_extra", "checker_extra"):
+            if isinstance(m_dump.get(extra_key), dict) and "headers" in m_dump[extra_key]:
+                m_dump[extra_key] = {
+                    k: v for k, v in m_dump[extra_key].items() if k != "headers"
+                }
+        manifest_models.append(m_dump)
     manifest = {
         "name": config.name,
         "suite": config.suite.value,
@@ -3479,7 +3488,7 @@ async def run_v4_experiment_async(
         "trials": config.trials,
         "max_turns": config.max_turns,
         "seed": config.seed,
-        "models": [m.model_dump(mode="json") for m in config.models],
+        "models": manifest_models,
         "execution_valid_rates": artifact.execution_valid_rates,
     }
     _write_atomic_text(

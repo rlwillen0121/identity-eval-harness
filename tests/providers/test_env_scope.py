@@ -34,6 +34,7 @@ LIVE = [
     ("audit", "adjudicate"),
     ("v3", "run"),
     ("v4", "run"),
+    ("v41", "run"),
 ]
 NOT_LIVE = [
     "generate",
@@ -46,6 +47,7 @@ NOT_LIVE = [
     (None,),
     "v3",
     "v4",
+    "v41",
     ("v3",),
     ("v3", None),
     ("v3", "generate"),
@@ -56,14 +58,28 @@ NOT_LIVE = [
     ("v4", "validate"),
     ("v4", "score"),
     ("v4", "report"),
+    ("v41", "generate"),
+    ("v41", "validate"),
+    ("v41", "score"),
+    ("v41", "report"),
 ]
 
 
 def test_the_live_commands_are_exactly_the_ones_that_create_providers() -> None:
     assert (
-        frozenset({("run",), ("judge",), ("audit",), ("v3", "run"), ("v4", "run")}) == LIVE_COMMANDS
+        frozenset(
+            {
+                ("run",),
+                ("judge",),
+                ("audit",),
+                ("v3", "run"),
+                ("v4", "run"),
+                ("v41", "run"),
+            }
+        )
+        == LIVE_COMMANDS
     )
-    assert frozenset({"v3", "v4"}) == LEAF_GROUPS
+    assert frozenset({"v3", "v4", "v41"}) == LEAF_GROUPS
     assert HARNESS_PREFIX == "IDENTITYBENCH_"
 
 

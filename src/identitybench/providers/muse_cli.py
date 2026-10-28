@@ -121,10 +121,6 @@ class MuseCliProvider(CliProvider):
         links = link_credentials(
             real, home / ".config/muse", ("auth.json",), shared=(".auth.json.lock",)
         )
-        keychains = Path.home() / "Library/Keychains"
-        if keychains.is_dir():
-            (home / "Library").mkdir(exist_ok=True)
-            (home / "Library/Keychains").symlink_to(keychains, target_is_directory=True)
         return Isolation(env={"HOME": str(home)}, links=links)
 
     def _build(

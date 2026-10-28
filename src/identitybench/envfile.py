@@ -62,13 +62,13 @@ __all__ = [
 ]
 
 LIVE_COMMANDS: frozenset[tuple[str, ...]] = frozenset(
-    {("run",), ("judge",), ("audit",), ("v3", "run"), ("v4", "run")}
+    {("run",), ("judge",), ("audit",), ("v3", "run"), ("v4", "run"), ("v41", "run")}
 )
 """Command paths that call model endpoints and so get the whole ``.env``: a top-level command,
 a group every subcommand of which may (``audit``: its panel commands do), or the one live
-subcommand of a group whose others don't (``v3 run``, ``v4 run``). A path below one of these
-(``audit panel``) is live too; a group on its own (``v3``) is not: its leaf decides."""
-LEAF_GROUPS = frozenset({"v3", "v4"})
+subcommand of a group whose others don't (``v3 run``, ``v4 run``, ``v41 run``). A path below one
+of these (``audit panel``) is live too; a group on its own (``v3``) is not: its leaf decides."""
+LEAF_GROUPS = frozenset({"v3", "v4", "v41"})
 """Top-level groups whose subcommands differ in whether they call models: the root callback
 loads nothing for them and the group's own callback loads for its leaf."""
 HARNESS_PREFIX = "IDENTITYBENCH_"

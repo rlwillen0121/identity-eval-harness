@@ -522,19 +522,23 @@ class V41AgentEnvironment:
         reset = self.run_config.wave_execution_mode == WaveExecutionMode.DIAGNOSTIC_RESET
         if k == 1:
             if reset:
-                assert self._reset_ledgers is not None
+                if self._reset_ledgers is None:
+                    raise RuntimeError("DIAGNOSTIC_RESET requires reset_ledgers")
                 ledger = self._reset_ledgers[0]
             else:
                 ledger = apply_wave1(self.snapshots[1], self.required[1], buf.mutations)
         elif k == 2:
             if reset:
-                assert self._reset_ledgers is not None
+                if self._reset_ledgers is None:
+                    raise RuntimeError("DIAGNOSTIC_RESET requires reset_ledgers")
                 ledger = self._reset_ledgers[1]
             else:
                 ledger = apply_wave2(self.snapshots[2], buf.mutations)
         else:
             self.current_wave_index = 4
             return
+        if not (0 <= self.current_wave_index < len(self.episode.waves)):
+            raise RuntimeError("Wave index out of bounds")
         nxt = k + 1
         self.ledgers[nxt] = ledger
         self.snapshots[nxt] = with_ledger(self.episode.waves[nxt - 1], ledger)

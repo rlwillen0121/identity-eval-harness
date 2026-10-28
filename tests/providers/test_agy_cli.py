@@ -265,10 +265,8 @@ async def test_runs_with_a_private_home_holding_only_the_agent_and_the_keychain_
         ".gemini/config/agents",
         ".gemini/config/agents/identitybench",
         ".gemini/config/agents/identitybench/agent.md",
-        "Library",
-        "Library/Keychains",
     ]
-    assert seen.keychains == (user / "Library" / "Keychains").resolve()
+    assert seen.keychains is None
     assert not home.exists()  # removed with the call's temp directory
 
 

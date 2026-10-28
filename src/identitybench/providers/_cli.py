@@ -666,6 +666,20 @@ def link_credentials(
     return tuple(links)
 
 
+_ALLOWED_SYNC_BACK_KEYS: frozenset[str] = frozenset(
+    {
+        "claudeAiOauth",
+        "oauthAccount",
+        "tokens",
+        "access_token",
+        "refresh_token",
+        "expires_at",
+        "id_token",
+        "last_refresh",
+    }
+)
+
+
 def sync_back(links: Sequence[CredentialLink]) -> None:
     """Propagate a refreshed login from a private CLI home to the user's real one.
 
@@ -679,18 +693,41 @@ def sync_back(links: Sequence[CredentialLink]) -> None:
     for item in links:
         if not item.sync_back or item.link.is_symlink() or not item.link.is_file():
             continue
+        staging_str: str | None = None
         try:
             content = item.link.read_bytes()
-            if load_object(content) is None:
+            parsed = load_object(content)
+            if not isinstance(parsed, dict) or not bool(parsed):
                 continue
-            if item.real.is_file() and item.real.read_bytes() == content:
-                continue
-            staging = item.real.with_name(f".{item.real.name}.identitybench-{os.getpid()}")
-            fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            if item.real.is_file():
+                orig_bytes = item.real.read_bytes()
+                if orig_bytes == content:
+                    continue
+                orig = load_object(orig_bytes)
+                if isinstance(orig, dict):
+                    allowed_keys = set(orig.keys()) | _ALLOWED_SYNC_BACK_KEYS
+                    if not set(parsed.keys()).issubset(allowed_keys):
+                        continue
+                    if any(
+                        orig[k] is not None
+                        and parsed[k] is not None
+                        and type(parsed[k]) is not type(orig[k])
+                        for k in parsed.keys() & orig.keys()
+                    ):
+                        continue
+            fd, staging_str = tempfile.mkstemp(
+                prefix=f".{item.real.name}.",
+                suffix=".tmp",
+                dir=str(item.real.parent),
+            )
             with os.fdopen(fd, "wb") as handle:
                 handle.write(content)
-            os.replace(staging, item.real)
+            os.replace(staging_str, item.real)
+            staging_str = None
         except OSError as exc:
+            if staging_str is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(staging_str)
             logger.warning("could not sync a refreshed CLI login back to %s: %s", item.real, exc)
 
 
@@ -734,6 +771,15 @@ COMMON_ENV_KEEP_PREFIXES: tuple[str, ...] = ("LC_",)
 
 COMMON_ENV_DROP: frozenset[str] = frozenset(
     {
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CURSOR_API_KEY",
+        "MINIMAX_API_KEY",
+        "MOONSHOT_API_KEY",
+        "KIMI_API_KEY",
+        "HF_TOKEN",
         "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
         "XAI_API_KEY",
@@ -840,7 +886,7 @@ class CliProvider(ABC):
         unset; a request's own effort is part of the cache key already.
         """
         if self._version is None:
-            self._version = probe_version(self.binary, env_items(self.child_env()))
+            self._version = probe_version(self.binary, env_items(base_child_env()))
         return hash_endpoint(
             self.kind, self._version, self.model, self.setup_revision(), self.effort
         )
@@ -955,18 +1001,23 @@ class CliProvider(ABC):
         """Whether a parent variable named ``name`` reaches this CLI, in order of precedence:
 
         1. never when ``always_dropped`` (``COMMON_ENV_DROP`` and its prefixes and suffixes) or
-           in ``ENV_DROP``, whatever ``ENV_KEEP`` says;
+           in ``ENV_DROP``, whatever ``ENV_KEEP`` says (except a CLI's own login variable in
+           ``ENV_KEEP`` matching its ``ENV_DROP_PREFIXES`` when not in ``ENV_DROP``);
         2. otherwise yes when in ``ENV_KEEP`` (this beats the CLI's ``ENV_DROP_PREFIXES``: the
            login variable usually shares the CLI's prefix);
         3. otherwise no when it matches ``ENV_DROP_PREFIXES``;
         4. otherwise only when in the common allow-list (``COMMON_ENV_KEEP`` and
            ``COMMON_ENV_KEEP_PREFIXES``).
         """
-        if always_dropped(name) or name in cls.ENV_DROP:
+        if (
+            name in cls.ENV_DROP
+            or name.startswith(COMMON_ENV_DROP_PREFIXES)
+            or name.upper().endswith(COMMON_ENV_DROP_SUFFIXES)
+        ):
             return False
         if name in cls.ENV_KEEP:
-            return True
-        if name.startswith(cls.ENV_DROP_PREFIXES):
+            return name not in COMMON_ENV_DROP or name.startswith(cls.ENV_DROP_PREFIXES)
+        if always_dropped(name) or name.startswith(cls.ENV_DROP_PREFIXES):
             return False
         return name in COMMON_ENV_KEEP or name.startswith(COMMON_ENV_KEEP_PREFIXES)
 
@@ -1028,11 +1079,14 @@ class CliProvider(ABC):
                 )
             try:
                 isolation = self._isolate(home_dir)
+                resolved_home = home_dir.resolve()
                 for relative, text in built.home_files.items():
-                    path = home_dir / relative
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(text, encoding="utf-8")
-            except OSError as exc:
+                    target = (home_dir / relative).resolve()
+                    if not target.is_relative_to(resolved_home):
+                        raise ValueError(f"home_files path escapes private home: {relative!r}")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(text, encoding="utf-8")
+            except (OSError, ValueError) as exc:
                 return self._fail(f"could not set up a private CLI home: {exc}")
             env = self.child_env()
             if "HOME" in isolation.env:

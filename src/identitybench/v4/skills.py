@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -363,8 +365,8 @@ def _posix_sandbox_limits() -> None:
         _soft_fsize, hard_fsize = resource.getrlimit(resource.RLIMIT_FSIZE)
         target_fsize = min(65536, hard_fsize) if hard_fsize > 0 else 65536
         resource.setrlimit(resource.RLIMIT_FSIZE, (target_fsize, hard_fsize))
-    except Exception:
-        pass
+    except Exception as exc:
+        sys.stderr.write(f"cleanup warning: {exc}\n")
 
 
 class SkillRegistryV4:
@@ -572,17 +574,26 @@ class SkillRegistryV4:
         stdin_bytes = json.dumps(payload_dict, sort_keys=True).encode("utf-8")[:65536]
         try:
             with tempfile.TemporaryDirectory(prefix="ib_v4_skill_val_") as tmp_dir:
-                proc = subprocess.run(
+                proc = subprocess.Popen(
                     [sys.executable, "-I", "-S", str(validator_path)],
-                    input=stdin_bytes,
-                    capture_output=True,
-                    timeout=2.0,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     cwd=tmp_dir,
                     env={"PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0"},
+                    start_new_session=True,
                     preexec_fn=_posix_sandbox_limits if sys.platform != "win32" else None,
-                    check=False,
                 )
-            stdout_raw = proc.stdout[:65536].decode("utf-8", errors="replace").strip()
+                try:
+                    stdout_bytes, _stderr_bytes = proc.communicate(input=stdin_bytes, timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except OSError:
+                        proc.kill()
+                    proc.communicate()
+                    raise
+            stdout_raw = stdout_bytes[:65536].decode("utf-8", errors="replace").strip()
             if proc.returncode != 0 or not stdout_raw:
                 return SkillValidatorResultV4(
                     skill_id=skill_id,

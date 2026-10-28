@@ -152,10 +152,6 @@ class AgyCliProvider(CliProvider):
         super().__init__(model, effort=effort, timeout_s=timeout_s, binary=binary, **options)
 
     def _isolate(self, home: Path) -> Isolation:
-        real_keychains = Path.home() / KEYCHAINS
-        if real_keychains.is_dir():
-            (home / KEYCHAINS).parent.mkdir(parents=True, exist_ok=True)
-            (home / KEYCHAINS).symlink_to(real_keychains, target_is_directory=True)
         return Isolation(env={"HOME": str(home)})
 
     def _build(

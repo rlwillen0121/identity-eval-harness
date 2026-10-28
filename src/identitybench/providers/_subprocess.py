@@ -110,10 +110,11 @@ def _kill_group(proc: asyncio.subprocess.Process) -> None:
     The CLIs are Node/Rust launchers that fork workers; killing only the direct child would leave
     an orphan still talking to the model (and still billing) after the timeout.
     """
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(proc.pid, signal.SIGKILL)
-    with contextlib.suppress(ProcessLookupError):
-        proc.kill()
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
 
 
 def _kill_stragglers(pgid: int) -> None:
@@ -158,7 +159,8 @@ async def _drain(stream: asyncio.StreamReader | None, limit: int) -> _Capture:
 
 async def _feed(proc: asyncio.subprocess.Process, data: bytes) -> None:
     stdin = proc.stdin
-    assert stdin is not None
+    if stdin is None:
+        raise RuntimeError("Subprocess pipes not initialized")
     try:
         stdin.write(data)
         await stdin.drain()
@@ -177,8 +179,10 @@ async def _communicate(
     stdout, stderr, *_ = await asyncio.gather(
         _drain(proc.stdout, MAX_CAPTURE_BYTES), _drain(proc.stderr, MAX_CAPTURE_BYTES), *feeders
     )
+    _kill_stragglers(proc.pid)
     await proc.wait()
-    assert stdout is not None and stderr is not None
+    if stdout is None or stderr is None:
+        raise RuntimeError("Subprocess pipes not initialized")
     return stdout, stderr
 
 
@@ -311,18 +315,24 @@ async def retry_transient[T](
 
 
 _SECRET_NAME_RE = re.compile(
-    r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|_URL|_ENDPOINT|_HOST|_AUTH|_BASE)$",
+    r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|_URL|_ENDPOINT|_HOST|_AUTH|_BASE"
+    r"|_PAT|_PASSWD|_COOKIE|_SESSION|_JWT)$",
     re.IGNORECASE,
 )
+_SENSITIVE_NAME = _SECRET_NAME_RE
 _SECRET_VALUE_RE = re.compile(
     r"\b(?:sk|xai|pk)-[A-Za-z0-9_\-]{12,}"
     r"|\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}"
-    r"|Bearer\s+[A-Za-z0-9._\-~+/=]{12,}"
+    r"|(?i:Bearer)\s+[A-Za-z0-9._\-~+/=]{12,}"
+    r"|(?i:Authorization:\s*Basic)\s+[A-Za-z0-9+/=]{8,}"
+    r"|(?i:x-api-key:)\s*[^\s\"',;]{8,}"
+    r"|\bxox[a-zA-Z]-[A-Za-z0-9-]{10,}"
     r"|\bAIza[0-9A-Za-z_-]{30,}"
     r"|\bya29\.[0-9A-Za-z_-]{20,}"
     r"|\bAKIA[0-9A-Z]{16}\b"
     r"|\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
 )
+_INLINE_PATTERNS = _SECRET_VALUE_RE
 _REDACTED = "<redacted>"
 _LOCAL_HOSTS = frozenset({"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"})
 _MIN_SECRET_CHARS = 8

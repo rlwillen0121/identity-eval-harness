@@ -35,10 +35,11 @@ def render_v41_markdown_report(artifact: V41RunArtifact) -> str:
         "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for m_id, s in artifact.summaries.items():
+        safe_m_id = str(m_id).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
         lo, hi = s.g_srr_ci95
         rate = artifact.execution_valid_rates.get(m_id, s.execution_valid_rate)
         lines.append(
-            f"| {m_id} | {s.n_episodes} | {_f(s.g_srr)} | [{_f(lo)}, {_f(hi)}] "
+            f"| {safe_m_id} | {s.n_episodes} | {_f(s.g_srr)} | [{_f(lo)}, {_f(hi)}] "
             f"| {_f(s.g_srr_first_stage)} | {_f(s.g_prop)} | {_f(s.mean_g_min)} "
             f"| {_f(s.mean_u_exec)} | {_f(s.mean_u_overgrant)} | {_f(s.mean_u_availability)} "
             f"| {_f(s.mean_waves_committed)} | {_f(rate)} |"
