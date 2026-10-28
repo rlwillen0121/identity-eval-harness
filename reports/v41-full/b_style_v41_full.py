@@ -76,6 +76,8 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "gpt-daybreak-blue-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "gpt-6-sol-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "gpt-5.6-terra-t0-medium": {"tier": "flagship", "class_label": "Mid-Tier (Proprietary)"},
+    "gpt-5.6-sol-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
+    "gpt-5.6-luna-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "gpt-reserve-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "composer-2.5-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "claude-opus-5-5-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
