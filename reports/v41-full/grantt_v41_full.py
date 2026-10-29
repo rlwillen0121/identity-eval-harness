@@ -132,6 +132,12 @@ def _short_name(n: str) -> str:
         ("Gemini 3.8 Flash", "Gemini Flash"),
         ("Qwen 3.8 Max Prime", "Qwen Max Prime"),
         ("MiniMax M3.1 Flash", "MiniMax M3.1"),
+        ("Muse Glimmer 30B", "Muse Glimmer 30B"),
+        ("Nemotron 3.5 Super", "Nemotron 3.5"),
+        ("Command A+", "Command A+"),
+        ("MiMo V2.6 Pro", "MiMo V2.6 Pro"),
+        ("Step 5 Preview", "Step 5 Preview"),
+        ("Beam 1.0 501B", "Beam 1.0 501B"),
     ]:
         if s.startswith(pfx):
             s = rep + s[len(pfx) :]

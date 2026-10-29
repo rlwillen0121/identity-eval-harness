@@ -107,6 +107,14 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "minimax-m3.1-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Flash (MoE)"},
     "muse-spark-open-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (MoE)"},
     "beam-1.0-501b-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (501B MoE)"},
+    "muse-glimmer-30b-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small (30B)"},
+    "nemotron-3.5-super-t0-medium": {
+        "tier": "open_weight",
+        "class_label": "Open-Weight (Super VL)",
+    },
+    "command-a-plus-t0-medium": {"tier": "flagship", "class_label": "Mid-Tier (Proprietary)"},
+    "mimo-v2.6-pro-t0-medium": {"tier": "flagship", "class_label": "Mid-Tier (Proprietary)"},
+    "step-5-preview-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
 }
 
 

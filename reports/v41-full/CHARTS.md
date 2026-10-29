@@ -1,4 +1,4 @@
-# IdentityBench v4.1 (`v41_full`) — Benchmark Visuals across 24 AI Models (`1,080` Category Tasks)
+# IdentityBench v4.1 (`v41_full`) — Benchmark Visuals across 25 AI Models (`1,080` Category Tasks)
 
 [Interactive Figures (`figures.html`)](figures.html) · [Dashboard (`index.html`)](index.html) · [Score Data (`summary.json`)](summary.json)
 
@@ -8,7 +8,7 @@ Every chart is generated deterministically from `runs/v41-full*/records/*.jsonl`
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="charts/b-capability-dark.svg">
-  <img alt="IdentityBench v4.1 Full Category Tasks across 24 AI Models" src="charts/b-capability-light.svg">
+  <img alt="IdentityBench v4.1 Full Category Tasks across 25 AI Models" src="charts/b-capability-light.svg">
 </picture>
 
 ## 2. Run Cost vs. Failed Tasks (`b-cost-efficiency` / `cost-efficiency`)
