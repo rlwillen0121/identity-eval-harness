@@ -1064,3 +1064,16 @@ def test_rejects_unknown_api_and_a_max_tokens_param_it_cannot_use() -> None:
         OpenAICompatProvider("m", api="completions")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="max_tokens_param does not apply"):
         OpenAICompatProvider("m", api="responses", max_tokens_param="max_tokens")
+
+
+def test_reflection_beam_populates_reasoning_on_all_assistant_messages() -> None:
+    p = OpenAICompatProvider("reflection/beam-1.0-501b-a23b")
+    text_only = p._api_message(Message(Role.assistant, "Checking wave 1 evidence."))
+    assert text_only["reasoning_content"] == "Checking wave 1 evidence."
+    assert text_only["reasoning"] == "Checking wave 1 evidence."
+
+    empty_text_tool = p._api_message(
+        Message(Role.assistant, "", tool_calls=(ToolCall("c1", "read_wave_evidence", {}),))
+    )
+    assert empty_text_tool["reasoning_content"] == " "
+    assert empty_text_tool["reasoning"] == " "
