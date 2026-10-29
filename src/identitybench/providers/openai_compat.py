@@ -547,6 +547,8 @@ class OpenAICompatProvider:
             if "reflection/" in self.model or "beam-1.0" in self.model:
                 api["reasoning_content"] = message.content or " "
                 api["reasoning"] = message.content or " "
+            if "cohere/" in self.model and not message.tool_calls and not message.content:
+                api["content"] = " "
             return api
         return {"role": "user", "content": message.content}
 
