@@ -84,6 +84,8 @@
 <circle cx="1239.0" cy="1026.3" r="8.0" fill="#2a2a2a" stroke="#5c5c5c" stroke-width="5.0"/>
 <circle cx="1495.1" cy="834.4" r="14.0" fill="#2a2a2a"/>
 <circle cx="1495.1" cy="834.4" r="10.0" fill="#5c5c5c"/>
+<circle cx="1129.6" cy="943.6" r="14.0" fill="#2a2a2a"/>
+<circle cx="1129.6" cy="943.6" r="10.0" fill="#5c5c5c"/>
 <circle cx="610.0" cy="1049.5" r="14.0" fill="#2a2a2a"/>
 <circle cx="610.0" cy="1049.5" r="10.0" fill="#5c5c5c"/>
 <circle cx="864.9" cy="966.6" r="14.0" fill="#2a2a2a"/>
@@ -117,12 +119,12 @@
 <text x="1446.0" y="943.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">DS V4 Pro</text>
 <text x="1247.5" y="945.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">GLM 5.3</text>
 <text x="824.7" y="946.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">GLM 5.3 Flash</text>
-<text x="1048.5" y="950.9" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Gemini Flash</text>
+<text x="1028.5" y="984.9" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="middle">Gemini Flash</text>
+<text x="1129.6" y="1013.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="middle">MiMo V2.6 Pro</text>
 <text x="844.9" y="974.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="end">Muse Glimmer 30B</text>
-<text x="1141.4" y="984.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="end">Beam 1.0 501B</text>
 <text x="1328.0" y="1000.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Luna 6</text>
 <text x="866.3" y="1028.1" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">GPT-OSS 120B</text>
-<text x="1219.0" y="1034.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="end">GPT-Reserve</text>
+<text x="1223.0" y="1060.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="end">GPT-Reserve</text>
 <text x="1328.0" y="1041.1" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="start">Luna 5.6</text>
 <text x="1299.2" y="1075.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="middle">Command A+</text>
 <text x="1051.9" y="1089.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#a1a1a1" text-anchor="middle">Nemotron 3.5</text>
