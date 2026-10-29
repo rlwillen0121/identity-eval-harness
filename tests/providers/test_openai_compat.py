@@ -1082,7 +1082,10 @@ def test_reflection_beam_populates_reasoning_on_all_assistant_messages() -> None
 def test_cohere_non_empty_content_fallback_on_empty_assistant_message() -> None:
     p = OpenAICompatProvider("cohere/command-a-plus")
     empty = p._api_message(Message(Role.assistant, ""))
-    assert empty["content"] == " "
+    assert empty["content"] == "."
+
+    whitespace = p._api_message(Message(Role.assistant, "   "))
+    assert whitespace["content"] == "."
 
     with_tool = p._api_message(
         Message(Role.assistant, "", tool_calls=(ToolCall("c1", "read_wave_evidence", {}),))
