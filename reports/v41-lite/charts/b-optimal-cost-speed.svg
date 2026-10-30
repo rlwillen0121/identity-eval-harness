@@ -2,7 +2,7 @@
 <title id="b-optimal-cost-speed-title">Agent Setup Comparison</title>
 <desc id="b-optimal-cost-speed-description">Setup, Skill, Tasks Solved, Cost, and Speed</desc>
 <style>text{font-variant-numeric:tabular-nums}</style>
-<rect width="1640" height="570" fill="#FFFFFF"/>
+<rect width="1640" height="570" rx="24" fill="#FFFFFF" stroke="#e5e5e5" stroke-width="2.0"/>
 <text x="70" y="88" fill="#111111" font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif' font-size="36" font-weight="700" text-anchor="start">Agent Setup Comparison</text>
 <rect x="70" y="120" width="1500" height="44" fill="#F3F5F8" rx="8" stroke="#D8DEE4" stroke-width="1"/>
 <text x="94" y="148" fill="#111111" font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif' font-size="16" font-weight="700" text-anchor="start">Setup</text>

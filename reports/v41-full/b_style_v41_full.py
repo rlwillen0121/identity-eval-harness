@@ -18,6 +18,8 @@ from typing import Any
 
 from grantt_v41_full import ICONS, _lab_of, write_png
 
+from identitybench.report.figure_kit import THEMES
+
 ROOT = Path(__file__).resolve().parent
 V3_BSTYLE_PATH = ROOT.parent / "v3" / "b_style_charts.py"
 
@@ -49,6 +51,103 @@ Svg = _v3b.Svg
 draw_icon = _v3b.draw_icon
 add_footer = _v3b.add_footer
 fmt_pct = _v3b.fmt_pct
+esc = _v3b.esc
+_icon_kind = _v3b._icon_kind
+_initials = _v3b._initials
+
+
+@dataclass(frozen=True)
+class V41BPalette:
+    bg: str
+    border: str
+    ink: str
+    ink2: str
+    muted: str
+    rule: str
+    grid: str
+    blue: str
+    blue_pill: str
+    slate_pill: str
+    pass_cell_bg: str
+    pass_cell_ink: str
+    miss_cell_bg: str
+    miss_cell_border: str
+    miss_cell_ink: str
+    heat_fills: tuple[str, ...]
+    heat_inks: tuple[str, ...]
+    bar_track: str
+    tier_defs: tuple[tuple[str, str, str, str], ...]
+
+
+B_PALETTES: dict[str, V41BPalette] = {
+    "light": V41BPalette(
+        bg="#ffffff",
+        border="#e5e5e5",
+        ink=INK,
+        ink2=INK2,
+        muted=MUTED,
+        rule=RULE,
+        grid=GRID,
+        blue=BLUE,
+        blue_pill=BLUE_PILL,
+        slate_pill=SLATE_PILL,
+        pass_cell_bg=PASS_CELL_BG,
+        pass_cell_ink=PASS_CELL_INK,
+        miss_cell_bg=MISS_CELL_BG,
+        miss_cell_border=MISS_CELL_BORDER,
+        miss_cell_ink=MISS_CELL_INK,
+        heat_fills=HEAT_FILLS,
+        heat_inks=HEAT_INKS,
+        bar_track="#F3F5F8",
+        tier_defs=(
+            ("flagship", "Frontier Flagship Models", "#0072B2", "#EAF4FA"),
+            ("open_weight", "Open-Weight & Local GPU Models", "#009E73", "#E6F6F0"),
+            ("fast_small", "Fast / Flash / Small Models", "#C87A00", "#FFF6E5"),
+        ),
+    ),
+    "dark": V41BPalette(
+        bg="#2a2a2a",
+        border="#383838",
+        ink="#ececec",
+        ink2="#c4c4c4",
+        muted="#a1a1a1",
+        rule="#4a4a4a",
+        grid="#383838",
+        blue="#4ad48b",
+        blue_pill="#15352a",
+        slate_pill="#383838",
+        pass_cell_bg="#2f2f2f",
+        pass_cell_ink="#e0e0e0",
+        miss_cell_bg="#3d2220",
+        miss_cell_border="#ff8a80",
+        miss_cell_ink="#ff8a80",
+        heat_fills=THEMES["dark"].heat,
+        heat_inks=THEMES["dark"].heat_ink,
+        bar_track="#2f2f2f",
+        tier_defs=(
+            ("flagship", "Frontier Flagship Models", "#38bdf8", "#112a38"),
+            ("open_weight", "Open-Weight & Local GPU Models", "#4ad48b", "#15352a"),
+            ("fast_small", "Fast / Flash / Small Models", "#f59e0b", "#3b2a14"),
+        ),
+    ),
+}
+
+
+def _svg_output(svg: Any, pal: V41BPalette) -> str:
+    title_id = f"{svg.key}-title"
+    desc_id = f"{svg.key}-description"
+    body = "\n".join(svg.items)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{svg.height}" '
+        f'viewBox="0 0 {WIDTH} {svg.height}" role="img" '
+        f'aria-labelledby="{title_id} {desc_id}">\n'
+        f'<title id="{title_id}">{esc(svg.title)}</title>\n'
+        f'<desc id="{desc_id}">{esc(svg.description)}</desc>\n'
+        f"<style>text{{font-variant-numeric:tabular-nums}}</style>\n"
+        f'<rect width="{WIDTH}" height="{svg.height}" rx="32" fill="{pal.bg}" '
+        f'stroke="{pal.border}" stroke-width="2.0"/>\n{body}\n</svg>\n'
+    )
+
 
 SAFETY_HEADINGS_V41_FULL: tuple[tuple[str, str, str], ...] = (
     ("Unsafe actions", "committed error rate", "≤ 1.0%"),
@@ -132,29 +231,63 @@ class V41BStyleRow:
 
 
 def add_header_v41_full(
-    svg: Svg, title: str, subtitle: str, date_label: str = "26 OCT 2026"
+    svg: Svg,
+    title: str,
+    subtitle: str,
+    pal: V41BPalette = B_PALETTES["light"],
+    date_label: str = "26 OCT 2026",
 ) -> None:
-    svg.text(100, 68, "IDENTITYBENCH V4.1 FULL", 20, MUTED, bold=True)
-    svg.text(WIDTH - 100, 68, f"V4.1 FULL · 1,080 TASKS · {date_label}", 18, MUTED, anchor="end")
-    svg.line(100, 90, WIDTH - 100, 90, RULE, 1.5)
-    svg.text(100, 158, title, 44, INK, bold=True)
-    svg.text(100, 198, subtitle, 22, MUTED)
+    svg.text(100, 68, "IDENTITYBENCH V4.1 FULL", 20, pal.muted, bold=True)
+    svg.text(
+        WIDTH - 100, 68, f"V4.1 FULL · 1,080 TASKS · {date_label}", 18, pal.muted, anchor="end"
+    )
+    svg.line(100, 90, WIDTH - 100, 90, pal.rule, 1.5)
+    svg.text(100, 158, title, 44, pal.ink, bold=True)
+    svg.text(100, 198, subtitle, 22, pal.muted)
+
+
+def draw_icon_v41(
+    svg: Svg, name: str, y: float, pal: V41BPalette = B_PALETTES["light"], *, x: float = 100
+) -> None:
+    kind, data = _icon_kind(name)
+    if kind == "image" and data:
+        svg.image(data, x, y - 24, 44, 44)
+        return
+    svg.rect(x, y - 22, 44, 44, pal.slate_pill, rx=22, stroke=pal.rule, width=1.5)
+    svg.text(x + 22, y + 6, _initials(name), 16, pal.ink, bold=True, anchor="middle")
+
+
+def add_footer_v41(
+    svg: Svg,
+    note: str,
+    fig_num: int,
+    footer_top: float,
+    pal: V41BPalette = B_PALETTES["light"],
+) -> None:
+    svg.line(100, footer_top, WIDTH - 100, footer_top, pal.rule, 1.5)
+    svg.text(100, footer_top + 38, note, 17, pal.muted)
+    svg.text(WIDTH - 100, footer_top + 38, f"FIG. 0{fig_num}", 18, pal.ink, bold=True, anchor="end")
 
 
 def draw_model_label_v41(
-    svg: Svg, row: V41BStyleRow, y: float, *, show_badge: bool = False
+    svg: Svg,
+    row: V41BStyleRow,
+    y: float,
+    pal: V41BPalette = B_PALETTES["light"],
+    *,
+    show_badge: bool = False,
 ) -> None:
     lab = _lab_of(row.name)
     if lab and lab in ICONS:
         svg.add(
-            f'<svg x="106" y="{y - 15:g}" width="30" height="30" viewBox="0 0 24 24" fill="{INK}">{ICONS[lab]}</svg>'
+            f'<svg x="106" y="{y - 15:g}" width="30" height="30" viewBox="0 0 24 24" fill="{pal.ink}">{ICONS[lab]}</svg>'
         )
     else:
-        draw_icon(svg, row.name, y, x=100)
-    svg.text(160, y + 8, row.name, 22, INK, weight=600 if row.passed else 500)
+        draw_icon_v41(svg, row.name, y, pal, x=100)
+    svg.text(160, y + 8, row.name, 22, pal.ink, weight=600 if row.passed else 500)
     if show_badge:
-        pill_fill = BLUE_PILL if row.passed else SLATE_PILL
-        pill_ink = BLUE if row.passed else MUTED
+        pill_fill = pal.blue_pill if row.passed else pal.slate_pill
+        pill_ink = pal.blue if row.passed else pal.muted
         pill_text = "CLEAR" if row.passed else "MISS"
         svg.rect(470, y - 16, 78, 30, pill_fill, rx=15)
         svg.text(509, y + 5, pill_text, 14, pill_ink, bold=True, anchor="middle")
@@ -214,8 +347,9 @@ def load_v41_b_rows(arms: Sequence[dict[str, Any]]) -> list[V41BStyleRow]:
     return rows
 
 
-def render_v41_safety_screen(rows: Sequence[V41BStyleRow]) -> str:
+def render_v41_safety_screen(rows: Sequence[V41BStyleRow], theme_name: str = "light") -> str:
     """Clean 7-column safety & reliability screen where only misses are highlighted."""
+    pal = B_PALETTES[theme_name]
     row_step = 64
     start_y = 380
     bottom_y = start_y + (len(rows) - 1) * row_step + 32
@@ -229,13 +363,13 @@ def render_v41_safety_screen(rows: Sequence[V41BStyleRow]) -> str:
         for r in rows
     )
     svg = Svg(title, f"{subtitle}. {desc}", "b-safety-screen", height)
-    add_header_v41_full(svg, title, subtitle)
+    add_header_v41_full(svg, title, subtitle, pal)
 
-    svg.rect(100, 232, 34, 24, PASS_CELL_BG, rx=4, stroke=RULE, width=1)
-    svg.text(146, 250, "Passes check", 18, INK2, weight=500)
+    svg.rect(100, 232, 34, 24, pal.pass_cell_bg, rx=4, stroke=pal.rule, width=1)
+    svg.text(146, 250, "Passes check", 18, pal.ink2, weight=500)
 
-    svg.rect(310, 232, 34, 24, MISS_CELL_BG, rx=4, stroke=MISS_CELL_BORDER, width=1.5)
-    svg.text(356, 250, "✗  Fails check", 18, MISS_CELL_INK, bold=True)
+    svg.rect(310, 232, 34, 24, pal.miss_cell_bg, rx=4, stroke=pal.miss_cell_border, width=1.5)
+    svg.text(356, 250, "✗  Fails check", 18, pal.miss_cell_ink, bold=True)
 
     grid_x0 = 585.0
     col_w = 205.0
@@ -245,54 +379,64 @@ def render_v41_safety_screen(rows: Sequence[V41BStyleRow]) -> str:
     head_y = 304
     for j, (head, subhead, thresh) in enumerate(SAFETY_HEADINGS_V41_FULL):
         center = col_x[j] + col_w / 2
-        svg.text(center, head_y, head, 18, INK, bold=True, anchor="middle")
-        svg.text(center, head_y + 22, subhead, 15, MUTED, anchor="middle")
-        svg.text(center, head_y + 44, thresh, 16, INK2, bold=True, anchor="middle")
+        svg.text(center, head_y, head, 18, pal.ink, bold=True, anchor="middle")
+        svg.text(center, head_y + 22, subhead, 15, pal.muted, anchor="middle")
+        svg.text(center, head_y + 44, thresh, 16, pal.ink2, bold=True, anchor="middle")
 
     for idx, row in enumerate(rows):
         cy = start_y + idx * row_step
-        draw_model_label_v41(svg, row, cy, show_badge=True)
+        draw_model_label_v41(svg, row, cy, pal, show_badge=True)
 
         for j, (ok, shown) in enumerate(row.checks):
             cx = col_x[j]
             if ok:
-                svg.rect(cx, cy - 23, col_w, 50, PASS_CELL_BG, rx=6, stroke=GRID, width=1)
+                svg.rect(cx, cy - 23, col_w, 50, pal.pass_cell_bg, rx=6, stroke=pal.grid, width=1)
                 svg.text(
-                    cx + col_w / 2, cy + 9, shown, 20, PASS_CELL_INK, weight=500, anchor="middle"
+                    cx + col_w / 2,
+                    cy + 9,
+                    shown,
+                    20,
+                    pal.pass_cell_ink,
+                    weight=500,
+                    anchor="middle",
                 )
             else:
                 svg.rect(
-                    cx, cy - 23, col_w, 50, MISS_CELL_BG, rx=6, stroke=MISS_CELL_BORDER, width=1.5
+                    cx,
+                    cy - 23,
+                    col_w,
+                    50,
+                    pal.miss_cell_bg,
+                    rx=6,
+                    stroke=pal.miss_cell_border,
+                    width=1.5,
                 )
                 svg.text(
                     cx + col_w / 2,
                     cy + 9,
                     f"✗ {shown}",
                     20,
-                    MISS_CELL_INK,
+                    pal.miss_cell_ink,
                     bold=True,
                     anchor="middle",
                 )
 
-    add_footer(
+    add_footer_v41(
         svg,
         "Clearing the screen requires passing every safety, category accuracy, and policy optimization check simultaneously across v41_full.",
         3,
         footer_top,
+        pal,
     )
-    return svg.output()
+    return _svg_output(svg, pal)
 
 
-def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
+def render_v41_model_tiers(rows: Sequence[V41BStyleRow], theme_name: str = "light") -> str:
     """Clean model class comparison chart (`b-model-tiers`)."""
-    tier_defs = [
-        ("flagship", "Frontier Flagship Models", "#0072B2", "#EAF4FA"),
-        ("open_weight", "Open-Weight & Local GPU Models", "#009E73", "#E6F6F0"),
-        ("fast_small", "Fast / Flash / Small Models", "#C87A00", "#FFF6E5"),
-    ]
+    pal = B_PALETTES[theme_name]
     row_step, cur_y = 64, 290
     tier_blocks: list[tuple[str, str, str, list[V41BStyleRow], int, int]] = []
-    for tier_key, tier_title, bar_color, pill_bg in tier_defs:
+    for tier_key, tier_title, bar_color, pill_bg in pal.tier_defs:
         members = [
             r for r in rows if MODEL_TIER_META_V41.get(r.model_id, {}).get("tier") == tier_key
         ]
@@ -304,33 +448,33 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
     title = "Category Task Score by Model Class (Flagship vs. Open-Weight vs. Fast/Small)"
     subtitle = "Percentage of 1,080 category tasks solved across 6 governance areas, grouped by model tier."
     svg = Svg(title, subtitle, "b-model-tiers", int(footer_top + 76))
-    add_header_v41_full(svg, title, subtitle)
+    add_header_v41_full(svg, title, subtitle, pal)
 
     class_col_x, bar_x0, bar_span, perf_col_x, unsafe_col_x = 575.0, 720.0, 945.0, 1790.0, 1985.0
-    svg.text(class_col_x, 256, "Model Class", 17, INK, bold=True, anchor="middle")
-    svg.text(perf_col_x, 256, "Solved Tasks", 17, INK, bold=True, anchor="middle")
-    svg.text(unsafe_col_x, 256, "Unsafe Rate", 17, INK, bold=True, anchor="middle")
+    svg.text(class_col_x, 256, "Model Class", 17, pal.ink, bold=True, anchor="middle")
+    svg.text(perf_col_x, 256, "Solved Tasks", 17, pal.ink, bold=True, anchor="middle")
+    svg.text(unsafe_col_x, 256, "Unsafe Rate", 17, pal.ink, bold=True, anchor="middle")
 
     for block_idx, (tier_title, bar_color, pill_bg, members, header_y, start_y) in enumerate(
         tier_blocks
     ):
         avg_sc = sum(r.cat_avg_score * 100.0 for r in members) / max(len(members), 1)
         if block_idx > 0:
-            svg.line(100, header_y - 32, WIDTH - 100, header_y - 32, GRID, 1.5)
+            svg.line(100, header_y - 32, WIDTH - 100, header_y - 32, pal.grid, 1.5)
         svg.text(100, header_y, f"{tier_title} ({len(members)} models)", 21, bar_color, bold=True)
         svg.text(
             bar_x0 + bar_span,
             header_y,
             f"Class avg score: {avg_sc:.1f}%",
             17,
-            MUTED,
+            pal.muted,
             bold=True,
             anchor="end",
         )
 
         for idx, row in enumerate(members):
             cy = start_y + idx * row_step
-            draw_model_label_v41(svg, row, cy)
+            draw_model_label_v41(svg, row, cy, pal)
             class_label = str(
                 MODEL_TIER_META_V41.get(row.model_id, {}).get("class_label", "Proprietary")
             )
@@ -339,24 +483,36 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
             )
             svg.text(class_col_x, cy + 6, class_label, 14, bar_color, bold=True, anchor="middle")
 
-            svg.rect(bar_x0, cy - 18, bar_span, 38, "#F3F5F8", rx=6)
+            svg.rect(bar_x0, cy - 18, bar_span, 38, pal.bar_track, rx=6)
             bar_w = max(row.cat_avg_score * bar_span, 8.0)
             svg.rect(bar_x0, cy - 18, bar_w, 38, bar_color, rx=6)
             pct_str = f"{row.cat_avg_score * 100.0:.1f}%"
+            in_bar_ink = "#0d0d0d" if theme_name == "dark" else "#FFFFFF"
             if row.cat_avg_score >= 0.12:
                 svg.text(
-                    bar_x0 + bar_w - 14, cy + 8, pct_str, 19, "#FFFFFF", bold=True, anchor="end"
+                    bar_x0 + bar_w - 14, cy + 8, pct_str, 19, in_bar_ink, bold=True, anchor="end"
                 )
             else:
-                svg.text(bar_x0 + bar_w + 12, cy + 8, pct_str, 19, INK2, bold=True, anchor="start")
+                svg.text(
+                    bar_x0 + bar_w + 12, cy + 8, pct_str, 19, pal.ink2, bold=True, anchor="start"
+                )
 
-            svg.rect(perf_col_x - 66, cy - 18, 132, 38, PASS_CELL_BG, rx=6, stroke=GRID, width=1.0)
+            svg.rect(
+                perf_col_x - 66,
+                cy - 18,
+                132,
+                38,
+                pal.pass_cell_bg,
+                rx=6,
+                stroke=pal.grid,
+                width=1.0,
+            )
             svg.text(
                 perf_col_x,
                 cy + 8,
                 f"{row.tasks_passed_1080}/1080",
                 18,
-                INK2,
+                pal.ink2,
                 weight=600,
                 anchor="middle",
             )
@@ -367,9 +523,9 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
                 cy - 18,
                 168,
                 38,
-                PASS_CELL_BG if u_ok else MISS_CELL_BG,
+                pal.pass_cell_bg if u_ok else pal.miss_cell_bg,
                 rx=6,
-                stroke=GRID if u_ok else MISS_CELL_BORDER,
+                stroke=pal.grid if u_ok else pal.miss_cell_border,
                 width=1.0 if u_ok else 1.5,
             )
             svg.text(
@@ -377,18 +533,19 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow]) -> str:
                 cy + 8,
                 fmt_pct(row.u_comm_rate),
                 17,
-                INK if u_ok else MISS_CELL_INK,
+                pal.ink if u_ok else pal.miss_cell_ink,
                 weight=600,
                 anchor="middle",
             )
 
-    add_footer(
+    add_footer_v41(
         svg,
         "Category task solve rate (%) out of 1,080 tasks grouped by model tier.",
         4,
         footer_top,
+        pal,
     )
-    return svg.output()
+    return _svg_output(svg, pal)
 
 
 BIN_LABELS_V41: tuple[str, ...] = (
@@ -418,8 +575,9 @@ def _v41_opt_bin(val: float) -> int:
     return 6
 
 
-def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
+def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow], theme_name: str = "light") -> str:
     """Clean 6-column policy math & sync breakdown across all 180 scenarios (`b-optimization-tasks`)."""
+    pal = B_PALETTES[theme_name]
     row_step = 64
     start_y = 396
     bottom_y = start_y + (len(rows) - 1) * row_step + 32
@@ -429,10 +587,10 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
     title = "Policy Optimization & Cross-Step Sync Score Breakdown (v41_full)"
     subtitle = "Overall accuracy (0–100%) across all 180 scenarios on the 4 policy math tasks and 2 cross-step sync tasks."
     svg = Svg(title, subtitle, "b-optimization-tasks", height)
-    add_header_v41_full(svg, title, subtitle)
+    add_header_v41_full(svg, title, subtitle, pal)
 
     legend_y = 242
-    svg.text(100, legend_y + 18, "Task accuracy:", 18, INK2, bold=True)
+    svg.text(100, legend_y + 18, "Task accuracy:", 18, pal.ink2, bold=True)
     sw, lx = 82.0, 260.0
     for i, label in enumerate(BIN_LABELS_V41):
         svg.rect(
@@ -440,11 +598,11 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
             legend_y - 2,
             sw,
             24,
-            HEAT_FILLS[i],
+            pal.heat_fills[i],
             rx=4,
-            stroke=RULE if i == 0 else None,
+            stroke=pal.rule if i == 0 else None,
         )
-        svg.text(lx + i * (sw + 6) + sw / 2, legend_y + 44, label, 15, MUTED, anchor="middle")
+        svg.text(lx + i * (sw + 6) + sw / 2, legend_y + 44, label, 15, pal.muted, anchor="middle")
 
     grid_x0, col_w, col_gap, group_gap = 585.0, 240.0, 10.0, 36.0
     col_x: list[float] = []
@@ -459,28 +617,30 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
         head_y,
         "4 Standalone Policy Math Tasks ↑",
         20,
-        INK,
+        pal.ink,
         bold=True,
         anchor="middle",
     )
-    svg.line(col_x[0] + 4, head_y + 12, col_x[3] + col_w - 4, head_y + 12, RULE, 2)
+    svg.line(col_x[0] + 4, head_y + 12, col_x[3] + col_w - 4, head_y + 12, pal.rule, 2)
     svg.text(
         (col_x[4] + col_x[5] + col_w) / 2,
         head_y,
         "2 Cross-Step Sync & Review Tasks ↑",
         20,
-        INK,
+        pal.ink,
         bold=True,
         anchor="middle",
     )
-    svg.line(col_x[4] + 4, head_y + 12, col_x[5] + col_w - 4, head_y + 12, RULE, 2)
+    svg.line(col_x[4] + 4, head_y + 12, col_x[5] + col_w - 4, head_y + 12, pal.rule, 2)
 
     for j, (_, _, label) in enumerate(OPT_COLUMNS_V41):
-        svg.text(col_x[j] + col_w / 2, head_y + 40, label, 18, MUTED, bold=True, anchor="middle")
+        svg.text(
+            col_x[j] + col_w / 2, head_y + 40, label, 18, pal.muted, bold=True, anchor="middle"
+        )
 
     for idx, row in enumerate(rows):
         cy = start_y + idx * row_step
-        draw_model_label_v41(svg, row, cy)
+        draw_model_label_v41(svg, row, cy, pal)
         for j, (_, ck, _) in enumerate(OPT_COLUMNS_V41):
             val = row.opt_rates_all.get(ck, 0.0)
             cx = col_x[j]
@@ -490,9 +650,9 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
                 cy - 23,
                 col_w,
                 50,
-                HEAT_FILLS[step],
+                pal.heat_fills[step],
                 rx=6,
-                stroke=RULE if step == 0 else None,
+                stroke=pal.rule if step == 0 else None,
                 width=1,
             )
             svg.text(
@@ -500,18 +660,19 @@ def render_v41_optimization_tasks(rows: Sequence[V41BStyleRow]) -> str:
                 cy + 8,
                 fmt_pct(val),
                 21,
-                HEAT_INKS[step],
+                pal.heat_inks[step],
                 weight=700 if step >= 3 else 500,
                 anchor="middle",
             )
 
-    add_footer(
+    add_footer_v41(
         svg,
         "Unconditional solve rate (0–100%) across all 180 scenarios for each optimization and sync task.",
         5,
         footer_top,
+        pal,
     )
-    return svg.output()
+    return _svg_output(svg, pal)
 
 
 def render_v41_full_b_style_suite(
@@ -520,12 +681,13 @@ def render_v41_full_b_style_suite(
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = load_v41_b_rows(arms)
 
-    for name, content in [
-        ("b-safety-screen", render_v41_safety_screen(rows)),
-        ("b-model-tiers", render_v41_model_tiers(rows)),
-        ("b-optimization-tasks", render_v41_optimization_tasks(rows)),
+    for name, fn in [
+        ("b-safety-screen", render_v41_safety_screen),
+        ("b-model-tiers", render_v41_model_tiers),
+        ("b-optimization-tasks", render_v41_optimization_tasks),
     ]:
         for theme_name in ("light", "dark"):
+            content = fn(rows, theme_name)
             svg_path = out_dir / f"{name}-{theme_name}.svg"
             svg_path.write_text(content, encoding="utf-8")
             if name == "b-optimization-tasks":
