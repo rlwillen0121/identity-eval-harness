@@ -178,3 +178,50 @@ Automatic evaluation failures persist as **Failed** with their original sanitize
 `EVALUATION_*` code. Later adapter completion cannot overwrite that cause. Genuine
 user Interrupt/End session retains user-stop attribution. No failed historical or
 visible run is relabeled or rescored by this correction.
+
+## Codex 0.166.0 tool-host compatibility
+
+The evaluation profile explicitly requires `features.code_mode_host=true` while
+keeping `features.code_mode=false`. Every other tool, filesystem, network,
+MCP/plugin and thread-binding restriction remains unchanged. These flags control
+different layers: the installed stable tool host supplies the dispatch runtime;
+the model-facing Code Mode feature remains disabled.
+
+This is version-matched to the official `rust-v0.166.0` release (commit `6ff1e1c`):
+[feature definitions](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/features/src/lib.rs)
+define host enabled and Code Mode disabled by default. The
+[provider selection](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/thread_manager.rs)
+and [disabled provider](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/code-mode/src/remote_session.rs)
+explain the observed “code-mode host is disabled” error. No prompt, policy, role,
+skill, provider or model change is involved.
+
+The installed helper's [globals](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/code-mode-runtime/src/runtime/globals.rs)
+include only the supplied tool callbacks and runtime helpers; its
+[module loader](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/code-mode-runtime/src/runtime/module_loader.rs)
+rejects imports. The reproducible stdlib probe executes the actual bundled helper
+with synthetic tools and no auth/provider/model connection:
+
+```sh
+python3 scripts/identitybench-codehost-probe.py \
+  --binary /absolute/installed/native/codex \
+  --out /private/tmp/identitybench-codehost-capability.json
+```
+
+Use a new output path. The native preflight runs this probe automatically and
+records its sidecar artifact, both executable hashes and the helper version source
+(the bundled Codex release; the helper has no independent version interface).
+The validated runtime pair is Codex SHA-256
+`39acf979729dd290f9a24ee38b2914e036c91b65952872e28ae2a6b88a7db7c1`
+and helper SHA-256
+`fd37051bfdce0b65cf22a7077e265720a7bd6709d5e400dcbc26197f3041400a`.
+Runtime audits also record the actual pair used for each episode.
+
+The 17 probe cases cover successful callback/receipt flow; absent process, require,
+fetch, Deno and socket globals; rejected filesystem/process/network imports;
+constructor escapes; unknown tools/namespaces; a worker with no tools; and
+synthetic binding-argument rejection. Aliasing a permitted callback cannot change
+its underlying tool name. This proves **installed-helper dispatch and capability
+isolation**, not model-selected app-server dispatch or authenticated app binding.
+Network APIs/imports are rejected; no external endpoint or packet monitoring is
+used. The separate OS sandbox probe and native root/child/stale-turn tests remain
+required. Previous failed visible attempts remain preserved without rescoring.
