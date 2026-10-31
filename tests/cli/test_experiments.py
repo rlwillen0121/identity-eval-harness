@@ -63,6 +63,8 @@ V41_CONFIGS = (
     "v41-lite-wave2",
     "v41-lite-wave3",
 )
+# Dedicated operator entry points validate these schemas outside the generic v41 loader.
+STANDALONE_CONFIGS = ("v41-orgai-12",)
 ALL_SUITES = list(Suite)
 
 
@@ -125,6 +127,7 @@ def test_the_committed_files_are_exactly_these() -> None:
         *(f"{n}.yaml" for n in V3_CONFIGS),
         *(f"{n}.yaml" for n in V4_CONFIGS),
         *(f"{n}.yaml" for n in V41_CONFIGS),
+        *(f"{n}.yaml" for n in STANDALONE_CONFIGS),
         "judges.yaml",
         "judges-consensus.example.yaml",
         "panel-adjudication.example.yaml",
