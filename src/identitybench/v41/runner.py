@@ -408,6 +408,7 @@ async def run_v41_agent_episode(
             resp.error is not None
             and not resp.refused
             and not _is_malformed_cli_function_call_error(resp.error)
+            and not (resp.raw or {}).get("nonretryable", False)
             and transient_retry < MAX_TRANSIENT_PROVIDER_RETRIES_V41
         ):
             transient_retry += 1
