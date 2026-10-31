@@ -127,7 +127,8 @@ def test_committed_config_and_baselines() -> None:
         "bad_config",
     ],
 )
-def test_actual_orgai_adapter_mock_transport(tmp_path: Path, mode: str) -> None:
+@pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6-astra"])
+def test_actual_orgai_adapter_mock_transport(tmp_path: Path, mode: str, model: str) -> None:
     """Exercise actual source spawnChild ordering with fake app-server; zero model calls."""
     runtime = os.environ.get("ORGAI_TEST_RUNTIME_ROOT")
     if not runtime:
@@ -173,13 +174,14 @@ class Fake {
  }
 }
 try {
- const r=await start({runtime_root:RUNTIME,codex_home:'/no-auth-read',model:'gpt-6.1-sol',episode_id:'mock-only',system:'public policy',prompt:JSON.stringify({action_schema:{type:'object',properties:{actions:{type:'array'}}}})},Fake);
+ const r=await start({runtime_root:RUNTIME,codex_home:'/no-auth-read',model:TEST_MODEL,episode_id:'mock-only',system:'public policy',prompt:JSON.stringify({action_schema:{type:'object',properties:{actions:{type:'array'}}}})},Fake);
  if(MODE==='stale_root') await send('next public observations');
  console.log(JSON.stringify({mock_result:r}));
 } catch(e) {console.log(JSON.stringify({mock_error:e.message}));}
 finally {await cleanup();}
 """.replace("BRIDGE", json.dumps((ROOT / "src/identitybench/v41/orgai_runtime.mjs").as_uri()))
         .replace("RUNTIME", json.dumps(runtime))
+        .replace("TEST_MODEL", json.dumps(model))
         .replace("TEST_MODE", json.dumps(mode))
     )
     result = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=20)
@@ -190,7 +192,7 @@ finally {await cleanup();}
         assert not any("mock_result" in e for e in events)
         return
     bound = [e for e in events if e.get("type") == "platform.child.bound"]
-    assert len(bound) == 1 and bound[0]["parent_id"] == "root"
+    assert len(bound) == 1 and bound[0]["parent_id"] == "root", result.stdout
     assert bound[0]["agent_id"] != "root" and bound[0]["thread_id"] == "th-2"
     assert any(e.get("type") == "platform.delegation.tool" for e in events)
     reply = next(e["mock_result"] for e in events if "mock_result" in e)
@@ -252,3 +254,30 @@ def test_partial_comparison_never_claims_matched_twelve() -> None:
     assert cell["planned_n"] == 12 and cell["attempted_n"] == 1
     assert cell["completed_n"] == 0 and len(cell["missing_episode_ids"]) == 11
     assert cell["g_srr"] is None and cell["execution_valid_rate"] is None
+
+
+def test_astra_full_suite_and_matched_history() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "orgai_astra", ROOT / "reports/v41-lite/run_orgai_comparison.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    config = module.matched_config(ROOT / "experiments/v41-orgai-astra-lite.yaml")
+    assert config["model"] == "gpt-6-astra"
+    assert len(config["episode_ids"]) == 60
+    assert config["episode_ids"][-1] == "v41_lite_060"
+    assert set(config["historical_cells"]) == {"solo", "team"}
+    assert all("gpt-6-astra" in v for v in config["historical_cells"].values())
+    summary = module.summarize_cell([], tuple(config["episode_ids"]))
+    assert summary["planned_n"] == 60 and len(summary["missing_episode_ids"]) == 60
+    assert summary["g_srr"] is None
+
+
+@pytest.mark.asyncio
+async def test_astra_model_passed_without_sol_substitution() -> None:
+    transport = FakeTransport(ACTION)
+    provider = OrgAIProvider(transport, "v41_lite_060", "gpt-6-astra")  # type: ignore[arg-type]
+    result = await provider.complete(ModelRequest(system="public", messages=()))
+    assert transport.payloads[0]["model"] == "gpt-6-astra"
+    assert result.served_model == "gpt-6-astra"
