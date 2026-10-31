@@ -94,3 +94,45 @@ Free bridge tests, including the actual external adapter with a fake app-server:
 ORGAI_TEST_RUNTIME_ROOT=/Users/ryanwillen/orca/workspaces/OrgAI/walrus \
   uv run --offline pytest tests/v41/test_orgai_bridge.py -q
 ```
+
+## Full Astra v41_lite operation
+
+The prerequisite Astra entry point is the same committed script with explicit
+`--config experiments/v41-orgai-astra-lite.yaml`. This selects all 60 sealed
+v41_lite episodes, fresh, one trial, serial execution, `gpt-6-astra` for both lead
+and specialist, medium effort, COUPLED / UNSTEERED / T3, 12 benchmark exchanges,
+4 calls per exchange and 96 platform turn requests per episode. Actual OrgAI
+spawn success and a completed nonempty child report remain mandatory; model
+fallback is disabled. No extra source bridge changes are necessary: its episode
+ID is an opaque transport identifier and the runtime already accepts explicit models.
+
+Only historical Astra A1 and Astra/Luna A5 records are compared, on the first 12
+matched episode IDs, with hashes, trial and family identity checked. Astra A4 is
+absent and is not invented or replaced by Sol A4. The fresh full-60 summary is
+separate from the fresh matched-12 summary. The older Sol pilot config remains
+supported. Platform internal inference budget is unmatched/unknown; neither the
+96-request limit nor observed scores establish controlled effects or publication readiness.
+
+After independent review, an operator can create a clean checkout of the reviewed
+commit without touching the original dirty main checkout:
+
+```sh
+git worktree add --detach /private/tmp/identitybench-orgai-astra-reviewed-<unique> <reviewed-commit>
+cd /private/tmp/identitybench-orgai-astra-reviewed-<unique>
+uv run --offline python reports/v41-lite/run_orgai_comparison.py --preflight \
+  --config experiments/v41-orgai-astra-lite.yaml \
+  --runtime-root /Users/ryanwillen/orca/workspaces/OrgAI/walrus \
+  --codex-home '/Users/ryanwillen/Library/Application Support/OrgAI/data/codex' \
+  --baseline-root /Users/ryanwillen/orca/projects/identity-eval-harness/runs/v41-skill-orchestration \
+  --out /private/tmp/identitybench-orgai-astra-preflight-<unique> \
+  --report-out /private/tmp/identitybench-orgai-astra-preflight-report-<unique>
+```
+
+Use an unused checkout path; preserve existing worktrees and branches. The live
+operator repeats this command with `--live` and distinct unused run and report
+directories outside the checkout. Existing output paths are refused. Preflight
+creates no model turns; implementation tests use a fake app-server. A preflight
+success does not guarantee model availability on the inherited app connection.
+A runtime/auth/model/delegation failure stops the run with its partial artifacts;
+there is no provider fallback or credential repair. No live execution was performed
+as part of these implementation changes.
