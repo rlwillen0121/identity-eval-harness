@@ -114,3 +114,43 @@ def test_malformed_model_turn_consumes_runner_parse_budget(tmp_path):
         assert host.records[0]["parse_failure"] and not host.records[0]["provider_error"]
 
     asyncio.run(check())
+
+
+def test_dev_diagnostic_is_explicit_and_isolated(tmp_path):
+    import yaml
+
+    path = ROOT / "experiments/v41-orgai-astra-dev-recovery.yaml"
+    config = load_config(path)
+    assert config["suite"] == "v41_dev"
+    assert config["episode_ids"] == ["v41_dev_001"]
+    assert config["prerequisite_recovery"] == {"max_denials": 3}
+    for key, value in (
+        ("suite", "v41_lite"),
+        ("episode_ids", ["v41_lite_001"]),
+        ("prerequisite_recovery", {"max_denials": 4}),
+        ("max_wall_seconds", 901),
+    ):
+        changed = {**config, key: value}
+        bad = tmp_path / "bad.yaml"
+        bad.write_text(yaml.safe_dump(changed))
+        with pytest.raises(ValueError):
+            load_config(bad)
+
+    async def check():
+        host = DesktopHost(config, tmp_path / "diagnostic", root=ROOT)
+        assert len(host.pairs) == 1
+        first = await host.dispatch({"op": "start", "evaluation_id": "dev-only"})
+        assert first["episode_id"] == "v41_dev_001"
+        assert first["total"] == 1 and first["suite"] == "v41_dev"
+        assert first["prerequisite_recovery"] == {"max_denials": 3}
+        assert host.manifest["historical_episode_ids"] == []
+        await host.dispatch(
+            {
+                "op": "abort",
+                "evaluation_id": "dev-only",
+                "episode_id": first["episode_id"],
+                "step": 0,
+            }
+        )
+
+    asyncio.run(check())
