@@ -110,7 +110,8 @@ class OrgAITransport:
             # Persist only bridge-owned codes, never arbitrary exception messages.
             if self.terminal_error is None:
                 self.terminal_error = (
-                    "ORGAI_TRANSPORT_TIMEOUT" if isinstance(exc, TimeoutError)
+                    "ORGAI_TRANSPORT_TIMEOUT"
+                    if isinstance(exc, TimeoutError)
                     else "ORGAI_TRANSPORT_FAILED"
                 )
             failure = {"kind": "event", "type": "bridge.failure", "code": self.terminal_error}
@@ -154,7 +155,8 @@ class OrgAITransport:
                     if row.get("type") == "bridge.fatal" and self.terminal_error is None:
                         code = str(row.get("code", ""))
                         self.terminal_error = self.terminal_error or (
-                            code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", code)
+                            code
+                            if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", code)
                             else "ORGAI_RUNTIME_FAILED"
                         )
                     self.trace.parent.mkdir(parents=True, exist_ok=True)
@@ -164,7 +166,8 @@ class OrgAITransport:
                     if row.get("error"):
                         code = str(row["error"])
                         self.terminal_error = self.terminal_error or (
-                            code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", code)
+                            code
+                            if re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", code)
                             else "ORGAI_RUNTIME_FAILED"
                         )
                         raise RuntimeError(self.terminal_error)

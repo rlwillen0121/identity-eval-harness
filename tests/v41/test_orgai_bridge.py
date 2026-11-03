@@ -363,7 +363,10 @@ async def test_fatal_transport_closes_and_preserves_first_code(
     assert spawns == 1
     assert transport.process and transport.process.returncode is not None
     assert transport.events[-1]["code"] == "SUCCESSFUL_DELEGATION_REQUIRED"
-    assert json.loads(transport.trace.read_text().splitlines()[-1])["code"] == "SUCCESSFUL_DELEGATION_REQUIRED"
+    assert (
+        json.loads(transport.trace.read_text().splitlines()[-1])["code"]
+        == "SUCCESSFUL_DELEGATION_REQUIRED"
+    )
 
 
 @pytest.mark.asyncio
@@ -382,8 +385,10 @@ async def test_fatal_provider_never_resends() -> None:
 @pytest.mark.asyncio
 async def test_node_fatal_protocol_exits_with_stdin_open() -> None:
     process = await asyncio.create_subprocess_exec(
-        "node", str(ROOT / "src/identitybench/v41/orgai_runtime.mjs"),
-        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+        "node",
+        str(ROOT / "src/identitybench/v41/orgai_runtime.mjs"),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     assert process.stdin and process.stdout

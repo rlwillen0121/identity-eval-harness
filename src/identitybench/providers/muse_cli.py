@@ -121,6 +121,17 @@ class MuseCliProvider(CliProvider):
         links = link_credentials(
             real, home / ".config/muse", ("auth.json",), shared=(".auth.json.lock",)
         )
+        keychains = Path.home() / "Library/Keychains"
+        if keychains.is_dir():
+            links = (
+                *links,
+                *link_credentials(
+                    keychains,
+                    home / "Library/Keychains",
+                    (),
+                    shared=("login.keychain-db", "login.keychain"),
+                ),
+            )
         return Isolation(env={"HOME": str(home)}, links=links)
 
     def _build(

@@ -13,6 +13,7 @@ import html
 import math
 import re
 import shutil
+import statistics
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,12 @@ ICONS: dict[str, str] = {
     "zai": '<path d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z"></path>',
     "meta": '<path d="M6.897 4c-1.923.01-3.626 1.258-4.853 3.17C1.2 8.447.598 9.995.274 11.664c-.177.918-.267 1.851-.269 2.786 0 .56.05 1.11.146 1.652.192 1.01.568 1.85 1.106 2.487.74.872 1.788 1.354 3.086 1.354 1.963 0 3.374-.928 5.884-5.33l1.766-3.13c.959 1.61 1.74 2.774 2.493 3.585.637.682 1.246 1.105 1.937 1.337.449.153.927.222 1.46.222.492 0 .943-.073 1.352-.215a3.558 3.558 0 001.804-1.4c.62-.96.946-2.293.946-3.91-.06-3.467-1.27-6.566-3.064-8.396C19.853 4.633 18.583 4 17.225 4c-1.432 0-2.637.787-3.723 1.944-.4.43-.786.908-1.16 1.416C10.413 4.932 8.812 4 6.896 4zm-.024 2.615c1.38 0 2.58 1.09 4.72 4.61-1.2 2.02-1.92 3.19-2.85 4.21-.68.74-1.29.96-1.94.96-.76 0-1.36-.42-1.69-1.19-.26-.6-.38-1.37-.38-2.29 0-1.91.59-3.9 1.46-5.11.46-.64.96-1.19 1.68-1.19zm10.352.002c.826 0 1.6.39 2.27 1.075 1.35 1.392 2.277 3.98 2.361 6.971 0 .815-.121 1.474-.368 1.95-.214.402-.519.67-.917.787-.429.075-.809-.01-1.235-.21-.55-.642-1.232-1.712-2.303-3.44l-1.396-2.336c.48-.743.928-1.345 1.367-1.807.715-.747 1.408-1.12 2.176-1.12z" fill="#0082FB"></path>',
     "mistral": '<path d="M3.428 3.4h3.429v3.428H3.428V3.4zm13.714 0h3.43v3.428h-3.43V3.4z" fill="gold"></path><path d="M3.428 6.828h6.857v3.429H3.429V6.828zm10.286 0h6.857v3.429h-6.857V6.828z" fill="#FFAF00"></path><path d="M3.428 10.258h17.144v3.428H3.428v-3.428z" fill="#FF8205"></path><path d="M3.428 13.686h3.429v3.428H3.428v-3.428zm6.858 0h3.429v3.428h-3.429v-3.428zm6.856 0h3.43v3.428h-3.43v-3.428z" fill="#FA500F"></path><path d="M0 17.114h10.286v3.429H0v-3.429zm13.714 0H24v3.429H13.714v-3.429z" fill="#E10500"></path>',
+    "cursor": '<path d="M22.106 5.68L12.5.135a.998.998 0 00-.998 0L1.893 5.68a.84.84 0 00-.419.726v11.186c0 .3.16.577.42.727l9.607 5.547a.999.999 0 00.998 0l9.608-5.547a.84.84 0 00.42-.727V6.407a.84.84 0 00-.42-.726zm-.603 1.176L12.228 22.92c-.063.108-.228.064-.228-.061V12.34a.59.59 0 00-.295-.51l-9.11-5.26c-.107-.062-.063-.228.062-.228h18.55c.264 0 .428.286.296.514z"></path>',
+    "nvidia": '<path d="M10.212 8.976V7.62c.127-.01.256-.017.388-.021 3.596-.117 5.957 3.184 5.957 3.184s-2.548 3.647-5.282 3.647a3.227 3.227 0 01-1.063-.175v-4.109c1.4.174 1.681.812 2.523 2.258l1.873-1.627a4.905 4.905 0 00-3.67-1.846 6.594 6.594 0 00-.729.044m0-4.476v2.025c.13-.01.259-.019.388-.024 5.002-.174 8.261 4.226 8.261 4.226s-3.743 4.69-7.643 4.69c-.338 0-.675-.031-1.007-.092v1.25c.278.038.558.057.838.057 3.629 0 6.253-1.91 8.794-4.169.421.347 2.146 1.193 2.501 1.564-2.416 2.083-8.048 3.763-11.24 3.763-.308 0-.603-.02-.894-.048V19.5H24v-15H10.21zm0 9.756v1.068c-3.356-.616-4.287-4.21-4.287-4.21a7.173 7.173 0 014.287-2.138v1.172h-.005a3.182 3.182 0 00-2.502 1.178s.615 2.276 2.507 2.931m-5.961-3.3c1.436-1.935 3.604-3.148 5.961-3.336V6.523C5.81 6.887 2 10.723 2 10.723s2.158 6.427 8.21 7.015v-1.166C5.77 16 4.25 10.958 4.25 10.958h-.002z" fill="#74B71B" fill-rule="nonzero"></path>',
+    "cohere": '<path clip-rule="evenodd" d="M8.128 14.099c.592 0 1.77-.033 3.398-.703 1.897-.781 5.672-2.2 8.395-3.656 1.905-1.018 2.74-2.366 2.74-4.18A4.56 4.56 0 0018.1 1H7.549A6.55 6.55 0 001 7.55c0 3.617 2.745 6.549 7.128 6.549z" fill="#39594D" fill-rule="evenodd"></path><path clip-rule="evenodd" d="M9.912 18.61a4.387 4.387 0 012.705-4.052l3.323-1.38c3.361-1.394 7.06 1.076 7.06 4.715a5.104 5.104 0 01-5.105 5.104l-3.597-.001a4.386 4.386 0 01-4.386-4.387z" fill="#D18EE2" fill-rule="evenodd"></path><path d="M4.776 14.962A3.775 3.775 0 001 18.738v.489a3.776 3.776 0 007.551 0v-.49a3.775 3.775 0 00-3.775-3.775z" fill="#FF7759"></path>',
+    "xiaomi": '<path d="M12 0C8.016 0 4.756.255 2.493 2.516.23 4.776 0 8.033 0 12.012c0 3.98.23 7.235 2.494 9.497C4.757 23.77 8.017 24 12 24c3.983 0 7.243-.23 9.506-2.491C23.77 19.247 24 15.99 24 12.012c0-3.984-.233-7.243-2.502-9.504C19.234.252 15.978 0 12 0zM4.906 7.405h5.624c1.47 0 3.007.068 3.764.827.746.746.827 2.233.83 3.676v4.54a.15.15 0 0 1-.152.147h-1.947a.15.15 0 0 1-.152-.148V11.83c-.002-.806-.048-1.634-.464-2.051-.358-.36-1.026-.441-1.72-.458H7.158a.15.15 0 0 0-.151.147v6.98a.15.15 0 0 1-.152.148H4.906a.15.15 0 0 1-.15-.148V7.554a.15.15 0 0 1 .15-.149zm12.131 0h1.949a.15.15 0 0 1 .15.15v8.892a.15.15 0 0 1-.15.148h-1.949a.15.15 0 0 1-.151-.148V7.554a.15.15 0 0 1 .151-.149zM8.92 10.948h2.046c.083 0 .15.066.15.147v5.352a.15.15 0 0 1-.15.148H8.92a.15.15 0 0 1-.152-.148v-5.352a.15.15 0 0 1 .152-.147Z" fill="#FF6900"></path>',
+    "reflection": '<path d="M24 12a5.718 5.718 0 1 1-11.437 0A5.718 5.718 0 0 1 24 12M5.718 6.282a5.718 5.718 0 1 0 0 11.436 5.718 5.718 0 0 0 0-11.436M10.31 12a4.591 4.591 0 1 1-9.182 0 4.591 4.591 0 0 1 9.182 0"></path>',
+    "stepfun": '<path d="M22.012 0h1.032v.927H24v.968h-.956V3.78h-1.032V1.896h-1.878v-.97h1.878V0zM2.6 12.371V1.87h.969v10.502h-.97zm10.423.66h10.95v.918h-6.208v9.579h-4.742V13.03zM5.629 3.333v12.356H0v4.51h10.386V8L20.859 8l-.003-4.668-15.227.001z" fill="#0185FF" fill-rule="evenodd"></path>',
 }
 
 
@@ -106,6 +113,17 @@ def _lab_of(name: str) -> str | None:
         ("glm", "zai"),
         ("muse", "meta"),
         ("mistral", "mistral"),
+        ("composer", "cursor"),
+        ("cursor", "cursor"),
+        ("nemotron", "nvidia"),
+        ("nvidia", "nvidia"),
+        ("command", "cohere"),
+        ("cohere", "cohere"),
+        ("mimo", "xiaomi"),
+        ("xiaomi", "xiaomi"),
+        ("beam", "reflection"),
+        ("reflection", "reflection"),
+        ("step", "stepfun"),
     ]:
         if n.startswith(pfx):
             return lab
@@ -196,12 +214,13 @@ def build_grantt_fig1_svg(
             float(a["cost_usd"]),
         ),
     )
-    W = int(1120 * scale)
+    W = int(1220 * scale)
     pad = 24 * scale
     name_w = 216 * scale
-    ground_w = 72 * scale
-    rate_w = 88 * scale
-    cost_w = 92 * scale
+    ground_w = 68 * scale
+    rate_w = 84 * scale
+    tok_w = 108 * scale
+    cost_w = 88 * scale
     row_h = 30 * scale
     bar_h = 14 * scale
     card_top = 92 * scale
@@ -211,9 +230,10 @@ def build_grantt_fig1_svg(
 
     top_models = [r for r in rows if int(r["tasks_passed_1080"]) >= 1058]
     bx = pad + name_w + 8 * scale
-    bw = W - bx - ground_w - rate_w - cost_w - pad - 16 * scale
+    bw = W - bx - ground_w - rate_w - tok_w - cost_w - pad - 16 * scale
     ground_x = bx + bw + ground_w
     rate_x = ground_x + rate_w
+    tok_x = rate_x + tok_w
     cost_x = W - pad
 
     parts = [
@@ -249,6 +269,9 @@ def build_grantt_fig1_svg(
     )
     parts.append(
         f'<text x="{rate_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Solved</text>'
+    )
+    parts.append(
+        f'<text x="{tok_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Tok / Task</text>'
     )
     parts.append(
         f'<text x="{cost_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Cost</text>'
@@ -320,6 +343,19 @@ def build_grantt_fig1_svg(
         parts.append(
             f'<text x="{rate_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{13 * scale:.1f}" '
             f'font-weight="500" fill="{solved_col}" text-anchor="end">{passed}/{target_n}</text>'
+        )
+
+        tok_lbl = html.escape(
+            f"{r.get('tok_per_task_label', '')} ({r.get('tok_vs_field_label', '')})"
+        )
+        tok_col = (
+            t["accent"]
+            if (is_top and float(r.get("tokens_vs_field_median", 1.0)) <= 1.0)
+            else t["ink_2"]
+        )
+        parts.append(
+            f'<text x="{tok_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.0 * scale:.1f}" '
+            f'font-weight="500" fill="{tok_col}" text-anchor="end">{tok_lbl}</text>'
         )
 
         cost_lbl = html.escape(str(r.get("cost_label", "")))
@@ -529,6 +565,196 @@ def build_grantt_fig2_svg(
     return "\n".join(parts)
 
 
+def build_grantt_fig_tokens_svg(
+    arms: list[dict[str, Any]], theme_name: str = "light", scale: float = 2.0
+) -> str:
+    t = THEMES[theme_name]
+    W = int(1120 * scale)
+    card_top = 92 * scale
+    plot_h = 500 * scale
+    H = int(card_top + plot_h + 16 * scale)
+    pad_x = 24 * scale
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
+        f'<rect width="{W}" height="{H}" rx="{16 * scale:.0f}" fill="{t["surface_raised"]}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>',
+        f'<text x="{pad_x:.1f}" y="{38 * scale:.1f}" font-family="{FONT}" font-size="{20 * scale:.1f}" font-weight="600" fill="{t["ink"]}" letter-spacing="-0.01em">Astra, Sol, and Terra solve the most tasks with 4–5× fewer tokens than the field median (v41_full)</text>',
+    ]
+
+    leg_y = 66 * scale
+    parts.append(
+        f'<circle cx="{pad_x + 6 * scale:.1f}" cy="{leg_y - 4 * scale:.1f}" r="{5 * scale:.1f}" fill="{t["accent"]}"/>'
+    )
+    parts.append(
+        f'<text x="{pad_x + 16 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">≤1% unsafe actions</text>'
+    )
+    parts.append(
+        f'<circle cx="{pad_x + 150 * scale:.1f}" cy="{leg_y - 4 * scale:.1f}" r="{5 * scale:.1f}" fill="{t["mark_muted"]}"/>'
+    )
+    parts.append(
+        f'<text x="{pad_x + 160 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">&gt;1% unsafe actions</text>'
+    )
+    parts.append(
+        f'<line x1="{pad_x + 292 * scale:.1f}" x2="{pad_x + 312 * scale:.1f}" y1="{leg_y - 4 * scale:.1f}" y2="{leg_y - 4 * scale:.1f}" stroke="{t["border_strong"]}" stroke-width="{1.5 * scale:.1f}" stroke-dasharray="{4 * scale:.1f},{3 * scale:.1f}"/>'
+    )
+    parts.append(
+        f'<text x="{pad_x + 318 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">Field median tokens/task (1.0×)</text>'
+    )
+
+    pad_l = pad_x + 48 * scale
+    pad_r = pad_x + 28 * scale
+    y_top = card_top + 32 * scale
+    y_bot = card_top + plot_h - 44 * scale
+    x0 = pad_l
+    x1 = W - pad_r
+
+    lo = 800.0
+    hi = 22000.0
+
+    def lx(v: float) -> float:
+        vc = max(lo, min(hi, v))
+        return x0 + (math.log10(vc) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)) * (
+            x1 - x0
+        )
+
+    max_f = max(int(r["tasks_failed_total_1080"]) for r in arms) or 10
+    y_max = math.ceil(max_f * 1.08 / 10.0) * 10.0
+    headroom = 48 * scale
+    footroom = 8 * scale
+
+    def ly(v: float) -> float:
+        return y_top + headroom + math.sqrt(v / y_max) * (y_bot - y_top - headroom - footroom)
+
+    for v in (0, 15, 75, 150, 300, 600, 1050):
+        if v <= y_max:
+            parts.append(
+                f'<line x1="{pad_l:.1f}" x2="{x1:.1f}" y1="{ly(v):.1f}" y2="{ly(v):.1f}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>'
+            )
+            parts.append(
+                f'<text x="{pad_l - 8 * scale:.1f}" y="{ly(v) + 4 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["ink_3"]}" text-anchor="end">{v}</text>'
+            )
+
+    parts.append(
+        f'<text x="{pad_x:.1f}" y="{y_top - 12 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}">Failed tasks (of 1,080)</text>'
+    )
+
+    for v in (1000, 2000, 3000, 5000, 10000, 15000, 20000):
+        parts.append(
+            f'<line x1="{lx(v):.1f}" x2="{lx(v):.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>'
+        )
+        lbl = f"{int(v // 1000)}k"
+        parts.append(
+            f'<text x="{lx(v):.1f}" y="{y_bot + 16 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["ink_3"]}" text-anchor="middle">{lbl}</text>'
+        )
+
+    med_tok = statistics.median([float(r["tokens_per_task"]) for r in arms]) if arms else 7280.0
+    med_x = lx(med_tok)
+    parts.append(
+        f'<line x1="{med_x:.1f}" x2="{med_x:.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border_strong"]}" stroke-width="{1.5 * scale:.1f}" stroke-dasharray="{5 * scale:.1f},{4 * scale:.1f}"/>'
+    )
+    parts.append(
+        f'<text x="{med_x:.1f}" y="{y_top - 10 * scale:.1f}" font-family="{FONT}" font-size="{11.5 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="middle">Field median: {med_tok / 1000.0:.1f}k/task (1.0×)</text>'
+    )
+    parts.append(
+        f'<text x="{med_x - 10 * scale:.1f}" y="{y_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["accent"]}" font-weight="500" text-anchor="end">← More token-efficient</text>'
+    )
+    parts.append(
+        f'<text x="{med_x + 10 * scale:.1f}" y="{y_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["ink_3"]}" text-anchor="start">More token-heavy →</text>'
+    )
+
+    parts.append(
+        f'<line x1="{x0:.1f}" x2="{x1:.1f}" y1="{y_bot:.1f}" y2="{y_bot:.1f}" stroke="{t["border_strong"]}" stroke-width="{1 * scale:.1f}"/>'
+    )
+    parts.append(
+        f'<text x="{x1:.1f}" y="{H - 12 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Generated tokens per task (of 1,080, reasoning + actions), log scale →</text>'
+    )
+
+    pts = [
+        (
+            r,
+            lx(float(r["tokens_per_task"])),
+            ly(int(r["tasks_failed_total_1080"])),
+        )
+        for r in arms
+    ]
+    for r, px, py in sorted(
+        pts,
+        key=lambda item: (
+            1
+            if (float(item[0]["u_comm_rate"]) <= 0.01 and int(item[0]["tasks_passed_1080"]) >= 270)
+            else 0
+        ),
+    ):
+        safe = float(r["u_comm_rate"]) <= 0.01 and int(r["tasks_passed_1080"]) >= 270
+        col = t["accent"] if safe else t["mark_muted"]
+        rad = (6 if safe else 5) * scale
+        parts.append(
+            f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad + 2 * scale:.1f}" fill="{t["surface_raised"]}"/>'
+        )
+        parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad:.1f}" fill="{col}"/>')
+
+    placed: list[tuple[float, float, float, float]] = [
+        (px - 7 * scale, py - 7 * scale, 14 * scale, 14 * scale) for _, px, py in pts
+    ]
+
+    def hits(rx: float, ry: float, rw: float, rh: float) -> bool:
+        if rx < pad_l or rx + rw > x1 + 2 * scale or ry < y_top - 8 * scale or ry + rh > y_bot:
+            return True
+        for ox, oy, ow, oh in placed:
+            if rx < ox + ow and rx + rw > ox and ry < oy + oh and ry + rh > oy:
+                return True
+        return False
+
+    for r, px, py in sorted(
+        pts,
+        key=lambda item: (
+            0
+            if (float(item[0]["u_comm_rate"]) <= 0.01 and int(item[0]["tasks_passed_1080"]) >= 270)
+            else 1,
+            int(item[0]["tasks_failed_total_1080"]),
+        ),
+    ):
+        safe = float(r["u_comm_rate"]) <= 0.01 and int(r["tasks_passed_1080"]) >= 270
+        s = (
+            f"{_short_name(str(r['label']))} · {r['tok_per_task_label']} ({r['tok_vs_field_label']})"
+            if safe
+            else _short_name(str(r["label"]))
+        )
+        w = (len(s) * (6.8 if safe else 6.2) + 4) * scale
+        h = 14 * scale
+        cands = [
+            (px + 10 * scale, py - h / 2, "start"),
+            (px - 10 * scale - w, py - h / 2, "end"),
+            (px - w / 2, py - 10 * scale - h, "middle"),
+            (px - w / 2, py + 10 * scale, "middle"),
+            (px + 8 * scale, py - 6 * scale - h, "start"),
+            (px + 8 * scale, py + 6 * scale, "start"),
+            (px - 8 * scale - w, py - 6 * scale - h, "end"),
+            (px - 8 * scale - w, py + 6 * scale, "end"),
+            (px - w / 2, py - 24 * scale - h, "middle"),
+            (px - w / 2, py + 24 * scale, "middle"),
+        ]
+        pick = next((c for c in cands if not hits(c[0], c[1], w, h)), None)
+        if not pick:
+            if not safe:
+                continue
+            pick = cands[0]
+        placed.append((pick[0], pick[1], w, h))
+        tx = (
+            pick[0]
+            if pick[2] == "start"
+            else (pick[0] + w if pick[2] == "end" else pick[0] + w / 2)
+        )
+        fill = t["ink"] if safe else t["ink_3"]
+        weight = 500 if safe else 400
+        parts.append(
+            f'<text x="{tx:.1f}" y="{pick[1] + 11 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="{weight}" fill="{fill}" text-anchor="{pick[2]}">{html.escape(s)}</text>'
+        )
+
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
 def build_grantt_fig3_svg(
     arms: list[dict[str, Any]], theme_name: str = "light", scale: float = 2.0
 ) -> str:
@@ -675,6 +901,7 @@ def render_grantt_v41_full_suite(
     for theme_name in ("light", "dark"):
         fig1_2x = build_grantt_fig1_svg(arms, theme_name, scale=2.0)
         fig2_2x = build_grantt_fig2_svg(arms, theme_name, scale=2.0)
+        fig_tok_2x = build_grantt_fig_tokens_svg(arms, theme_name, scale=2.0)
         fig3_2x = build_grantt_fig3_svg(arms, theme_name, scale=2.0)
 
         for base_name, svg_content in [
@@ -682,6 +909,8 @@ def render_grantt_v41_full_suite(
             ("readme-leaderboard", fig1_2x),
             ("b-cost-efficiency", fig2_2x),
             ("cost-efficiency", fig2_2x),
+            ("b-token-efficiency", fig_tok_2x),
+            ("token-efficiency", fig_tok_2x),
             ("b-categories", fig3_2x),
             ("readme-scorecard", fig3_2x),
         ]:
