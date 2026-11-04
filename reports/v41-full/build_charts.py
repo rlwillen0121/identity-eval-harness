@@ -907,22 +907,19 @@ def _compute_arm_summary(
     short_name = meta.get("short_name", display_name)
     base_label = base_labels.get(model_id, short_name)
     tier = "baseline" if is_baseline else meta.get("tier", "mid")
-    provider = (
-        "deterministic"
-        if is_baseline
-        else meta.get("provider", str(records[0].get("provider_kind", "")))
-    )
-    reported_cost_sum = sum(float(r.get("cost_usd", 0.0) or 0.0) for r in use_recs)
+    provider_kind = str(records[0].get("provider_kind", "")) if records else ""
+    provider = "deterministic" if is_baseline else meta.get("provider", provider_kind)
+    reported_cost_sum = sum(float(r.get("reported_cost_usd", 0.0) or 0.0) for r in use_recs)
     if is_baseline:
         cost_usd, cost_label, cost_basis = 0.0, "$0.00", "billed"
     elif model_id in ("qwen3.8-27b-exl3-4bit-local", "qwen3.8-flash-next-local"):
         cost_usd, cost_label, cost_basis = 0.0, "Local · $0", "local"
-    elif provider in ("openai_compatible", "grok_cli") and reported_cost_sum > 0:
+    elif provider_kind in ("openai_compatible", "grok_cli") and reported_cost_sum > 0:
         cost_usd = round(reported_cost_sum, 2)
         cost_label, cost_basis = f"${cost_usd:.2f}", "billed"
     else:
         pin, pcr, pout = retail_api_prices.get(model_id, (2.00, 0.20, 10.00))
-        if provider in ("agy_cli", "cursor_cli"):
+        if provider_kind in ("agy_cli", "cursor_cli") and model_id in retail_api_prices:
             in_tok = sum(int(r.get("input_tokens", 0) or 0) for r in use_recs)
             cr_tok = sum(int(r.get("cache_read_tokens", 0) or 0) for r in use_recs)
             out_tok = sum(int(r.get("output_tokens", 0) or 0) for r in use_recs)

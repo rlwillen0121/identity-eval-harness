@@ -38,30 +38,30 @@
 <rect x="152.0" y="248.0" width="100.0" height="848.0" rx="16.0" fill="#f3f3f3"/>
 <text x="202.0" y="1128.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="22.0" fill="#6b6b6b" text-anchor="middle">Local</text>
 <text x="2136.0" y="1192.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="500" fill="#4d4d4d" text-anchor="end">Run cost (180 scenarios), log scale →</text>
-<circle cx="1197.8" cy="976.6" r="14.0" fill="#ffffff"/>
-<circle cx="1197.8" cy="976.6" r="10.0" fill="#b3b3b3"/>
+<circle cx="1219.6" cy="976.6" r="14.0" fill="#ffffff"/>
+<circle cx="1219.6" cy="976.6" r="10.0" fill="#b3b3b3"/>
 <circle cx="1160.3" cy="776.2" r="14.0" fill="#ffffff"/>
 <circle cx="1160.3" cy="776.2" r="10.0" fill="#b3b3b3"/>
 <circle cx="1985.2" cy="560.1" r="14.0" fill="#ffffff"/>
 <circle cx="1985.2" cy="560.1" r="10.0" fill="#b3b3b3"/>
 <circle cx="1892.1" cy="631.5" r="14.0" fill="#ffffff"/>
 <circle cx="1892.1" cy="631.5" r="10.0" fill="#b3b3b3"/>
-<circle cx="1212.7" cy="1033.8" r="14.0" fill="#ffffff"/>
-<circle cx="1212.7" cy="1033.8" r="10.0" fill="#b3b3b3"/>
+<circle cx="1261.7" cy="1033.8" r="14.0" fill="#ffffff"/>
+<circle cx="1261.7" cy="1033.8" r="10.0" fill="#b3b3b3"/>
 <circle cx="1642.1" cy="857.2" r="14.0" fill="#ffffff"/>
 <circle cx="1642.1" cy="857.2" r="10.0" fill="#b3b3b3"/>
-<circle cx="1619.4" cy="935.0" r="14.0" fill="#ffffff"/>
-<circle cx="1619.4" cy="935.0" r="10.0" fill="#b3b3b3"/>
-<circle cx="1052.0" cy="903.4" r="14.0" fill="#ffffff"/>
-<circle cx="1052.0" cy="903.4" r="10.0" fill="#b3b3b3"/>
+<circle cx="1585.2" cy="935.0" r="14.0" fill="#ffffff"/>
+<circle cx="1585.2" cy="935.0" r="10.0" fill="#b3b3b3"/>
+<circle cx="1154.4" cy="903.4" r="14.0" fill="#ffffff"/>
+<circle cx="1154.4" cy="903.4" r="10.0" fill="#b3b3b3"/>
 <circle cx="1762.8" cy="942.9" r="14.0" fill="#ffffff"/>
 <circle cx="1762.8" cy="942.9" r="10.0" fill="#b3b3b3"/>
 <circle cx="1826.0" cy="642.7" r="14.0" fill="#ffffff"/>
 <circle cx="1826.0" cy="642.7" r="10.0" fill="#b3b3b3"/>
-<circle cx="730.3" cy="938.2" r="14.0" fill="#ffffff"/>
-<circle cx="730.3" cy="938.2" r="10.0" fill="#b3b3b3"/>
-<circle cx="1514.1" cy="937.0" r="14.0" fill="#ffffff"/>
-<circle cx="1514.1" cy="937.0" r="10.0" fill="#b3b3b3"/>
+<circle cx="1026.5" cy="938.2" r="14.0" fill="#ffffff"/>
+<circle cx="1026.5" cy="938.2" r="10.0" fill="#b3b3b3"/>
+<circle cx="1469.8" cy="937.0" r="14.0" fill="#ffffff"/>
+<circle cx="1469.8" cy="937.0" r="10.0" fill="#b3b3b3"/>
 <circle cx="990.2" cy="1033.1" r="14.0" fill="#ffffff"/>
 <circle cx="990.2" cy="1033.1" r="10.0" fill="#b3b3b3"/>
 <circle cx="1806.9" cy="672.4" r="14.0" fill="#ffffff"/>
@@ -80,22 +80,22 @@
 <circle cx="1028.2" cy="1020.1" r="10.0" fill="#b3b3b3"/>
 <circle cx="981.6" cy="1026.3" r="14.0" fill="#ffffff"/>
 <circle cx="981.6" cy="1026.3" r="10.0" fill="#b3b3b3"/>
-<circle cx="1828.2" cy="834.4" r="14.0" fill="#ffffff"/>
-<circle cx="1828.2" cy="834.4" r="10.0" fill="#b3b3b3"/>
-<circle cx="1678.3" cy="715.8" r="14.0" fill="#ffffff"/>
-<circle cx="1678.3" cy="715.8" r="10.0" fill="#b3b3b3"/>
-<circle cx="1289.6" cy="943.6" r="14.0" fill="#ffffff"/>
-<circle cx="1289.6" cy="943.6" r="10.0" fill="#b3b3b3"/>
-<circle cx="1193.4" cy="1049.5" r="14.0" fill="#ffffff"/>
-<circle cx="1193.4" cy="1049.5" r="10.0" fill="#b3b3b3"/>
-<circle cx="1123.2" cy="966.6" r="14.0" fill="#ffffff"/>
-<circle cx="1123.2" cy="966.6" r="10.0" fill="#b3b3b3"/>
-<circle cx="1730.5" cy="915.7" r="14.0" fill="#ffffff"/>
-<circle cx="1730.5" cy="915.7" r="10.0" fill="#b3b3b3"/>
+<circle cx="1881.5" cy="834.4" r="14.0" fill="#ffffff"/>
+<circle cx="1881.5" cy="834.4" r="10.0" fill="#b3b3b3"/>
+<circle cx="1685.9" cy="715.8" r="14.0" fill="#ffffff"/>
+<circle cx="1685.9" cy="715.8" r="10.0" fill="#b3b3b3"/>
+<circle cx="1316.8" cy="943.6" r="14.0" fill="#ffffff"/>
+<circle cx="1316.8" cy="943.6" r="10.0" fill="#b3b3b3"/>
+<circle cx="1175.1" cy="1049.5" r="14.0" fill="#ffffff"/>
+<circle cx="1175.1" cy="1049.5" r="10.0" fill="#b3b3b3"/>
+<circle cx="1114.2" cy="966.6" r="14.0" fill="#ffffff"/>
+<circle cx="1114.2" cy="966.6" r="10.0" fill="#b3b3b3"/>
+<circle cx="1729.9" cy="915.7" r="14.0" fill="#ffffff"/>
+<circle cx="1729.9" cy="915.7" r="10.0" fill="#b3b3b3"/>
 <circle cx="1844.3" cy="622.4" r="14.0" fill="#ffffff"/>
 <circle cx="1844.3" cy="622.4" r="10.0" fill="#b3b3b3"/>
-<circle cx="978.0" cy="1047.2" r="14.0" fill="#ffffff"/>
-<circle cx="978.0" cy="1047.2" r="10.0" fill="#b3b3b3"/>
+<circle cx="1008.0" cy="1047.2" r="14.0" fill="#ffffff"/>
+<circle cx="1008.0" cy="1047.2" r="10.0" fill="#b3b3b3"/>
 <circle cx="202.0" cy="930.7" r="14.0" fill="#ffffff"/>
 <circle cx="202.0" cy="930.7" r="10.0" fill="#b3b3b3"/>
 <circle cx="202.0" cy="911.2" r="14.0" fill="#ffffff"/>
@@ -114,26 +114,26 @@
 <text x="1806.0" y="650.7" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Gemini Argon</text>
 <text x="1583.2" y="678.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Daybreak Blue</text>
 <text x="1826.9" y="680.4" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Sol 5.6</text>
-<text x="1698.3" y="723.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Kimi K3.1 Pro</text>
+<text x="1705.9" y="723.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Kimi K3.1 Pro</text>
 <text x="1180.3" y="784.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Haiku 5.5</text>
 <text x="1668.0" y="807.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Terra 5.6</text>
-<text x="1848.2" y="842.4" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Grok 4.7</text>
-<text x="1622.1" y="865.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Composer 2.5</text>
-<text x="1072.0" y="911.4" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">DS V4.1 Flash</text>
+<text x="1901.5" y="842.4" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Grok 4.7</text>
+<text x="1662.1" y="865.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Composer 2.5</text>
+<text x="1174.4" y="911.4" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">DS V4.1 Flash</text>
 <text x="222.0" y="919.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Qwen 3.8 Flash</text>
-<text x="1746.5" y="897.7" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Muse Spark Open</text>
+<text x="1745.9" y="897.7" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Muse Spark Open</text>
 <text x="218.0" y="964.7" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Qwen 3.8 27B</text>
-<text x="1619.4" y="909.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="middle">DS V4 Pro</text>
-<text x="1494.1" y="945.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">GLM 5.3</text>
-<text x="750.3" y="946.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">GLM 5.3 Flash</text>
+<text x="1585.2" y="909.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="middle">DS V4 Pro</text>
+<text x="1449.8" y="945.0" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">GLM 5.3</text>
+<text x="1046.5" y="946.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">GLM 5.3 Flash</text>
 <text x="1782.8" y="950.9" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Gemini Flash</text>
-<text x="1305.6" y="977.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">MiMo V2.6 Pro</text>
-<text x="1103.2" y="974.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Muse Glimmer 30B</text>
-<text x="1213.8" y="1010.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Beam 1.0 501B</text>
+<text x="1332.8" y="977.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">MiMo V2.6 Pro</text>
+<text x="1094.2" y="974.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Muse Glimmer 30B</text>
+<text x="1235.6" y="1010.6" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Beam 1.0 501B</text>
 <text x="658.7" y="1000.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Luna 6</text>
+<text x="1048.2" y="1028.1" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">GPT-OSS 120B</text>
 <text x="961.6" y="1034.3" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">GPT-Reserve</text>
-<text x="1006.2" y="1067.1" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Luna 5.6</text>
-<text x="1232.7" y="1041.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Command A+</text>
-<text x="962.0" y="1081.2" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Nemotron 3.5</text>
-<text x="1209.4" y="1083.5" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">MiniMax M3.1</text>
+<text x="974.2" y="1067.1" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="end">Luna 5.6</text>
+<text x="1281.7" y="1041.8" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">Command A+</text>
+<text x="1191.1" y="1083.5" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24.0" font-weight="400" fill="#6b6b6b" text-anchor="start">MiniMax M3.1</text>
 </svg>
