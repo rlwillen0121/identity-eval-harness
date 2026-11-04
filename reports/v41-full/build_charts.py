@@ -750,6 +750,11 @@ def _compute_arm_summary(
         if tokens_per_task >= 1000.0
         else f"{round(tokens_per_task)}"
     )
+    total_tokens_label = (
+        f"{total_output_tokens / 1_000_000.0:.1f}M"
+        if total_output_tokens >= 1_000_000
+        else f"{total_output_tokens / 1_000.0:.0f}k"
+    )
 
     # Per-area wave/task failures out of 180 episodes
     w2_s34 = wave_stats[2]["stage34_rate"]
@@ -959,6 +964,7 @@ def _compute_arm_summary(
         "avg_cache_read_tokens": round(avg_cache_read_tokens, 1),
         "avg_reasoning_tokens": round(avg_reasoning_tokens, 1),
         "total_output_tokens": total_output_tokens,
+        "total_tokens_label": total_tokens_label,
         "tokens_per_task": tokens_per_task,
         "tokens_per_solved_task": tokens_per_solved_task,
         "tok_per_task_label": tok_per_task_label,

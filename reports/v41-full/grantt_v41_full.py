@@ -214,12 +214,12 @@ def build_grantt_fig1_svg(
             float(a["cost_usd"]),
         ),
     )
-    W = int(1220 * scale)
+    W = int(1180 * scale)
     pad = 24 * scale
     name_w = 216 * scale
     ground_w = 68 * scale
     rate_w = 84 * scale
-    tok_w = 108 * scale
+    tok_w = 76 * scale
     cost_w = 88 * scale
     row_h = 30 * scale
     bar_h = 14 * scale
@@ -271,7 +271,7 @@ def build_grantt_fig1_svg(
         f'<text x="{rate_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Solved</text>'
     )
     parts.append(
-        f'<text x="{tok_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Tok / Task</text>'
+        f'<text x="{tok_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Tokens</text>'
     )
     parts.append(
         f'<text x="{cost_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Cost</text>'
@@ -345,16 +345,14 @@ def build_grantt_fig1_svg(
             f'font-weight="500" fill="{solved_col}" text-anchor="end">{passed}/{target_n}</text>'
         )
 
-        tok_lbl = html.escape(
-            f"{r.get('tok_per_task_label', '')} ({r.get('tok_vs_field_label', '')})"
-        )
+        tok_lbl = html.escape(str(r.get("total_tokens_label", "")))
         tok_col = (
             t["accent"]
             if (is_top and float(r.get("tokens_vs_field_median", 1.0)) <= 1.0)
             else t["ink_2"]
         )
         parts.append(
-            f'<text x="{tok_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.0 * scale:.1f}" '
+            f'<text x="{tok_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.5 * scale:.1f}" '
             f'font-weight="500" fill="{tok_col}" text-anchor="end">{tok_lbl}</text>'
         )
 
@@ -598,7 +596,7 @@ def build_grantt_fig_tokens_svg(
         f'<line x1="{pad_x + 292 * scale:.1f}" x2="{pad_x + 312 * scale:.1f}" y1="{leg_y - 4 * scale:.1f}" y2="{leg_y - 4 * scale:.1f}" stroke="{t["border_strong"]}" stroke-width="{1.5 * scale:.1f}" stroke-dasharray="{4 * scale:.1f},{3 * scale:.1f}"/>'
     )
     parts.append(
-        f'<text x="{pad_x + 318 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">Field median tokens/task (1.0×)</text>'
+        f'<text x="{pad_x + 318 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">Field median tokens</text>'
     )
 
     pad_l = pad_x + 48 * scale
@@ -608,8 +606,8 @@ def build_grantt_fig_tokens_svg(
     x0 = pad_l
     x1 = W - pad_r
 
-    lo = 800.0
-    hi = 22000.0
+    lo = 0.8
+    hi = 22.0
 
     def lx(v: float) -> float:
         vc = max(lo, min(hi, v))
@@ -638,22 +636,24 @@ def build_grantt_fig_tokens_svg(
         f'<text x="{pad_x:.1f}" y="{y_top - 12 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}">Failed tasks (of 1,080)</text>'
     )
 
-    for v in (1000, 2000, 3000, 5000, 10000, 15000, 20000):
+    for v in (1, 2, 3, 5, 10, 15, 20):
         parts.append(
-            f'<line x1="{lx(v):.1f}" x2="{lx(v):.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>'
+            f'<line x1="{lx(float(v)):.1f}" x2="{lx(float(v)):.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>'
         )
-        lbl = f"{int(v // 1000)}k"
+        lbl = f"{v}M"
         parts.append(
-            f'<text x="{lx(v):.1f}" y="{y_bot + 16 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["ink_3"]}" text-anchor="middle">{lbl}</text>'
+            f'<text x="{lx(float(v)):.1f}" y="{y_bot + 16 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["ink_3"]}" text-anchor="middle">{lbl}</text>'
         )
 
-    med_tok = statistics.median([float(r["tokens_per_task"]) for r in arms]) if arms else 7280.0
-    med_x = lx(med_tok)
+    med_m = (
+        statistics.median([float(r["total_output_tokens"]) / 1e6 for r in arms]) if arms else 7.86
+    )
+    med_x = lx(med_m)
     parts.append(
         f'<line x1="{med_x:.1f}" x2="{med_x:.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border_strong"]}" stroke-width="{1.5 * scale:.1f}" stroke-dasharray="{5 * scale:.1f},{4 * scale:.1f}"/>'
     )
     parts.append(
-        f'<text x="{med_x:.1f}" y="{y_top - 10 * scale:.1f}" font-family="{FONT}" font-size="{11.5 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="middle">Field median: {med_tok / 1000.0:.1f}k/task (1.0×)</text>'
+        f'<text x="{med_x:.1f}" y="{y_top - 10 * scale:.1f}" font-family="{FONT}" font-size="{11.5 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="middle">Field median: {med_m:.1f}M</text>'
     )
     parts.append(
         f'<text x="{med_x - 10 * scale:.1f}" y="{y_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{11 * scale:.1f}" fill="{t["accent"]}" font-weight="500" text-anchor="end">← More token-efficient</text>'
@@ -666,13 +666,13 @@ def build_grantt_fig_tokens_svg(
         f'<line x1="{x0:.1f}" x2="{x1:.1f}" y1="{y_bot:.1f}" y2="{y_bot:.1f}" stroke="{t["border_strong"]}" stroke-width="{1 * scale:.1f}"/>'
     )
     parts.append(
-        f'<text x="{x1:.1f}" y="{H - 12 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Generated tokens per task (of 1,080, reasoning + actions), log scale →</text>'
+        f'<text x="{x1:.1f}" y="{H - 12 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Total tokens generated (180 scenarios), log scale →</text>'
     )
 
     pts = [
         (
             r,
-            lx(float(r["tokens_per_task"])),
+            lx(float(r["total_output_tokens"]) / 1e6),
             ly(int(r["tasks_failed_total_1080"])),
         )
         for r in arms
@@ -716,7 +716,7 @@ def build_grantt_fig_tokens_svg(
     ):
         safe = float(r["u_comm_rate"]) <= 0.01 and int(r["tasks_passed_1080"]) >= 270
         s = (
-            f"{_short_name(str(r['label']))} · {r['tok_per_task_label']} ({r['tok_vs_field_label']})"
+            f"{_short_name(str(r['label']))} · {r['total_tokens_label']}"
             if safe
             else _short_name(str(r["label"]))
         )

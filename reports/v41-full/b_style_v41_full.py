@@ -233,6 +233,8 @@ class V41BStyleRow:
     tok_per_task_label: str = ""
     tok_vs_field_label: str = "1.0×"
     tokens_vs_field_median: float = 1.0
+    total_output_tokens: int = 0
+    total_tokens_label: str = ""
 
 
 def add_header_v41_full(
@@ -349,6 +351,8 @@ def load_v41_b_rows(arms: Sequence[dict[str, Any]]) -> list[V41BStyleRow]:
                 tok_per_task_label=str(arm.get("tok_per_task_label", "")),
                 tok_vs_field_label=str(arm.get("tok_vs_field_label", "1.0×")),
                 tokens_vs_field_median=float(arm.get("tokens_vs_field_median", 1.0)),
+                total_output_tokens=int(arm.get("total_output_tokens", 0)),
+                total_tokens_label=str(arm.get("total_tokens_label", "")),
             )
         )
 
@@ -469,22 +473,21 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow], theme_name: str = "ligh
     )
     svg.text(class_col_x, 256, "Model Class", 17, pal.ink, bold=True, anchor="middle")
     svg.text(perf_col_x, 256, "Solved Tasks", 17, pal.ink, bold=True, anchor="middle")
-    svg.text(tok_col_x, 256, "Tok / Task (vs Field)", 17, pal.ink, bold=True, anchor="middle")
+    svg.text(tok_col_x, 256, "Total Tokens", 17, pal.ink, bold=True, anchor="middle")
     svg.text(unsafe_col_x, 256, "Unsafe Rate", 17, pal.ink, bold=True, anchor="middle")
 
     for block_idx, (tier_title, bar_color, pill_bg, members, header_y, start_y) in enumerate(
         tier_blocks
     ):
         avg_sc = sum(r.cat_avg_score * 100.0 for r in members) / max(len(members), 1)
-        avg_tok = sum(r.tokens_per_task for r in members) / max(len(members), 1)
-        avg_rel = sum(r.tokens_vs_field_median for r in members) / max(len(members), 1)
+        avg_tok_m = sum(r.total_output_tokens / 1e6 for r in members) / max(len(members), 1)
         if block_idx > 0:
             svg.line(100, header_y - 32, WIDTH - 100, header_y - 32, pal.grid, 1.5)
         svg.text(100, header_y, f"{tier_title} ({len(members)} models)", 21, bar_color, bold=True)
         svg.text(
             bar_x0 + bar_span,
             header_y,
-            f"Class avg: {avg_sc:.1f}%  ·  Avg tok/task: {avg_tok / 1000.0:.1f}k ({avg_rel:.2f}× med)",
+            f"Class avg: {avg_sc:.1f}%  ·  Avg tokens: {avg_tok_m:.1f}M",
             17,
             pal.muted,
             bold=True,
@@ -549,8 +552,8 @@ def render_v41_model_tiers(rows: Sequence[V41BStyleRow], theme_name: str = "ligh
             svg.text(
                 tok_col_x,
                 cy + 8,
-                f"{row.tok_per_task_label} · {row.tok_vs_field_label}",
-                17,
+                row.total_tokens_label,
+                18,
                 pal.ink2,
                 weight=600,
                 anchor="middle",
