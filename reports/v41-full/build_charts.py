@@ -824,64 +824,132 @@ def _compute_arm_summary(
             "g_srr": round(sum(f_gsrr_list) / float(n_f), 6) if n_f > 0 else None,
         }
 
-    # 180-scenario (3x v41_lite) estimated/billed full-suite costs
-    cost_meta: dict[str, tuple[str, float, str, str]] = {
-        "gpt-6-astra-t0-medium": ("GPT-6 Astra", 28.20, "~$28.20", "est"),
-        "gpt-6.1-sol-t0-medium": ("GPT-6.1 Sol", 15.60, "~$15.60", "est"),
-        "gpt-6.1-terra-t0-medium": ("GPT-6.1 Terra", 7.80, "~$7.80", "est"),
-        "claude-opus-5-5-t0-medium": ("Claude Opus 5.5", 50.40, "~$50.40", "est"),
-        "gemini-4-argon-t0-medium": ("Gemini 4 Argon", 16.80, "~$16.80", "est"),
-        "claude-sonnet-5-5-t0-medium": ("Claude Sonnet 5.5", 14.25, "~$14.25", "est"),
-        "muse-spark-1.3-t0-medium": ("Muse Spark 1.3", 8.70, "~$8.70", "est"),
-        "muse-wonder-1.0-t0-medium": ("Muse Wonder 1.0", 12.30, "~$12.30", "est"),
-        "gemini-3.8-flash-t0-medium": ("Gemini 3.8 Flash", 1.65, "~$1.65", "est"),
-        "kimi-k3-t0-medium": ("Kimi K3", 2.55, "$2.55", "billed"),
-        "claude-haiku-5-5-t0-medium": ("Claude Haiku 5.5", 4.05, "~$4.05", "est"),
-        "grok-4.7-t0-medium": ("Grok 4.7", 9.30, "$9.30", "billed"),
-        "gpt-6-luna-t0-medium": ("GPT-6 Luna", 4.65, "~$4.65", "est"),
-        "qwen3.8-27b-exl3-4bit-local": ("Qwen 3.8 27B", 0.00, "Local · $0", "local"),
-        "claude-fable-5-1-t0-medium": ("Claude Fable 5.1", 2.85, "~$2.85", "est"),
-        "gpt-oss-120b-t0-medium": ("GPT-OSS 120B", 0.84, "~$0.84", "est"),
-        "qwen3.8-flash-next-local": ("Qwen 3.8 Flash", 0.00, "Local · $0", "local"),
-        "composer-2.5-t0-medium": ("Composer 2.5", 9.00, "~$9.00", "est"),
-        "gpt-daybreak-blue-t0-medium": ("GPT Daybreak Blue", 18.00, "~$18.00", "est"),
-        "gpt-reserve-t0-medium": ("GPT-Reserve", 3.60, "~$3.60", "est"),
-        "gpt-6-sol-t0-medium": ("GPT-6 Sol", 15.60, "~$15.60", "est"),
-        "gpt-5.6-terra-t0-medium": ("GPT-5.6 Terra", 15.60, "~$15.60", "est"),
-        "gpt-5.6-sol-t0-medium": ("GPT-5.6 Sol", 15.60, "~$15.60", "est"),
-        "gpt-5.6-luna-t0-medium": ("GPT-5.6 Luna", 4.65, "~$4.65", "est"),
-        "glm-5.3-flash-t0-medium": ("GLM 5.3 Flash", 0.72, "$0.72", "billed"),
-        "deepseek-v4.1-flash-t0-medium": ("DeepSeek V4.1 Flash", 1.02, "$1.02", "billed"),
-        "minimax-m3.1-flash-t0-medium": ("MiniMax M3.1 Flash", 0.35, "$0.35", "billed"),
-        "beam-1.0-501b-t0-medium": ("Beam 1.0 501B", 2.70, "$2.70", "billed"),
-        "muse-glimmer-30b-t0-medium": ("Muse Glimmer 30B", 0.90, "$0.90", "billed"),
-        "nemotron-3.5-super-t0-medium": ("Nemotron 3.5 Super", 1.80, "$1.80", "billed"),
-        "command-a-plus-t0-medium": ("Command A+", 4.50, "$4.50", "billed"),
-        "mimo-v2.6-pro-t0-medium": ("MiMo V2.6 Pro", 2.40, "$2.40", "billed"),
-        "step-5-preview-t0-medium": ("Step 5 Preview", 6.30, "$6.30", "billed"),
-        "glm-5.3-t0-medium": ("GLM 5.3", 3.45, "$3.45", "billed"),
-        "deepseek-v4-pro-t0-medium": ("DeepSeek V4 Pro", 7.20, "$7.20", "billed"),
-        "kimi-k3.1-pro-t0-medium": ("Kimi K3.1 Pro", 64.01, "$64.01", "billed"),
-        "muse-spark-open-t0-medium": ("Muse Spark Open", 74.50, "$74.50", "billed"),
+    base_labels: dict[str, str] = {
+        "gpt-6-astra-t0-medium": "GPT-6 Astra",
+        "gpt-6.1-sol-t0-medium": "GPT-6.1 Sol",
+        "gpt-6.1-terra-t0-medium": "GPT-6.1 Terra",
+        "claude-opus-5-5-t0-medium": "Claude Opus 5.5",
+        "gemini-4-argon-t0-medium": "Gemini 4 Argon",
+        "claude-sonnet-5-5-t0-medium": "Claude Sonnet 5.5",
+        "muse-spark-1.3-t0-medium": "Muse Spark 1.3",
+        "muse-wonder-1.0-t0-medium": "Muse Wonder 1.0",
+        "gemini-3.8-flash-t0-medium": "Gemini 3.8 Flash",
+        "kimi-k3-t0-medium": "Kimi K3",
+        "claude-haiku-5-5-t0-medium": "Claude Haiku 5.5",
+        "grok-4.7-t0-medium": "Grok 4.7",
+        "gpt-6-luna-t0-medium": "GPT-6 Luna",
+        "qwen3.8-27b-exl3-4bit-local": "Qwen 3.8 27B",
+        "claude-fable-5-1-t0-medium": "Claude Fable 5.1",
+        "gpt-oss-120b-t0-medium": "GPT-OSS 120B",
+        "qwen3.8-flash-next-local": "Qwen 3.8 Flash",
+        "composer-2.5-t0-medium": "Composer 2.5",
+        "gpt-daybreak-blue-t0-medium": "GPT Daybreak Blue",
+        "gpt-reserve-t0-medium": "GPT-Reserve",
+        "gpt-6-sol-t0-medium": "GPT-6 Sol",
+        "gpt-5.6-terra-t0-medium": "GPT-5.6 Terra",
+        "gpt-5.6-sol-t0-medium": "GPT-5.6 Sol",
+        "gpt-5.6-luna-t0-medium": "GPT-5.6 Luna",
+        "glm-5.3-flash-t0-medium": "GLM 5.3 Flash",
+        "deepseek-v4.1-flash-t0-medium": "DeepSeek V4.1 Flash",
+        "minimax-m3.1-flash-t0-medium": "MiniMax M3.1 Flash",
+        "beam-1.0-501b-t0-medium": "Beam 1.0 501B",
+        "muse-glimmer-30b-t0-medium": "Muse Glimmer 30B",
+        "nemotron-3.5-super-t0-medium": "Nemotron 3.5 Super",
+        "command-a-plus-t0-medium": "Command A+",
+        "mimo-v2.6-pro-t0-medium": "MiMo V2.6 Pro",
+        "step-5-preview-t0-medium": "Step 5 Preview",
+        "glm-5.3-t0-medium": "GLM 5.3",
+        "deepseek-v4-pro-t0-medium": "DeepSeek V4 Pro",
+        "kimi-k3.1-pro-t0-medium": "Kimi K3.1 Pro",
+        "muse-spark-open-t0-medium": "Muse Spark Open",
+    }
+    retail_api_prices: dict[str, tuple[float, float, float]] = {
+        "gpt-6-astra-t0-medium": (10.00, 1.00, 50.00),
+        "gpt-6.1-sol-t0-medium": (2.00, 0.10, 10.00),
+        "gpt-6.1-terra-t0-medium": (1.00, 0.05, 5.00),
+        "gpt-6-sol-t0-medium": (2.00, 0.20, 10.00),
+        "gpt-6-luna-t0-medium": (0.10, 0.01, 0.50),
+        "gpt-daybreak-blue-t0-medium": (2.00, 0.20, 10.00),
+        "gpt-reserve-t0-medium": (0.20, 0.02, 1.20),
+        "gpt-5.6-sol-t0-medium": (4.00, 0.40, 20.00),
+        "gpt-5.6-terra-t0-medium": (2.00, 0.20, 12.00),
+        "gpt-5.6-luna-t0-medium": (0.20, 0.02, 1.20),
+        "gpt-oss-120b-t0-medium": (0.15, 0.075, 0.60),
+        "claude-opus-5-5-t0-medium": (4.00, 0.20, 20.00),
+        "claude-sonnet-5-5-t0-medium": (2.00, 0.10, 10.00),
+        "claude-haiku-5-5-t0-medium": (0.10, 0.01, 0.50),
+        "claude-fable-5-1-t0-medium": (10.00, 0.25, 50.00),
+        "gemini-4-argon-t0-medium": (2.00, 0.10, 10.00),
+        "gemini-3.8-flash-t0-medium": (0.83, 0.083, 4.12),
+        "muse-wonder-1.0-t0-medium": (4.00, 0.20, 20.00),
+        "muse-spark-1.3-t0-medium": (1.25, 0.15, 4.25),
+        "muse-spark-open-t0-medium": (1.25, 0.15, 4.25),
+        "muse-glimmer-30b-t0-medium": (0.30, 0.04, 1.20),
+        "composer-2.5-t0-medium": (0.50, 0.05, 2.50),
+        "grok-4.7-t0-medium": (2.00, 0.50, 6.00),
+        "deepseek-v4-pro-t0-medium": (1.60, 0.135, 3.20),
+        "deepseek-v4.1-flash-t0-medium": (0.04, 0.018, 0.50),
+        "glm-5.3-t0-medium": (0.08, 0.076, 3.60),
+        "glm-5.3-flash-t0-medium": (0.03, 0.027, 0.10),
+        "kimi-k3-t0-medium": (0.20, 0.19, 16.00),
+        "kimi-k3.1-pro-t0-medium": (2.00, 0.20, 10.00),
+        "mimo-v2.6-pro-t0-medium": (0.43, 0.004, 0.87),
+        "minimax-m3.1-flash-t0-medium": (0.15, 0.015, 0.60),
+        "beam-1.0-501b-t0-medium": (0.25, 0.05, 1.00),
+        "command-a-plus-t0-medium": (0.30, 0.15, 1.50),
+        "nemotron-3.5-super-t0-medium": (0.15, 0.02, 0.50),
+        "step-5-preview-t0-medium": (1.00, 0.10, 2.70),
     }
     meta = MODEL_METADATA.get(model_id, {})
     baseline_map = {b_id: (b_name, b_desc) for b_id, b_name, b_desc in BASELINE_ORDER}
     is_baseline = model_id in baseline_map
     display_name = meta.get("display_name", baseline_map.get(model_id, (model_id, ""))[0])
     short_name = meta.get("short_name", display_name)
-    base_label, cost_usd, cost_label, cost_basis = cost_meta.get(
-        model_id, (short_name, 0.0, "$0.00", "billed")
-    )
-    label = (
-        f"{base_label} ({n_valid}/180)"
-        if (not is_baseline and 0 < n_valid < V41_FULL_EXPECTED_EPISODES)
-        else base_label
-    )
+    base_label = base_labels.get(model_id, short_name)
     tier = "baseline" if is_baseline else meta.get("tier", "mid")
     provider = (
         "deterministic"
         if is_baseline
         else meta.get("provider", str(records[0].get("provider_kind", "")))
+    )
+    reported_cost_sum = sum(float(r.get("cost_usd", 0.0) or 0.0) for r in use_recs)
+    if is_baseline:
+        cost_usd, cost_label, cost_basis = 0.0, "$0.00", "billed"
+    elif model_id in ("qwen3.8-27b-exl3-4bit-local", "qwen3.8-flash-next-local"):
+        cost_usd, cost_label, cost_basis = 0.0, "Local · $0", "local"
+    elif provider in ("openai_compatible", "grok_cli") and reported_cost_sum > 0:
+        cost_usd = round(reported_cost_sum, 2)
+        cost_label, cost_basis = f"${cost_usd:.2f}", "billed"
+    else:
+        pin, pcr, pout = retail_api_prices.get(model_id, (2.00, 0.20, 10.00))
+        if provider in ("agy_cli", "cursor_cli"):
+            in_tok = sum(int(r.get("input_tokens", 0) or 0) for r in use_recs)
+            cr_tok = sum(int(r.get("cache_read_tokens", 0) or 0) for r in use_recs)
+            out_tok = sum(int(r.get("output_tokens", 0) or 0) for r in use_recs)
+            cost_usd = round((in_tok * pin + cr_tok * pcr + out_tok * pout) / 1e6, 2)
+        else:
+            ep_cost_sum = 0.0
+            for r in use_recs:
+                t_turns = max(1, int(r.get("turns_used", 1) or 1))
+                tot_in = (
+                    int(r.get("input_tokens", 0) or 0)
+                    + int(r.get("cache_read_tokens", 0) or 0)
+                    + int(r.get("cache_write_tokens", 0) or 0)
+                ) / 1e6
+                out_m = int(r.get("output_tokens", 0) or 0) / 1e6
+                uncached_f = min(1.0, (1.0 / t_turns) + 0.05)
+                ep_cost_sum += (
+                    (tot_in * uncached_f * pin)
+                    + (tot_in * (1.0 - uncached_f) * pcr)
+                    + (out_m * pout)
+                )
+            cost_usd = round(ep_cost_sum, 2)
+        cost_label, cost_basis = f"${cost_usd:.2f}", "retail_api"
+
+    label = (
+        f"{base_label} ({n_valid}/180)"
+        if (not is_baseline and 0 < n_valid < V41_FULL_EXPECTED_EPISODES)
+        else base_label
     )
 
     return {

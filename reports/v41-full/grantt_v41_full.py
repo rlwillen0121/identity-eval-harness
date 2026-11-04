@@ -380,7 +380,7 @@ def build_grantt_fig2_svg(
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
         f'<rect width="{W}" height="{H}" rx="{16 * scale:.0f}" fill="{t["surface_raised"]}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>',
-        f'<text x="{pad_x:.1f}" y="{38 * scale:.1f}" font-family="{FONT}" font-size="{20 * scale:.1f}" font-weight="600" fill="{t["ink"]}" letter-spacing="-0.01em">Sol and Astra: highest accuracy, lowest frontier cost (v41_full)</text>',
+        f'<text x="{pad_x:.1f}" y="{38 * scale:.1f}" font-family="{FONT}" font-size="{20 * scale:.1f}" font-weight="600" fill="{t["ink"]}" letter-spacing="-0.01em">GPT-6.1 Sol and Terra lead the frontier cost–accuracy Pareto curve (v41_full)</text>',
     ]
 
     leg_y = 66 * scale
@@ -396,12 +396,6 @@ def build_grantt_fig2_svg(
     parts.append(
         f'<text x="{pad_x + 160 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">&gt;1% unsafe actions</text>'
     )
-    parts.append(
-        f'<circle cx="{pad_x + 298 * scale:.1f}" cy="{leg_y - 4 * scale:.1f}" r="{4 * scale:.1f}" fill="{t["surface_raised"]}" stroke="{t["ink_3"]}" stroke-width="{2 * scale:.1f}"/>'
-    )
-    parts.append(
-        f'<text x="{pad_x + 308 * scale:.1f}" y="{leg_y:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" fill="{t["ink_2"]}">Estimated cost</text>'
-    )
 
     lane_w = 64 * scale
     pad_l = pad_x + 48 * scale
@@ -414,7 +408,7 @@ def build_grantt_fig2_svg(
     priced = [r for r in arms if r["cost_basis"] != "local" and float(r["cost_usd"]) > 0]
     costs = [float(r["cost_usd"]) for r in priced] or [1.0]
     lo = 0.5 if min(costs) >= 0.5 else 10 ** math.floor(math.log10(min(costs)))
-    hi = 10 ** math.ceil(math.log10(max(costs) * 1.15))
+    hi = 300.0
 
     def lx(v: float) -> float:
         return x0 + (math.log10(v) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)) * (x1 - x0)
@@ -494,12 +488,7 @@ def build_grantt_fig2_svg(
         parts.append(
             f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad + 2 * scale:.1f}" fill="{t["surface_raised"]}"/>'
         )
-        if r["cost_basis"] == "est":
-            parts.append(
-                f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad - 1 * scale:.1f}" fill="{t["surface_raised"]}" stroke="{col}" stroke-width="{2.5 * scale:.1f}"/>'
-            )
-        else:
-            parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad:.1f}" fill="{col}"/>')
+        parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{rad:.1f}" fill="{col}"/>')
 
     placed: list[tuple[float, float, float, float]] = [
         (px - 7 * scale, py - 7 * scale, 14 * scale, 14 * scale) for _, px, py in pts
