@@ -305,6 +305,13 @@ MODEL_METADATA: dict[str, dict[str, str]] = {
         "provider": "openai_compatible",
         "vendor": "moonshot",
     },
+    "muse-spark-open-t0-medium": {
+        "display_name": "Muse Spark Open (T0, medium)",
+        "short_name": "Muse Spark Open (T0)",
+        "tier": "open",
+        "provider": "openai_compatible",
+        "vendor": "meta",
+    },
 }
 
 BASELINE_ORDER: tuple[tuple[str, str, str], ...] = (
@@ -850,6 +857,7 @@ def _compute_arm_summary(
         "glm-5.3-t0-medium": ("GLM 5.3", 3.45, "$3.45", "billed"),
         "deepseek-v4-pro-t0-medium": ("DeepSeek V4 Pro", 7.20, "$7.20", "billed"),
         "kimi-k3.1-pro-t0-medium": ("Kimi K3.1 Pro", 64.01, "$64.01", "billed"),
+        "muse-spark-open-t0-medium": ("Muse Spark Open", 74.50, "$74.50", "billed"),
     }
     meta = MODEL_METADATA.get(model_id, {})
     baseline_map = {b_id: (b_name, b_desc) for b_id, b_name, b_desc in BASELINE_ORDER}
