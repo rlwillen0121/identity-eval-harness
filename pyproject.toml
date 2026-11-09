@@ -32,6 +32,7 @@ classifiers = [
   "Topic :: Security",
 ]
 dependencies = [
+  "defusedxml>=0.7.1",
   "pydantic>=2.9",
   "typer>=0.15",
   "pyyaml>=6.0",

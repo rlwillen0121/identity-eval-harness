@@ -4,7 +4,6 @@ bypass, subprocess resource limits, and optional macOS OS-level containment)."""
 from __future__ import annotations
 
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -241,7 +240,7 @@ def test_stdout_scan_is_capped() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Fix 3: optional OS-level containment (macOS sandbox-exec) with graceful fallback
+# Fix 3: optional OS-level containment with fail-closed wrapper errors
 # --------------------------------------------------------------------------------------
 
 _DARWIN_SANDBOX = sys.platform == "darwin" and os.access("/usr/bin/sandbox-exec", os.X_OK)
@@ -255,13 +254,12 @@ def test_launch_argv_respects_keyword_and_env_switch(monkeypatch: pytest.MonkeyP
 
         monkeypatch.setenv("IDENTITYBENCH_OS_SANDBOX", "0")
         assert os_sandbox_available() is False
-        argv_env, sandboxed_env = _build_launch_argv("pass", work_dir, os_sandbox=True)
-        assert sandboxed_env is False
-        assert argv_env == argv_off
+        with pytest.raises(RuntimeError, match="requested but is disabled or unavailable"):
+            _build_launch_argv("pass", work_dir, os_sandbox=True)
 
         monkeypatch.delenv("IDENTITYBENCH_OS_SANDBOX")
-        argv_on, sandboxed_on = _build_launch_argv("pass", work_dir, os_sandbox=True)
         if _DARWIN_SANDBOX:
+            argv_on, sandboxed_on = _build_launch_argv("pass", work_dir, os_sandbox=True)
             assert sandboxed_on is True
             assert argv_on[0] == "/usr/bin/sandbox-exec"
             assert argv_on[1] == "-p"
@@ -274,7 +272,28 @@ def test_launch_argv_respects_keyword_and_env_switch(monkeypatch: pytest.MonkeyP
             assert "procargs" not in argv_on[2]
             assert argv_on[3:6] == [sys.executable, "-I", "-S"]
         else:
-            assert sandboxed_on is False
+            with pytest.raises(RuntimeError, match="requested but is disabled or unavailable"):
+                _build_launch_argv("pass", work_dir, os_sandbox=True)
+
+
+def test_requested_os_sandbox_unavailable_fails_without_running_connector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _connector_target()
+    ref_code = build_reference_connector_code(target.target_id)
+    monkeypatch.setattr(sandbox_mod, "os_sandbox_available", lambda: False)
+    monkeypatch.setattr(
+        sandbox_mod,
+        "_run_harness_process",
+        lambda *_args, **_kwargs: pytest.fail("connector ran without requested OS containment"),
+    )
+
+    result = execute_connector_in_sandbox(ref_code, target, os_sandbox=True)
+
+    assert result.passed is False
+    assert result.os_sandbox_active is False
+    assert result.violations == ("SUBPROCESS_FAILURE", "OS_SANDBOX_UNAVAILABLE")
+    assert result.error is not None and "requested but is disabled or unavailable" in result.error
 
 
 @pytest.mark.skipif(not _DARWIN_SANDBOX, reason="macOS sandbox-exec not available")
@@ -379,26 +398,36 @@ def test_reference_connector_passes_under_os_sandbox() -> None:
 
 
 @pytest.mark.skipif(not _DARWIN_SANDBOX, reason="macOS sandbox-exec not available")
-def test_os_sandbox_launch_failure_falls_back_and_warns_every_time(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+def test_os_sandbox_launch_failure_does_not_retry_without_containment(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target = _connector_target()
     ref_code = build_reference_connector_code(target.target_id)
+    original_run = sandbox_mod._run_harness_process
+    calls = 0
+
+    def count_run(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(sandbox_mod, "_run_harness_process", count_run)
     monkeypatch.setattr(
         sandbox_mod, "build_macos_sandbox_profile", lambda _work_dir: "(version 1) (bogus"
     )
-    with caplog.at_level(logging.WARNING, logger="identitybench.v3.sandbox"):
-        first = execute_connector_in_sandbox(ref_code, target, os_sandbox=True)
-        second = execute_connector_in_sandbox(ref_code, target, os_sandbox=True)
-    assert first.passed is True and first.score == 1.0
-    assert second.passed is True and second.score == 1.0
+
+    first = execute_connector_in_sandbox(ref_code, target, os_sandbox=True)
+    second = execute_connector_in_sandbox(ref_code, target, os_sandbox=True)
+
+    assert first.passed is False
+    assert second.passed is False
     assert first.os_sandbox_active is False
     assert second.os_sandbox_active is False
-    fallback_warnings = [
-        r for r in caplog.records if "OS-level sandbox launch failed" in r.getMessage()
-    ]
-    assert len(fallback_warnings) == 2
-    assert all(r.levelno == logging.WARNING for r in fallback_warnings)
+    assert first.violations == ("SUBPROCESS_FAILURE", "OS_SANDBOX_LAUNCH_FAILED")
+    assert second.violations == ("SUBPROCESS_FAILURE", "OS_SANDBOX_LAUNCH_FAILED")
+    assert "sandbox-exec:" in (first.error or "")
+    assert "sandbox-exec:" in (second.error or "")
+    assert calls == 2  # one wrapper attempt per call; no plain-interpreter retry
 
 
 # Raw MIB form (CTL_KERN=1, KERN_PROCARGS2=49): this bypasses the sysctl *name* allowlist and

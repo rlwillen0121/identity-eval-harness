@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 import pytest
+from defusedxml.common import EntitiesForbidden
 
 from identitybench.report.cost_quality import (
     LABEL_ALL,
@@ -211,6 +212,22 @@ def test_text_width_is_per_character_and_padded() -> None:
     lines = wrap("one two three four", width, 12)
     assert lines[0] == "one two" and " ".join(lines) == "one two three four"
     assert all(text_width(line, 12) <= width for line in lines)
+
+
+def test_text_boxes_rejects_entity_expansion_without_exposing_content() -> None:
+    payload = "sensitive-entity-content"
+    svg = (
+        '<!DOCTYPE svg [<!ENTITY secret "'
+        + payload
+        + '">]><svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="12">'
+        + "&secret;"
+        + "</text></svg>"
+    )
+
+    with pytest.raises(EntitiesForbidden) as error:
+        text_boxes(svg)
+
+    assert payload not in str(error.value)
 
 
 def test_a_subtitle_wraps_into_even_lines_never_an_orphan() -> None:

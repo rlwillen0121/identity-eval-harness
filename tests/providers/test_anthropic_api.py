@@ -436,6 +436,32 @@ async def test_api_errors_become_error_responses(error: Exception, fragment: str
     assert response.latency_s >= 0
 
 
+async def test_api_error_redacts_configured_values_from_error_and_metadata(
+    monkeypatch,
+) -> None:
+    key = "synthetic-credential-7319"
+    host = "synthetic-gateway.invalid"
+    endpoint = f"https://{host}/v1"
+    monkeypatch.setenv("AUTH_BLOB", key)
+    monkeypatch.setenv("SERVICE_ADDR", endpoint)
+    request = httpx2.Request("POST", f"{endpoint}/messages")
+    response_obj = httpx2.Response(
+        400,
+        request=request,
+        headers={"request-id": f"request-{key}-{host}"},
+    )
+    error = anthropic.BadRequestError(
+        f"request rejected for {key} at {endpoint}", response=response_obj, body=None
+    )
+    response = await provider(error, api_key_env="AUTH_BLOB", base_url_env="SERVICE_ADDR").complete(
+        make_request()
+    )
+    assert response.error is not None
+    assert key not in response.error and host not in response.error
+    assert response.raw is not None
+    assert key not in str(response.raw) and host not in str(response.raw)
+
+
 async def test_connection_errors_become_error_responses() -> None:
     request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     response = await provider(anthropic.APITimeoutError(request)).complete(make_request())

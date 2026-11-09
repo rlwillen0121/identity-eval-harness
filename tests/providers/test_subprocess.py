@@ -19,6 +19,7 @@ from identitybench.providers._subprocess import (
     kill_all_live,
     live_groups,
     redact,
+    redact_diagnostics,
     register_group,
     retry_transient,
     run_command,
@@ -234,6 +235,45 @@ def test_redact_masks_secret_env_values_and_key_shapes() -> None:
     assert "eyJhbGciOiJIUzI1NiJ9" not in redacted
     assert "short=abc" in redacted  # too short to be a credential worth masking
     assert "/usr/bin:/bin" in redacted  # not a credential-named variable
+
+
+def test_redact_masks_explicitly_configured_values_with_arbitrary_names() -> None:
+    key = "synthetic-credential-7319"
+    endpoint = "https://synthetic-gateway.invalid/v1"
+    redacted = redact(
+        f"key={key} host=synthetic-gateway.invalid url={endpoint}",
+        env={"AUTH_BLOB": key, "SERVICE_ADDR": endpoint},
+        explicit_env_names=("AUTH_BLOB", "SERVICE_ADDR"),
+    )
+    assert key not in redacted
+    assert "synthetic-gateway.invalid" not in redacted
+    assert redacted.count("<redacted>") == 3
+
+
+def test_redact_diagnostics_recurses_and_preserves_functional_replay_payloads() -> None:
+    key = "synthetic-credential-7319"
+    endpoint = "https://synthetic-gateway.invalid/v1"
+    payload = {
+        "request": {"message": f"failed for {key}", "urls": [endpoint]},
+        "trace": ("host synthetic-gateway.invalid", [key]),
+        f"diagnostic-{key}": "safe value",
+        "metadata": {"assistant_content": [{"text": f"diagnostic {key} {endpoint}"}]},
+        "assistant_content": [{"text": f"preserve {key} {endpoint}"}],
+    }
+    redacted = redact_diagnostics(
+        payload,
+        env={"AUTH_BLOB": key, "SERVICE_ADDR": endpoint},
+        explicit_env_names=("AUTH_BLOB", "SERVICE_ADDR"),
+    )
+    assert isinstance(redacted, dict)
+    assert "synthetic-credential-7319" not in str(redacted["request"])
+    assert "synthetic-gateway.invalid" not in str(redacted["trace"])
+    diagnostics = {name: item for name, item in redacted.items() if name != "assistant_content"}
+    assert key not in str(diagnostics)
+    assert any(name == "diagnostic-<redacted>" for name in redacted)
+    assert "synthetic-credential-7319" not in str(redacted["metadata"])
+    assert "synthetic-gateway.invalid" not in str(redacted["metadata"])
+    assert redacted["assistant_content"] == payload["assistant_content"]
 
 
 # Fake tokens in the real formats, assembled at run time so no literal looks like a live secret

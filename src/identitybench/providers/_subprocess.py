@@ -25,7 +25,7 @@ import re
 import signal
 import threading
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -360,12 +360,18 @@ def url_hostname(value: str) -> str | None:
     return host
 
 
-def redact(text: str, env: Mapping[str, str] | None = None) -> str:
+def redact(
+    text: str,
+    env: Mapping[str, str] | None = None,
+    *,
+    explicit_env_names: Collection[str] = (),
+) -> str:
     """Mask secrets before text reaches a log, an error message or ``ModelResponse.raw``.
 
     Masks, in order:
 
-    - the values of credential- and endpoint-looking environment variables (names ending in
+    - the values of explicitly selected environment variables and credential- and
+      endpoint-looking environment variables (names ending in
       KEY, TOKEN, SECRET, PASSWORD, CREDENTIAL(S), _URL, _ENDPOINT, _HOST, _AUTH or _BASE), and
       the JSON-escaped form of any such value holding a ``/`` (``https:\\/\\/...``), as a CLI's
       JSON error output would spell it;
@@ -380,10 +386,12 @@ def redact(text: str, env: Mapping[str, str] | None = None) -> str:
     source = os.environ if env is None else env
     values: set[str] = set()
     hosts: set[str] = set()
+    explicit_names = frozenset(explicit_env_names)
     for name, value in source.items():
-        if not _SECRET_NAME_RE.search(name):
+        explicit = name in explicit_names
+        if not explicit and not _SECRET_NAME_RE.search(name):
             continue
-        if len(value) >= _MIN_SECRET_CHARS:
+        if value and (explicit or len(value) >= _MIN_SECRET_CHARS):
             values.add(value)
             if "/" in value:
                 values.add(value.replace("/", "\\/"))
@@ -395,6 +403,47 @@ def redact(text: str, env: Mapping[str, str] | None = None) -> str:
     for host in sorted(hosts, key=len, reverse=True):
         text = re.sub(rf"\b{re.escape(host)}\b", _REDACTED, text)
     return _SECRET_VALUE_RE.sub(_REDACTED, text)
+
+
+_FUNCTIONAL_RAW_KEYS = frozenset({"assistant_content"})
+"""Raw response payloads replayed to preserve provider-specific tool turns."""
+
+
+def redact_diagnostics(
+    value: object,
+    env: Mapping[str, str] | None = None,
+    *,
+    explicit_env_names: Collection[str] = (),
+) -> object:
+    """Recursively redact diagnostic keys and values.
+
+    The root ``assistant_content`` value is provider-specific replay data, so retain it verbatim.
+    The same key nested in diagnostic metadata has no such contract and is scrubbed normally.
+    """
+
+    def scrub(item: object, *, root: bool = False) -> object:
+        if isinstance(item, str):
+            return redact(item, env, explicit_env_names=explicit_env_names)
+        if isinstance(item, Mapping):
+            redacted: dict[object, object] = {}
+            for key, child in item.items():
+                safe_key = (
+                    redact(key, env, explicit_env_names=explicit_env_names)
+                    if isinstance(key, str)
+                    else key
+                )
+                preserve_replay_payload = (
+                    root and isinstance(key, str) and key in _FUNCTIONAL_RAW_KEYS
+                )
+                redacted[safe_key] = child if preserve_replay_payload else scrub(child)
+            return redacted
+        if isinstance(item, list):
+            return [scrub(child) for child in item]
+        if isinstance(item, tuple):
+            return tuple(scrub(child) for child in item)
+        return item
+
+    return scrub(value, root=True)
 
 
 def tail(text: str, limit: int = 2000) -> str:

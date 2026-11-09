@@ -27,10 +27,11 @@ from __future__ import annotations
 
 import math
 import re
-import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from dataclasses import dataclass
 from html import escape
+
+from defusedxml import ElementTree as ET
 
 __all__ = [
     "FONT",

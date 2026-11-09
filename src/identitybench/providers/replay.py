@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args
 
+from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     ModelRequest,
     ModelResponse,
@@ -50,8 +51,13 @@ _USAGE_FIELDS = frozenset(field.name for field in dataclasses.fields(Usage))
 
 
 def response_to_dict(response: ModelResponse) -> dict[str, Any]:
-    """JSON-ready form of a response (the inverse of ``response_from_dict``)."""
-    return dataclasses.asdict(response)
+    """JSON-ready, redacted form of a response (the inverse of ``response_from_dict``)."""
+    data = dataclasses.asdict(response)
+    if data["error"] is not None:
+        data["error"] = redact(data["error"])
+    if data["raw"] is not None:
+        data["raw"] = redact_diagnostics(data["raw"])
+    return data
 
 
 def response_from_dict(data: Mapping[str, Any]) -> ModelResponse:
