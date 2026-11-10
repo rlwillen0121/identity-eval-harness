@@ -217,23 +217,21 @@ def _draw_logo_and_name(
 def build_grantt_fig1_svg(
     arms: list[dict[str, Any]], theme_name: str = "light", scale: float = 2.0
 ) -> str:
+    """Headline leaderboard: scenarios fully solved (of 180), models that solve at least one."""
+    from b_style_v41_full import load_v41_b_rows  # lazy: b_style imports this module
+
     t = THEMES[theme_name]
-    target_n = 1080
+    target_n = 180
+    screen = {r.model_id: r.passed for r in load_v41_b_rows(arms)}
     rows = sorted(
-        arms,
-        key=lambda a: (
-            -int(a["tasks_passed_1080"]),
-            int(a["tasks_unsafe_1080"]),
-            float(a["cost_usd"]),
-        ),
+        (a for a in arms if int(a["seg_perfect"]) > 0),
+        key=lambda a: (-int(a["seg_perfect"]), float(a["u_comm_rate"]), float(a["cost_usd"])),
     )
     W = int(1180 * scale)
     pad = 24 * scale
     name_w = 216 * scale
-    ground_w = 68 * scale
-    rate_w = 84 * scale
-    tok_w = 76 * scale
-    cost_w = 88 * scale
+    unsafe_w = 96 * scale
+    cost_w = 96 * scale
     row_h = 30 * scale
     bar_h = 14 * scale
     card_top = 92 * scale
@@ -241,27 +239,28 @@ def build_grantt_fig1_svg(
     axis_h = 30 * scale
     H = int(card_top + head_h + len(rows) * row_h + axis_h + 20 * scale)
 
-    top_models = [r for r in rows if int(r["tasks_passed_1080"]) >= 1058]
     bx = pad + name_w + 8 * scale
-    bw = W - bx - ground_w - rate_w - tok_w - cost_w - pad - 16 * scale
-    ground_x = bx + bw + ground_w
-    rate_x = ground_x + rate_w
-    tok_x = rate_x + tok_w
+    bw = W - bx - unsafe_w - cost_w - pad - 48 * scale
+    unsafe_x = bx + bw + 48 * scale + unsafe_w
     cost_x = W - pad
+    n_pass = sum(1 for a in rows if screen.get(str(a["arm_id"])))
+    lead = rows[0]
+    title = (
+        f"{n_pass} of {len(arms)} models pass the safety screen; {html.escape(str(lead['label']))} "
+        f"fully solves {int(lead['seg_perfect'])} of {target_n} scenarios (v41_full)"
+    )
 
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
         f'<rect width="{W}" height="{H}" rx="{16 * scale:.0f}" fill="{t["surface_raised"]}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>',
-        f'<text x="{pad:.1f}" y="{38 * scale:.1f}" font-family="{FONT}" font-size="{20 * scale:.1f}" font-weight="600" fill="{t["ink"]}" letter-spacing="-0.01em">{len(top_models)} models solve 98%+ of the 1,080 category tasks (v41_full)</text>',
+        f'<text x="{pad:.1f}" y="{38 * scale:.1f}" font-family="{FONT}" font-size="{20 * scale:.1f}" font-weight="600" fill="{t["ink"]}" letter-spacing="-0.01em">{title}</text>',
     ]
 
     leg_y = 66 * scale
     lx = pad
     for label, col in [
-        ("≥98% solved", t["accent"]),
-        ("Passed", t["pass_fill"]),
-        ("Failed / Incomplete", t["mark_muted"]),
-        ("Unsafe action", t["denied"]),
+        (f"Passes all 7 safety checks ({n_pass})", t["accent"]),
+        ("Misses a safety check", t["pass_fill"]),
     ]:
         parts.append(
             f'<rect x="{lx:.1f}" y="{leg_y - 10 * scale:.1f}" width="{12 * scale:.1f}" height="{12 * scale:.1f}" rx="{3 * scale:.1f}" fill="{col}"/>'
@@ -273,22 +272,13 @@ def build_grantt_fig1_svg(
 
     plot_top = card_top + head_h
     plot_bot = plot_top + len(rows) * row_h
-
     parts.append(
-        f'<text x="{bx:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}">Tasks, out of {target_n}</text>'
+        f'<text x="{bx:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}">Scenarios fully solved, out of {target_n}</text>'
     )
-    parts.append(
-        f'<text x="{ground_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Score</text>'
-    )
-    parts.append(
-        f'<text x="{rate_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Solved</text>'
-    )
-    parts.append(
-        f'<text x="{tok_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Tokens</text>'
-    )
-    parts.append(
-        f'<text x="{cost_x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">Cost</text>'
-    )
+    for label, x in (("Unsafe actions", unsafe_x), ("Run cost", cost_x)):
+        parts.append(
+            f'<text x="{x:.1f}" y="{card_top + 14 * scale:.1f}" font-family="{FONT}" font-size="{12 * scale:.1f}" font-weight="500" fill="{t["ink_2"]}" text-anchor="end">{label}</text>'
+        )
 
     for f in (0.0, 0.25, 0.5, 0.75, 1.0):
         v = round(target_n * f)
@@ -306,74 +296,27 @@ def build_grantt_fig1_svg(
         y = plot_top + idx * row_h
         cy = y + row_h / 2.0
         top = cy - bar_h / 2.0
-        passed = int(r["tasks_passed_1080"])
-        safe_fail = int(r["tasks_incomplete_1080"])
-        u_count = int(r["tasks_unsafe_1080"])
-        miss_count = int(r["tasks_failed_total_1080"])
-        is_top = passed >= 1058
-        _draw_logo_and_name(parts, str(r["label"]), pad, cy, is_top, t, scale)
+        solved = int(r["seg_perfect"])
+        passes = bool(screen.get(str(r["arm_id"])))
+        _draw_logo_and_name(parts, str(r["label"]), pad, cy, passes, t, scale)
 
-        min_w = 3.0 * scale
-        gap = 2.0 * scale
-        w_u = max(min_w, (u_count / target_n) * bw) if u_count > 0 else 0.0
-        w_s = max(min_w, (safe_fail / target_n) * bw) if safe_fail > 0 else 0.0
-        w_p = max(0.0, bw - w_u - w_s - (gap if w_u > 0 else 0.0) - (gap if w_s > 0 else 0.0))
-
-        pass_fill = t["accent"] if is_top else t["pass_fill"]
-        if miss_count == 0 and w_p > 0:
-            parts.append(
-                f'<path d="{_rounded_right_path(bx, top, w_p, bar_h, 4 * scale)}" fill="{pass_fill}"/>'
-            )
-        elif w_p > 0:
-            parts.append(
-                f'<rect x="{bx:.1f}" y="{top:.1f}" width="{w_p:.1f}" height="{bar_h:.1f}" fill="{pass_fill}"/>'
-            )
-
-        cur_x = bx + w_p
-        segs = [(w, c) for w, c in ((w_s, t["mark_muted"]), (w_u, t["denied"])) if w > 0]
-        for s_i, (seg_w, seg_col) in enumerate(segs):
-            if cur_x > bx:
-                cur_x += gap
-            if s_i == len(segs) - 1:
-                parts.append(
-                    f'<path d="{_rounded_right_path(cur_x, top, seg_w, bar_h, 4 * scale)}" fill="{seg_col}"/>'
-                )
-            else:
-                parts.append(
-                    f'<rect x="{cur_x:.1f}" y="{top:.1f}" width="{seg_w:.1f}" height="{bar_h:.1f}" fill="{seg_col}"/>'
-                )
-            cur_x += seg_w
-
-        score_pct = float(r["cat_avg_score"]) * 100.0
-        score_str = f"{score_pct:.1f}%"
-        score_col = t["accent"] if is_top else (t["ink_2"] if score_pct >= 70.0 else t["denied"])
+        w = max(3.0 * scale, solved / target_n * bw)
         parts.append(
-            f'<text x="{ground_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.5 * scale:.1f}" '
-            f'font-weight="500" fill="{score_col}" text-anchor="end">{score_str}</text>'
-        )
-
-        solved_col = t["accent"] if is_top else t["ink"]
-        parts.append(
-            f'<text x="{rate_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{13 * scale:.1f}" '
-            f'font-weight="500" fill="{solved_col}" text-anchor="end">{passed}/{target_n}</text>'
-        )
-
-        tok_lbl = html.escape(str(r.get("total_tokens_label", "")))
-        tok_col = (
-            t["accent"]
-            if (is_top and float(r.get("tokens_vs_field_median", 1.0)) <= 1.0)
-            else t["ink_2"]
+            f'<path d="{_rounded_right_path(bx, top, w, bar_h, 4 * scale)}" fill="{t["accent"] if passes else t["pass_fill"]}"/>'
         )
         parts.append(
-            f'<text x="{tok_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.5 * scale:.1f}" '
-            f'font-weight="500" fill="{tok_col}" text-anchor="end">{tok_lbl}</text>'
+            f'<text x="{bx + w + 8 * scale:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.5 * scale:.1f}" '
+            f'font-weight="600" fill="{t["ink"]}">{solved}</text>'
         )
 
-        cost_lbl = html.escape(str(r.get("cost_label", "")))
-        cost_col = t["ink"] if is_top else t["ink_2"]
+        u_pct = float(r["u_comm_rate"]) * 100.0
+        parts.append(
+            f'<text x="{unsafe_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.5 * scale:.1f}" '
+            f'font-weight="{600 if u_pct > 1.0 else 500}" fill="{t["denied"] if u_pct > 1.0 else t["ink_2"]}" text-anchor="end">{u_pct:.1f}%</text>'
+        )
         parts.append(
             f'<text x="{cost_x:.1f}" y="{cy + 4 * scale:.1f}" font-family="{FONT}" font-size="{12.5 * scale:.1f}" '
-            f'font-weight="500" fill="{cost_col}" text-anchor="end">{cost_lbl}</text>'
+            f'font-weight="500" fill="{t["ink"] if passes else t["ink_2"]}" text-anchor="end">{html.escape(str(r.get("cost_label", "")))}</text>'
         )
 
     parts.append("</svg>")
