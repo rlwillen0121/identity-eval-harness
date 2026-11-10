@@ -39,7 +39,7 @@ def sync_identities(api_client, state_cursor=None):
     assert any("Formatter" in v or "get_field" in v or "__globals__" in v for v in violations)
 
     target = _connector_target()
-    res = execute_connector_in_sandbox(code, target, timeout_s=5.0)
+    res = execute_connector_in_sandbox(code, target, timeout_s=5.0, os_sandbox=False)
     assert not res.passed
     assert not res.ast_safe
 
@@ -53,7 +53,7 @@ def sync_identities(api_client, state_cursor=None):
     X = type("X", (), {})
     return {"accounts": [], "entitlements": [], "grants": [], "bindings": []}
 """
-    res_bad = execute_connector_in_sandbox(bad_code, target, timeout_s=5.0)
+    res_bad = execute_connector_in_sandbox(bad_code, target, timeout_s=5.0, os_sandbox=False)
     assert not res_bad.passed
     assert res_bad.ast_safe
     assert res_bad.error is not None
@@ -66,7 +66,9 @@ def sync_identities(api_client, state_cursor=None):
         "    if type(1) is not int:\n"
         "        raise RuntimeError('1-arg type(1) broken')",
     )
-    res_good = execute_connector_in_sandbox(good_type_check, target, timeout_s=5.0)
+    res_good = execute_connector_in_sandbox(
+        good_type_check, target, timeout_s=5.0, os_sandbox=False
+    )
     assert res_good.passed, (res_good.error, res_good.violations)
 
 
@@ -79,7 +81,7 @@ import json
 def sync_identities(api_client, state_cursor=None):
     return getattr(json, "Formatter")
 """
-    res = execute_connector_in_sandbox(code, target, timeout_s=5.0)
+    res = execute_connector_in_sandbox(code, target, timeout_s=5.0, os_sandbox=False)
     assert not res.passed
 
 

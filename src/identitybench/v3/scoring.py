@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from typing import Literal
 
 import numpy as np
 from pydantic import ConfigDict, Field
@@ -93,6 +94,8 @@ class ModelScoreSummaryV3(_FrozenModel):
 
     config_id: str
     episode_count: int
+    scoring_status: Literal["eligible", "ineligible"] = "eligible"
+    infrastructure_invalid_count: int = Field(default=0, ge=0)
     execution_valid_rate: float
     mean_s_ep: float
     ci_low: float

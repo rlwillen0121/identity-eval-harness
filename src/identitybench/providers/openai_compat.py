@@ -71,7 +71,7 @@ from openai.types.responses import Response
 
 from identitybench.providers._env import paired_api_key_env
 from identitybench.providers._json import load_object
-from identitybench.providers._subprocess import redact
+from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     Message,
     ModelRequest,
@@ -565,6 +565,13 @@ class OpenAICompatProvider:
         ignored = self._ignored_params(request)
         if ignored:
             response.raw = {**(response.raw or {}), "ignored_params": ignored}
+        env_names = self._redaction_env_names()
+        if response.error is not None:
+            response.error = redact(response.error, explicit_env_names=env_names)
+        if response.raw is not None:
+            response.raw = cast(
+                dict[str, Any], redact_diagnostics(response.raw, explicit_env_names=env_names)
+            )
         return response
 
     def _ignored_params(self, request: ModelRequest) -> list[str]:
@@ -597,10 +604,10 @@ class OpenAICompatProvider:
             return self._fail(f"{type(exc).__name__}: {exc.message}")
         except openai.OpenAIError as exc:
             return self._fail(f"{type(exc).__name__}: {exc}")
-        except ValueError as exc:
-            # The SDK parses the body itself; a gateway that cuts a response short (seen on
-            # OpenRouter) raises json.JSONDecodeError there. That is a failed call to retry,
-            # not a crash that ends the run.
+        except (ValueError, RecursionError) as exc:
+            # The SDK parses the body itself; truncated JSON and deeply nested JSON can raise
+            # JSONDecodeError or RecursionError there. That is a failed call to retry, not a
+            # crash that ends the run.
             return self._fail(f"unparseable response body ({type(exc).__name__}: {exc})")
         try:
             if isinstance(completion, Response):
@@ -659,7 +666,10 @@ class OpenAICompatProvider:
         if response.raw is not None:
             response.raw.update(_gateway_raw(completion))
         if not completion.choices:
-            response.error = redact(f"{self.kind}: response has no choices")
+            response.error = redact(
+                f"{self.kind}: response has no choices",
+                explicit_env_names=self._redaction_env_names(),
+            )
             return response
 
         choice = completion.choices[0]
@@ -692,7 +702,10 @@ class OpenAICompatProvider:
         if reply.status == "failed" or reply.error is not None:
             error = reply.error
             detail = f"{error.code}: {error.message}" if error is not None else "no error given"
-            response.error = redact(f"{self.kind}: response failed ({detail})")
+            response.error = redact(
+                f"{self.kind}: response failed ({detail})",
+                explicit_env_names=self._redaction_env_names(),
+            )
             return response
 
         texts: list[str] = []
@@ -734,4 +747,15 @@ class OpenAICompatProvider:
         return response
 
     def _fail(self, message: str, raw: dict[str, Any] | None = None) -> ModelResponse:
-        return ModelResponse(error=redact(f"{self.kind}: {message}"), raw=raw)
+        return ModelResponse(
+            error=redact(f"{self.kind}: {message}", explicit_env_names=self._redaction_env_names()),
+            raw=cast(
+                dict[str, Any],
+                redact_diagnostics(raw, explicit_env_names=self._redaction_env_names()),
+            )
+            if raw is not None
+            else None,
+        )
+
+    def _redaction_env_names(self) -> tuple[str, ...]:
+        return tuple(name for name in (self._api_key_env, self._base_url_env) if name)

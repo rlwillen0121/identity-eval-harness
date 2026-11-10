@@ -39,6 +39,45 @@ def test_dict_round_trip() -> None:
     assert response_from_dict(json.loads(json.dumps(response_to_dict(RECORDED)))) == RECORDED
 
 
+def test_response_to_dict_redacts_diagnostics_without_mutating_scored_or_replay_data(
+    monkeypatch,
+) -> None:
+    key = "synthetic-cache-token-9417"
+    endpoint = "https://synthetic-cache-gateway.invalid/v1"
+    host = "synthetic-cache-gateway.invalid"
+    monkeypatch.setenv("RUNNER_ACCESS_TOKEN", key)
+    monkeypatch.setenv("RUNNER_BASE_URL", endpoint)
+    response = ModelResponse(
+        text="  ordinary answer\nwith exact spacing  ",
+        parsed={"decision": "DENY"},
+        tool_calls=[ToolCall("t1", "get_identity", {"id": "U1"})],
+        error=f"diagnostic {key} at {endpoint}",
+        raw={
+            f"diagnostic-{key}": "safe value",
+            "metadata": {
+                "messages": [key, (endpoint, f"host={host}")],
+                "assistant_content": [{"text": f"diagnostic {key} at {endpoint}"}],
+            },
+            "assistant_content": [{"text": "functional tool turn"}],
+        },
+    )
+
+    serialized = response_to_dict(response)
+
+    assert key not in serialized["error"] and host not in serialized["error"]
+    assert key not in str(serialized["raw"]) and host not in str(serialized["raw"])
+    assert f"diagnostic-{key}" not in serialized["raw"]
+    assert key not in str(serialized["raw"]["metadata"])
+    assert host not in str(serialized["raw"]["metadata"])
+    assert serialized["text"] == "  ordinary answer\nwith exact spacing  "
+    assert serialized["parsed"] == {"decision": "DENY"}
+    assert serialized["tool_calls"][0]["arguments"] == {"id": "U1"}
+    assert serialized["raw"]["assistant_content"] == [{"text": "functional tool turn"}]
+    assert response.error == f"diagnostic {key} at {endpoint}"
+    assert response.raw is not None
+    assert response.raw["metadata"]["messages"][0] == key
+
+
 def test_from_dict_rejects_unknown_fields() -> None:
     with pytest.raises(ValueError, match="unknown ModelResponse fields"):
         response_from_dict({"text": "x", "confidence": 1})

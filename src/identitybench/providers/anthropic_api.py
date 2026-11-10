@@ -49,7 +49,7 @@ from anthropic.types import Message as ApiMessage
 
 from identitybench.providers._env import paired_api_key_env
 from identitybench.providers._json import load_object
-from identitybench.providers._subprocess import redact
+from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     Message,
     ModelRequest,
@@ -251,6 +251,13 @@ class AnthropicProvider:
         response.latency_s = time.perf_counter() - start
         if request.params.temperature is not None and not accepts_temperature(self.model):
             response.raw = {**(response.raw or {}), "ignored_params": ["temperature"]}
+        env_names = self._redaction_env_names()
+        if response.error is not None:
+            response.error = redact(response.error, explicit_env_names=env_names)
+        if response.raw is not None:
+            response.raw = cast(
+                dict[str, Any], redact_diagnostics(response.raw, explicit_env_names=env_names)
+            )
         return response
 
     async def _complete(self, request: ModelRequest) -> ModelResponse:
@@ -273,6 +280,10 @@ class AnthropicProvider:
             return self._fail(f"{type(exc).__name__}: {exc.message}")
         except anthropic.AnthropicError as exc:
             return self._fail(f"{type(exc).__name__}: {exc}")
+        except (ValueError, RecursionError) as exc:
+            # The SDK decodes successful response bodies before returning them. Malformed or
+            # excessively nested JSON is a failed call, not a crash that ends the run.
+            return self._fail(f"unparseable response body ({type(exc).__name__}: {exc})")
         try:
             return self._to_response(message, request)
         except (AttributeError, TypeError, ValueError, RecursionError) as exc:
@@ -368,4 +379,15 @@ class AnthropicProvider:
             self._tool_turns.popitem(last=False)
 
     def _fail(self, message: str, raw: dict[str, Any] | None = None) -> ModelResponse:
-        return ModelResponse(error=redact(f"{self.kind}: {message}"), raw=raw)
+        return ModelResponse(
+            error=redact(f"{self.kind}: {message}", explicit_env_names=self._redaction_env_names()),
+            raw=cast(
+                dict[str, Any],
+                redact_diagnostics(raw, explicit_env_names=self._redaction_env_names()),
+            )
+            if raw is not None
+            else None,
+        )
+
+    def _redaction_env_names(self) -> tuple[str, ...]:
+        return tuple(name for name in (self._api_key_env, self._base_url_env) if name)

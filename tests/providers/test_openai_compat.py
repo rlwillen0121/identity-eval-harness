@@ -20,6 +20,7 @@ from identitybench.providers.openai_compat import (
     is_vendor_endpoint,
     provider_routing_problem,
 )
+from identitybench.providers.replay import response_to_dict
 from tests.providers.fakes import DECISION_SCHEMA, LOOKUP_TOOL, FakeOpenAIClient, make_request
 
 
@@ -378,6 +379,50 @@ async def test_api_errors_become_error_responses(
     assert response.error is not None
     assert str(code) in response.error
     assert response.raw == {"request_id": "req_9"}
+
+
+async def test_api_error_redacts_configured_values_in_error_and_nested_metadata(
+    monkeypatch,
+) -> None:
+    key = "synthetic-credential-7319"
+    host = "synthetic-gateway.invalid"
+    endpoint = f"https://{host}/v1"
+    monkeypatch.setenv("AUTH_BLOB", key)
+    monkeypatch.setenv("SERVICE_ADDR", endpoint)
+    request = httpx2.Request("POST", f"{endpoint}/chat/completions")
+    response_obj = httpx2.Response(
+        400,
+        request=request,
+        headers={"x-request-id": f"request-{key}-{host}"},
+    )
+    error = openai.BadRequestError(
+        f"request rejected for {key} at {endpoint}", response=response_obj, body=None
+    )
+    p = provider(error, api_key_env="AUTH_BLOB", base_url_env="SERVICE_ADDR")
+    response = await p.complete(make_request())
+    assert response.error is not None
+    assert key not in response.error and host not in response.error
+    assert response.raw is not None
+    assert key not in str(response.raw) and host not in str(response.raw)
+
+    nested = p._fail(
+        f"nested error for {key} at {endpoint}",
+        raw={
+            "request": {"metadata": [{"message": key}, (endpoint, host)]},
+            "assistant_content": [{"text": "tool turn remains functional"}],
+        },
+    )
+    nested.text = "  APPROVE\nwith exact spacing  "
+    nested.parsed = {"decision": "APPROVE"}
+    nested.tool_calls = [ToolCall("call-1", "get_identity", {"id": "U1"})]
+    serialized = response_to_dict(nested)
+    assert key not in nested.error and host not in nested.error
+    assert key not in str(nested.raw) and host not in str(nested.raw)
+    assert key not in str(serialized) and host not in str(serialized)
+    assert serialized["text"] == "  APPROVE\nwith exact spacing  "
+    assert serialized["parsed"] == {"decision": "APPROVE"}
+    assert serialized["tool_calls"][0]["arguments"] == {"id": "U1"}
+    assert serialized["raw"]["assistant_content"] == [{"text": "tool turn remains functional"}]
 
 
 async def test_connection_errors_become_error_responses() -> None:
@@ -770,6 +815,25 @@ async def test_a_response_body_the_sdk_cannot_parse_is_a_failed_call() -> None:
     p = provider(json.JSONDecodeError("Expecting value", '{"id":', 7))
     response = await p.complete(make_request(schema=DECISION_SCHEMA))
     assert response.error is not None and "unparseable response body" in response.error
+
+
+async def test_recursive_sdk_body_decode_failure_is_redacted_and_returned(monkeypatch) -> None:
+    key = "synthetic-decode-key-4198"
+    endpoint = "https://synthetic-decode-gateway.invalid/v1"
+    monkeypatch.setenv("AUTH_BLOB", key)
+    monkeypatch.setenv("SERVICE_ADDR", endpoint)
+    p = provider(
+        RecursionError(f"deep response body contained {key} at {endpoint}"),
+        api_key_env="AUTH_BLOB",
+        base_url_env="SERVICE_ADDR",
+    )
+
+    response = await p.complete(make_request())
+
+    assert response.error is not None
+    assert "unparseable response body (RecursionError" in response.error
+    assert key not in response.error
+    assert "synthetic-decode-gateway.invalid" not in response.error
 
 
 # --------------------------------------------------------------------------- Responses API

@@ -252,6 +252,8 @@ def run_v4_baseline_on_episode(
 ) -> EpisodeScorecardV4:
     """Execute one of the 8 deterministic v4 baselines on a single episode (`SPEC-v4.md` §5.3)."""
     cfg = run_config if run_config is not None else default_run_config_for_baseline(baseline_id)
+    if cfg.skill_condition == SkillCondition.S4_CUSTOM_TEAM_SKILLS:
+        raise ValueError("v4 baseline execution does not support S4 custom validators")
     rt = OrchestrationRuntimeV4(episode, initial_world, oracle, cfg)
     reg = SkillRegistryV4(episode, oracle, cfg.skill_condition)
     steer = IdentityTeamSteeringOracle(episode, oracle)

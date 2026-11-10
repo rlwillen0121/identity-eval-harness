@@ -436,6 +436,32 @@ async def test_api_errors_become_error_responses(error: Exception, fragment: str
     assert response.latency_s >= 0
 
 
+async def test_api_error_redacts_configured_values_from_error_and_metadata(
+    monkeypatch,
+) -> None:
+    key = "synthetic-credential-7319"
+    host = "synthetic-gateway.invalid"
+    endpoint = f"https://{host}/v1"
+    monkeypatch.setenv("AUTH_BLOB", key)
+    monkeypatch.setenv("SERVICE_ADDR", endpoint)
+    request = httpx2.Request("POST", f"{endpoint}/messages")
+    response_obj = httpx2.Response(
+        400,
+        request=request,
+        headers={"request-id": f"request-{key}-{host}"},
+    )
+    error = anthropic.BadRequestError(
+        f"request rejected for {key} at {endpoint}", response=response_obj, body=None
+    )
+    response = await provider(error, api_key_env="AUTH_BLOB", base_url_env="SERVICE_ADDR").complete(
+        make_request()
+    )
+    assert response.error is not None
+    assert key not in response.error and host not in response.error
+    assert response.raw is not None
+    assert key not in str(response.raw) and host not in str(response.raw)
+
+
 async def test_connection_errors_become_error_responses() -> None:
     request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     response = await provider(anthropic.APITimeoutError(request)).complete(make_request())
@@ -573,3 +599,33 @@ async def test_degenerate_deeply_nested_reply_is_unparsed_not_a_crash() -> None:
     assert response.ok
     assert response.parsed is None
     assert response.text == "[" * 30000
+
+
+async def test_sdk_recursive_json_body_decode_failure_is_a_failed_call() -> None:
+    """The real SDK JSON decoder can raise RecursionError before a Message is returned."""
+    body = "[" * 10_000 + "0" + "]" * 10_000
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            content=body,
+            headers={"content-type": "application/json"},
+            request=request,
+        )
+
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    client = anthropic.AsyncAnthropic(
+        api_key="synthetic-test-key",
+        base_url="https://anthropic.invalid",
+        max_retries=0,
+        http_client=http_client,
+    )
+    try:
+        response = await AnthropicProvider("claude-opus-5-5", client=client).complete(
+            make_request()
+        )
+    finally:
+        await client.close()
+
+    assert response.error is not None
+    assert "unparseable response body (RecursionError" in response.error

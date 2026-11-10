@@ -154,6 +154,34 @@ def render_v4_markdown_report(
             f"| {exec_rate:.2f} |"
         )
 
+    infra_invalid = [
+        (config_id, sum(1 for rec in records if rec.infrastructure_error))
+        for config_id, records in sorted(artifact.records_by_model.items())
+        if any(rec.infrastructure_error for rec in records)
+    ]
+    if infra_invalid:
+        lines.extend(
+            [
+                "",
+                "### Infrastructure-invalid Trials",
+                "",
+                "S4 validator sandbox failures are excluded from performance scorecards and "
+                "bootstrap intervals; the trial records remain in the run artifacts and "
+                "execution-validity denominator.",
+                "",
+            ]
+        )
+        for config_id, count in infra_invalid:
+            ineligible = artifact.scoring_ineligible_models.get(config_id)
+            if ineligible is not None:
+                lines.append(f"- `{config_id}`: {ineligible}.")
+            else:
+                eligible_count = len(artifact.per_episode.get(config_id, ()))
+                lines.append(
+                    f"- `{config_id}`: {count} trial(s) excluded; "
+                    f"{eligible_count} scoring-eligible trial(s) remain."
+                )
+
     arch_header = (
         "| Config / Baseline | `P1` (M&A) | `P2` (SOX/UAR) | `P3` (ZSP/JIT) | "
         "`P4` (CAE/Drift) | `P5` (Swarm) | `P6` (Backlog) | Wave Mode |"
