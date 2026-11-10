@@ -315,7 +315,12 @@ const ICONS = {"openai": "<path d=\"M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4
     const priced = rows.filter(m => m.basis !== "local" && m.cost > 0);
     const costs = priced.map(m => m.cost);
     const lo = Math.min(...costs) >= 0.5 ? 0.5 : Math.pow(10, Math.floor(Math.log10(Math.min(...costs))));
-    const hi = 300.0;
+    const hi = (() => {
+      const target = Math.max(300, Math.max(...costs) * 1.12);
+      for (let p = Math.floor(Math.log10(target)); ; p++) {
+        for (const mult of [1, 2, 3, 5]) { const v = mult * Math.pow(10, p); if (v >= target - 1e-9) return v; }
+      }
+    })();
     const x0 = pad.l + laneW, x1 = W - pad.r;
     const lx = v => x0 + (Math.log10(v) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)) * (x1 - x0);
     const maxF = Math.max(...rows.map(m => m.fail));

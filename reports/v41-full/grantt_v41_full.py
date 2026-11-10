@@ -164,6 +164,19 @@ def _short_name(n: str) -> str:
     return s
 
 
+def _cost_axis_max(max_cost: float, floor: float = 300.0, headroom: float = 1.12) -> float:
+    """Smallest 1/2/3/5 x 10^n at or above `max_cost * headroom` (never below `floor`), so the
+    costliest run's dot always lands inside the cost-scatter plot area."""
+    target = max(floor, max_cost * headroom)
+    p = math.floor(math.log10(target))
+    while True:
+        for mult in (1, 2, 3, 5):
+            v = float(mult * 10**p)
+            if v >= target - 1e-9:
+                return v
+        p += 1
+
+
 def _rounded_right_path(x: float, y: float, w: float, h: float, r: float) -> str:
     r = min(r, w / 2.0, h / 2.0)
     return (
@@ -408,7 +421,7 @@ def build_grantt_fig2_svg(
     priced = [r for r in arms if r["cost_basis"] != "local" and float(r["cost_usd"]) > 0]
     costs = [float(r["cost_usd"]) for r in priced] or [1.0]
     lo = 0.5 if min(costs) >= 0.5 else 10 ** math.floor(math.log10(min(costs)))
-    hi = 300.0
+    hi = _cost_axis_max(max(costs))
 
     def lx(v: float) -> float:
         return x0 + (math.log10(v) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)) * (x1 - x0)
@@ -442,6 +455,8 @@ def build_grantt_fig2_svg(
             v = float((10**p) * mult)
             if v >= lo - 1e-9 and v <= hi + 1e-9 and all(abs(v - tv) > 1e-9 for tv in tick_vals):
                 tick_vals.append(v)
+    if all(abs(hi - tv) > 1e-9 for tv in tick_vals):
+        tick_vals.append(hi)
     for v in sorted(tick_vals):
         parts.append(
             f'<line x1="{lx(v):.1f}" x2="{lx(v):.1f}" y1="{y_top:.1f}" y2="{y_bot:.1f}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>'
