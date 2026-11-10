@@ -637,6 +637,48 @@ def _build_custom_validator_argv(work_dir: str) -> list[str]:
     raise _ValidatorSandboxUnavailable
 
 
+def preflight_custom_validator_sandbox() -> None:
+    """Prove the required S4 wrapper can launch before any paid model work starts."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="ib_v4_s4_preflight_") as tmp_dir:
+            validator_path = Path(tmp_dir) / "validator.py"
+            validator_path.write_text(
+                "print('IDENTITYBENCH_S4_SANDBOX_PREFLIGHT_OK')\n",
+                encoding="utf-8",
+            )
+            result = _run_validator_process(
+                _build_custom_validator_argv(tmp_dir),
+                b"",
+                cwd=tmp_dir,
+                env={"PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0"},
+                preexec_fn=_strict_posix_sandbox_limits,
+                memory_limit_bytes=_CUSTOM_VALIDATOR_MEMORY_LIMIT_BYTES,
+                input_gate=True,
+            )
+            (
+                returncode,
+                stdout_bytes,
+                _stderr_bytes,
+                timed_out,
+                output_exceeded,
+                memory_exceeded,
+                memory_unavailable,
+            ) = result
+            if (
+                returncode != 0
+                or stdout_bytes.strip() != b"IDENTITYBENCH_S4_SANDBOX_PREFLIGHT_OK"
+                or timed_out
+                or output_exceeded
+                or memory_exceeded
+                or memory_unavailable
+            ):
+                raise _ValidatorSandboxUnavailable
+    except _ValidatorSandboxUnavailable:
+        raise
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        raise _ValidatorSandboxUnavailable from exc
+
+
 def _kill_validator_process_group(proc: subprocess.Popen[bytes]) -> None:
     try:
         if os.name == "posix":
@@ -1288,4 +1330,5 @@ __all__ = [
     "DRIFTED_SKILL_CLAUSES",
     "SkillRegistryV4",
     "count_o200k_tokens",
+    "preflight_custom_validator_sandbox",
 ]

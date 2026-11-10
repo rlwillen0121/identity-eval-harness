@@ -7,6 +7,7 @@ import os
 import pytest
 
 import identitybench.v3.environment as environment_module
+import identitybench.v3.runner as runner_module
 import identitybench.v3.sandbox as sandbox_module
 from identitybench.v3.sandbox import ConnectorSandboxResult
 from identitybench.v3.schemas import ConnectorTargetSpec
@@ -30,6 +31,10 @@ def _explicitly_opt_out_when_os_sandbox_is_unavailable(
     }
     if not disabled and sandbox_module.os_sandbox_available():
         return
+
+    # Most runner tests use synthetic providers and assert model-loop behavior. The dedicated
+    # infrastructure regressions override this probe to exercise the fail-closed path.
+    monkeypatch.setattr(runner_module, "os_sandbox_available", lambda: True)
 
     def execute_connector_without_os_sandbox(
         code: str, target: ConnectorTargetSpec

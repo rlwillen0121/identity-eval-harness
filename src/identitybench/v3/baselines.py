@@ -35,6 +35,15 @@ class BaselineNameV3(StrEnum):
     oracle_replay = "oracle_replay"
 
 
+class BaselineInfrastructureError(RuntimeError):
+    """Raised when a baseline connector trial cannot execute under required containment."""
+
+    def __init__(self, violation: str, detail: str) -> None:
+        super().__init__(f"{violation}: {detail}")
+        self.violation = violation
+        self.detail = detail
+
+
 def run_baseline_episode(
     episode: EpisodeSpecV3,
     baseline: BaselineNameV3 | str,
@@ -47,21 +56,22 @@ def run_baseline_episode(
 
     if b_name == BaselineNameV3.oracle_replay:
         env.replay_tool_calls(episode.reference_solution.tool_calls)
-        return verify_episode_v3(episode, env)
-
-    if b_name == BaselineNameV3.always_deny:
+    elif b_name == BaselineNameV3.always_deny:
         _run_always_deny(episode, env)
-        return verify_episode_v3(episode, env)
-
-    if b_name == BaselineNameV3.always_approve:
+    elif b_name == BaselineNameV3.always_approve:
         _run_always_approve(episode, env)
-        return verify_episode_v3(episode, env)
-
-    if b_name == BaselineNameV3.random_valid:
+    elif b_name == BaselineNameV3.random_valid:
         _run_random_valid(episode, env, seed=seed)
-        return verify_episode_v3(episode, env)
+    else:
+        _run_surface_heuristic(episode, env)
 
-    _run_surface_heuristic(episode, env)
+    if env.connector_result is not None:
+        for violation in env.connector_result.violations:
+            if violation in {"OS_SANDBOX_UNAVAILABLE", "OS_SANDBOX_LAUNCH_FAILED"}:
+                raise BaselineInfrastructureError(
+                    violation,
+                    env.connector_result.error or violation,
+                )
     return verify_episode_v3(episode, env)
 
 
