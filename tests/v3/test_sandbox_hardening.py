@@ -57,7 +57,7 @@ def _connector_target() -> ConnectorTargetSpec:
 
 def _assert_forbidden(code: str) -> None:
     target = _connector_target()
-    res = execute_connector_in_sandbox(code, target, timeout_s=5.0)
+    res = execute_connector_in_sandbox(code, target, timeout_s=5.0, os_sandbox=False)
     assert res.passed is False
     assert res.ast_safe is True, res.violations
     assert res.violations == ("CONNECTOR_RUNTIME_ERROR",), (res.violations, res.error)
@@ -131,7 +131,7 @@ def test_plain_str_getattr_on_public_attribute_still_works() -> None:
         'tuple(getattr(api_client, "required_schema_fields", ()))',
     )
     assert code != build_reference_connector_code(target.target_id)
-    res = execute_connector_in_sandbox(code, target)
+    res = execute_connector_in_sandbox(code, target, os_sandbox=False)
     assert res.passed is True
     assert res.score == 1.0
 
@@ -149,7 +149,7 @@ def test_runaway_allocation_is_killed_not_succeeding() -> None:
         "    x = [0] * 200_000_000\n"
         "    raise RuntimeError('ALLOCATED ' + str(len(x)))\n"
     )
-    res = execute_connector_in_sandbox(code, target, timeout_s=20.0)
+    res = execute_connector_in_sandbox(code, target, timeout_s=20.0, os_sandbox=False)
     assert res.passed is False
     assert res.timed_out is False
     assert res.error is not None
@@ -168,10 +168,15 @@ def test_reference_connector_passes_with_resource_limits_on() -> None:
     res = execute_connector_in_sandbox(
         ref_code, target, memory_limit_bytes=DEFAULT_MEMORY_LIMIT_BYTES, os_sandbox=True
     )
-    assert res.passed is True
-    assert res.score == 1.0
-    assert res.violations == ()
-    assert res.os_sandbox_active is os_sandbox_available()
+    if os_sandbox_available():
+        assert res.passed is True
+        assert res.score == 1.0
+        assert res.violations == ()
+        assert res.os_sandbox_active is True
+    else:
+        assert res.passed is False
+        assert res.violations == ("SUBPROCESS_FAILURE", "OS_SANDBOX_UNAVAILABLE")
+        assert res.os_sandbox_active is False
 
     plain = execute_connector_in_sandbox(ref_code, target, os_sandbox=False)
     assert plain.passed is True and plain.os_sandbox_active is False
@@ -192,7 +197,9 @@ def test_memory_limit_keyword_is_honoured() -> None:
         "        checksum += sum(x)\n"
         "    raise RuntimeError('ALLOCATED ' + str(len(x)) + ' ' + str(checksum))\n"
     )
-    small = execute_connector_in_sandbox(code, target, memory_limit_bytes=48 * 1024 * 1024)
+    small = execute_connector_in_sandbox(
+        code, target, memory_limit_bytes=48 * 1024 * 1024, os_sandbox=False
+    )
     assert small.passed is False
     assert small.error is not None
     assert "ALLOCATED" not in small.error, small.error
@@ -201,7 +208,9 @@ def test_memory_limit_keyword_is_honoured() -> None:
         small.error,
     )
 
-    large = execute_connector_in_sandbox(code, target, memory_limit_bytes=1024 * 1024 * 1024)
+    large = execute_connector_in_sandbox(
+        code, target, memory_limit_bytes=1024 * 1024 * 1024, os_sandbox=False
+    )
     assert large.violations == ("CONNECTOR_RUNTIME_ERROR",), (large.violations, large.error)
     assert large.error is not None and "ALLOCATED 12000000" in large.error, large.error
 
@@ -244,6 +253,13 @@ def test_stdout_scan_is_capped() -> None:
 # --------------------------------------------------------------------------------------
 
 _DARWIN_SANDBOX = sys.platform == "darwin" and os.access("/usr/bin/sandbox-exec", os.X_OK)
+_OS_SANDBOX_DISABLED = os.environ.get("IDENTITYBENCH_OS_SANDBOX", "1").strip().lower() in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+_DARWIN_SANDBOX_ENABLED = _DARWIN_SANDBOX and not _OS_SANDBOX_DISABLED
 
 
 def test_launch_argv_respects_keyword_and_env_switch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -380,7 +396,7 @@ def test_macos_profile_allows_python_but_denies_network_and_foreign_io() -> None
             )
 
 
-@pytest.mark.skipif(not _DARWIN_SANDBOX, reason="macOS sandbox-exec not available")
+@pytest.mark.skipif(not _DARWIN_SANDBOX_ENABLED, reason="enabled macOS sandbox-exec not available")
 def test_reference_connector_passes_under_os_sandbox() -> None:
     target = _connector_target()
     ref_code = build_reference_connector_code(target.target_id)
@@ -401,6 +417,7 @@ def test_reference_connector_passes_under_os_sandbox() -> None:
 def test_os_sandbox_launch_failure_does_not_retry_without_containment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("IDENTITYBENCH_OS_SANDBOX", raising=False)
     target = _connector_target()
     ref_code = build_reference_connector_code(target.target_id)
     original_run = sandbox_mod._run_harness_process
