@@ -321,6 +321,7 @@ from identitybench.v4.skills import _read_custom_validator_source
 
 target = Path(sys.argv[1])
 skills_root = Path(sys.argv[2])
+result_path = Path(sys.argv[3])
 real_open = os.open
 dir_fd_support = set(os.supports_dir_fd)
 swapped = False
@@ -341,19 +342,29 @@ os.supports_dir_fd = dir_fd_support | {swap_to_fifo}
 try:
     _read_custom_validator_source(target, skills_root)
 except Exception as exc:
-    print(type(exc).__name__)
+    result_path.write_text(type(exc).__name__ + "\n", encoding="utf-8")
+    os._exit(0)
 """
 
+    result_path = tmp_path / "child-result.txt"
     completed = subprocess.run(
-        [sys.executable, "-c", child, str(validator_path), str(skills_dir)],
-        capture_output=True,
-        text=True,
+        [
+            sys.executable,
+            "-c",
+            child,
+            str(validator_path),
+            str(skills_dir),
+            str(result_path),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         timeout=2,
         check=False,
     )
 
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "_ValidatorSourceInvalid"
+    assert completed.returncode == 0
+    assert result_path.read_text(encoding="utf-8").strip() == "_ValidatorSourceInvalid"
 
 
 @pytest.mark.parametrize(
