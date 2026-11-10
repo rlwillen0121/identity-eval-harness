@@ -564,38 +564,37 @@ def _strict_posix_sandbox_limits() -> None:
 
 
 def _read_custom_validator_source(validator_path: Path, skills_dir: Path) -> bytes:
-    """Read a bounded regular validator file without following an escaping symlink."""
+    """Read a bounded validator through pinned directories without following symlinks."""
     try:
-        skills_root = skills_dir.resolve(strict=True)
-        resolved = validator_path.resolve(strict=True)
-        resolved.relative_to(skills_root)
-        path_stat = validator_path.lstat()
-    except (OSError, ValueError) as exc:
+        skill_relative = validator_path.parent.relative_to(skills_dir)
+        if len(skill_relative.parts) != 1 or validator_path.name != "validator.py":
+            raise _ValidatorSourceInvalid
+        root_path = skills_dir.resolve(strict=True)
+        root_fd = os.open(root_path, _custom_skill_open_flags(directory=True))
+    except (OSError, ValueError, TypeError, NotImplementedError) as exc:
         raise _ValidatorSourceInvalid from exc
 
-    if stat.S_ISLNK(path_stat.st_mode) or not stat.S_ISREG(path_stat.st_mode):
-        raise _ValidatorSourceInvalid
-    if path_stat.st_size > _CUSTOM_VALIDATOR_SOURCE_LIMIT_BYTES:
-        raise _ValidatorSourceInvalid
-
-    flags = os.O_RDONLY
-    flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(resolved, flags)
-        with os.fdopen(descriptor, "rb") as source:
-            opened_stat = os.fstat(source.fileno())
-            if not stat.S_ISREG(opened_stat.st_mode):
+        with contextlib.ExitStack() as stack:
+            stack.callback(os.close, root_fd)
+            if not stat.S_ISDIR(os.fstat(root_fd).st_mode):
                 raise _ValidatorSourceInvalid
-            if opened_stat.st_dev != path_stat.st_dev or opened_stat.st_ino != path_stat.st_ino:
+            skill_fd = _open_custom_skill_directory(root_fd, skill_relative.parts[0])
+            if skill_fd is None:
                 raise _ValidatorSourceInvalid
-            if opened_stat.st_size > _CUSTOM_VALIDATOR_SOURCE_LIMIT_BYTES:
+            stack.callback(os.close, skill_fd)
+            content = _read_custom_skill_file(
+                skill_fd,
+                "validator.py",
+                limit_bytes=_CUSTOM_VALIDATOR_SOURCE_LIMIT_BYTES,
+            )
+            if content is None:
                 raise _ValidatorSourceInvalid
-            content = source.read(_CUSTOM_VALIDATOR_SOURCE_LIMIT_BYTES + 1)
-    except OSError as exc:
+            return content
+    except _CustomSkillSourceInvalid as exc:
         raise _ValidatorSourceInvalid from exc
-    if len(content) > _CUSTOM_VALIDATOR_SOURCE_LIMIT_BYTES:
-        raise _ValidatorSourceInvalid
-    return content
+    except (OSError, TypeError, NotImplementedError) as exc:
+        raise _ValidatorSourceInvalid from exc
 
 
 def _build_custom_validator_argv(work_dir: str) -> list[str]:
@@ -1017,7 +1016,7 @@ class SkillRegistryV4:
                 )
             try:
                 parsed = json.loads(payload) if payload.strip() else {}
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 return SkillValidatorResultV4(
                     skill_id=skill_id,
                     valid=False,
@@ -1045,7 +1044,7 @@ class SkillRegistryV4:
 
         try:
             stdin_bytes = json.dumps(payload_dict, sort_keys=True).encode("utf-8")
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             return SkillValidatorResultV4(
                 skill_id=skill_id,
                 valid=False,
@@ -1186,7 +1185,7 @@ class SkillRegistryV4:
                 ),
                 checked_items=0,
             )
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             return SkillValidatorResultV4(
                 skill_id=skill_id,
                 valid=False,

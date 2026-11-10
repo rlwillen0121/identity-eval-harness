@@ -817,6 +817,25 @@ async def test_a_response_body_the_sdk_cannot_parse_is_a_failed_call() -> None:
     assert response.error is not None and "unparseable response body" in response.error
 
 
+async def test_recursive_sdk_body_decode_failure_is_redacted_and_returned(monkeypatch) -> None:
+    key = "synthetic-decode-key-4198"
+    endpoint = "https://synthetic-decode-gateway.invalid/v1"
+    monkeypatch.setenv("AUTH_BLOB", key)
+    monkeypatch.setenv("SERVICE_ADDR", endpoint)
+    p = provider(
+        RecursionError(f"deep response body contained {key} at {endpoint}"),
+        api_key_env="AUTH_BLOB",
+        base_url_env="SERVICE_ADDR",
+    )
+
+    response = await p.complete(make_request())
+
+    assert response.error is not None
+    assert "unparseable response body (RecursionError" in response.error
+    assert key not in response.error
+    assert "synthetic-decode-gateway.invalid" not in response.error
+
+
 # --------------------------------------------------------------------------- Responses API
 
 

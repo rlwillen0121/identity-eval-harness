@@ -604,10 +604,10 @@ class OpenAICompatProvider:
             return self._fail(f"{type(exc).__name__}: {exc.message}")
         except openai.OpenAIError as exc:
             return self._fail(f"{type(exc).__name__}: {exc}")
-        except ValueError as exc:
-            # The SDK parses the body itself; a gateway that cuts a response short (seen on
-            # OpenRouter) raises json.JSONDecodeError there. That is a failed call to retry,
-            # not a crash that ends the run.
+        except (ValueError, RecursionError) as exc:
+            # The SDK parses the body itself; truncated JSON and deeply nested JSON can raise
+            # JSONDecodeError or RecursionError there. That is a failed call to retry, not a
+            # crash that ends the run.
             return self._fail(f"unparseable response body ({type(exc).__name__}: {exc})")
         try:
             if isinstance(completion, Response):
@@ -749,7 +749,10 @@ class OpenAICompatProvider:
     def _fail(self, message: str, raw: dict[str, Any] | None = None) -> ModelResponse:
         return ModelResponse(
             error=redact(f"{self.kind}: {message}", explicit_env_names=self._redaction_env_names()),
-            raw=redact_diagnostics(raw, explicit_env_names=self._redaction_env_names())
+            raw=cast(
+                dict[str, Any],
+                redact_diagnostics(raw, explicit_env_names=self._redaction_env_names()),
+            )
             if raw is not None
             else None,
         )

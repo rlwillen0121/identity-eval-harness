@@ -280,6 +280,10 @@ class AnthropicProvider:
             return self._fail(f"{type(exc).__name__}: {exc.message}")
         except anthropic.AnthropicError as exc:
             return self._fail(f"{type(exc).__name__}: {exc}")
+        except (ValueError, RecursionError) as exc:
+            # The SDK decodes successful response bodies before returning them. Malformed or
+            # excessively nested JSON is a failed call, not a crash that ends the run.
+            return self._fail(f"unparseable response body ({type(exc).__name__}: {exc})")
         try:
             return self._to_response(message, request)
         except (AttributeError, TypeError, ValueError, RecursionError) as exc:
@@ -377,7 +381,10 @@ class AnthropicProvider:
     def _fail(self, message: str, raw: dict[str, Any] | None = None) -> ModelResponse:
         return ModelResponse(
             error=redact(f"{self.kind}: {message}", explicit_env_names=self._redaction_env_names()),
-            raw=redact_diagnostics(raw, explicit_env_names=self._redaction_env_names())
+            raw=cast(
+                dict[str, Any],
+                redact_diagnostics(raw, explicit_env_names=self._redaction_env_names()),
+            )
             if raw is not None
             else None,
         )

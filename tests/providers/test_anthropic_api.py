@@ -599,3 +599,33 @@ async def test_degenerate_deeply_nested_reply_is_unparsed_not_a_crash() -> None:
     assert response.ok
     assert response.parsed is None
     assert response.text == "[" * 30000
+
+
+async def test_sdk_recursive_json_body_decode_failure_is_a_failed_call() -> None:
+    """The real SDK JSON decoder can raise RecursionError before a Message is returned."""
+    body = "[" * 10_000 + "0" + "]" * 10_000
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            content=body,
+            headers={"content-type": "application/json"},
+            request=request,
+        )
+
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    client = anthropic.AsyncAnthropic(
+        api_key="synthetic-test-key",
+        base_url="https://anthropic.invalid",
+        max_retries=0,
+        http_client=http_client,
+    )
+    try:
+        response = await AnthropicProvider("claude-opus-5-5", client=client).complete(
+            make_request()
+        )
+    finally:
+        await client.close()
+
+    assert response.error is not None
+    assert "unparseable response body (RecursionError" in response.error
