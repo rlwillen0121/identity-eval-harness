@@ -2082,7 +2082,7 @@ def _extract_v4_turn_tool_calls(resp: ModelResponse, turn_idx: int) -> list[Tool
                 loaded_args: Any = None
                 try:
                     loaded_args = json.loads(raw_json)
-                except ValueError:
+                except (ValueError, RecursionError):
                     loaded_args = load_object(raw_json)
                     if not isinstance(loaded_args, dict):
                         loaded_args = extract_json_object(
@@ -2091,7 +2091,7 @@ def _extract_v4_turn_tool_calls(resp: ModelResponse, turn_idx: int) -> list[Tool
                             schema_keys=(),
                         )
                 if isinstance(loaded_args, str):
-                    with contextlib.suppress(ValueError):
+                    with contextlib.suppress(ValueError, RecursionError):
                         loaded_args = json.loads(loaded_args)
                 if not isinstance(loaded_args, dict):
                     return []
