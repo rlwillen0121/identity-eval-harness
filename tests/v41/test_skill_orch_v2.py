@@ -2910,3 +2910,159 @@ def test_build_report_v2_end_to_end_deltas_u_exec_survivorship_seal_svg_and_xss(
             suite="v41_lite",
             allow_offline_mock=True,
         )
+
+
+def test_two_wave_parallel_cells_pipe_limiter_non_deadlock_and_llama_server_props_slots(
+    dev_pairs: list[tuple[EpisodeSpecV41, SealedEpisodeOracleV41]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # 1. `probe_local_llm_server` caps `recommended_concurrency` via `{root}/props` `total_slots`
+    #    and ignores HTTP 404 on `/props` (vLLM), using `ProxyHandler({})` + `_NoRedirectHandler`.
+    monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setenv("HTTP_PROXY", "http://evil-proxy.example.com:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://evil-proxy.example.com:8080")
+
+    class _FakeResp(io.BytesIO):
+        def __enter__(self) -> _FakeResp:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    seen_urls: list[str] = []
+
+    def _fake_open_slots_1(
+        _self: urllib.request.OpenerDirector,
+        req: urllib.request.Request,
+        timeout: float = 5.0,
+    ) -> _FakeResp:
+        assert timeout > 0
+        seen_urls.append(req.full_url)
+        if req.full_url.endswith("/v1/models"):
+            return _FakeResp(
+                json.dumps({"data": [{"id": "qwen3.8-flash-next-iq3_xxs"}]}).encode("utf-8")
+            )
+        if req.full_url.endswith("/props"):
+            return _FakeResp(json.dumps({"total_slots": 1}).encode("utf-8"))
+        raise AssertionError(f"Unexpected probe URL: {req.full_url}")
+
+    with patch.object(urllib.request.OpenerDirector, "open", _fake_open_slots_1):
+        probe_1slot = allowlist.probe_local_llm_server(timeout_s=1.0)
+
+    assert seen_urls == ["http://127.0.0.1:8080/v1/models", "http://127.0.0.1:8080/props"]
+    assert probe_1slot["selected_model"] == "qwen3.8-flash-next-iq3_xxs"
+    assert probe_1slot["recommended_concurrency"] == 1
+    assert probe_1slot["server_total_slots"] == 1
+
+    def _fake_open_vllm_404(
+        _self: urllib.request.OpenerDirector,
+        req: urllib.request.Request,
+        timeout: float = 5.0,
+    ) -> _FakeResp:
+        assert timeout > 0
+        if req.full_url.endswith("/v1/models"):
+            return _FakeResp(
+                json.dumps({"data": [{"id": "qwen3.8-flash-next-iq3_xxs"}]}).encode("utf-8")
+            )
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", http.client.HTTPMessage(), None)
+
+    with patch.object(urllib.request.OpenerDirector, "open", _fake_open_vllm_404):
+        probe_vllm = allowlist.probe_local_llm_server(timeout_s=1.0)
+    assert probe_vllm["recommended_concurrency"] == 2
+    assert "server_total_slots" not in probe_vllm
+
+    # 2. Wave A (Controls) -> Wave B (Teams) concurrent execution + `ProviderPipeLimiter(mock=1)`
+    #    non-deadlock stress test (even with strict limit=1 on nested O5/O7 teams!).
+    sub_pairs = dev_pairs[:2]
+    oracles_map = {ep.episode_id: ora for ep, ora in sub_pairs}
+    call_order: list[str] = []
+    inflight = {"cur": 0, "peak": 0}
+
+    class _TrackedPipeProvider(ScriptedStudyMockProvider):
+        async def complete(self, request: ModelRequest) -> ModelResponse:
+            inflight["cur"] += 1
+            inflight["peak"] = max(inflight["peak"], inflight["cur"])
+            try:
+                await asyncio.sleep(0.002)
+                return await super().complete(request)
+            finally:
+                inflight["cur"] -= 1
+
+    counts: dict[str, int] = defaultdict(int)
+
+    def _tracked_builder(
+        mk: str, temp: float | None = None
+    ) -> tuple[Provider, GenerationParams, int]:
+        eff_t = temp if temp is not None else (0.0 if mk == "qwen-local" else None)
+        prov = _TrackedPipeProvider(mk, eff_t, oracles_map, counts)
+        return prov, GenerationParams(temperature=eff_t), 4
+
+    orig_run_cell = run_study_v2.run_cell_in_stratified_blocks
+
+    async def _instrumented_run_cell(
+        cell_id: str,
+        pairs: list[tuple[EpisodeSpecV41, SealedEpisodeOracleV41]],
+        **kwargs: Any,
+    ) -> list[Any]:
+        call_order.append(f"start:{cell_id}")
+        res = await orig_run_cell(cell_id, pairs, **kwargs)
+        call_order.append(f"done:{cell_id}")
+        return res
+
+    async def _drive_two_wave_with_limit_1() -> dict[str, list[Any]]:
+        # Even with pipe limit = 1 across ALL leaf calls, nested O5 (`T02`) & O7 (`T14`) NEVER deadlock!
+        run_study_v2.set_pipe_limiter_for_current_loop(
+            run_study_v2.ProviderPipeLimiter(overrides={"mock": 1})
+        )
+        cache = run_study_v2.StudyCacheStore(tmp_path / "two_wave_run")
+        # Interleave team IDs before control IDs in input list to verify Wave A always runs before Wave B!
+        mixed_cells = [
+            "T02_Local_vLLM_10Shard_Swarm",
+            "qwen-local__C_S2_prog_t0",
+            "T14_Bossless_3Pipe_Jury",
+            "gpt-6.1-sol__C_S0_no_skill_t0",
+        ]
+        with patch.object(
+            run_study_v2, "run_cell_in_stratified_blocks", side_effect=_instrumented_run_cell
+        ):
+            return await run_study_v2.run_cells_two_wave(
+                mixed_cells,
+                sub_pairs,
+                suite=SplitRingV41.v41_dev,
+                out_dir=tmp_path / "two_wave_run",
+                cache_store=cache,
+                provider_builder=_tracked_builder,
+                allow_offline_mock=True,
+            )
+
+    res_by_cell = asyncio.run(_drive_two_wave_with_limit_1())
+    assert set(res_by_cell) == {
+        "qwen-local__C_S2_prog_t0",
+        "gpt-6.1-sol__C_S0_no_skill_t0",
+        "T02_Local_vLLM_10Shard_Swarm",
+        "T14_Bossless_3Pipe_Jury",
+    }
+    for cid, recs in res_by_cell.items():
+        assert len(recs) == 2 and all(r.scorecard.g_srr == 1.0 for r in recs), cid
+
+    # `ProviderPipeLimiter(overrides={"mock": 1})` strictly enforced peak leaf concurrency == 1
+    assert inflight["peak"] == 1
+
+    # Both Wave A controls finished BEFORE any Wave B team started!
+    latest_control_done = max(
+        call_order.index("done:qwen-local__C_S2_prog_t0"),
+        call_order.index("done:gpt-6.1-sol__C_S0_no_skill_t0"),
+    )
+    earliest_team_start = min(
+        call_order.index("start:T02_Local_vLLM_10Shard_Swarm"),
+        call_order.index("start:T14_Bossless_3Pipe_Jury"),
+    )
+    assert latest_control_done < earliest_team_start
+
+    out_stdout = capsys.readouterr().out
+    assert "[Wave Start] Wave A (Controls)" in out_stdout
+    assert "[Wave Start] Wave B (Teams)" in out_stdout
+    assert "[Progress] qwen-local__C_S2_prog_t0" in out_stdout
+    assert "term=EPISODE_COMPLETED" in out_stdout

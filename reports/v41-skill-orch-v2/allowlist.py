@@ -26,6 +26,7 @@ from identitybench.providers.factory import ModelSpec
 from identitybench.providers.openai_compat import OpenAICompatProvider
 
 MAX_PROBE_RESPONSE_BYTES = 1_048_576
+MAX_PROPS_RESPONSE_BYTES = 65_536
 
 SUBSCRIPTION_CLI_PROVIDERS: frozenset[str] = frozenset(
     {
@@ -482,7 +483,7 @@ def _unreachable_probe() -> dict[str, Any]:
 
 
 def probe_local_llm_server(timeout_s: float = 5.0) -> dict[str, Any]:
-    """Query `LOCAL_LLM_BASE_URL/models` in preflight/live mode without leaking URLs or keys."""
+    """Query `LOCAL_LLM_BASE_URL/models` (and `{root}/props`) without leaking URLs or keys."""
     raw_base = (os.environ.get(ALLOWED_LOCAL_BASE_URL_ENV) or "").strip().rstrip("/")
     if not raw_base:
         return _unreachable_probe()
@@ -494,13 +495,18 @@ def probe_local_llm_server(timeout_s: float = 5.0) -> dict[str, Any]:
         headers["Authorization"] = f"Bearer {raw_key}"
 
     req = urllib.request.Request(f"{raw_base}/models", headers=headers, method="GET")
-    opener = urllib.request.build_opener(_NoRedirectHandler())
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoRedirectHandler(),
+    )
     try:
         with opener.open(req, timeout=timeout_s) as resp:
             raw_bytes = resp.read(MAX_PROBE_RESPONSE_BYTES + 1)
         if len(raw_bytes) > MAX_PROBE_RESPONSE_BYTES:
             return _unreachable_probe()
         payload = json.loads(raw_bytes.decode("utf-8", errors="replace"))
+    except PermissionError:
+        raise
     except (
         OSError,
         ValueError,
@@ -519,10 +525,45 @@ def probe_local_llm_server(timeout_s: float = 5.0) -> dict[str, Any]:
                     if clean_id:
                         served.append(clean_id)
     selected_model, rec_conc, t0_source = _classify_served_models(served)
-    return {
+
+    # Probe llama-server `{root}/props` for `total_slots` (vLLM returns 404 -> ignored silently).
+    root_base = raw_base[:-3].rstrip("/") if raw_base.endswith("/v1") else raw_base
+    detected_slots: int | None = None
+    if root_base:
+        props_req = urllib.request.Request(f"{root_base}/props", headers=headers, method="GET")
+        try:
+            with opener.open(props_req, timeout=timeout_s) as p_resp:
+                props_bytes = p_resp.read(MAX_PROPS_RESPONSE_BYTES + 1)
+            if len(props_bytes) <= MAX_PROPS_RESPONSE_BYTES:
+                props_obj = json.loads(props_bytes.decode("utf-8", errors="replace"))
+                if isinstance(props_obj, Mapping):
+                    raw_slots = props_obj.get("total_slots")
+                    if (
+                        isinstance(raw_slots, int)
+                        and not isinstance(raw_slots, bool)
+                        and raw_slots >= 1
+                    ):
+                        detected_slots = raw_slots
+        except PermissionError:
+            raise
+        except (
+            OSError,
+            ValueError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+        ):
+            detected_slots = None
+
+    if detected_slots is not None and rec_conc > 0:
+        rec_conc = min(rec_conc, detected_slots)
+
+    result: dict[str, Any] = {
         "reachable": True,
         "served_models": served,
         "selected_model": redact_sensitive_text(selected_model),
         "recommended_concurrency": rec_conc,
         "t0_source": t0_source,
     }
+    if detected_slots is not None:
+        result["server_total_slots"] = detected_slots
+    return result
