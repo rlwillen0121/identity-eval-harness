@@ -4,15 +4,17 @@ tool receipts, and episode / oracle / seal / scorecard models (SPEC-v4.1 §2).""
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     AliasChoices,
     Field,
+    SerializerFunctionWrapHandler,
     StrictBool,
     StrictInt,
     StrictStr,
     TypeAdapter,
+    model_serializer,
     model_validator,
 )
 
@@ -839,7 +841,23 @@ class CommitReceiptV4_1(_FrozenModelV4):
 # ---------------------------------------------------------------------------
 
 
-class RunConfigV41(_FrozenModelV4):
+class _TokenBudgetConfigV41(_FrozenModelV4):
+    """Omit an unset budget without changing legacy configuration fingerprints.
+
+    A wrap serializer also supports the project's minimum Pydantic version (2.9).
+    """
+
+    max_total_tokens: int | None = Field(default=None, gt=0)
+
+    @model_serializer(mode="wrap")
+    def _serialize_budget(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.max_total_tokens is None:
+            data.pop("max_total_tokens", None)
+        return data
+
+
+class RunConfigV41(_TokenBudgetConfigV41):
     """Agent run configuration (topology only gates tool permission in v4.1)."""
 
     topology_id: OrchestrationTopologyId = OrchestrationTopologyId.T0_SINGLE_MONOLITH

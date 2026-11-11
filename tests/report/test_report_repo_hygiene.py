@@ -18,7 +18,8 @@ def test_v3_muse_config_is_portable() -> None:
 
 
 def test_binary_path_is_excluded_from_muse_endpoint_and_v3_fingerprint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # No CLI invocation or real credentials: equal executable versions, empty private homes.
     monkeypatch.setattr(_cli, "probe_version", lambda *args: "test-version")
@@ -28,9 +29,15 @@ def test_binary_path_is_excluded_from_muse_endpoint_and_v3_fingerprint(
     assert absolute.endpoint_identity() == portable.endpoint_identity()
     fingerprints = [
         compute_config_fingerprint(
-            provider_kind="muse_cli", model=provider.model, effort=provider.effort,
-            temperature=None, max_output_tokens=4096, max_turns=10, max_actions_per_turn=4,
-            max_tool_calls_per_episode=40, endpoint_identity=provider.endpoint_identity(),
+            provider_kind="muse_cli",
+            model=provider.model,
+            effort=provider.effort,
+            temperature=None,
+            max_output_tokens=4096,
+            max_turns=10,
+            max_actions_per_turn=4,
+            max_tool_calls_per_episode=40,
+            endpoint_identity=provider.endpoint_identity(),
         )
         for provider in (absolute, portable)
     ]
@@ -39,12 +46,17 @@ def test_binary_path_is_excluded_from_muse_endpoint_and_v3_fingerprint(
 
 def test_v41_binary_path_changes_resume_fingerprint(tmp_path: Path) -> None:
     absolute = V41ModelEntryConfig(
-        provider="muse_cli", model="muse-spark-1.3", extra={"binary": str(tmp_path / "bin/muse")},
+        provider="muse_cli",
+        model="muse-spark-1.3",
+        extra={"binary": str(tmp_path / "bin/muse")},
     )
     portable = absolute.model_copy(update={"extra": {"binary": "muse"}})
     fingerprints = [
         compute_v41_config_fingerprint(
-            entry, entry.to_run_config(), seed=1, dataset_sha256="test",
+            entry,
+            entry.to_run_config(),
+            seed=1,
+            dataset_sha256="test",
             endpoint_identity="same-endpoint",
         )
         for entry in (absolute, portable)

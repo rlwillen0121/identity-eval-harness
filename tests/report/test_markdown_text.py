@@ -37,9 +37,14 @@ def test_an_empty_cell_still_fills_its_column() -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "http://example.com", "https://example.com", "HTTPS://example.com",
-        "ftp://example.com", "mailto:user@example.com", "www.example.com",
-        "WWW.example.com", "user@example.com",
+        "http://example.com",
+        "https://example.com",
+        "HTTPS://example.com",
+        "ftp://example.com",
+        "mailto:user@example.com",
+        "www.example.com",
+        "WWW.example.com",
+        "user@example.com",
     ],
 )
 def test_bare_links_are_readable_but_not_autolinkable(text: str) -> None:

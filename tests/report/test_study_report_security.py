@@ -12,7 +12,7 @@ from types import ModuleType
 import pytest
 
 REPORTS = Path(__file__).resolve().parents[2] / "reports" / "v41-lite"
-ATTACK = '</script><img src=x onerror="alert(1)"> & \'quoted\''
+ATTACK = "</script><img src=x onerror=\"alert(1)\"> & 'quoted'"
 
 
 def _load(name: str, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
@@ -40,7 +40,8 @@ class _Tags(HTMLParser):
 
 
 def test_study_payload_cannot_close_inline_script(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load("build_skill_orchestration_report", monkeypatch)
     monkeypatch.setattr(module, "ROOT", tmp_path)
@@ -91,13 +92,22 @@ def test_study_dom_interpolations_treat_payload_fields_as_text(
         "boss_cost_usd",
     ]
     cell = {key: 1 for key in numeric_fields}
-    cell.update({
-        "cell_id": "claude-opus-5-5__A1_solo_no_skill", "arm_id": "A1_solo_no_skill",
-        "display_title": ATTACK, "arm_badge": ATTACK, "arm_color": ATTACK,
-        "boss_key": "claude-opus-5-5", "is_team": True, "cat_pass_12": {}, "cost_basis": "est",
-    })
+    cell.update(
+        {
+            "cell_id": "claude-opus-5-5__A1_solo_no_skill",
+            "arm_id": "A1_solo_no_skill",
+            "display_title": ATTACK,
+            "arm_badge": ATTACK,
+            "arm_color": ATTACK,
+            "boss_key": "claude-opus-5-5",
+            "is_team": True,
+            "cat_pass_12": {},
+            "cost_basis": "est",
+        }
+    )
     payload = {
-        "cells": [cell], "models_meta": {"claude-opus-5-5": {"name": ATTACK}},
+        "cells": [cell],
+        "models_meta": {"claude-opus-5-5": {"name": ATTACK}},
         "arms_meta": {"a": dict.fromkeys(["color", "badge", "short", "desc"], ATTACK)},
     }
     # Protect the script boundary separately so this test isolates DOM insertion.
@@ -117,7 +127,10 @@ global.document = {
 """
     result = subprocess.run(
         [node, "-e", harness + script + "\nconsole.log(JSON.stringify(writes));"],
-        check=True, capture_output=True, text=True, timeout=10,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     parser = _Tags()
     for fragment in json.loads(result.stdout):
@@ -135,15 +148,20 @@ def test_chart_builders_have_no_personal_export_directory(name: str) -> None:
 
 @pytest.mark.parametrize("name", ["build_simple_optimal_chart", "build_skill_orchestration_charts"])
 def test_chart_builders_only_write_report_outputs(
-    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load(name, monkeypatch)
     monkeypatch.setattr(module, "CHARTS_DIR", tmp_path / "charts")
     monkeypatch.setattr(module, "ARTIFACT_DIR", tmp_path, raising=False)
     monkeypatch.setattr(module, "write_png", lambda path: None)
     for fn in (
-        "build_simple_optimal_chart", "build_gantt_leaderboard", "build_pareto_and_progression",
-        "build_swarm_wave_delegation", "build_category_heatmap_scorecard",
+        "build_simple_optimal_chart",
+        "build_gantt_leaderboard",
+        "build_pareto_and_progression",
+        "build_swarm_wave_delegation",
+        "build_category_heatmap_scorecard",
     ):
         if hasattr(module, fn):
             monkeypatch.setattr(module, fn, lambda *args: "<svg/>")

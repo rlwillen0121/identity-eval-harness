@@ -12,7 +12,7 @@ from identitybench.runner.cost import Rates
 from identitybench.runner.manifest import git_info
 
 
-@pytest.mark.parametrize("tokens", [-10**12, 10**400, float("nan"), float("inf")])
+@pytest.mark.parametrize("tokens", [-(10**12), 10**400, float("nan"), float("inf")])
 def test_cost_handles_untrusted_counts(tokens):
     amount = Rates(input=1, output=2).cost(Usage(output_tokens=tokens))
     assert math.isfinite(amount) and amount >= 0
@@ -41,7 +41,8 @@ def test_home_config_paths_warn_but_load(monkeypatch, tmp_path, key, relative):
     with pytest.warns(UserWarning, match="bare binary name or experiments/local/"):
         entry = ModelEntry(
             provider="replay" if key == "path" else "claude_cli",
-            model="fixture", extra={key: value},
+            model="fixture",
+            extra={key: value},
         )
     assert entry.extra[key] == value
 

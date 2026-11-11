@@ -330,6 +330,7 @@ class OpenAICompatProvider:
         api_key_env: str | None = None,
         base_url_env: str | None = DEFAULT_BASE_URL_ENV,
         cache_namespace: str | None = None,
+        allow_custom_endpoint: bool = False,
         reasoning_effort_param: bool = True,
         max_tokens_param: MaxTokensParam = "max_completion_tokens",
         provider_routing: Mapping[str, Any] | None = None,
@@ -377,6 +378,19 @@ class OpenAICompatProvider:
         self._timeout_s = timeout_s
         self._client = client
         self._base_url = self._resolve_base_url()
+        if not isinstance(allow_custom_endpoint, bool):
+            raise ValueError("allow_custom_endpoint must be true or false")
+        self._allow_custom_endpoint = allow_custom_endpoint
+        if (
+            base_url_env in (None, DEFAULT_BASE_URL_ENV)
+            and not is_vendor_endpoint(self._base_url)
+            and not allow_custom_endpoint
+        ):
+            raise ValueError(
+                "openai_compatible: custom vendor endpoint requires "
+                "extra.allow_custom_endpoint: true; vendor credentials and prompts "
+                "would be sent to another host"
+            )
         self._drops_temperature = is_vendor_endpoint(self._base_url) and not accepts_temperature(
             model
         )
@@ -402,14 +416,16 @@ class OpenAICompatProvider:
         """Hash of base URL, model and cache namespace, plus the routing preference when one is
         set (a different host order can produce a different answer) and the API when it is the
         Responses API (the same model can answer differently there). Without either the parts
-        are exactly the earlier ones, so existing cache entries stay valid."""
+        are exactly the earlier ones, so existing cache entries stay valid. An explicit
+        custom-endpoint opt-in adds a visible prefix, separating those cache entries."""
         base = self._base_url or f"unset:{self._base_url_env}"
         parts = [base, self.model, self._cache_namespace]
         if self._routing_json is not None:
             parts.append(self._routing_json)
         if self.api != "chat_completions":
             parts.append(f"api={self.api}")
-        return hash_endpoint(*parts)
+        identity = hash_endpoint(*parts)
+        return f"custom-endpoint-opt-in:{identity}" if self._allow_custom_endpoint else identity
 
     # ------------------------------------------------------------------ request construction
 

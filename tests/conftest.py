@@ -12,3 +12,9 @@ from __future__ import annotations
 import os
 
 os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
+# A developer shell may export a vendor base-URL override (a local proxy, say). Providers
+# refuse such an override unless a model entry opts in, so an inherited one would fail every
+# test that builds a default vendor client. Tests that exercise the override set it themselves.
+for _name in ("OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"):
+    os.environ.pop(_name, None)

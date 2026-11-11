@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -56,6 +57,7 @@ from identitybench.v41.schemas import (
     SteeringMode,
     SuiteScoreSummaryV41,
     WaveExecutionMode,
+    _TokenBudgetConfigV41,
 )
 from identitybench.v41.scoring import score_episode, summarize_suite_v41
 
@@ -111,7 +113,7 @@ def compute_v41_episode_sha256(episode: EpisodeSpecV41) -> str:
 # ---------------------------------------------------------------------------
 
 
-class V41ModelEntryConfig(_FrozenModelV4):
+class V41ModelEntryConfig(_TokenBudgetConfigV41):
     """Model or deterministic baseline entry in a v4.1 experiment YAML config."""
 
     provider: str
@@ -171,7 +173,11 @@ class V41ModelEntryConfig(_FrozenModelV4):
         return ModelSpec.model_validate(self._spec_payload())
 
     def to_run_config(
-        self, *, max_turns: int | None = None, max_calls_per_turn: int = 4
+        self,
+        *,
+        max_turns: int | None = None,
+        max_calls_per_turn: int = 4,
+        max_total_tokens: int | None = None,
     ) -> RunConfigV41:
         return RunConfigV41(
             topology_id=self.topology_id,
@@ -179,10 +185,11 @@ class V41ModelEntryConfig(_FrozenModelV4):
             wave_execution_mode=self.wave_execution_mode,
             max_turns=self.max_turns or max_turns or 12,
             max_calls_per_turn=max_calls_per_turn,
+            max_total_tokens=self.max_total_tokens or max_total_tokens,
         )
 
 
-class V41ExperimentConfig(_FrozenModelV4):
+class V41ExperimentConfig(_TokenBudgetConfigV41):
     """A v4.1 experiment: one sealed suite x a list of models / baselines."""
 
     name: str = "identitybench-v41"
@@ -207,7 +214,37 @@ def load_v41_experiment_config(path: Path) -> V41ExperimentConfig:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError(f"Experiment config at {path} must be a YAML mapping")
-    return V41ExperimentConfig.model_validate(raw)
+    config = V41ExperimentConfig.model_validate(raw)
+    local = any(
+        parent.name == "local" and parent.parent.name == "experiments"
+        for parent in Path(path).resolve().parents
+    )
+    if not local:
+        # runner.config embeds this rule in a validator with unrelated URL/protocol
+        # checks. Mirror only its path rule here, without changing config serialization.
+        for entry in config.models:
+            for key in ("binary", "path"):
+                value = entry.extra.get(key)
+                if not isinstance(value, str) or not (
+                    value.startswith("~") or Path(value).is_absolute()
+                ):
+                    continue
+                under_home = value.startswith("~") or bool(re.match(r"^/(Users|home)/[^/]+", value))
+                try:
+                    expanded = Path(value).expanduser()
+                    under_home = (
+                        under_home
+                        or expanded.is_relative_to(Path.home())
+                        or (expanded.resolve().is_relative_to(Path.home().resolve()))
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    pass
+                if under_home:
+                    raise ValueError(
+                        f"extra.{key} points under the home directory; "
+                        "use a bare binary name or experiments/local/"
+                    )
+    return config
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +262,7 @@ class EpisodeTrialRecordV41(_FrozenModelV4):
     trial_index: int = 0
     config_fingerprint: str = ""
     episode_sha256: str = ""
+    oracles_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     execution_valid: bool = True
     provider_error: bool = False
     parse_failure: bool = False
@@ -336,6 +374,12 @@ async def run_v41_agent_episode(
         if resp.reported_cost_usd is not None:
             cost = (cost or 0.0) + resp.reported_cost_usd
 
+    def budget_exceeded() -> bool:
+        return (
+            run_config.max_total_tokens is not None
+            and usage.input_tokens + usage.output_tokens > run_config.max_total_tokens
+        )
+
     def execute_turn(turn_idx: int, calls: Sequence[ToolCall]) -> list[dict[str, Any]]:
         """Execute calls in array order; returns one result dict per call (incl. capped)."""
         env.current_turn_index = turn_idx
@@ -390,7 +434,8 @@ async def run_v41_agent_episode(
 
         retry = 0
         while (
-            not native
+            not budget_exceeded()
+            and not native
             and resp.error is not None
             and not resp.refused
             and _is_malformed_cli_function_call_error(resp.error)
@@ -410,7 +455,8 @@ async def run_v41_agent_episode(
 
         transient_retry = 0
         while (
-            resp.error is not None
+            not budget_exceeded()
+            and resp.error is not None
             and not resp.refused
             and not _is_malformed_cli_function_call_error(resp.error)
             and not (resp.raw or {}).get("nonretryable", False)
@@ -421,6 +467,8 @@ async def run_v41_agent_episode(
             resp = await provider.complete(make_request(messages))
             account(resp)
 
+        if budget_exceeded():
+            break
         if resp.error is not None and not resp.refused:
             provider_error = resp.error
             break
@@ -506,7 +554,9 @@ async def run_v41_agent_episode(
         if env.episode_completed:
             break
 
-    if provider_error is not None:
+    if budget_exceeded():
+        reason = "TOKEN_BUDGET_EXCEEDED"
+    elif provider_error is not None:
         reason = "PROVIDER_ERROR"
     elif env.episode_completed:
         reason = "EPISODE_COMPLETED"
@@ -621,7 +671,9 @@ def run_v41_baselines_on_suite(
     """Run the deterministic v4.1 baselines on a sealed dataset dir or an in-memory suite."""
     ring, seal, episodes, oracles = _load_suite(suite_or_dir)
     records = [
-        _baseline_record(name, name, ep, orc, None)
+        _baseline_record(name, name, ep, orc, None).model_copy(
+            update={"oracles_sha256": seal.oracles_sha256 if seal else None}
+        )
         for name in baselines
         for ep, orc in zip(episodes, oracles, strict=True)
     ]
@@ -784,7 +836,9 @@ async def run_v41_experiment_async(
     async def run_model(m: V41ModelEntryConfig) -> None:
         m_id = m.display_id
         run_cfg = m.to_run_config(
-            max_turns=config.max_turns, max_calls_per_turn=config.max_calls_per_turn
+            max_turns=config.max_turns,
+            max_calls_per_turn=config.max_calls_per_turn,
+            max_total_tokens=config.max_total_tokens,
         )
         rec_path = records_dir / f"{_safe(m_id)}.jsonl"
         provider: Provider | None = None
@@ -822,6 +876,7 @@ async def run_v41_experiment_async(
                     and rec.model_id == m_id
                     and rec.config_fingerprint == fp
                     and rec.episode_sha256 == ep_sha.get(rec.episode_id)
+                    and rec.oracles_sha256 in (None, seal.oracles_sha256)
                     and 0 <= rec.trial_index < config.trials
                 ):
                     key = (rec.episode_id, rec.trial_index)
@@ -879,6 +934,7 @@ async def run_v41_experiment_async(
                             config_fingerprint=fp,
                             episode_sha256=ep_sha[ep.episode_id],
                         )
+                    rec = rec.model_copy(update={"oracles_sha256": seal.oracles_sha256})
                     # Verify the exact persistence format is readable before appending it.
                     EpisodeTrialRecordV41.model_validate_json(rec.model_dump_json())
                     async with lock:
@@ -896,6 +952,7 @@ async def run_v41_experiment_async(
                         trial_index=t_idx,
                         config_fingerprint=fp,
                         episode_sha256=ep_sha[ep.episode_id],
+                        oracles_sha256=seal.oracles_sha256,
                         execution_valid=False,
                         termination_reason="INFRASTRUCTURE_ERROR",
                         error_message=(
@@ -1004,6 +1061,8 @@ async def run_v41_experiment_async(
         "models": manifest_models,
         "execution_valid_rates": rates,
     }
+    if config.max_total_tokens is not None:
+        manifest["max_total_tokens"] = config.max_total_tokens
     _write_atomic_text(out_dir / "manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
     return artifact
 

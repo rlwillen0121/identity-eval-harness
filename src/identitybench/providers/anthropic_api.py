@@ -42,6 +42,7 @@ import os
 import time
 from collections import OrderedDict
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import anthropic
 from anthropic import AsyncAnthropic
@@ -123,6 +124,7 @@ class AnthropicProvider:
         api_key_env: str | None = None,
         base_url_env: str | None = None,
         cache_namespace: str | None = None,
+        allow_custom_endpoint: bool = False,
         max_retries: int = 4,
         timeout_s: float = 600.0,
         client: AsyncAnthropic | None = None,
@@ -144,6 +146,18 @@ class AnthropicProvider:
         self._timeout_s = timeout_s
         self._client = client
         self._base_url = self._resolve_base_url()
+        if not isinstance(allow_custom_endpoint, bool):
+            raise ValueError("allow_custom_endpoint must be true or false")
+        self._allow_custom_endpoint = allow_custom_endpoint
+        if (
+            self.kind == "anthropic"
+            and urlsplit(self._base_url or "").hostname != "api.anthropic.com"
+            and not allow_custom_endpoint
+        ):
+            raise ValueError(
+                "anthropic: custom endpoint requires extra.allow_custom_endpoint: true; "
+                "vendor credentials and prompts would be sent to another host"
+            )
         # Original content blocks of assistant turns that called tools, keyed by tool_use id.
         # Thinking is always on for current models and the API requires a tool-calling turn's
         # thinking blocks to be sent back unchanged, but the provider-neutral ``Message`` can't
@@ -167,7 +181,8 @@ class AnthropicProvider:
 
     def endpoint_identity(self) -> str:
         base = self._base_url or f"unset:{self._base_url_env}"
-        return hash_endpoint(base, self.model, self._cache_namespace)
+        identity = hash_endpoint(base, self.model, self._cache_namespace)
+        return f"custom-endpoint-opt-in:{identity}" if self._allow_custom_endpoint else identity
 
     # ------------------------------------------------------------------ request construction
 

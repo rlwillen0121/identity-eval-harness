@@ -424,15 +424,16 @@ def parse_vote(response: ModelResponse) -> tuple[VoteStatus, dict[str, Any] | No
         return VoteStatus.error, None, response.error
     if response.parsed is None:
         decoder = json.JSONDecoder()
-        start = response.text.find("{")
+        reply = response.text or ""
+        start = reply.find("{")
         votes = 0
         while start != -1:
             try:
-                value, end = decoder.raw_decode(response.text, start)
+                value, end = decoder.raw_decode(reply, start)
             except RecursionError:
                 return VoteStatus.invalid, None, "JSON nesting too deep"
             except ValueError:
-                start = response.text.find("{", start + 1)
+                start = reply.find("{", start + 1)
                 continue
             if isinstance(value, dict) and all(
                 key in value for key in ("classification", "reason")
@@ -441,7 +442,7 @@ def parse_vote(response: ModelResponse) -> tuple[VoteStatus, dict[str, Any] | No
                 if votes > 1:
                     return VoteStatus.invalid, None, "multiple vote objects"
             # Skip nested objects and quoted JSON within a decoded object.
-            start = response.text.find("{", end)
+            start = reply.find("{", end)
     data = (
         response.parsed
         if response.parsed is not None

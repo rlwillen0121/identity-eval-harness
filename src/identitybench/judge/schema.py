@@ -151,22 +151,23 @@ def parse_judge_response(response: ModelResponse) -> JudgeVerdict:
         return JudgeVerdict(status=JudgeStatus.error, error=response.error)
     if response.parsed is None:
         decoder = json.JSONDecoder()
-        start = response.text.find("{")
+        reply = response.text or ""
+        start = reply.find("{")
         verdicts = 0
         while start != -1:
             try:
-                value, end = decoder.raw_decode(response.text, start)
+                value, end = decoder.raw_decode(reply, start)
             except RecursionError:
                 return JudgeVerdict(status=JudgeStatus.invalid, error="JSON nesting too deep")
             except ValueError:
-                start = response.text.find("{", start + 1)
+                start = reply.find("{", start + 1)
                 continue
             if isinstance(value, dict) and all(key in value for key in DIMENSIONS):
                 verdicts += 1
                 if verdicts > 1:
                     return JudgeVerdict(status=JudgeStatus.invalid, error="multiple score objects")
             # Skip nested objects and quoted JSON within a decoded object.
-            start = response.text.find("{", end)
+            start = reply.find("{", end)
     data = (
         response.parsed
         if response.parsed is not None
