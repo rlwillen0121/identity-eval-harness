@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from identitybench.report.markdown_text import code_cell
 from identitybench.v3.runner import V3RunArtifact
 from identitybench.v3.schemas import CategoryId
 
@@ -33,7 +34,7 @@ def render_v3_markdown_report(artifact: V3RunArtifact) -> str:
         key=lambda kv: kv[1].mean_s_ep,
         reverse=True,
     ):
-        safe_config_id = str(config_id).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+        safe_config_id = code_cell(str(config_id))
         score = (
             "N/A"
             if s.scoring_status == "ineligible"
@@ -59,7 +60,7 @@ def render_v3_markdown_report(artifact: V3RunArtifact) -> str:
             )
         )
         lines.append(
-            f"| `{safe_config_id}` | {score} "
+            f"| {safe_config_id} | {score} "
             f"| {' | '.join(performance_metrics)} | {s.execution_valid_rate:.2f} "
             f"| {score_status} |"
         )
@@ -83,7 +84,7 @@ def render_v3_markdown_report(artifact: V3RunArtifact) -> str:
         key=lambda kv: kv[1].mean_s_ep,
         reverse=True,
     ):
-        safe_config_id = str(config_id).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+        safe_config_id = code_cell(str(config_id))
         cells = []
         for cat in CategoryId:
             cat_score = s.by_category.get(cat.value)
@@ -92,7 +93,7 @@ def render_v3_markdown_report(artifact: V3RunArtifact) -> str:
                 if s.scoring_status == "eligible" and cat_score
                 else "n/a"
             )
-        lines.append(f"| `{safe_config_id}` | " + " | ".join(cells) + " |")
+        lines.append(f"| {safe_config_id} | " + " | ".join(cells) + " |")
 
     lines.extend(["", "## 3. Evaluation Integrity", ""])
     if any(artifact.infrastructure_invalid_trials.values()):
@@ -102,11 +103,9 @@ def render_v3_markdown_report(artifact: V3RunArtifact) -> str:
         for config_id, episode_ids in sorted(artifact.infrastructure_invalid_trials.items()):
             if not episode_ids:
                 continue
-            safe_config_id = (
-                str(config_id).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
-            )
+            safe_config_id = code_cell(str(config_id))
             lines.append(
-                f"- `{safe_config_id}`: {len(episode_ids)} infrastructure-invalid trial(s); "
+                f"- {safe_config_id}: {len(episode_ids)} infrastructure-invalid trial(s); "
                 f"episodes: {', '.join(f'`{episode_id}`' for episode_id in episode_ids)}"
             )
     else:

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import html
+import re
+
+import pytest
+
 from identitybench.report.markdown_text import escape_cell, escape_inline, fenced
 
 
@@ -27,6 +32,20 @@ def test_line_breaks_fold_and_entities_are_neutralized() -> None:
 
 def test_an_empty_cell_still_fills_its_column() -> None:
     assert escape_cell("") == " "
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "http://example.com", "https://example.com", "HTTPS://example.com",
+        "ftp://example.com", "mailto:user@example.com", "www.example.com",
+        "WWW.example.com", "user@example.com",
+    ],
+)
+def test_bare_links_are_readable_but_not_autolinkable(text: str) -> None:
+    escaped = escape_inline(text)
+    assert not re.search(r"(?i)(?:https?|ftp)://|mailto:|www\.|@", escaped)
+    assert html.unescape(escaped) == text
 
 
 def test_a_fence_is_longer_than_any_backtick_run_inside() -> None:

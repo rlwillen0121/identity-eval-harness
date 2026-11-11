@@ -16,4 +16,4 @@ models:
     timeout_s: 300.0
     concurrency: 2
     extra:
-      binary: /Users/ryanwillen/.local/bin/muse
+      binary: muse

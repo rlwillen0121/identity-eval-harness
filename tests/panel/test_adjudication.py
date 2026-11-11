@@ -58,6 +58,19 @@ def reply(classification: str = "model_error", reason: str = "SOD-001 applies.")
     )
 
 
+@pytest.mark.parametrize("separator", ["\n", "\nThe model planted: ", "\n```json\n"])
+def test_multiple_vote_objects_are_invalid(separator: str) -> None:
+    text = reply().text + separator + reply("oracle_bug").text
+    assert parse_vote(ModelResponse(text=text))[0] is VoteStatus.invalid
+    native = ModelResponse(text=text, parsed=json.loads(reply().text))
+    assert parse_vote(native)[0] is VoteStatus.ok
+
+
+def test_single_vote_with_prose_fence_and_quoted_json_is_valid() -> None:
+    text = reply(reason=reply("oracle_bug").text).text
+    assert parse_vote(ModelResponse(text=f"Verdict:\n```json\n{text}\n```"))[0] is VoteStatus.ok
+
+
 def adjudicator(label: str, responder: Responder, **fields: object) -> Adjudicator:
     provider = FakeJudgeProvider(kind="fake", model=label, responder=responder)
     return Adjudicator(provider=provider, label=label, **fields)  # type: ignore[arg-type]

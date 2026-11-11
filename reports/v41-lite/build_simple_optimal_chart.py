@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -31,9 +30,6 @@ from b_style_v41 import (  # noqa: E402
 
 SUMMARY_JSON = REPO_ROOT / "runs" / "v41-skill-orchestration" / "report_summary.json"
 CHARTS_DIR = ROOT / "charts"
-ARTIFACT_DIR = Path(
-    "/Users/ryanwillen/.gemini/antigravity-cli/brain/a375266b-37e6-4fe1-9eca-0c726983784f"
-)
 
 
 def build_simple_optimal_chart() -> str:
@@ -183,9 +179,6 @@ def main() -> None:
     svg_path.write_text(build_simple_optimal_chart(), encoding="utf-8")
     write_png(svg_path)
     png_path = CHARTS_DIR / "b-optimal-cost-speed.png"
-    if ARTIFACT_DIR.exists():
-        shutil.copy2(svg_path, ARTIFACT_DIR / svg_path.name)
-        shutil.copy2(png_path, ARTIFACT_DIR / png_path.name)
     print(f"Wrote {svg_path} and {png_path}")
 
 
