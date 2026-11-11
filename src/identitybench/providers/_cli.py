@@ -64,7 +64,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar, TypedDict
 
-from identitybench.providers._json import load_object
+from identitybench.providers._json import bounded_token_count, load_object
 from identitybench.providers._subprocess import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BASE_DELAY_S,
@@ -222,20 +222,17 @@ def as_int(value: object) -> int:
 
     ``json.loads`` accepts ``NaN`` and ``Infinity``, so non-finite floats count as malformed.
     """
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(value, 0)
-    if isinstance(value, float) and math.isfinite(value):
-        return max(int(value), 0)
-    return 0
+    return bounded_token_count(value)
 
 
 def as_float(value: object) -> float | None:
     """A reported cost from CLI JSON; missing, malformed or non-finite values are None."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
     return number if math.isfinite(number) else None
 
 

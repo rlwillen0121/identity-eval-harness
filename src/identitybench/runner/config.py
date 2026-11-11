@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import itertools
 import re
+import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast, get_args
 
@@ -294,6 +295,23 @@ class ModelEntry(_Strict):
     @classmethod
     def _extra_has_no_urls(cls, value: dict[str, Any]) -> dict[str, Any]:
         _check_no_urls(value, "extra")
+        for key in _PATH_EXTRA_KEYS:
+            path = value.get(key)
+            if isinstance(path, str) and (path.startswith("~") or Path(path).is_absolute()):
+                try:
+                    expanded = Path(path).expanduser()
+                    under_home = expanded.is_relative_to(Path.home()) or (
+                        expanded.resolve().is_relative_to(Path.home().resolve())
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    under_home = False
+                if under_home:
+                    warnings.warn(
+                        f"extra.{key} points under the home directory; "
+                        "use a bare binary name or experiments/local/",
+                        UserWarning,
+                        stacklevel=2,
+                    )
         protocol = value.get("tool_protocol")
         if protocol is not None and protocol not in TOOL_PROTOCOLS:
             raise ValueError(

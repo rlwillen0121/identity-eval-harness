@@ -613,7 +613,8 @@ async def test_home_directories_never_reach_run_files(
     expected = "claude_cli: could not start '~/.local/bin/claude' (see /Users/alice2/log, ~)"
     assert prediction.invalid_reason == expected
     (recording,) = load_responses_jsonl(result.run_dir / RESPONSES_FILE).values()
-    assert recording.error == expected
+    # The recording goes through the provider redaction too, which masks any account name.
+    assert recording.error == expected.replace("alice2", "<redacted>")
 
 
 async def test_home_directories_never_reach_baseline_predictions(

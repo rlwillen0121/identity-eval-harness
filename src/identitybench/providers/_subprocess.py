@@ -27,6 +27,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 logger = logging.getLogger("identitybench.providers")
@@ -212,7 +213,7 @@ async def run_command(command: Command) -> ProcessResult:
             stdout="",
             stderr="",
             duration_s=time.perf_counter() - start,
-            launch_error=f"could not start {command.argv[0]!r}: {exc.strerror or exc}",
+            launch_error=redact(f"could not start {command.argv[0]!r}: {exc.strerror or exc}"),
         )
 
     register_group(proc.pid)  # start_new_session: the child's pid is its process group id
@@ -316,7 +317,8 @@ async def retry_transient[T](
 
 _SECRET_NAME_RE = re.compile(
     r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|_URL|_ENDPOINT|_HOST|_AUTH|_BASE"
-    r"|_PAT|_PASSWD|_COOKIE|_SESSION|_JWT)$",
+    r"|_PAT|_PASSWD|_COOKIE|_SESSION|_JWT|_PROXY|_ADDR|_URI|_DSN)$"
+    r"|(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?)(?:_|$)",
     re.IGNORECASE,
 )
 _SENSITIVE_NAME = _SECRET_NAME_RE
@@ -371,15 +373,15 @@ def redact(
     Masks, in order:
 
     - the values of explicitly selected environment variables and credential- and
-      endpoint-looking environment variables (names ending in
-      KEY, TOKEN, SECRET, PASSWORD, CREDENTIAL(S), _URL, _ENDPOINT, _HOST, _AUTH or _BASE), and
+      endpoint-looking environment variables (including KEY/TOKEN/SECRET/PASSWORD segments
+      and URL/URI/DSN/ADDR/PROXY suffixes), and
       the JSON-escaped form of any such value holding a ``/`` (``https:\\/\\/...``), as a CLI's
       JSON error output would spell it;
     - the hostname of every such endpoint-named value that is a URL (``url_hostname``), as a
       whole word, so the host alone (or inside another URL, escaped or not) can't surface
       either. Only those variables: masking the host of any URL-valued variable turned a
       ``WORD_URL=http://test:8080`` into a mask over every ``test`` in a message;
-    - common key and bearer-token shapes.
+    - common key and bearer-token shapes, URL userinfo and home-directory paths.
 
     Longer values go first, so a value that contains another is masked whole.
     """
@@ -402,6 +404,20 @@ def redact(
         text = text.replace(value, _REDACTED)
     for host in sorted(hosts, key=len, reverse=True):
         text = re.sub(rf"\b{re.escape(host)}\b", _REDACTED, text)
+    text = re.sub(
+        r"(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*://)([^\s/@]+:[^\s/@]+)@",
+        lambda match: (
+            match.group(1) + _REDACTED + "@"
+            if len(match.group(2)) >= _MIN_SECRET_CHARS
+            else match.group(0)
+        ),
+        text,
+    )
+    home = str(Path.home().resolve())
+    if home != "/":
+        text = re.sub(re.escape(home) + r"(?=/|$|[\s\"'])", "~", text)
+    # Any other account's home names a person too; keep the shape, drop the name.
+    text = re.sub(r"(/(?:Users|home)/)[^/\s\"'<>:,)]+", rf"\1{_REDACTED}", text)
     return _SECRET_VALUE_RE.sub(_REDACTED, text)
 
 

@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from identitybench import __version__
+from identitybench.providers._cli import base_child_env
 from identitybench.providers.base import GenerationParams, Usage
 from identitybench.runner.config import Mode, Repeats, ToolProtocolName, slug
 from identitybench.runner.cost import CostMode, CostTracker, PricingTable
@@ -320,7 +321,8 @@ def git_info(
     def run(*args: str) -> str | None:
         try:
             proc = subprocess.run(
-                ["git", "--no-optional-locks", "-C", root, *args],
+                ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", root, *args],
+                env=base_child_env(),
                 capture_output=True,
                 text=True,
                 check=False,

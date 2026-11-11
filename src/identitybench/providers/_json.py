@@ -39,23 +39,109 @@ Five rules decide *which* object when a reply holds several:
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Collection, Iterator
+from dataclasses import fields
 from typing import Any
+
+from identitybench.providers.base import ModelResponse, Usage
 
 _FENCE_RE = re.compile(r"```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\r?\n(.*?)```", re.DOTALL)
 _DATA_FENCE_TAGS = frozenset({"", "json", "jsonc", "json5"})
 """Fence tags whose content counts as output; any other tag marks a code block."""
 _THINK_TAG_RE = re.compile(r"<(/?)(think|thinking)>", re.IGNORECASE)
 _DECODER = json.JSONDecoder()
+MAX_JSON_TEXT = 1024 * 1024
+MAX_TOKEN_COUNT = 1_000_000_000
+_SCAN_WORK_BUDGET = 256 * MAX_JSON_TEXT
+"""Characters the embedded-object scan may re-read across failed decode attempts."""
+
+
+def bounded_token_count(value: object) -> int:
+    """Untrusted counts are finite, non-negative and capped before any arithmetic."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return min(max(value, 0), MAX_TOKEN_COUNT)
+    if isinstance(value, float) and math.isfinite(value):
+        return int(min(max(value, 0), MAX_TOKEN_COUNT))
+    return 0
+
+
+def _finite_json(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _finite_json(child) for key, child in value.items()}
+    if isinstance(value, list | tuple):
+        return [_finite_json(child) for child in value]
+    return value
+
+
+def sanitize_response(response: ModelResponse, kind: str) -> ModelResponse:
+    """Enforce the response contract before untrusted API/replay data reaches a runner."""
+    response.usage = Usage(
+        **{
+            field.name: bounded_token_count(getattr(response.usage, field.name, None))
+            for field in fields(Usage)
+        }
+    )
+    malformed = False
+    for name in ("text", "served_model", "stop_reason", "error"):
+        value = getattr(response, name)
+        if value is not None and not isinstance(value, str):
+            setattr(response, name, None)
+            malformed = True
+    for name in ("raw", "parsed"):
+        value = getattr(response, name)
+        if value is not None and not isinstance(value, dict):
+            setattr(response, name, None)
+            malformed = True
+    try:
+        response.raw = _finite_json(response.raw)
+        response.parsed = _finite_json(response.parsed)
+        for call in response.tool_calls:
+            if not isinstance(call.id, str) or not isinstance(call.name, str):
+                malformed = True
+            if not isinstance(call.arguments, dict):
+                malformed = True
+            else:
+                arguments = _finite_json(call.arguments)
+                call.arguments.clear()
+                call.arguments.update(arguments)
+    except (AttributeError, TypeError, RecursionError):
+        response.raw = None
+        malformed = True
+    for name in ("latency_s", "reported_cost_usd"):
+        value = getattr(response, name)
+        try:
+            number = (
+                float(value)
+                if isinstance(value, int | float) and not isinstance(value, bool)
+                else -1.0
+            )
+        except OverflowError:
+            number = -1.0
+        if not math.isfinite(number) or number < 0:
+            setattr(response, name, 0.0 if name == "latency_s" else None)
+    response.refused = response.refused is True
+    if malformed:
+        response.text = None
+        response.parsed = None
+        response.tool_calls = []
+        response.error = f"{kind}: malformed response"
+    return response
 
 
 class _TooDeep(Exception):
-    """Nesting deeper than the decoder supports was found during the embedded-object scan."""
+    """The embedded-object scan exceeded its nesting or decoding-work limit."""
 
 
 def load_object(text: str | bytes) -> dict[str, Any] | None:
     """``text`` decoded as one JSON object, or ``None`` (invalid, not an object, or too deep)."""
+    if not isinstance(text, str | bytes):
+        return None
     try:
         value = json.loads(text)
     except (ValueError, RecursionError):
@@ -73,15 +159,22 @@ def _top_level_objects(text: str) -> Iterator[tuple[int, int, dict[str, Any]]]:
 
     Raises ``_TooDeep`` on nesting the decoder can't handle: where that object would end is then
     unknown, so no later object can be placed. Stopping there also keeps a degenerate reply from
-    costing quadratic time (one deep decode attempt per brace).
+    costing quadratic time (one deep decode attempt per brace). Failed attempts also draw on
+    a cumulative work budget: a failure costs the offset it stopped at, since building a
+    ``JSONDecodeError`` scans the text up to there. The budget is far above what prose with
+    many stray braces spends, and a reply that exhausts it is unscorable.
     """
     start = text.find("{")
+    remaining = _SCAN_WORK_BUDGET
     while start != -1:
         try:
             value, end = _DECODER.raw_decode(text, start)
         except RecursionError as exc:
             raise _TooDeep from exc
-        except ValueError:
+        except ValueError as exc:
+            remaining -= getattr(exc, "pos", start) + 1
+            if remaining < 0:
+                raise _TooDeep from exc
             start = text.find("{", start + 1)
             continue
         if isinstance(value, dict):
@@ -113,11 +206,31 @@ def strip_reasoning(text: str) -> str:
     A tag inside a top-level object that decodes is part of a string value, not a tag, so it
     neither cuts nor hides that object (``{"note": "has <think> inside"}`` in prose survives).
     """
+    if len(text) > MAX_JSON_TEXT:
+        return ""
     found = list(_THINK_TAG_RE.finditer(text))
     if not found:
         return text
     spans = _object_spans(text)
-    tags = [tag for tag in found if not any(start < tag.start() < end for start, end in spans)]
+    tags: list[re.Match[str]] = []
+    span_index = 0
+    for tag in found:
+        while span_index < len(spans) and spans[span_index][1] <= tag.start():
+            span_index += 1
+        if span_index == len(spans) or tag.start() <= spans[span_index][0]:
+            tags.append(tag)
+
+    # Index the next matching close once, instead of rescanning the remaining tags for
+    # every unmatched opening tag. Keep the historical first-matching-close semantics.
+    next_closes: dict[str, int] = {}
+    pairs: dict[int, int] = {}
+    for index in range(len(tags) - 1, -1, -1):
+        tag = tags[index]
+        name = tag.group(2).lower()
+        if tag.group(1):
+            next_closes[name] = index
+        elif name in next_closes:
+            pairs[index] = next_closes[name]
 
     # Complete spans: each opening tag pairs with the next closing tag of the same name, and the
     # tags in between are part of the span.
@@ -127,15 +240,7 @@ def strip_reasoning(text: str) -> str:
     while index < len(tags):
         tag = tags[index]
         if not tag.group(1):
-            name = tag.group(2).lower()
-            close = next(
-                (
-                    later
-                    for later in range(index + 1, len(tags))
-                    if tags[later].group(1) and tags[later].group(2).lower() == name
-                ),
-                None,
-            )
+            close = pairs.get(index)
             if close is not None:
                 removed.append((tag.start(), tags[close].end()))
                 index = close + 1
@@ -198,7 +303,7 @@ def extract_json_object(
     """
     if isinstance(required_keys, str) or isinstance(schema_keys, str):
         raise TypeError("key arguments must be collections of key names, not one string")
-    if not text:
+    if not isinstance(text, str) or not text or len(text) > MAX_JSON_TEXT:
         return None
     stripped = text.strip().lstrip("﻿").strip()
     whole = load_object(stripped)
