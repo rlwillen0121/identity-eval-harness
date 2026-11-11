@@ -33,3 +33,18 @@ experiments/local/
 
 # Agent worktrees (they would otherwise mark run manifests git_dirty)
 .claude/worktrees/
+
+# Local OrgAI testing artifacts (never commit)
+.orgai/
+*[Oo][Rr][Gg][Aa][Ii]*
+docs/*[Oo][Rr][Gg][Aa][Ii]*
+experiments/*[Oo][Rr][Gg][Aa][Ii]*
+reports/*[Oo][Rr][Gg][Aa][Ii]*
+reports/**/*[Oo][Rr][Gg][Aa][Ii]*
+src/identitybench/v41/orgai_*
+tests/v41/test_orgai_*
+
+# Dev report preview output (never commit)
+reports/v41-skill-orch-v2-dev/
+
+
