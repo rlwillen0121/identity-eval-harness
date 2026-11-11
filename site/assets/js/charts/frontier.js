@@ -1,29 +1,35 @@
-import {pct, usd} from '../format.js';
+import {endToEndPct, pct, usd} from '../format.js';
 import {chart, el, log, linear, scatter, stepObstacles, stepPath, svgCanvas, text, ticks, yAxis} from './svg.js';
+
+export function paretoFrontier(models, metric = 'g_srr') {
+  const paid = models.filter(m => m.cost_basis !== 'local' && m.cost_usd > 0 && m[metric] > 0)
+    .slice().sort((a, b) => a.cost_usd - b.cost_usd || b[metric] - a[metric] || a.rank - b.rank);
+  let best = 0;
+  return paid.filter(model => {
+    if (model[metric] <= best) return false;
+    best = model[metric];
+    return true;
+  });
+}
 
 export function mount(root, data, store) {
   let metric = 'g_srr';
-  const subtitle = 'Run cost (log USD) versus resolution. Cost is the retail list price of tokens used, or the amount billed; local runs are separate.';
+  const subtitle = 'Run cost (log USD) versus resolution. Cost is the amount billed when reported; otherwise retail token prices are applied to the run\'s recorded tokens. Local runs have no cost.';
   const view = chart(root, 'What does resolution cost?', subtitle, store, ({width, canvas, tip}) => {
     const plot = {left: 44, right: width - 18, top: 24, bottom: 300};
-    const paid = data.models.filter(m => m.cost_basis !== 'local' && m.cost_usd > 0)
-      .sort((a, b) => a.cost_usd - b.cost_usd || b[metric] - a[metric]);
+    const paid = data.models.filter(m => m.cost_basis !== 'local' && m.cost_usd > 0);
     const local = data.models.filter(m => m.cost_basis === 'local');
     const logStart = plot.left + (local.length ? 52 : 0);
     const minCost = Math.min(1, ...paid.map(m => m.cost_usd));
     const maxCost = Math.max(300, ...paid.map(m => m.cost_usd)) * 1.12;
     const x = log([minCost, maxCost], [logStart, plot.right - 6]);
     const y = linear([0, 1], [plot.bottom, plot.top]);
-    let best = 0;
-    const frontier = paid.filter(m => {
-      if (m[metric] <= best) return false;
-      best = m[metric];
-      return true;
-    });
+    const frontier = paretoFrontier(data.models, metric);
     const lead = data.models.reduce((a, b) => a[metric] > b[metric] ? a : b);
     const metricLabel = metric === 'g_srr' ? 'end-to-end resolution' : 'tasks solved';
+    const leadRate = metric === 'g_srr' ? endToEndPct(lead[metric]) : pct(lead[metric], 1);
     const svg = svgCanvas(canvas, width, 354,
-      `${lead.name} has the highest ${metricLabel} at ${pct(lead[metric], 1)}; ${frontier.length} paid models form the cost frontier. Local runs are shown separately.`);
+      `${lead.name} has the highest ${metricLabel} at ${leadRate}; ${frontier.length} paid models form the cost frontier. Local runs are shown separately.`);
     yAxis(svg, plot, y, ticks(0, 1, 4), v => pct(v, 0));
     svg.append(text(plot.left, 12, metric === 'g_srr' ? 'End to end' : 'Tasks solved', {class: 'chart-axis-title'}));
     for (const value of [1, 3, 10, 30, 100, 300]) {
@@ -45,11 +51,15 @@ export function mount(root, data, store) {
         m.cost_usd > 0 ? x(m.cost_usd) : logStart,
       y: y(m[metric]), color: ids.has(m.id) ? 'var(--accent)' : 'var(--ink-2)',
       opacity: m[metric] === 0 ? 0.35 : ids.has(m.id) ? 1 : 0.55, radius: m[metric] === 0 ? 3 : undefined,
-      lines: [['Run cost', `${usd(m.cost_usd)} (${({retail_api: 'retail API', billed: 'billed', local: 'local'})[m.cost_basis]})`],
-        ['End to end', pct(m.g_srr, 1)], ['Tasks solved', pct(m.tasks_rate, 1)]]}));
+      lines: [['Run cost', `${m.cost_basis === 'local' ? 'No run cost (local hardware)' : usd(m.cost_usd)} (${({retail_api: 'retail API', billed: 'billed', local: 'local'})[m.cost_basis]})`],
+        ['End to end', endToEndPct(m.g_srr)], ['Tasks solved', pct(m.tasks_rate, 1)]]}));
     const sync = scatter(svg, points, plot, store, tip, root, ids, {labelMode: 'frontier',
       obstacles: stepObstacles(frontierPoints, plot.right)});
-    return state => { line.setAttribute('stroke', state.hover ? 'var(--axis)' : 'var(--accent)'); sync(state); };
+    return state => {
+      line.setAttribute('stroke', 'var(--accent)');
+      line.setAttribute('opacity', state.hover ? 0.35 : 1);
+      sync(state);
+    };
   });
   const control = document.createElement('div');
   control.className = 'chart-segmented';

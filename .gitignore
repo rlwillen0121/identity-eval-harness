@@ -33,3 +33,6 @@ experiments/local/
 
 # Agent worktrees (they would otherwise mark run manifests git_dirty)
 .claude/worktrees/
+
+# Wrangler local state (leaderboard site)
+.wrangler/

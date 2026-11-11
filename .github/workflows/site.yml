@@ -1,0 +1,43 @@
+# Checks for the leaderboard site. Cloudflare Workers Builds deploys site/ on push to main
+# (see wrangler.jsonc); this workflow is the gate that keeps a stale or broken site out of main.
+name: Site checks
+
+on:
+  push:
+    paths:
+      - "site/**"
+      - "tests/site/**"
+      - "reports/v41-full/summary.json"
+      - "wrangler.jsonc"
+      - ".github/workflows/site.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "tests/site/**"
+      - "reports/v41-full/summary.json"
+      - "wrangler.jsonc"
+      - ".github/workflows/site.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Committed leaderboard data is current
+        run: python site/build.py --check
+      - name: Site JavaScript tests
+        run: node --test "tests/site/js/*.test.mjs"

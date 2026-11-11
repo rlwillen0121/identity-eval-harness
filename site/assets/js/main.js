@@ -1,5 +1,17 @@
-import { pct, int, date } from './format.js';
+import { END_TO_END_INTERVAL_METHOD, endToEndPct, int, date, safetyScreenLabels } from './format.js';
 import { mount as mountTable } from './table.js';
+import { mount as mountUpdates } from './updates.js';
+
+function sameStoreValue(key, left, right) {
+  if (key === 'vendors' && left instanceof Set && right instanceof Set) {
+    return left.size === right.size && [...left].every((value) => right.has(value));
+  }
+  if (key === 'sort' && left && right && typeof left === 'object' && typeof right === 'object') {
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+    return [...keys].every((name) => Object.is(left[name], right[name]));
+  }
+  return Object.is(left, right);
+}
 
 export function createStore(initial) {
   let state = initial;
@@ -8,12 +20,14 @@ export function createStore(initial) {
     get: () => state,
     set(patch) {
       const next = { ...state, ...patch };
-      if (next.selected && next.selected !== state.selected) {
+      const selecting = Boolean(patch.selected);
+      if (selecting) {
         next.query = '';
         next.vendors = new Set();
       }
-      const repeatedSelection = patch.selected && patch.selected === state.selected;
-      if (!repeatedSelection && Object.keys(patch).every((key) => next[key] === state[key])) return;
+      const repeatedSelection = selecting && patch.selected === state.selected;
+      const unchanged = Object.keys(patch).every((key) => sameStoreValue(key, next[key], state[key]));
+      if (unchanged && !repeatedSelection) return;
       state = next;
       [...listeners].forEach((fn) => fn(state, patch));
     },
@@ -47,16 +61,19 @@ function setupTheme() {
 
 function fillSummary(data) {
   const models = data.models;
-  const top = [...models].sort((a, b) => a.rank - b.rank)[0];
-  const rates = models.map((m) => m.g_srr).sort((a, b) => a - b);
-  const middle = Math.floor(rates.length / 2);
-  const median = rates.length % 2 ? rates[middle] : (rates[middle - 1] + rates[middle]) / 2;
-  const noneCount = models.filter((model) => model.g_srr === 0).length;
-  const summary = median === 0
-    ? `${int(noneCount)} of ${int(models.length)} models resolve none.`
-    : `The median model resolves ${pct(median)}.`;
-  if (top) document.getElementById('hero-title').textContent = `${top.name} resolves ${pct(top.g_srr)} of enterprise identity scenarios end to end. ${summary}`;
+  document.getElementById('interval-method').textContent = END_TO_END_INTERVAL_METHOD;
+  const checks = safetyScreenLabels(data.screen);
+  document.getElementById('method-screen-count').textContent = int(checks.length);
+  const checkList = document.getElementById('method-screen-checks');
+  for (const label of checks) {
+    const item = document.createElement('li');
+    item.textContent = label;
+    checkList.append(item);
+  }
+  const sentence = heroSentence(data);
+  if (sentence) document.getElementById('hero-title').textContent = sentence;
   document.getElementById('turn-budget').textContent = int(data.suite.turn_budget);
+  document.getElementById('leaderboard-lede').textContent = `Models are ranked by category tasks solved, out of ${int(data.suite.tasks)}. End to end is the share of the ${int(data.suite.scenarios)} scenarios a model resolved completely, with nothing unsafe and nothing missed; it is the harder number, and the one to read first.`;
   const figures = [
     [int(models.length), 'models evaluated'],
     [int(data.suite.scenarios), 'scenarios'],
@@ -86,6 +103,19 @@ function fillSummary(data) {
   document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
 }
 
+export function heroSentence(data) {
+  const models = data.models;
+  const top = [...models].sort((a, b) => a.rank - b.rank)[0];
+  if (!top) return '';
+  const rates = models.map((model) => model.g_srr).sort((a, b) => a - b);
+  const middle = Math.floor(rates.length / 2);
+  const median = rates.length % 2 ? rates[middle] : (rates[middle - 1] + rates[middle]) / 2;
+  const summary = median === 0
+    ? `${int(models.filter((model) => model.g_srr === 0).length)} of ${int(models.length)} models resolve none.`
+    : `The median model resolves ${endToEndPct(median)}.`;
+  return `${top.name} resolves ${endToEndPct(top.g_srr)} of enterprise identity scenarios end to end. ${summary}`;
+}
+
 async function boot() {
   setupTheme();
   const response = await fetch(new URL('../../data/leaderboard.json', import.meta.url));
@@ -102,6 +132,7 @@ async function boot() {
   const store = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '', selected: selectionFromHash(), hover: null });
   fillSummary(data);
   mountTable(document.getElementById('leaderboard-root'), data, store);
+  mountUpdates(document.getElementById('updates-root'), data, store);
   document.getElementById('load-status').hidden = true;
   let lastSelected = store.get().selected;
   function scrollToModel(id) {
@@ -121,10 +152,11 @@ async function boot() {
   if (lastSelected) scrollToModel(lastSelected);
 
   const charts = [
+    ['chart-field', () => import('./charts/field.js')],
     ['chart-frontier', () => import('./charts/frontier.js')],
     ['chart-safety', () => import('./charts/safety.js')],
+    ['chart-outcomes', () => import('./charts/outcomes.js')],
     ['chart-anatomy', () => import('./charts/anatomy.js')],
-    ['chart-timeline', () => import('./charts/timeline.js')],
   ];
   await Promise.all(charts.map(async ([id, load]) => {
     const root = document.getElementById(id);
@@ -141,9 +173,11 @@ async function boot() {
   }));
 }
 
-boot().catch((error) => {
-  console.error('Unable to load IdentityBench results', error);
-  const status = document.getElementById('load-status');
-  status.hidden = false;
-  status.textContent = 'Results could not be loaded. Please reload the page or use the full report linked in Method.';
-});
+if (typeof document !== 'undefined') {
+  boot().catch((error) => {
+    console.error('Unable to load IdentityBench results', error);
+    const status = document.getElementById('load-status');
+    status.hidden = false;
+    status.textContent = 'Results could not be loaded. Please reload the page or use the full report linked in Method.';
+  });
+}

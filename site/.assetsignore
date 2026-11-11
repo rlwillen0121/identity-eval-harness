@@ -1,0 +1,6 @@
+# Build tooling and docs live beside the site but are not part of it.
+build.py
+README.md
+__pycache__
+*.pyc
+.DS_Store

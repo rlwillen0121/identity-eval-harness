@@ -1,5 +1,5 @@
 import {int, pct} from '../format.js';
-import {bindMark, chart, el, markState, placeLabels, svgCanvas, text} from './svg.js';
+import {bindMark, chart, el, markPosition, modelRow, nameColumn, svgCanvas, text} from './svg.js';
 
 const median = values => {
   const sorted = values.slice().sort((a, b) => a - b);
@@ -7,11 +7,9 @@ const median = values => {
   return sorted.length % 2 ? sorted[i] : (sorted[i - 1] + sorted[i]) / 2;
 };
 
-const shade = rate => rate === 0 ? 'var(--seq-0)' : `var(--seq-${Math.min(7, Math.ceil(rate * 7))})`;
-const sentenceCase = value => value.toLocaleLowerCase('en-US').replace(/^./u, char => char.toLocaleUpperCase('en-US'))
-  .replace(/\bsod\b/giu, 'SoD').replace(/\bjit\b/giu, 'JIT').replace(/\bcae\b/giu, 'CAE');
+export const shade = rate => rate === 0 ? 'var(--seq-0)' : `var(--seq-${Math.min(7, Math.ceil(rate * 7))})`;
 const wrapLabel = (label, maxWidth) => {
-  const words = sentenceCase(label).split(/\s+/u);
+  const words = label.split(/\s+/u);
   if (words.length < 2) return [label];
   let best = [words[0], words.slice(1).join(' ')];
   let bestScore = Infinity;
@@ -34,7 +32,7 @@ export function mount(root, data, store) {
     const mobile = width < 640;
     sub.textContent = subtitle + (mobile ? ' Optimisation columns are hidden at this width.' : '');
     const columns = data.categories.map(c => ({...c, category: true})).concat(mobile ? [] : data.opt_tasks);
-    const left = mobile ? Math.min(140, width * 0.43) : 166;
+    const left = nameColumn(width, models);
     const gap = mobile ? 0 : 14;
     const cellWidth = Math.max(1, (width - left - 4 - gap) / columns.length);
     const top = 64;
@@ -55,20 +53,10 @@ export function mount(root, data, store) {
       svg.append(node);
     }
     const rows = [];
-    const rowLabels = placeLabels(models.map((model, i) => {
-      const maxChars = Math.max(5, Math.floor((left - 18) / 7.2));
-      const label = model.name.length > maxChars ? `${model.name.slice(0, maxChars - 1)}…` : model.name;
-      return {x: 0, y: top + i * 20 + 9, label, model};
-    }), {left: 0, right: left - 4, top, bottom: height});
-    const nameBoxes = new Map(rowLabels.map(label => [label.model.id, label]));
     for (const [i, model] of models.entries()) {
-      const row = el('g', {'data-row-model': model.id});
       const rowTop = top + i * 20;
-      const label = nameBoxes.get(model.id);
-      const name = text(label?.box.x + 3 || 6, rowTop + 13, label?.label || '', {class: 'chart-row-label'});
-      const outline = el('rect', {x: left - 2, y: rowTop - 1, width: width - left + 1, height: 20,
-        fill: 'none', stroke: 'none', 'stroke-width': 1.5, 'pointer-events': 'none'});
-      row.append(name);
+      const frame = modelRow(svg, model, {left, width, top: rowTop, pitch: 20, height: 18});
+      const {row} = frame;
       const cells = [];
       for (const [j, column] of columns.entries()) {
         const score = column.category ? {hits: model.categories[column.id], total: data.suite.scenarios} : model.opt[column.id];
@@ -76,36 +64,17 @@ export function mount(root, data, store) {
         const cell = el('rect', {x: cx(j), y: rowTop, width: Math.max(1, cellWidth - 2), height: 18, rx: 1,
           fill: shade(rate), class: 'chart-heat-cell', 'data-column-id': column.id});
         const lines = [[column.label, `${int(score.hits)}/${int(score.total)} (${pct(rate, 1)})`]];
-        const events = bindMark(cell, model, lines, store, tip, root, () => {
-          const rect = svg.getBoundingClientRect();
-          const outer = root.getBoundingClientRect();
-          return [rect.left - outer.left + cx(j) * rect.width / width,
-            rect.top - outer.top + rowTop * rect.height / height];
-        });
+        const events = bindMark(cell, model, lines, store, tip,
+          () => markPosition(svg, root, cx(j) + (cellWidth - 2) / 2, rowTop + 9));
         cell.addEventListener('pointermove', events.move);
         cell.addEventListener('pointerleave', events.leave);
         row.append(cell);
         cells.push({cell});
       }
-      row.append(outline);
-      svg.append(row);
-      rows.push({model, row, name, outline, cells});
+      rows.push({frame, cells});
     }
     return state => {
-      const active = [];
-      for (const {model, row, name, outline, cells} of rows) {
-        const style = markState(model, state);
-        const rowActive = model.id === state.hover || model.id === state.selected;
-        row.setAttribute('opacity', style.filtered ? 0.35 : 1);
-        name.style.fill = 'var(--ink)';
-        name.style.fontWeight = rowActive ? '600' : '400';
-        outline.setAttribute('stroke', rowActive && !style.filtered ? 'var(--accent)' : 'none');
-        for (const {cell} of cells) {
-          cell.setAttribute('aria-pressed', state.selected === model.id ? 'true' : 'false');
-        }
-        if (style.active) active.push(row);
-      }
-      for (const row of active) svg.append(row);
+      for (const {frame, cells} of rows) frame.sync(state, cells.map(({cell}) => cell));
     };
   });
   const key = document.createElement('div');

@@ -70,7 +70,14 @@
 .chart-row-label { font-size: 12px; }
 .chart-mark { pointer-events: none; }
 .chart-hit-area, .chart-heat-cell { cursor: pointer; }
-.chart-mark, .chart-heat-cell { transition: opacity 140ms ease; }
+.chart-mark, .chart-heat-cell, .chart-frontier, .chart-direct-label,
+.chart-label-leader, .chart-row-label, .chart-model-row rect { transition: opacity 120ms ease; }
+.chart-model-row[role="button"] { cursor: pointer; }
+.chart-field .chart-caption { color: var(--muted); }
+.chart-field-count { fill: var(--muted); font: 400 12px/1.3 var(--sans); }
+.chart-outcome-key { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--ink-2); font: 400 11px/1.3 var(--sans); }
+.chart-outcome-key > span { display: inline-flex; align-items: center; gap: 5px; }
+.chart-outcome-key .chart-scale-swatch { display: inline-block; width: 14px; height: 8px; }
 .analysis-chart :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chart-segmented {
   display: inline-flex;

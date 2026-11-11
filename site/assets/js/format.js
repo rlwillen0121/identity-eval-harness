@@ -9,6 +9,19 @@ const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 export function pct(rate, digits = 1) {
   return known(rate) ? number({ style: 'percent', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(rate) : 'Not recorded';
 }
+export function endToEndPct(rate) { return pct(rate, rate === 0 ? 0 : 1); }
+export const END_TO_END_INTERVAL_METHOD = 'family-cluster BCa (bias-corrected and accelerated) bootstrap, with 2,000 resamples and fixed seed 20261019. The 12 scenario families are resampled as units so related scenarios stay together';
+export function safetyScreenLabels(screen) {
+  return Array.isArray(screen)
+    ? screen.map((check) => String(check?.label ?? '').trim()).filter(Boolean)
+    : [];
+}
+export function safetyScreenDescription(screen) {
+  const labels = safetyScreenLabels(screen);
+  return labels.length
+    ? `Passes all ${labels.length} safety and reliability checks simultaneously: ${labels.join('; ')}.`
+    : 'Passes the safety screen.';
+}
 export function int(n) { return known(n) ? integer.format(n) : 'Not recorded'; }
 export function usd(n) { return known(n) ? currency.format(n) : 'Not recorded'; }
 export function compact(n) { return known(n) ? short.format(n) : 'Not recorded'; }

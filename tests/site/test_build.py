@@ -141,6 +141,79 @@ def test_category_labels_keep_data_driven_bar_order() -> None:
     ]
 
 
+def test_vendor_makers_use_display_prefix_then_known_summary_fallback() -> None:
+    assert BUILD.resolve_vendor("Grok 4.7", "anthropic", "test.model") == ("xai", "xAI")
+    assert BUILD.resolve_vendor("Muse Glimmer 30B", "muse", "test.model") == ("meta", "Meta")
+    assert BUILD.resolve_vendor("New model", "grok", "test.model") == ("xai", "xAI")
+
+    with pytest.raises(BUILD.BuildError, match="unknown vendor 'other'"):
+        BUILD.resolve_vendor("Unrecognized model", "other", "test.model")
+
+
+def test_vendor_summaries_count_all_models_and_sort_by_count_then_label() -> None:
+    data = load_data()
+    models = model_rows(data)
+    vendors = data.get("vendors")
+
+    assert isinstance(vendors, list) and vendors
+    assert list(data)[list(data).index("screen") + 1] == "vendors"
+    assert sum(vendor["count"] for vendor in vendors) == len(models)
+    assert {vendor["id"] for vendor in vendors} == {model["vendor"] for model in models}
+    assert all(
+        vendor["count"] == sum(model["vendor"] == vendor["id"] for model in models)
+        for vendor in vendors
+    )
+    assert vendors == sorted(vendors, key=lambda vendor: (-vendor["count"], vendor["label"]))
+    assert {model["vendor_label"] for model in models} == {
+        "OpenAI",
+        "Anthropic",
+        "Google",
+        "Meta",
+        "xAI",
+        "Moonshot",
+        "DeepSeek",
+        "Z.ai",
+        "Qwen",
+        "MiniMax",
+        "Xiaomi",
+        "Cohere",
+        "NVIDIA",
+        "Reflection AI",
+        "Cursor",
+    }
+
+
+def test_baselines_have_plain_names_and_behavioral_descriptions() -> None:
+    baselines = load_data().get("baselines")
+    assert isinstance(baselines, list)
+    assert [(row["id"], row["name"]) for row in baselines] == [
+        ("oracle_team_replay", "Reference solution"),
+        ("all_halt", "Stop every connector sync"),
+        ("all_deny", "Reject all temporary access"),
+        ("all_disable_orphan", "Disable every unowned service account"),
+        ("all_keep_retain_all", "Keep every account and its access"),
+        ("all_certify", "Approve every access review"),
+        ("all_escalate", "Escalate account and review decisions"),
+        ("noop_team", "Do nothing"),
+    ]
+    assert all(0 < len(row["description"]) < 100 for row in baselines)
+    assert all(
+        "everything else follows the reference solution" in row["description"]
+        for row in baselines
+        if row["id"]
+        in {
+            "all_halt",
+            "all_deny",
+            "all_disable_orphan",
+            "all_keep_retain_all",
+            "all_certify",
+            "all_escalate",
+        }
+    )
+    joined = " ".join(row["name"] + " " + row["description"] for row in baselines)
+    assert all(token not in joined for token in ("JIT", "NHI", "DISABLE_ORPHAN", "Wave 1"))
+
+
 def test_history_ids_are_covered_by_current_models() -> None:
     models = model_rows(load_data())
     model_ids = {model.get("id") for model in models}
