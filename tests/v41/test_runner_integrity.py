@@ -13,10 +13,10 @@ from typing import Any
 import pytest
 
 from identitybench.providers.base import ModelResponse, ToolCall
-from identitybench.v4.runner import _extract_v4_turn_tool_calls
 from identitybench.v41 import generator, runner
 from identitybench.v41.report import render_v41_markdown_report
 from identitybench.v41.schemas import RunConfigV41, SplitRingV41, SteeringMode
+from identitybench.v41.turns import _extract_v4_turn_tool_calls
 
 from .helpers import probe
 from .test_env_and_schemas import _env, _gold_args

@@ -2,7 +2,7 @@
 
 Every model access path implements ``Provider``: native APIs (Anthropic, OpenAI-compatible,
 Anthropic-compatible), subscription CLIs (``claude -p``, ``codex exec``, ``grok -p``), the replay
-provider and the baselines. The runner and scorers only ever see ``ModelRequest`` and
+provider. The runner and scorers only ever see ``ModelRequest`` and
 ``ModelResponse``, so nothing downstream special-cases a provider.
 
 A provider never raises for model-level failures. Transport, auth and parse problems come back
@@ -15,10 +15,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    from identitybench.schemas.case import Case
+from typing import Any, Protocol, runtime_checkable
 
 
 class Role(StrEnum):
@@ -143,24 +140,6 @@ class Provider(Protocol):
     def capabilities(self) -> ProviderCapabilities: ...
 
     async def complete(self, request: ModelRequest) -> ModelResponse: ...
-
-
-@runtime_checkable
-class CaseAwareProvider(Protocol):
-    """A provider that answers from the case itself rather than from a prompt: the SPEC §14
-    baselines (``always_*``, ``peer_recommender``, ``surface_probe``, plan floors, ``oracle``).
-
-    The runner calls ``decide`` instead of rendering a prompt and calling ``complete``. The
-    response is an ordinary ``ModelResponse`` whose ``parsed`` holds a task output dict, so the
-    parser and every scorer treat baselines exactly like models.
-    """
-
-    kind: str
-    model: str
-
-    def endpoint_identity(self) -> str: ...
-
-    async def decide(self, case: Case) -> ModelResponse: ...
 
 
 def hash_endpoint(*parts: str | None) -> str:

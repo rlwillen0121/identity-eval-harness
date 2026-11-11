@@ -9,8 +9,6 @@ Generates:
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,38 +16,28 @@ from typing import Any
 
 from grantt_v41 import ICONS, _lab_of, write_png
 
-ROOT = Path(__file__).resolve().parent
-V3_BSTYLE_PATH = ROOT.parent / "v3" / "b_style_charts.py"
-
-_spec = importlib.util.spec_from_file_location("v3_b_style_charts", V3_BSTYLE_PATH)
-assert _spec is not None and _spec.loader is not None
-_v3b = importlib.util.module_from_spec(_spec)
-sys.modules["v3_b_style_charts"] = _v3b
-_spec.loader.exec_module(_v3b)
-
-WIDTH: int = _v3b.WIDTH
-INK: str = _v3b.INK
-INK2: str = _v3b.INK2
-MUTED: str = _v3b.MUTED
-RULE: str = _v3b.RULE
-GRID: str = _v3b.GRID
-BLUE: str = _v3b.BLUE
-BLUE_PILL: str = _v3b.BLUE_PILL
-SLATE_PILL: str = _v3b.SLATE_PILL
-PASS_CELL_BG: str = _v3b.PASS_CELL_BG
-PASS_CELL_INK: str = _v3b.PASS_CELL_INK
-MISS_CELL_BG: str = _v3b.MISS_CELL_BG
-MISS_CELL_BORDER: str = _v3b.MISS_CELL_BORDER
-MISS_CELL_INK: str = _v3b.MISS_CELL_INK
-HEAT_FILLS: tuple[str, ...] = _v3b.HEAT_FILLS
-HEAT_INKS: tuple[str, ...] = _v3b.HEAT_INKS
-BIN_LABELS: tuple[str, ...] = _v3b.BIN_LABELS
-
-Svg = _v3b.Svg
-draw_icon = _v3b.draw_icon
-shortfall_bin = _v3b.shortfall_bin
-add_footer = _v3b.add_footer
-fmt_pct = _v3b.fmt_pct
+from identitybench.report.chart_style import (
+    BLUE,
+    BLUE_PILL,
+    GRID,
+    HEAT_FILLS,
+    HEAT_INKS,
+    INK,
+    INK2,
+    MISS_CELL_BG,
+    MISS_CELL_BORDER,
+    MISS_CELL_INK,
+    MUTED,
+    PASS_CELL_BG,
+    PASS_CELL_INK,
+    RULE,
+    SLATE_PILL,
+    WIDTH,
+    Svg,
+    add_footer,
+    draw_icon,
+    fmt_pct,
+)
 
 SAFETY_HEADINGS_V41: tuple[tuple[str, str, str], ...] = (
     ("Unsafe actions", "committed error rate", "≤ 1.0%"),

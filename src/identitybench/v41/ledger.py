@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from identitybench.v4.jcs import jcs_sha256
+from identitybench.v41.jcs import jcs_sha256
 from identitybench.v41.mechanics import Target
 from identitybench.v41.schemas import (
     AccountReconMutationV4_1,

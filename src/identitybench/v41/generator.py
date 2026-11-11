@@ -17,8 +17,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from identitybench.v4.jcs import jcs_dumps, jcs_sha256
-from identitybench.v4.skills import count_o200k_tokens
 from identitybench.v41.baselines import (
     CONSTANT_POLICIES,
     NEGATIVE_MUTATIONS,
@@ -30,6 +28,7 @@ from identitybench.v41.baselines import (
     run_scripted_policy,
 )
 from identitybench.v41.checker import evaluate_stages
+from identitybench.v41.jcs import jcs_dumps, jcs_sha256
 from identitybench.v41.mechanics import (
     StagedBufferV41,
     compact_dump,
@@ -62,6 +61,7 @@ from identitybench.v41.schemas import (
     WaveExecutionMode,
     WaveTelemetrySnapshotV4_1,
 )
+from identitybench.v41.tokens import count_o200k_tokens
 
 DEFAULT_V41_SEED = 20261019
 # Released digests are anchored in source, independently of the adjacent seal.

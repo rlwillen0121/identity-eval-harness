@@ -8,17 +8,17 @@ description: >-
 
 # Multi-Lane & Cross-Model Adversarial Review Skill (`review`)
 
-Use this skill at milestone boundaries (`M4.1-Hard`; legacy `M3.1` through `M3.6`) and before any dataset freeze or publication claim.
+Use this skill at milestone boundaries (`M4.1-Hard`) and before any dataset freeze or publication claim.
 
 ## 1. Internal Multi-Lane Review Composition
 
 The `review` lane fans out independent read-only subagents across the hidden lanes defined in `AGENTS.md`:
 
 - **`lane-rules` (Always-On):** Checks `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `SPEC-v4.1.md`, and modified files for domain boundary violations (no SOC/SIEM drift, no `nhi_ai_agent` governance) or rule contradictions.
-- **`lane-security` (Always-On):** Audits subprocess sandbox isolation (network disabled, temp dir isolation, resource caps in `connectors`), secret scrubbing, dataset `SEAL.json` integrity, and dev-only tuning hygiene.
+- **`lane-security` (Always-On):** Audits provider subprocess/env isolation, secret and path redaction, `SEAL.json` plus source-pinned digest integrity, run-artifact trace verification (`identitybench v41 verify --run <dir>`), and dev-only tuning hygiene.
 - **`lane-oracle` (Always-On):** Runs `uv run pytest`, `uv run identitybench v41 validate --suite <suite> --double-build`, verifies `oracle_team_replay == 1.00` and negative-mutation pass rate `== 0.00`, and checks state/trace verifier determinism.
 - **`lane-blind-conformance` (When policy/generator/verifier changes):** Verifies `tests/conformance/` passes 100% (`G-SPEC-01`) and the version's `AMBIGUITIES.md` has zero unresolved items.
-- **`lane-stats` (When scoring/bootstrap/reporting changes):** Audits v4.1 `G-SRR` scoring and cluster bootstrap CIs (legacy v3: `B = 10,000`, TOST, BH-FDR) and `execution_valid_rate == 1.00` enforcement.
+- **`lane-stats` (When scoring/bootstrap/reporting changes):** Audits v4.1 `G-SRR` scoring and cluster bootstrap CIs and `execution_valid_rate == 1.00` enforcement.
 
 ## 2. Cross-Model Adversarial Review (`Codex Astra xhigh`)
 

@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from identitybench.v4.jcs import jcs_sha256
+from identitybench.v41.jcs import jcs_sha256
 from identitybench.v41.schemas import (
     HUMAN_SUBKINDS,
     MUTATION_ADAPTER,

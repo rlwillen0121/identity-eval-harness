@@ -12,7 +12,9 @@ REPO_ROOT = ROOT.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from b_style_v41 import (  # noqa: E402
+from grantt_v41 import write_png  # noqa: E402
+
+from identitybench.report.chart_style import (  # noqa: E402
     BLUE,
     BLUE_PILL,
     INK,
@@ -25,7 +27,6 @@ from b_style_v41 import (  # noqa: E402
     RULE,
     Svg,
     draw_icon,
-    write_png,
 )
 
 SUMMARY_JSON = REPO_ROOT / "runs" / "v41-skill-orchestration" / "report_summary.json"

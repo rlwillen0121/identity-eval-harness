@@ -19,11 +19,11 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from identitybench.v4.scoring import family_cluster_bca_bootstrap_ci
 from identitybench.v41.generator import load_v41_dataset
 from identitybench.v41.report import verify_v41_report_artifact
 from identitybench.v41.runner import load_v41_run_artifact
 from identitybench.v41.schemas import AnyMutation, SplitRingV41
+from identitybench.v41.stats import family_cluster_bca_bootstrap_ci
 from identitybench.v41.verify import (
     load_run_config_candidates,
     load_run_records,

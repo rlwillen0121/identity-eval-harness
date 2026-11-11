@@ -9,8 +9,6 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-# Temporary coordination allowance: another worker is deleting these files. Empty afterward.
-PENDING_DELETION = {"docs/ORGAI-BRIDGE.md", "docs/orgai-desktop-eval.md"}
 MAX_BYTES = 5 * 1024 * 1024
 HOME = re.compile(r"/(?:Users|home)/([^/\s\"'`]+)(?:/|(?=[\s\"'`]|$))")
 PLACEHOLDERS = {"user", "username", "alice", "bob", "example", "youruser", "yourname"}
@@ -58,7 +56,7 @@ def tracked_violations(root: Path) -> list[str]:
         pytest.skip("repository hygiene requires a Git checkout")
     found = []
     for name in result.stdout.decode().split("\0"):
-        if not name or name.startswith("tests/") or name in PENDING_DELETION:
+        if not name or name.startswith("tests/"):
             continue
         path = root / name
         # Scan a symlink's tracked target text, without reading anything outside the repo.
