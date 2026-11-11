@@ -1,0 +1,67 @@
+[
+ {
+  "date": "2026-10-27",
+  "models": [
+   "claude-haiku-5-5-t0-medium",
+   "claude-opus-5-5-t0-medium",
+   "claude-sonnet-5-5-t0-medium",
+   "deepseek-v4.1-flash-t0-medium",
+   "gemini-3.8-flash-t0-medium",
+   "gemini-4-argon-t0-medium",
+   "glm-5.3-flash-t0-medium",
+   "glm-5.3-t0-medium",
+   "gpt-5.6-terra-t0-medium",
+   "gpt-6-astra-t0-medium",
+   "gpt-6-luna-t0-medium",
+   "gpt-6-sol-t0-medium",
+   "gpt-6.1-sol-t0-medium",
+   "gpt-6.1-terra-t0-medium",
+   "gpt-daybreak-blue-t0-medium",
+   "gpt-oss-120b-t0-medium",
+   "gpt-reserve-t0-medium",
+   "minimax-m3.1-flash-t0-medium",
+   "qwen3.8-27b-exl3-4bit-local",
+   "qwen3.8-flash-next-local"
+  ]
+ },
+ {
+  "date": "2026-10-28",
+  "models": [
+   "deepseek-v4-pro-t0-medium",
+   "gpt-5.6-luna-t0-medium",
+   "gpt-5.6-sol-t0-medium",
+   "grok-4.7-t0-medium"
+  ]
+ },
+ {
+  "date": "2026-10-29",
+  "models": [
+   "beam-1.0-501b-t0-medium",
+   "command-a-plus-t0-medium",
+   "composer-2.5-t0-medium",
+   "mimo-v2.6-pro-t0-medium",
+   "muse-glimmer-30b-t0-medium",
+   "nemotron-3.5-super-t0-medium"
+  ]
+ },
+ {
+  "date": "2026-11-03",
+  "models": [
+   "kimi-k3.1-pro-t0-medium",
+   "muse-wonder-1.0-t0-medium"
+  ]
+ },
+ {
+  "date": "2026-11-04",
+  "models": [
+   "muse-spark-open-t0-medium"
+  ]
+ },
+ {
+  "date": "2026-11-09",
+  "models": [
+   "claude-fable-5-1-t0-medium",
+   "claude-fable-5-2-t0-medium"
+  ]
+ }
+]
