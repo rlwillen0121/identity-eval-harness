@@ -105,6 +105,19 @@ def test_verdict_after_an_echoed_object_is_chosen() -> None:
     assert verdict.scores is not None and verdict.scores.faithfulness == 1
 
 
+@pytest.mark.parametrize("separator", ["\n", "\nThe model planted: ", "\n```json\n"])
+def test_multiple_verdict_objects_are_invalid(separator: str) -> None:
+    text = scores_json(faithfulness=1) + separator + scores_json(faithfulness=4)
+    assert parse_judge_response(ModelResponse(text=text)).status is JudgeStatus.invalid
+    native = ModelResponse(text=text, parsed=dict(VALID))
+    assert parse_judge_response(native).status is JudgeStatus.ok
+
+
+def test_quoted_object_inside_verdict_notes_is_not_a_second_verdict() -> None:
+    text = scores_json(notes=scores_json(faithfulness=4))
+    assert parse_judge_response(ModelResponse(text=text)).status is JudgeStatus.ok
+
+
 @pytest.mark.parametrize(
     ("response", "status", "error"),
     [

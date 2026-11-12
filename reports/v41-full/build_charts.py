@@ -10,6 +10,7 @@ Reads episode records dynamically from `runs/v41-full*/records/*.jsonl` plus dat
 
 from __future__ import annotations
 
+import argparse
 import json
 import statistics
 import sys
@@ -19,7 +20,15 @@ from typing import Any
 from pydantic import TypeAdapter, ValidationError
 
 from identitybench.v4.scoring import family_cluster_bca_bootstrap_ci
-from identitybench.v41.schemas import AnyMutation
+from identitybench.v41.generator import load_v41_dataset
+from identitybench.v41.report import verify_v41_report_artifact
+from identitybench.v41.runner import load_v41_run_artifact
+from identitybench.v41.schemas import AnyMutation, SplitRingV41
+from identitybench.v41.verify import (
+    load_run_config_candidates,
+    load_run_records,
+    verify_with_candidates,
+)
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
@@ -346,18 +355,12 @@ def _load_dataset_index() -> tuple[
     dict[str, dict[str, Any]],
     dict[tuple[str, str], str],
 ]:
-    seal = json.loads((DATASET_DIR / "SEAL.json").read_text(encoding="utf-8"))
-    episodes: dict[str, dict[str, Any]] = {}
-    for line in (DATASET_DIR / "episodes.jsonl").read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            ep = json.loads(line)
-            episodes[str(ep["episode_id"])] = ep
-
-    oracles: dict[str, dict[str, Any]] = {}
-    for line in (DATASET_DIR / "oracles.jsonl").read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            ora = json.loads(line)
-            oracles[str(ora["episode_id"])] = ora
+    sealed, episode_models, oracle_models = load_v41_dataset(DATASET_DIR)
+    if sealed.suite != SplitRingV41.v41_full:
+        raise ValueError("charts require the pinned v41_full dataset")
+    seal = sealed.model_dump(mode="json")
+    episodes = {ep.episode_id: ep.model_dump(mode="json") for ep in episode_models}
+    oracles = {oracle.episode_id: oracle.model_dump(mode="json") for oracle in oracle_models}
 
     opt_kind_map: dict[tuple[str, str], str] = {}
     for eid, ep in episodes.items():
@@ -368,41 +371,136 @@ def _load_dataset_index() -> tuple[
     return seal, episodes, oracles, opt_kind_map
 
 
-def _load_records_by_model() -> dict[str, list[dict[str, Any]]]:
-    by_model_ep: dict[str, dict[str, dict[str, Any]]] = {}
+# Historical leaderboard precedence, now restricted to known overlaps. Preserve the
+# original two passes (sorted summaries, then sorted journals): execution-valid records
+# beat invalid ones, and the later record wins ties. Any new cross-run overlap is an error.
+PUBLISHED_MODEL_OVERLAPS: dict[str, tuple[str, ...]] = {
+    "claude-opus-5-5-t0-medium": ("v41-full-claude", "v41-full-codex"),
+    "claude-sonnet-5-5-t0-medium": ("v41-full-claude", "v41-full-codex"),
+    "composer-2.5-t0-medium": ("v41-full-composer-cpa", "v41-full-cursor"),
+    "gemini-4-argon-t0-medium": ("v41-full-claude", "v41-full-codex"),
+    "grok-4.7-t0-medium": ("v41-full-cursor", "v41-full-grok", "v41-full-grok-or"),
+    "muse-spark-1.3-t0-medium": ("v41-full-codex", "v41-full-muse"),
+    "muse-wonder-1.0-t0-medium": ("v41-full-codex", "v41-full-muse"),
+}
 
-    def _merge_rec(rec: dict[str, Any]) -> None:
-        m_id = str(rec["model_id"])
-        eid = str(rec["episode_id"])
-        by_ep = by_model_ep.setdefault(m_id, {})
-        prev = by_ep.get(eid)
-        if prev is None:
-            by_ep[eid] = rec
-        else:
-            prev_ok = bool(prev.get("execution_valid")) and not prev.get("provider_error")
-            curr_ok = bool(rec.get("execution_valid")) and not rec.get("provider_error")
-            if (curr_ok and not prev_ok) or (curr_ok == prev_ok):
-                by_ep[eid] = rec
 
-    for summary_path in sorted(REPO_ROOT.glob("runs/v41-full*/v41_summary.json")):
-        try:
-            sum_data = json.loads(summary_path.read_text(encoding="utf-8"))
-            for rec in sum_data.get("records") or []:
-                if isinstance(rec, dict) and "model_id" in rec and "episode_id" in rec:
-                    _merge_rec(rec)
-        except (OSError, json.JSONDecodeError, ValueError, KeyError, TypeError):
-            pass
+# Published records that trace replay cannot reproduce. Each stays in the leaderboard exactly
+# as published, is logged on every build, and is listed in reports/v41-full/README.md. Adding
+# an entry needs a written reason; a mismatch on any record not listed here aborts the build.
+KNOWN_UNREPLAYABLE: dict[tuple[str, str, str], str] = {
+    ("v41-full-claude", "claude-opus-5-5-t0-medium", "v41_full_014"): (
+        "scored by a pre-release scorer (extra waves_commit.g_k fields, zero token counts); "
+        "trace entry 11 records STAGED where replay returns REJECTED_STRUCTURAL. "
+        "Stored G-SRR is 0, so the published row cannot be overstated by it"
+    ),
+}
 
-    for path in sorted(REPO_ROOT.glob("runs/v41-full*/records/*.jsonl")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                _merge_rec(json.loads(line))
 
-    return {
-        m_id: [by_ep[eid] for eid in sorted(by_ep)]
-        for m_id, by_ep in sorted(by_model_ep.items())
-        if by_ep
-    }
+def _load_records_by_model(runs_dir: Path | None = None) -> dict[str, list[dict[str, Any]]]:
+    seal, episodes, oracles = load_v41_dataset(DATASET_DIR)
+    if seal.suite != SplitRingV41.v41_full:
+        raise ValueError("charts require the pinned v41_full dataset")
+    pairs = {ep.episode_id: (ep, oracle) for ep, oracle in zip(episodes, oracles, strict=True)}
+    candidates: list[tuple[int, Path, str, dict[str, Any]]] = []
+    configs = {}
+    owners: dict[str, set[str]] = {}
+    for summary_path in sorted((runs_dir or REPO_ROOT / "runs").glob("v41-full*/v41_summary.json")):
+        run_dir = summary_path.parent
+        artifact = load_v41_run_artifact(run_dir)
+        if (
+            artifact.suite != seal.suite
+            or artifact.seal is None
+            or (artifact.seal.episodes_sha256, artifact.seal.oracles_sha256)
+            != (seal.episodes_sha256, seal.oracles_sha256)
+        ):
+            raise ValueError(f"{run_dir}: artifact seal disagrees with pinned v41_full dataset")
+        # Recompute summaries from validated records, including the published CI checks.
+        verify_v41_report_artifact(artifact, check_dataset=False)
+        configs[run_dir] = load_run_config_candidates(
+            run_dir, experiments_dir=REPO_ROOT / "experiments"
+        )
+        legacy: list[tuple[str, dict[str, Any], str]] = []
+        records = [
+            (source, rec.model_dump(mode="json"))
+            for source, rec in load_run_records(
+                run_dir, artifact, deduplicate=False, legacy_records=legacy
+            )
+        ]
+        records.extend((source, raw) for source, raw, _ in legacy)
+        # Retain journal line order, including legacy records that require replay recovery.
+        records.sort(
+            key=lambda item: (
+                item[0].startswith("records/"),
+                item[0].rsplit(":", 1)[0],
+                int(item[0].rsplit(":", 1)[1]) if item[0].startswith("records/") else 0,
+            )
+        )
+        for source, raw in records:
+            owners.setdefault(str(raw["model_id"]), set()).add(run_dir.name)
+            candidates.append((int(source.startswith("records/")), run_dir, source, raw))
+    for model_id, run_names in owners.items():
+        if len(run_names) <= 1:
+            continue
+        if not run_names <= set(PUBLISHED_MODEL_OVERLAPS.get(model_id, ())):
+            raise ValueError(f"duplicate model id {model_id!r} across runs: {sorted(run_names)}")
+        print(
+            f"published precedence {model_id}: {sorted(run_names)}; valid beats invalid, "
+            "then later sorted journal beats summary",
+            file=sys.stderr,
+        )
+    selected: dict[tuple[str, str], tuple[Path, str, dict[str, Any]]] = {}
+    # Stable sorting retains line order within each journal and summary.
+    for _, run_dir, source, rec in sorted(candidates, key=lambda row: (row[0], row[1])):
+        key = (str(rec["model_id"]), str(rec["episode_id"]))
+        previous = selected.get(key)
+        if previous is None or (bool(rec["execution_valid"]) and not rec["provider_error"]) >= (
+            bool(previous[2]["execution_valid"]) and not previous[2]["provider_error"]
+        ):
+            selected[key] = (run_dir, source, rec)
+    by_model: dict[str, list[dict[str, Any]]] = {}
+    unverifiable: dict[tuple[str, str], int] = {}
+    for (model_id, episode_id), (run_dir, source, raw) in sorted(selected.items()):
+        if episode_id not in pairs:
+            raise ValueError(f"{run_dir}/{source}: episode {episode_id} is absent from dataset")
+        result, rec = verify_with_candidates(
+            raw,
+            *pairs[episode_id],
+            configs[run_dir].get(model_id, []),
+            oracles_sha256=seal.oracles_sha256,
+        )
+        known = KNOWN_UNREPLAYABLE.get((run_dir.name, model_id, episode_id))
+        if known is not None and result.status in ("mismatch", "unverifiable"):
+            print(
+                f"{run_dir}/{source}: known unreplayable record kept as published "
+                f"({result.reason}): {known}",
+                file=sys.stderr,
+            )
+            by_model.setdefault(model_id, []).append(raw)
+            continue
+        if result.status == "mismatch":
+            raise ValueError(f"{run_dir}/{source}: {model_id} {episode_id}: {result.reason}")
+        if result.status == "unverifiable":
+            # Only already-schema-valid legacy records may remain unverifiable. A
+            # scorecard that needs recovery must be proven before it supplies a metric.
+            from identitybench.v41.runner import EpisodeTrialRecordV41
+
+            try:
+                rec = EpisodeTrialRecordV41.model_validate(raw)
+            except ValidationError:
+                raise ValueError(
+                    f"{run_dir}/{source}: legacy replay recovery failed: {result.reason}"
+                ) from None
+            key_reason = (run_dir.name, result.reason)
+            unverifiable[key_reason] = unverifiable.get(key_reason, 0) + 1
+        if result.status == "recovered":
+            print(f"{run_dir}/{source}: legacy record re-scored by replay", file=sys.stderr)
+        assert rec is not None
+        by_model.setdefault(model_id, []).append(rec.model_dump(mode="json"))
+    for (run_name, reason), count in sorted(unverifiable.items()):
+        print(f"{run_name}: {count} unverifiable chart records: {reason}", file=sys.stderr)
+    # _compute_arm_summary derives every plotted metric from these checked records.
+    return by_model
 
 
 def _classify_w1_jml_rule(ora_w1: dict[str, Any], tid: str, account_action: str) -> str:
@@ -1123,9 +1221,9 @@ Every chart is generated deterministically from `runs/v41-full*/records/*.jsonl`
 """
 
 
-def build_summary_data() -> dict[str, Any]:
+def build_summary_data(runs_dir: Path | None = None) -> dict[str, Any]:
     seal, _episodes, oracles, opt_kind_map = _load_dataset_index()
-    records_by_model = _load_records_by_model()
+    records_by_model = _load_records_by_model(runs_dir)
     adapter: TypeAdapter[Any] = TypeAdapter(AnyMutation)
     baseline_ids = {b_id for b_id, _, _ in BASELINE_ORDER}
 
@@ -1176,26 +1274,40 @@ def build_summary_data() -> dict[str, Any]:
 
 
 def main() -> None:
-    summary_payload = build_summary_data()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=ROOT,
+        help="Output directory (default: this report directory).",
+    )
+    parser.add_argument(
+        "--runs-dir", type=Path, default=REPO_ROOT / "runs", help="Read-only run corpus directory."
+    )
+    args = parser.parse_args()
+    out_dir: Path = args.out_dir
+    summary_payload = build_summary_data(args.runs_dir)
     arms = list(summary_payload["v41_full"]["live_arms"].values())
-    charts_dir = ROOT / "charts"
+    charts_dir = out_dir / "charts"
     charts_dir.mkdir(parents=True, exist_ok=True)
 
     render_grantt_v41_full_suite(arms, charts_dir, export_png=True)
     render_v41_full_b_style_suite(arms, charts_dir, export_png=True)
-    write_v41_full_html_files(arms, ROOT)
+    write_v41_full_html_files(arms, out_dir)
 
-    (ROOT / "summary.json").write_text(
+    (out_dir / "summary.json").write_text(
         json.dumps(summary_payload, indent=2) + "\n", encoding="utf-8"
     )
-    (ROOT / "CHARTS.md").write_text(_render_charts_md(len(arms)), encoding="utf-8")
+    (out_dir / "CHARTS.md").write_text(_render_charts_md(len(arms)), encoding="utf-8")
 
     draft_report = ROOT / "DRAFT_REPORT.md"
     if draft_report.exists():
-        (ROOT / "report.md").write_text(draft_report.read_text(encoding="utf-8"), encoding="utf-8")
+        (out_dir / "report.md").write_text(
+            draft_report.read_text(encoding="utf-8"), encoding="utf-8"
+        )
 
     print(
-        f"Generated reports/v41-full/{{summary.json,CHARTS.md,index.html,figures.html,report.md,charts/*.{{svg,png}}}} across {len(arms)} models"
+        f"Generated {out_dir}/{{summary.json,CHARTS.md,index.html,figures.html,report.md,charts/*.{{svg,png}}}} across {len(arms)} models"
     )
 
 

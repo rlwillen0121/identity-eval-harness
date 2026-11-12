@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import itertools
 import re
+import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast, get_args
 
@@ -33,6 +34,7 @@ from pydantic import (
     Field,
     Strict,
     ValidationError,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -292,8 +294,35 @@ class ModelEntry(_Strict):
 
     @field_validator("extra")
     @classmethod
-    def _extra_has_no_urls(cls, value: dict[str, Any]) -> dict[str, Any]:
+    def _extra_has_no_urls(cls, value: dict[str, Any], info: ValidationInfo) -> dict[str, Any]:
         _check_no_urls(value, "extra")
+        for key in _PATH_EXTRA_KEYS:
+            path = value.get(key)
+            if isinstance(path, str) and (path.startswith("~") or Path(path).is_absolute()):
+                under_home = path.startswith("~") or bool(re.match(r"^/(Users|home)/[^/]+", path))
+                try:
+                    expanded = Path(path).expanduser()
+                    under_home = (
+                        under_home
+                        or expanded.is_relative_to(Path.home())
+                        or (expanded.resolve().is_relative_to(Path.home().resolve()))
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    pass
+                if under_home:
+                    message = (
+                        f"extra.{key} points under the home directory; "
+                        "use a bare binary name or experiments/local/"
+                    )
+                    if isinstance(info.context, dict) and "allow_home_paths" in info.context:
+                        if not info.context["allow_home_paths"]:
+                            raise ValueError(message)
+                        continue
+                    warnings.warn(
+                        message,
+                        UserWarning,
+                        stacklevel=2,
+                    )
         protocol = value.get("tool_protocol")
         if protocol is not None and protocol not in TOOL_PROTOCOLS:
             raise ValueError(
@@ -616,4 +645,9 @@ def load_config(path: Path | str) -> ExperimentConfig:
         raise ConfigError(f"{p}: invalid YAML: {exc}") from exc
     if not isinstance(data, dict):
         raise ConfigError(f"{p}: experiment config must be a YAML mapping")
-    return ExperimentConfig.model_validate(data)
+    # Resolve symlinks so an alias in local/ cannot exempt a published config elsewhere.
+    local = any(
+        parent.name == "local" and parent.parent.name == "experiments"
+        for parent in p.resolve().parents
+    )
+    return ExperimentConfig.model_validate(data, context={"allow_home_paths": local})

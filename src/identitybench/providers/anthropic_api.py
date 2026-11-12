@@ -42,13 +42,14 @@ import os
 import time
 from collections import OrderedDict
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import anthropic
 from anthropic import AsyncAnthropic
 from anthropic.types import Message as ApiMessage
 
 from identitybench.providers._env import paired_api_key_env
-from identitybench.providers._json import load_object
+from identitybench.providers._json import bounded_token_count, load_object, sanitize_response
 from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     Message,
@@ -103,11 +104,13 @@ def _usage(usage: Any) -> Usage:
         return Usage()
     details = getattr(usage, "output_tokens_details", None)
     return Usage(
-        input_tokens=getattr(usage, "input_tokens", None) or 0,
-        output_tokens=getattr(usage, "output_tokens", None) or 0,
-        cache_read_tokens=getattr(usage, "cache_read_input_tokens", None) or 0,
-        cache_write_tokens=getattr(usage, "cache_creation_input_tokens", None) or 0,
-        reasoning_tokens=(getattr(details, "thinking_tokens", None) or 0) if details else 0,
+        input_tokens=bounded_token_count(getattr(usage, "input_tokens", None)),
+        output_tokens=bounded_token_count(getattr(usage, "output_tokens", None)),
+        cache_read_tokens=bounded_token_count(getattr(usage, "cache_read_input_tokens", None)),
+        cache_write_tokens=bounded_token_count(getattr(usage, "cache_creation_input_tokens", None)),
+        reasoning_tokens=(bounded_token_count(getattr(details, "thinking_tokens", None)))
+        if details
+        else 0,
     )
 
 
@@ -121,6 +124,7 @@ class AnthropicProvider:
         api_key_env: str | None = None,
         base_url_env: str | None = None,
         cache_namespace: str | None = None,
+        allow_custom_endpoint: bool = False,
         max_retries: int = 4,
         timeout_s: float = 600.0,
         client: AsyncAnthropic | None = None,
@@ -142,6 +146,18 @@ class AnthropicProvider:
         self._timeout_s = timeout_s
         self._client = client
         self._base_url = self._resolve_base_url()
+        if not isinstance(allow_custom_endpoint, bool):
+            raise ValueError("allow_custom_endpoint must be true or false")
+        self._allow_custom_endpoint = allow_custom_endpoint
+        if (
+            self.kind == "anthropic"
+            and urlsplit(self._base_url or "").hostname != "api.anthropic.com"
+            and not allow_custom_endpoint
+        ):
+            raise ValueError(
+                "anthropic: custom endpoint requires extra.allow_custom_endpoint: true; "
+                "vendor credentials and prompts would be sent to another host"
+            )
         # Original content blocks of assistant turns that called tools, keyed by tool_use id.
         # Thinking is always on for current models and the API requires a tool-calling turn's
         # thinking blocks to be sent back unchanged, but the provider-neutral ``Message`` can't
@@ -165,7 +181,8 @@ class AnthropicProvider:
 
     def endpoint_identity(self) -> str:
         base = self._base_url or f"unset:{self._base_url_env}"
-        return hash_endpoint(base, self.model, self._cache_namespace)
+        identity = hash_endpoint(base, self.model, self._cache_namespace)
+        return f"custom-endpoint-opt-in:{identity}" if self._allow_custom_endpoint else identity
 
     # ------------------------------------------------------------------ request construction
 
@@ -247,7 +264,7 @@ class AnthropicProvider:
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
         start = time.perf_counter()
-        response = await self._complete(request)
+        response = sanitize_response(await self._complete(request), self.kind)
         response.latency_s = time.perf_counter() - start
         if request.params.temperature is not None and not accepts_temperature(self.model):
             response.raw = {**(response.raw or {}), "ignored_params": ["temperature"]}
@@ -286,7 +303,7 @@ class AnthropicProvider:
             return self._fail(f"unparseable response body ({type(exc).__name__}: {exc})")
         try:
             return self._to_response(message, request)
-        except (AttributeError, TypeError, ValueError, RecursionError) as exc:
+        except (AttributeError, TypeError, ValueError, RecursionError, OverflowError) as exc:
             # The SDK builds responses leniently, so a Messages-compatible server can hand back
             # a shape missing fields a real Message always has; that is a failed call, not a
             # crash.
@@ -344,6 +361,8 @@ class AnthropicProvider:
             for block in content
             if block.type == "tool_use"
         ]
+        if any(not isinstance(call.id, str) or not isinstance(call.name, str) for call in calls):
+            raise ValueError("tool-call id and name must be strings")
         if calls:
             blocks = [block.model_dump(mode="json", exclude_none=True) for block in content]
             self._remember_tool_turn(blocks, calls)

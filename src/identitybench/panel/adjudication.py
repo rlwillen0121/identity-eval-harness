@@ -414,13 +414,35 @@ def check_units(units: Sequence[PanelUnit], cases: Mapping[str, Case]) -> None:
 def parse_vote(response: ModelResponse) -> tuple[VoteStatus, dict[str, Any] | None, str | None]:
     """A reply's status, its validated fields (``classification``, ``cited_rules``,
     ``reason``) when valid, and the error otherwise. Native structured output is used when
-    present; otherwise the JSON object is extracted from the text, never repaired. An
+    present; otherwise a single vote object is extracted from text, never repaired. Prose and
+    fences are allowed, but multiple vote objects are ambiguous and invalid. An
     unknown classification, a missing or empty reason, or a cited rule ID the policy doesn't
     have makes the reply invalid."""
     if response.refused:
         return VoteStatus.refused, None, "refused"
     if response.error is not None:
         return VoteStatus.error, None, response.error
+    if response.parsed is None:
+        decoder = json.JSONDecoder()
+        reply = response.text or ""
+        start = reply.find("{")
+        votes = 0
+        while start != -1:
+            try:
+                value, end = decoder.raw_decode(reply, start)
+            except RecursionError:
+                return VoteStatus.invalid, None, "JSON nesting too deep"
+            except ValueError:
+                start = reply.find("{", start + 1)
+                continue
+            if isinstance(value, dict) and all(
+                key in value for key in ("classification", "reason")
+            ):
+                votes += 1
+                if votes > 1:
+                    return VoteStatus.invalid, None, "multiple vote objects"
+            # Skip nested objects and quoted JSON within a decoded object.
+            start = reply.find("{", end)
     data = (
         response.parsed
         if response.parsed is not None

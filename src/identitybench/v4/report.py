@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from identitybench.report.markdown_text import code_cell
 from identitybench.v4.generator import DEFAULT_V4_SEED
 from identitybench.v4.runner import EpisodeTrialRecordV4, V4RunArtifact
 from identitybench.v4.schemas import (
@@ -143,7 +144,7 @@ def render_v4_markdown_report(
         steer_short = s.run_config.steering_mode.value
         exec_rate = artifact.execution_valid_rates.get(config_id, 1.0)
         lines.append(
-            f"| `{config_id}` | `{topo_short}` | `{skill_short}` | `{steer_short}` "
+            f"| {code_cell(config_id)} | `{topo_short}` | `{skill_short}` | `{steer_short}` "
             f"| **{s.mean_episode_score_v4:.3f}** (`[{ci_lo:.3f}, {ci_hi:.3f}]`) "
             f"| {s.g_srr:.3f} | {s.auto_g_srr:.3f} "
             f"| {m_state:.3f} | {m_trace:.3f} | {m_evid:.3f} | {m_steer:.3f} "
@@ -174,11 +175,11 @@ def render_v4_markdown_report(
         for config_id, count in infra_invalid:
             ineligible = artifact.scoring_ineligible_models.get(config_id)
             if ineligible is not None:
-                lines.append(f"- `{config_id}`: {ineligible}.")
+                lines.append(f"- {code_cell(config_id)}: {ineligible}.")
             else:
                 eligible_count = len(artifact.per_episode.get(config_id, ()))
                 lines.append(
-                    f"- `{config_id}`: {count} trial(s) excluded; "
+                    f"- {code_cell(config_id)}: {count} trial(s) excluded; "
                     f"{eligible_count} scoring-eligible trial(s) remain."
                 )
 
@@ -204,7 +205,7 @@ def render_v4_markdown_report(
             ]
             cells.append(f"{sum(matched) / float(len(matched)):.3f}" if matched else "n/a")
         lines.append(
-            f"| `{config_id}` | "
+            f"| {code_cell(config_id)} | "
             + " | ".join(cells)
             + f" | `{s.run_config.wave_execution_mode.value}` |"
         )
@@ -274,7 +275,7 @@ def render_v4_markdown_report(
             else "n/a"
         )
         lines.append(
-            f"| `{config_id}` | {avg_lead_turns:.1f} | {avg_worker_calls:.1f} "
+            f"| {code_cell(config_id)} | {avg_lead_turns:.1f} | {avg_worker_calls:.1f} "
             f"| {avg_checker_calls:.1f} "
             f"| {tot_caught_agent}/{tot_materialized} (`{_fmt_opt(s.gar_agent)}`) "
             f"| {live_agree_cell} "

@@ -12,6 +12,23 @@
           "implement": "allow",
           "review": "allow",
           "lane-blind-conformance": "allow"
+        },
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "uv run pytest*": "allow",
+          "uv run ruff check*": "allow",
+          "uv run mypy*": "allow",
+          "uv run identitybench v41 validate*": "allow",
+          "uv run identitybench v41 score*": "allow",
+          "uv run identitybench v41 verify*": "allow"
         }
       }
     },
@@ -35,6 +52,28 @@
           "lane-oracle": "allow",
           "lane-blind-conformance": "allow",
           "lane-stats": "allow"
+        },
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "uv run pytest*": "allow",
+          "uv run ruff check*": "allow",
+          "uv run mypy*": "allow",
+          "uv run identitybench v41 validate*": "allow",
+          "uv run identitybench v41 score*": "allow",
+          "uv run identitybench v41 verify*": "allow",
+          "rm *": "deny",
+          "git push*": "deny",
+          "git commit*": "deny",
+          "git reset*": "deny",
+          "git checkout*": "deny"
         }
       }
     },
@@ -43,7 +82,140 @@
       "mode": "primary",
       "permission": {
         "edit": "deny",
-        "task": "deny"
+        "task": "deny",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "uv run pytest*": "allow",
+          "uv run ruff check*": "allow",
+          "uv run mypy*": "allow",
+          "uv run identitybench v41 validate*": "allow",
+          "uv run identitybench v41 score*": "allow",
+          "uv run identitybench v41 verify*": "allow",
+          "uv run identitybench v41 run*": "allow",
+          "uv run identitybench v41 report*": "allow"
+        }
+      }
+    },
+    "lane-rules": {
+      "description": "IdentityBench blind rules review lane. Read-only; no live models.",
+      "mode": "subagent",
+      "permission": {
+        "edit": "deny",
+        "task": "deny",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "rm *": "deny",
+          "git push*": "deny",
+          "git commit*": "deny",
+          "git reset*": "deny",
+          "git checkout*": "deny"
+        }
+      }
+    },
+    "lane-security": {
+      "description": "IdentityBench blind security review lane. Read-only; no live models.",
+      "mode": "subagent",
+      "permission": {
+        "edit": "deny",
+        "task": "deny",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "uv run pytest*": "allow",
+          "uv run ruff check*": "allow",
+          "uv run mypy*": "allow",
+          "uv run identitybench v41 validate*": "allow",
+          "uv run identitybench v41 score*": "allow",
+          "uv run identitybench v41 verify*": "allow",
+          "rm *": "deny",
+          "git push*": "deny",
+          "git commit*": "deny",
+          "git reset*": "deny",
+          "git checkout*": "deny"
+        }
+      }
+    },
+    "lane-oracle": {
+      "description": "IdentityBench blind oracle review lane. Read-only; no live models.",
+      "mode": "subagent",
+      "permission": {
+        "edit": "deny",
+        "task": "deny",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "uv run pytest*": "allow",
+          "uv run ruff check*": "allow",
+          "uv run mypy*": "allow",
+          "uv run identitybench v41 validate*": "allow",
+          "uv run identitybench v41 score*": "allow",
+          "uv run identitybench v41 verify*": "allow",
+          "rm *": "deny",
+          "git push*": "deny",
+          "git commit*": "deny",
+          "git reset*": "deny",
+          "git checkout*": "deny"
+        }
+      }
+    },
+    "lane-stats": {
+      "description": "IdentityBench blind stats review lane. Read-only; no live models.",
+      "mode": "subagent",
+      "permission": {
+        "edit": "deny",
+        "task": "deny",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "uv run pytest*": "allow",
+          "uv run ruff check*": "allow",
+          "uv run mypy*": "allow",
+          "uv run identitybench v41 validate*": "allow",
+          "uv run identitybench v41 score*": "allow",
+          "uv run identitybench v41 verify*": "allow",
+          "rm *": "deny",
+          "git push*": "deny",
+          "git commit*": "deny",
+          "git reset*": "deny",
+          "git checkout*": "deny"
+        }
       }
     }
   }

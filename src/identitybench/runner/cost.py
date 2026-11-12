@@ -39,6 +39,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
+from identitybench.providers._json import bounded_token_count
 from identitybench.providers.base import Usage
 from identitybench.providers.openai_compat import (
     DEFAULT_BASE_URL_ENV as OPENAI_DEFAULT_BASE_URL_ENV,
@@ -170,10 +171,10 @@ class Rates(_Strict):
     def cost(self, usage: Usage, ttl: CacheTtl = "5m") -> float:
         """USD for one call. Reasoning tokens are already inside ``output_tokens``."""
         total = (
-            usage.input_tokens * self.input
-            + usage.output_tokens * self.output
-            + usage.cache_read_tokens * self.cache_read_rate
-            + usage.cache_write_tokens * self.cache_write_rate(ttl)
+            bounded_token_count(usage.input_tokens) * self.input
+            + bounded_token_count(usage.output_tokens) * self.output
+            + bounded_token_count(usage.cache_read_tokens) * self.cache_read_rate
+            + bounded_token_count(usage.cache_write_tokens) * self.cache_write_rate(ttl)
         )
         return total / _PER_TOKEN
 

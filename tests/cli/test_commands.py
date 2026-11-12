@@ -628,7 +628,9 @@ def test_a_dead_cli_provider_calls_for_a_new_run_only_when_its_cli_is_missing(
     ``not-installed``), so installing it makes a resume impossible; a CLI that is there but
     fails (not logged in, say) leaves the identity alone. No binary is run either way."""
     binary = sys.executable if installed else "ib-test-no-such-cli"
-    experiment = repo / "cli.yaml"
+    # The interpreter may live under the home directory, which only a local config may name.
+    experiment = repo / "experiments" / "local" / "cli.yaml"
+    experiment.parent.mkdir(parents=True, exist_ok=True)
     experiment.write_text(CLI_EXPERIMENT.format(binary=json.dumps(binary)), encoding="utf-8")
     dead = ("cli__baseline__context", "cli__checklist__context")
     runs["predictions"] = [prediction(config_id, "c1", "failed") for config_id in dead]
@@ -680,7 +682,11 @@ def test_a_cli_binary_path_is_checked_where_the_runner_runs_it(
         where.mkdir(parents=True)
         (where / "cli").write_text("#!/bin/sh\n", encoding="utf-8")
         (where / "cli").chmod(0o755)
-    experiment = repo / "cli.yaml"
+    # A home-directory path names the user, so only a local (unpublished) config may hold one.
+    experiment = (
+        repo / "cli.yaml" if form == "repo-relative" else repo / "experiments/local/cli.yaml"
+    )
+    experiment.parent.mkdir(parents=True, exist_ok=True)
     experiment.write_text(CLI_EXPERIMENT.format(binary=json.dumps(binary)), encoding="utf-8")
     sub = repo / "sub"
     sub.mkdir()

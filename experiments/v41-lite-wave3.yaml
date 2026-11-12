@@ -19,7 +19,7 @@ models:
     timeout_s: 600
     concurrency: 2
     extra:
-      binary: /Users/ryanwillen/.local/bin/muse
+      binary: muse
   - provider: claude_cli
     model: claude-fable-5-1
     label: claude-fable-5-1-t0-medium

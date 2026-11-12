@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args
 
+from identitybench.providers._json import sanitize_response
 from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     ModelRequest,
@@ -71,14 +72,21 @@ def response_from_dict(data: Mapping[str, Any]) -> ModelResponse:
         raise ValueError(f"unknown ModelResponse fields: {sorted(unknown)}")
     fields = dict(data)
     usage = fields.pop("usage", None) or {}
+    if not isinstance(usage, dict):
+        raise ValueError("malformed response (usage must be an object)")
     unknown_usage = set(usage) - _USAGE_FIELDS
     if unknown_usage:
         raise ValueError(f"unknown Usage fields: {sorted(unknown_usage)}")
-    calls = [
-        ToolCall(id=call["id"], name=call["name"], arguments=dict(call.get("arguments") or {}))
-        for call in fields.pop("tool_calls", None) or []
-    ]
-    return ModelResponse(**fields, usage=Usage(**usage), tool_calls=calls)
+    try:
+        calls = [
+            ToolCall(id=call["id"], name=call["name"], arguments=dict(call.get("arguments") or {}))
+            for call in fields.pop("tool_calls", None) or []
+        ]
+    except (KeyError, AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("malformed response (invalid tool calls)") from exc
+    return sanitize_response(
+        ModelResponse(**fields, usage=Usage(**usage), tool_calls=calls), "replay"
+    )
 
 
 @dataclass(frozen=True)
@@ -199,4 +207,4 @@ class ReplayProvider:
         if recorded is None:
             return ModelResponse(error=f"replay: no recorded response for key {key}")
         # A copy, so a caller mutating the response can't corrupt later replays of the key.
-        return copy.deepcopy(recorded)
+        return sanitize_response(copy.deepcopy(recorded), self.kind)

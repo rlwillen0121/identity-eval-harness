@@ -14,6 +14,7 @@ refused, and model substitutions fail closed.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Unpack
@@ -218,7 +219,16 @@ class MuseCliProvider(CliProvider):
                     as_dict(usage.get("output_tokens_details")).get("reasoning_tokens")
                 ),
             ),
-            raw={"subscription_usage": subscription[-1] if subscription else None},
+            raw={
+                "subscription_usage": {
+                    key: value
+                    for key, value in subscription[-1].items()
+                    if isinstance(value, int | float | bool)
+                    and (not isinstance(value, float) or math.isfinite(value))
+                }
+                if subscription
+                else None
+            },
         )
         problem = None
         if result.returncode != 0 or terminal.get("terminal") != "completed":

@@ -64,12 +64,7 @@ V41_CONFIGS = (
     "v41-lite-wave3",
 )
 # Dedicated operator entry points validate these schemas outside the generic v41 loader.
-STANDALONE_CONFIGS = (
-    "v41-orgai-12",
-    "v41-orgai-astra-lite",
-    "v41-orgai-astra-desktop",
-    "v41-orgai-astra-dev-recovery",
-)
+STANDALONE_CONFIGS: tuple[str, ...] = ()
 ALL_SUITES = list(Suite)
 
 
