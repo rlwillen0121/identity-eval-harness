@@ -29,7 +29,7 @@ python site/build.py           # site/data/leaderboard.json
 ```
 
 A model from a vendor that is new to the leaderboard also needs a mark in
-`site/assets/js/logos.js`: a single-colour 24 by 24 path, keyed by the vendor id used in
+`site/assets/scripts/logos.js`: a single-colour 24 by 24 path, keyed by the vendor id used in
 `leaderboard.json`. The JavaScript tests fail until every listed vendor has one. Existing marks
 come from [`@lobehub/icons-static-svg`](https://github.com/lobehub/lobe-icons) (MIT) and
 [Simple Icons](https://simpleicons.org) (CC0); they are trademarks of their owners and identify

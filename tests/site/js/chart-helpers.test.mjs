@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/js/charts/svg.js';
-import {paretoFrontier} from '../../../site/assets/js/charts/frontier.js';
-import {TOP_COUNT, topModels} from '../../../site/assets/js/charts/field.js';
-import {shade} from '../../../site/assets/js/charts/anatomy.js';
+import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/scripts/charts/svg.js';
+import {paretoFrontier} from '../../../site/assets/scripts/charts/frontier.js';
+import {TOP_COUNT, topModels} from '../../../site/assets/scripts/charts/field.js';
+import {shade} from '../../../site/assets/scripts/charts/anatomy.js';
 import {installDOM} from './dom-stub.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));

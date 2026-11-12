@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import * as field from '../../../site/assets/js/charts/field.js';
-import * as frontier from '../../../site/assets/js/charts/frontier.js';
-import * as safety from '../../../site/assets/js/charts/safety.js';
-import * as outcomes from '../../../site/assets/js/charts/outcomes.js';
-import * as anatomy from '../../../site/assets/js/charts/anatomy.js';
+import * as field from '../../../site/assets/scripts/charts/field.js';
+import * as frontier from '../../../site/assets/scripts/charts/frontier.js';
+import * as safety from '../../../site/assets/scripts/charts/safety.js';
+import * as outcomes from '../../../site/assets/scripts/charts/outcomes.js';
+import * as anatomy from '../../../site/assets/scripts/charts/anatomy.js';
 import {installDOM, makeStore} from './dom-stub.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
@@ -202,7 +202,7 @@ test('safety gives every screen-clear label priority at rest and while models ar
 
 test('safety screen-clear labels remain visible during their own tooltip and distant labels have one-pixel leaders', () => {
   const dom = installDOM();
-  const css = readFileSync(new URL('../../../site/assets/css/charts.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../../../site/assets/styles/charts.css', import.meta.url), 'utf8');
   assert.match(css, /\.chart-label-leader\s*\{\s*stroke:\s*var\(--axis\);\s*stroke-width:\s*1px;/u);
   for (const width of [328, 560, 1120]) {
     const root = dom.root(width);

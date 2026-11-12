@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/js/table.js';
-import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/js/detail.js';
-import { leaderboardLede } from '../../../site/assets/js/main.js';
-import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/js/updates.js';
-import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/js/format.js';
+import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/scripts/table.js';
+import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/scripts/detail.js';
+import { leaderboardLede } from '../../../site/assets/scripts/main.js';
+import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/scripts/updates.js';
+import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/scripts/format.js';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
 const sortableColumns = ['rank', 'name', 'g_srr', 'tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'];
@@ -58,7 +58,7 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
   assert.ok(identityCell.indexOf('class="model-name"') < identityCell.indexOf('class="model-attribution"'));
   for (const check of data.screen) assert.ok(identityCell.includes(escapeHTML(check.label)), check.label);
 
-  const css = readFileSync(new URL('../../../site/assets/css/table.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../../../site/assets/styles/table.css', import.meta.url), 'utf8');
   const mobile = css.split('@media (max-width: 759px)')[1];
   assert.match(css, /\.model-attribution \{ display: contents; \}/);
   assert.match(mobile, /\.model-name \{ display: block;/);
@@ -209,7 +209,7 @@ test('updates follow history date membership, newest-first groups, and six-plus 
 });
 
 test('every vendor on the leaderboard has a mark, and unknown vendors fall back to an escaped monogram', async () => {
-  const { hasVendorLogo, vendorLogo, vendorLogoBody } = await import('../../../site/assets/js/logos.js');
+  const { hasVendorLogo, vendorLogo, vendorLogoBody } = await import('../../../site/assets/scripts/logos.js');
   for (const vendor of data.vendors) assert.ok(hasVendorLogo(vendor.id), `missing mark for ${vendor.id}`);
   for (const model of data.models) {
     const cell = identityCellMarkup(model, data.screen);
@@ -224,7 +224,7 @@ test('every vendor on the leaderboard has a mark, and unknown vendors fall back 
 
 test('self-hosted fonts exist, are preloaded from the page, and ship with their licence', () => {
   const site = new URL('../../../site/', import.meta.url);
-  const tokens = readFileSync(new URL('assets/css/tokens.css', site), 'utf8');
+  const tokens = readFileSync(new URL('assets/styles/tokens.css', site), 'utf8');
   const fontUrls = [...tokens.matchAll(/url\("\.\.\/fonts\/([^"]+)"\)/g)].map((match) => match[1]);
   assert.equal(fontUrls.length, 3);
   for (const file of fontUrls) assert.ok(existsSync(new URL(`assets/fonts/${file}`, site)), file);
