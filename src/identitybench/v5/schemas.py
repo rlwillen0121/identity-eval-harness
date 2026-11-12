@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import copy
 import json
 import math
 import re
 import types
-from typing import Annotated, Any, Literal, Self, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Self, Union, cast, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    TypeAdapter,
+    ValidationInfo,
+    model_validator,
+)
 
 STAGE_ID_RE = re.compile(r"^stg_[a-z0-9_]{1,24}$")
 ETAG_HEX_RE = re.compile(r"^[a-f0-9]{16}$")
@@ -174,6 +185,27 @@ class _FrozenDict(dict[str, Any]):
     def __ior__(self, other: Any) -> Self:  # type: ignore[override, misc]
         raise TypeError("v5 schema mappings are immutable")
 
+    def __copy__(self) -> Self:
+        # The container and its values are recursively frozen after validation.
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        """Deep-copy nested model values without routing through blocked mutation hooks.
+
+        Pydantic's ``model_copy(deep=True)`` delegates nested values to ``copy.deepcopy``.
+        Reconstructing a dict subclass normally invokes ``__setitem__`` and makes this
+        immutable mapping unusable at runtime boundaries. Use the base dict primitive only
+        while constructing a fresh instance; the returned container remains immutable.
+        """
+        existing = memo.get(id(self))
+        if existing is not None:
+            return cast(Self, existing)
+        copied = _FrozenDict()
+        memo[id(self)] = copied
+        for key, value in self.items():
+            dict.__setitem__(copied, copy.deepcopy(key, memo), copy.deepcopy(value, memo))
+        return cast(Self, copied)
+
 
 def _deep_freeze(value: Any) -> Any:
     if isinstance(value, BaseModel):
@@ -229,7 +261,6 @@ _ID_PATTERNS_BY_FIELD: dict[str, tuple[re.Pattern[str], ...]] = {
     "reconciled_account_ids": (_id_pattern("acct_"),),
     "candidate_account_id": (_id_pattern("acct_"),),
     "approver_account_id": (_id_pattern("acct_"),),
-    "actor_account_id": (_id_pattern("acct_"),),
     "assignee_account_id": (_id_pattern("acct_"),),
     "delegator_account_id": (_id_pattern("acct_"),),
     "proposed_hitl_approver_account_id": (_id_pattern("acct_"),),
@@ -267,7 +298,7 @@ _ID_PATTERNS_BY_FIELD: dict[str, tuple[re.Pattern[str], ...]] = {
     "rejected_feed_ids": (_id_pattern("hfeed_"),),
     "bnhi_id": (_id_pattern("bnhi_"),),
     "nhi_id": (_id_pattern("nhi_"),),
-    "parent_nhi_id": (_id_pattern("nhi_"),),
+    "parent_nhi_id": (_id_pattern("bnhi_"),),
     "target_nhi_ids": (_id_pattern("nhi_"),),
     "signal_id": (_id_pattern("sig_"),),
     "bagt_id": (_id_pattern("bagt_"),),
@@ -316,7 +347,6 @@ _ID_PATTERNS_BY_FIELD: dict[str, tuple[re.Pattern[str], ...]] = {
     "slice_id": (_id_pattern("sl_"),),
     "already_delivered_ids": (_id_pattern("sl_"),),
     "evidence_id": (_id_pattern("ev_"),),
-    "stage_id": (STAGE_ID_RE,),
     "etag": (ETAG_HEX_RE,),
     "current_etag": (ETAG_HEX_RE,),
     "manifest_digest_etag": (ETAG_HEX_RE,),
@@ -347,11 +377,6 @@ _ID_PATTERNS_BY_MODEL_FIELD: dict[tuple[str, str], tuple[re.Pattern[str], ...]] 
     ("AccountReconMutationV5", "target_entity_id"): (_id_pattern("acct_"),),
     ("HRSourceMappingMutationV5", "target_entity_id"): (_id_pattern("hrmap_"),),
     ("ConnectorSyncMutationV5", "target_entity_id"): (_id_pattern("conn_"),),
-    ("CoSignReceiptV5", "target_entity_id"): (
-        _id_pattern("camp_"),
-        _id_pattern("req_"),
-        _id_pattern("dlreq_"),
-    ),
 }
 
 _TUPLE_ID_POSITIONS_BY_MODEL_FIELD: dict[
@@ -547,7 +572,14 @@ class StrictV5Model(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_non_finite_or_non_json_values(cls, value: Any) -> Any:
+    def _reject_non_finite_or_non_json_values(cls, value: Any, info: ValidationInfo) -> Any:
+        # Pydantic's class-level ``model_validate_json`` override below normalizes
+        # JSON arrays before validation, but TypeAdapter and tagged-union validation
+        # enter through pydantic-core and bypass that method.  Restore declared tuple
+        # shapes here for every JSON-mode entrypoint while keeping strict Python-mode
+        # list rejection intact.
+        if info.mode == "json":
+            value = _normalize_json_for_annotation(cls, value)
         _validate_finite_json_tree(value)
         _check_contract_strings(cls.__name__, value)
         _check_indexed_collections(cls.__name__, value)
@@ -1805,6 +1837,32 @@ class SealedEpisodeOracleV5(StrictV5Model):
     omniscient_s2_gold: WorldStateV5
     gold_p1_mutations: tuple[Any, ...]
     gold_p2_mutations: tuple[Any, ...]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strict_parse_gold_mutation_unions(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        adapter: TypeAdapter[AtomicMutationV5] = TypeAdapter(AtomicMutationV5)
+        for field_name in ("gold_p1_mutations", "gold_p2_mutations"):
+            mutations = payload.get(field_name)
+            if not isinstance(mutations, (tuple, list)):
+                continue
+            parsed: list[Any] = []
+            for mutation in mutations:
+                if isinstance(mutation, BaseModel):
+                    parsed.append(adapter.validate_python(mutation, strict=True))
+                else:
+                    encoded = json.dumps(
+                        mutation,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                    parsed.append(adapter.validate_json(encoded, strict=True))
+            payload[field_name] = tuple(parsed)
+        return payload
 
 
 class ComparatorEntryV5(StrictV5Model):
