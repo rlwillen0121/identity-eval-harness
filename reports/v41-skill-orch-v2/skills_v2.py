@@ -170,9 +170,7 @@ After `stage_wave_mutations`, call `run_wave_checker(wave_index, stage_digest)` 
 """.strip()
 
 
-def get_s2_progressive_wave_playbook(
-    wave_index: int, include_maker_checker: bool = False
-) -> str:
+def get_s2_progressive_wave_playbook(wave_index: int, include_maker_checker: bool = False) -> str:
     """Return the compact wave-scoped `S2(k)` playbook (`len < 0.60 * len(S1_MONOLITH_PLAYBOOK)`)."""
     if isinstance(wave_index, bool) or wave_index not in (1, 2, 3):
         raise ValueError(f"wave_index must be 1, 2, or 3 (got {wave_index!r})")
@@ -287,9 +285,7 @@ def verify_opt_candidate_feasibility(
             reasons.append(f"{task.task_id}: missing required_capabilities {missing}")
         standing_cnt = sum(1 for g in chosen if g.mode == "standing")
         if standing_cnt > task.max_standing_grants:
-            reasons.append(
-                f"{task.task_id}: standing grant count exceeds max_standing_grants"
-            )
+            reasons.append(f"{task.task_id}: standing grant count exceeds max_standing_grants")
         sod_hits = _find_internal_forbidden_pairs(covered, task.forbidden_pairs)
         if sod_hits:
             reasons.append(f"{task.task_id}: forbidden capability pairs {sod_hits}")
@@ -387,9 +383,7 @@ def verify_opt_candidate_feasibility(
                     f"{task.task_id}: approver {aid} lacks {snapshot.jit_approver_capability}"
                 )
             if appr.person_id == req.requester_person_id:
-                reasons.append(
-                    f"{task.task_id}: self-approval on {rid} by person {appr.person_id}"
-                )
+                reasons.append(f"{task.task_id}: self-approval on {rid} by person {appr.person_id}")
             role_caps = rcap_map.get(req.role_id, set())
             sod_hits = _find_cross_forbidden_pairs(role_caps, appr_caps, task.forbidden_pairs)
             if sod_hits:
@@ -404,14 +398,16 @@ def verify_opt_candidate_feasibility(
             )
         for aid, cnt in load.items():
             if aid in appr_map and cnt > appr_map[aid].capacity:
-                reasons.append(
-                    f"{task.task_id}: approver {aid} load exceeds capacity"
-                )
+                reasons.append(f"{task.task_id}: approver {aid} load exceeds capacity")
         if reasons:
             return (False, None, reasons)
         computed = sum(
             appr_map[aid].cost_per_review
-            + (appr_map[aid].cross_dept_surcharge if appr_map[aid].dept_id != req_map[rid].dept_id else 0)
+            + (
+                appr_map[aid].cross_dept_surcharge
+                if appr_map[aid].dept_id != req_map[rid].dept_id
+                else 0
+            )
             for rid, aid in assigned_req.items()
         )
 

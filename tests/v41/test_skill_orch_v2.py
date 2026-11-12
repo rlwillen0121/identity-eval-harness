@@ -116,9 +116,7 @@ def dev_pairs() -> list[tuple[EpisodeSpecV41, SealedEpisodeOracleV41]]:
         ora.episode_id: ora
         for ora in (
             SealedEpisodeOracleV41.model_validate_json(line)
-            for line in (DEV_DATASET_DIR / "oracles.jsonl")
-            .read_text(encoding="utf-8")
-            .splitlines()
+            for line in (DEV_DATASET_DIR / "oracles.jsonl").read_text(encoding="utf-8").splitlines()
             if line.strip()
         )
     }
@@ -726,11 +724,11 @@ def test_redact_sensitive_text_scrubs_urls_escaped_urls_quoted_keys_jwt_oauth_an
     raw = (
         "Failed at http://192.168.77.42:8088/v1/chat and host 192.168.77.42 and "
         "https://MixedCase-GW.Internal.Lan:8443/v1 on MIXEDCASE-GW.INTERNAL.LAN and "
-        r'escaped https:\/\/private-gw.example.internal:8443\/models '
+        r"escaped https:\/\/private-gw.example.internal:8443\/models "
         "encoded https%3A%2F%2Fsecret-gw.corp.lan%2Fv1 "
         'JSON {"api_key": "my_custom_json_secret_value_123", "x-api-key": "hdr_tok_999", '
         '"refresh_token": "rt_secret_abc"} '
-        r'escaped_json {\"api_key\": \"escaped_json_secret_value_888\"} '
+        r"escaped_json {\"api_key\": \"escaped_json_secret_value_888\"} "
         "Authorization: Basic dXNlcjpzdXBlcnNlY3JldA== "
         "Authorization: Token tok_secret_header_value_555 "
         "Authorization: ApiKey ak_secret_header_value_777 "
@@ -959,7 +957,13 @@ def test_lint_stage_payload_zero_leakage_discriminated_adapter_and_unread_gate(
     empty_w1 = {
         "wave_index": 1,
         "mutations": [],
-        "citations": [{"target_entity_id": "bogus_unattached_tid_99", "rule_id": "BIND-01a", "evidence_id": next(iter(read1))}],
+        "citations": [
+            {
+                "target_entity_id": "bogus_unattached_tid_99",
+                "rule_id": "BIND-01a",
+                "evidence_id": next(iter(read1)),
+            }
+        ],
         "resource_preconditions": [],
     }
     errs_empty_w1 = "\n".join(skills_v2.lint_stage_payload(1, empty_w1, snap1, read1, nar1))
@@ -1242,7 +1246,9 @@ def test_single_agent_s2_and_s3_prestage_linter_gating_and_retry(
             model_key="qwen-local",
             arm_id="C_S3_prog_val_t3",
             cell_id="qwen-local__C_S3_prog_val_t3",
-            provider_builder=_make_builder(oracles_map, counts, _s3_hook, emitted_call_ids=emitted_ids),
+            provider_builder=_make_builder(
+                oracles_map, counts, _s3_hook, emitted_call_ids=emitted_ids
+            ),
             allow_offline_mock=True,
         )
     )
@@ -1619,7 +1625,9 @@ def test_o4_o5_o6_o7_and_subscription_tiered_teams_pure_multiturn(
     assert meta_t06["budget_regime"] == "G_TURN_12_STRICT"
     assert meta_t06["boss_escalations_count"] == 1
     assert meta_t06["waves"][2]["committed_by"] == "boss"
-    assert meta_t06["cache_hit_completions"] == 2  # W1 read + temp=0.0 W3_ops_and_opt_A cached from T02!
+    assert (
+        meta_t06["cache_hit_completions"] == 2
+    )  # W1 read + temp=0.0 W3_ops_and_opt_A cached from T02!
     assert rec_t06.turns_used == 11 <= 12
     assert meta_t06["env_turns_used"] == 9 <= 12
 
@@ -1685,7 +1693,11 @@ def test_o4_o5_o6_o7_and_subscription_tiered_teams_pure_multiturn(
     assert meta_t14_v["boss_escalations_count"] == 0
     assert meta_t14_v["waves"][2]["committed_by"] == "jury_vote"
     assert rec_t14_v.turns_used <= 12
-    assert c_o7_vote["qwen-local"] >= 1 and c_o7_vote["composer-2.5"] >= 1 and c_o7_vote["grok-4.7"] >= 1
+    assert (
+        c_o7_vote["qwen-local"] >= 1
+        and c_o7_vote["composer-2.5"] >= 1
+        and c_o7_vote["grok-4.7"] >= 1
+    )
 
     # Also verify T14 Wave 3 synthesis repair when both parallel W3 proposals fail semantic checker!
     c_o7_rep: dict[str, int] = defaultdict(int)
@@ -1818,7 +1830,9 @@ def test_parallel_provider_error_retains_sibling_tokens_and_resume_deduplicates_
             allow_offline_mock=True,
         )
     )
-    assert all(r.execution_valid and not r.provider_error and r.scorecard.g_srr == 1.0 for r in recs_2)
+    assert all(
+        r.execution_valid and not r.provider_error and r.scorecard.g_srr == 1.0 for r in recs_2
+    )
     team_log_lines = [
         json.loads(line)
         for line in (tmp_path / "team_logs" / "T14_Bossless_3Pipe_Jury.jsonl")
@@ -1862,7 +1876,9 @@ def test_failure_taxonomy_max_turns_parse_failure_and_manifest_suite_lock(
         return ModelResponse(
             text="",
             tool_calls=(
-                ToolCall(id=f"poll_{call_num}", name="poll_interrupts", arguments={"wave_index": 1}),
+                ToolCall(
+                    id=f"poll_{call_num}", name="poll_interrupts", arguments={"wave_index": 1}
+                ),
             ),
             usage=Usage(input_tokens=50, output_tokens=10),
             latency_s=0.1,
@@ -1898,12 +1914,19 @@ def test_failure_taxonomy_max_turns_parse_failure_and_manifest_suite_lock(
             return ModelResponse(
                 text="",
                 tool_calls=(
-                    ToolCall(id=f"p_{call_num}", name="poll_interrupts", arguments={"wave_index": 1}),
+                    ToolCall(
+                        id=f"p_{call_num}", name="poll_interrupts", arguments={"wave_index": 1}
+                    ),
                 ),
                 usage=Usage(input_tokens=50, output_tokens=10),
                 latency_s=0.1,
             )
-        return ModelResponse(text="not-json", tool_calls=(), usage=Usage(input_tokens=50, output_tokens=5), latency_s=0.1)
+        return ModelResponse(
+            text="not-json",
+            tool_calls=(),
+            usage=Usage(input_tokens=50, output_tokens=5),
+            latency_s=0.1,
+        )
 
     rec_t12, _ = asyncio.run(
         run_study_v2.run_single_agent_control_episode(
@@ -1970,7 +1993,9 @@ def test_failure_taxonomy_max_turns_parse_failure_and_manifest_suite_lock(
 
     with patch(
         "run_study_v2.async_main",
-        side_effect=PermissionError("Blocked https://secret-endpoint.internal:8443/v1 sk-1234567890abcdef"),
+        side_effect=PermissionError(
+            "Blocked https://secret-endpoint.internal:8443/v1 sk-1234567890abcdef"
+        ),
     ):
         rc_err = run_study_v2.main(["--suite", "v41_dev"])
     err_out = capsys.readouterr().err
@@ -2299,7 +2324,9 @@ def test_live_cli_notional_vs_metered_guard_singleflight_cache_and_malformed_ret
     )
 
     def _alt_builder(mk: str, temp: float | None = None) -> tuple[Provider, GenerationParams, int]:
-        p = ScriptedStudyMockProvider(mk, temp, {ep.episode_id: ora}, defaultdict(int), native_tools=False)
+        p = ScriptedStudyMockProvider(
+            mk, temp, {ep.episode_id: ora}, defaultdict(int), native_tools=False
+        )
         return p, GenerationParams(temperature=temp), 4
 
     fp_alt = run_study_v2.cell_config_fingerprint(
@@ -2335,7 +2362,9 @@ def test_live_cli_notional_vs_metered_guard_singleflight_cache_and_malformed_ret
     legit_imp = rec_sample.model_copy(
         update={"config_fingerprint": "imported_s0:gpt-6.1-sol-t0-medium"}
     )
-    forged_rec_path.write_text(json.dumps(legit_imp.model_dump(mode="json")) + "\n", encoding="utf-8")
+    forged_rec_path.write_text(
+        json.dumps(legit_imp.model_dump(mode="json")) + "\n", encoding="utf-8"
+    )
     assert ep.episode_id in run_study_v2.load_valid_cached_records(
         forged_rec_path,
         ep_sha_map,
@@ -2553,7 +2582,12 @@ def test_ratio_cluster_bootstrap_unequal_clusters_and_pricing_rules() -> None:
             pricing,
         )
     )
-    assert fable_usd is None and fable_priced_tok == 0 and fable_unpriced_tok == 110_000 and fable_local_tok == 0
+    assert (
+        fable_usd is None
+        and fable_priced_tok == 0
+        and fable_unpriced_tok == 110_000
+        and fable_local_tok == 0
+    )
 
     # [P1-04] Default --out on v41_dev never points at reports/v41-skill-orch-v2!
     assert (
@@ -2667,13 +2701,17 @@ def test_build_report_v2_end_to_end_deltas_u_exec_survivorship_seal_svg_and_xss(
         row = copy.deepcopy(base_row)
         row["model_id"] = xss_cell_id
         row["provider_kind"] = "claude_cli"
-        row["reported_cost_usd"] = 0.55  # [R2-P0-01] Subscription CLI notional cost -> allowed (0 metered spend)!
+        row["reported_cost_usd"] = (
+            0.55  # [R2-P0-01] Subscription CLI notional cost -> allowed (0 metered spend)!
+        )
         if idx == 1:
             row["scorecard"]["g_srr"] = 0
             row["scorecard"]["g_min"] = 0.25
             row["scorecard"]["u_exec"] = 2
             row["scorecard"]["u_overgrant"] = 2
-            row["turns_used"] = 13  # [R2-P0-02] > 12 turns -> headline_g_turn_01_compliant == False!
+            row["turns_used"] = (
+                13  # [R2-P0-02] > 12 turns -> headline_g_turn_01_compliant == False!
+            )
             row["turn_truncated"] = True
             row["termination_reason"] = "MAX_TURNS_EXCEEDED"
         elif idx == 2:
@@ -2870,8 +2908,12 @@ def test_build_report_v2_end_to_end_deltas_u_exec_survivorship_seal_svg_and_xss(
             SealedEpisodeOracleV41.model_validate_json(ol),
         )
         for el, ol in zip(
-            (REPO_ROOT / "datasets" / "v41_lite" / "episodes.jsonl").read_text(encoding="utf-8").splitlines()[:2],
-            (REPO_ROOT / "datasets" / "v41_lite" / "oracles.jsonl").read_text(encoding="utf-8").splitlines()[:2],
+            (REPO_ROOT / "datasets" / "v41_lite" / "episodes.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()[:2],
+            (REPO_ROOT / "datasets" / "v41_lite" / "oracles.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()[:2],
             strict=True,
         )
     ]
@@ -2966,7 +3008,9 @@ def test_two_wave_parallel_cells_pipe_limiter_non_deadlock_and_llama_server_prop
             return _FakeResp(
                 json.dumps({"data": [{"id": "qwen3.8-flash-next-iq3_xxs"}]}).encode("utf-8")
             )
-        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", http.client.HTTPMessage(), None)
+        raise urllib.error.HTTPError(
+            req.full_url, 404, "Not Found", http.client.HTTPMessage(), None
+        )
 
     with patch.object(urllib.request.OpenerDirector, "open", _fake_open_vllm_404):
         probe_vllm = allowlist.probe_local_llm_server(timeout_s=1.0)

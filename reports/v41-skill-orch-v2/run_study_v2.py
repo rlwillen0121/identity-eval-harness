@@ -176,7 +176,10 @@ def _unwrap_leaf_provider(provider: Provider) -> Provider:
 
 
 def _is_subscription_cli_provider(leaf: Provider) -> bool:
-    return isinstance(leaf, CliProvider) or str(getattr(leaf, "kind", "")) in SUBSCRIPTION_CLI_PROVIDERS
+    return (
+        isinstance(leaf, CliProvider)
+        or str(getattr(leaf, "kind", "")) in SUBSCRIPTION_CLI_PROVIDERS
+    )
 
 
 class UnrecoveredProviderError(RuntimeError):
@@ -520,7 +523,10 @@ def _endpoint_identities_for_cell(
         if provider_builder is not None:
             base_prov, _, _ = _resolve_seat_provider(provider_builder, mk, None)
             prov: Provider = (
-                cast(Provider, SkillPlaybookProvider(base_prov, playbook=S1_MONOLITH_PLAYBOOK, tag="S1"))
+                cast(
+                    Provider,
+                    SkillPlaybookProvider(base_prov, playbook=S1_MONOLITH_PLAYBOOK, tag="S1"),
+                )
                 if use_s1
                 else base_prov
             )
@@ -619,9 +625,7 @@ def _resolve_seat_provider(
 ) -> tuple[Provider, GenerationParams, int]:
     """Build provider for `model_key`, defaulting `qwen-local` deterministic calls to `temperature=0.0`."""
     eff_temp = (
-        temperature
-        if temperature is not None
-        else (0.0 if model_key == "qwen-local" else None)
+        temperature if temperature is not None else (0.0 if model_key == "qwen-local" else None)
     )
     return provider_builder(model_key, eff_temp)
 
@@ -742,9 +746,15 @@ def _add_model_bucket(
     if is_lc:
         bucket["long_context_input_tokens"] = int(bucket["long_context_input_tokens"]) + in_t
         bucket["long_context_output_tokens"] = int(bucket["long_context_output_tokens"]) + out_t
-        bucket["long_context_reasoning_tokens"] = int(bucket["long_context_reasoning_tokens"]) + reas_t
-        bucket["long_context_cache_read_tokens"] = int(bucket["long_context_cache_read_tokens"]) + cr_t
-        bucket["long_context_cache_write_tokens"] = int(bucket["long_context_cache_write_tokens"]) + cw_t
+        bucket["long_context_reasoning_tokens"] = (
+            int(bucket["long_context_reasoning_tokens"]) + reas_t
+        )
+        bucket["long_context_cache_read_tokens"] = (
+            int(bucket["long_context_cache_read_tokens"]) + cr_t
+        )
+        bucket["long_context_cache_write_tokens"] = (
+            int(bucket["long_context_cache_write_tokens"]) + cw_t
+        )
         bucket["long_context_calls"] = int(bucket["long_context_calls"]) + 1
     else:
         bucket["base_input_tokens"] = int(bucket["base_input_tokens"]) + in_t
@@ -835,7 +845,8 @@ class EpisodeAccounting:
 
     def can_complete(self, batch_size: int = 1) -> bool:
         return batch_size >= 1 and (
-            self.llm_completions_used + self._inflight_reserved + batch_size <= self.max_llm_completions
+            self.llm_completions_used + self._inflight_reserved + batch_size
+            <= self.max_llm_completions
         )
 
     def try_reserve_extra_completion(self) -> bool:
@@ -864,9 +875,7 @@ class EpisodeAccounting:
         self.wall_latency_s += step_wall
 
         local_lats = [
-            max(0.0, float(lat))
-            for mk, _, _, lat, _, _, _, _ in entries
-            if _is_local_qwen(mk)
+            max(0.0, float(lat)) for mk, _, _, lat, _, _, _, _ in entries if _is_local_qwen(mk)
         ]
         if local_lats:
             self.local_gpu_seconds += max(local_lats)
@@ -881,7 +890,16 @@ class EpisodeAccounting:
             self.executed_local_gpu_seconds += max(exec_local_lats)
             self.executed_local_gpu_request_seconds += sum(exec_local_lats)
 
-        for model_key, seat_role, usage, lat_raw, cli_notional, is_cache_hit, prov_kind, _ex in entries:
+        for (
+            model_key,
+            seat_role,
+            usage,
+            lat_raw,
+            cli_notional,
+            is_cache_hit,
+            prov_kind,
+            _ex,
+        ) in entries:
             lat = max(0.0, float(lat_raw))
             self.compute_latency_s += lat
             self.total_usage.add(usage)
@@ -985,8 +1003,7 @@ def _message_to_jcs(m: Message) -> dict[str, Any]:
         "role": str(m.role.value),
         "content": m.content,
         "tool_calls": [
-            {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
-            for tc in m.tool_calls
+            {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in m.tool_calls
         ],
         "tool_call_id": m.tool_call_id,
     }
@@ -1096,9 +1113,9 @@ class ProviderPipeLimiter:
         return sem
 
 
-_LOOP_PIPE_LIMITERS: weakref.WeakKeyDictionary[
-    asyncio.AbstractEventLoop, ProviderPipeLimiter
-] = weakref.WeakKeyDictionary()
+_LOOP_PIPE_LIMITERS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, ProviderPipeLimiter] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def get_pipe_limiter() -> ProviderPipeLimiter:
@@ -1193,9 +1210,7 @@ async def _invoke_model_once(
         if advisory_text_only:
             return ModelRequest(system=sys_prompt, messages=tuple(msgs), params=params)
         if native:
-            return ModelRequest(
-                system=sys_prompt, messages=tuple(msgs), tools=tools, params=params
-            )
+            return ModelRequest(system=sys_prompt, messages=tuple(msgs), tools=tools, params=params)
         return ModelRequest(
             system=sys_prompt,
             messages=tuple(msgs),
@@ -1377,7 +1392,9 @@ async def _invoke_model_once(
                     "cli_notional_usd": final_call_cli_notional,
                     "reported_cost_usd": None,
                     "text": resp.text or "",
-                    "calls": [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in calls],
+                    "calls": [
+                        {"id": c.id, "name": c.name, "arguments": c.arguments} for c in calls
+                    ],
                 },
             )
 
@@ -1567,12 +1584,16 @@ async def _call_tracked_parallel(
                     )
                 )
             else:
-                entries.append((spec.model_key, spec.seat_role, Usage(), 0.0, None, False, leaf_pk, 0))
+                entries.append(
+                    (spec.model_key, spec.seat_role, Usage(), 0.0, None, False, leaf_pk, 0)
+                )
             if first_exc is None or isinstance(res, PermissionError):
                 first_exc = res
         else:
             u, lat, cli_notional, resp, calls, is_hit, pk, extra_c = res
-            entries.append((spec.model_key, spec.seat_role, u, lat, cli_notional, is_hit, pk, extra_c))
+            entries.append(
+                (spec.model_key, spec.seat_role, u, lat, cli_notional, is_hit, pk, extra_c)
+            )
             outputs.append((spec.model_key, resp, calls))
 
     acct.record_step(entries)
@@ -1627,13 +1648,18 @@ def _render_messages_for_provider(
             else:
                 replay: dict[str, Any] = {
                     "actions": [
-                        {"action": c.name, "arguments_json": json.dumps(c.arguments, sort_keys=True)}
+                        {
+                            "action": c.name,
+                            "arguments_json": json.dumps(c.arguments, sort_keys=True),
+                        }
                         for c in calls
                     ]
                 }
                 if not no_thought:
                     replay["thought"] = ""
-                msgs.append(Message(role=Role.assistant, content=json.dumps(replay, sort_keys=True)))
+                msgs.append(
+                    Message(role=Role.assistant, content=json.dumps(replay, sort_keys=True))
+                )
                 observations = [
                     {"tool_call_id": tc.id, "name": tc.name, "result": out}
                     for tc, out in zip(calls, results, strict=True)
@@ -1894,7 +1920,9 @@ def _build_completed_record(
     )
 
 
-def _serialize_model_usage_map(raw_map: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+def _serialize_model_usage_map(
+    raw_map: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for mk, bucket in sorted(raw_map.items()):
         in_t = int(bucket.get("input_tokens", 0))
@@ -2139,7 +2167,9 @@ async def run_single_agent_control_episode(
         while acct.can_complete(1) and acct.can_step_env() and not env.episode_completed:
             cur_w = min(3, max(1, int(env.current_wave_index)))
             initial_user = (
-                base_prompt + "\n\n" + get_s2_progressive_wave_playbook(cur_w, include_maker_checker=is_t3)
+                base_prompt
+                + "\n\n"
+                + get_s2_progressive_wave_playbook(cur_w, include_maker_checker=is_t3)
                 if use_s2
                 else base_prompt
             )
@@ -2208,7 +2238,9 @@ async def run_single_agent_control_episode(
                     )
                     if lint_errs:
                         s3_retried_waves.add(cur_w)
-                        wave_state[cur_w]["s3_lint_retries"] = int(wave_state[cur_w]["s3_lint_retries"]) + 1
+                        wave_state[cur_w]["s3_lint_retries"] = (
+                            int(wave_state[cur_w]["s3_lint_retries"]) + 1
+                        )
                         history.append(
                             {
                                 "kind": "user_feedback",
@@ -2236,7 +2268,11 @@ async def run_single_agent_control_episode(
                     "EPISODE_COMPLETED",
                 ):
                     w_arg = tc.arguments.get("wave_index")
-                    w_done = int(w_arg) if isinstance(w_arg, int) and not isinstance(w_arg, bool) else cur_w
+                    w_done = (
+                        int(w_arg)
+                        if isinstance(w_arg, int) and not isinstance(w_arg, bool)
+                        else cur_w
+                    )
                     if w_done in wave_state:
                         wave_state[w_done]["committed"] = True
                         wave_state[w_done]["committed_by"] = "worker"
@@ -2594,7 +2630,9 @@ async def run_team_episode(
             )
             use_mc_footer = not skip_checker_on_wave and not only_one_completion_left
             initial_user = (
-                base_prompt + "\n\n" + get_s2_progressive_wave_playbook(cur_w, include_maker_checker=use_mc_footer)
+                base_prompt
+                + "\n\n"
+                + get_s2_progressive_wave_playbook(cur_w, include_maker_checker=use_mc_footer)
             )
             if skip_checker_on_wave:
                 initial_user += (
@@ -2681,7 +2719,9 @@ async def run_team_episode(
                 )
                 par_specs: list[ParallelCallSpec] = []
                 for _sub_tag, sub_temp, sub_prompt in prompt_specs:
-                    s_prov, s_params, _ = _resolve_seat_provider(provider_builder, sub_key, sub_temp)
+                    s_prov, s_params, _ = _resolve_seat_provider(
+                        provider_builder, sub_key, sub_temp
+                    )
                     par_specs.append(
                         ParallelCallSpec(
                             model_key=sub_key,
@@ -2729,7 +2769,9 @@ async def run_team_episode(
                 ws["jury_voted"] = True
                 all_jurors = tuple(str(x) for x in tdef["jurors"])
                 prop_jurors = all_jurors[:2] if len(all_jurors) >= 2 else all_jurors
-                synth_lead = all_jurors[2] if len(all_jurors) > 2 else str(tdef.get("lead") or all_jurors[0])
+                synth_lead = (
+                    all_jurors[2] if len(all_jurors) > 2 else str(tdef.get("lead") or all_jurors[0])
+                )
                 jury_specs: list[ParallelCallSpec] = []
                 jury_history = [
                     *history,
@@ -2773,7 +2815,9 @@ async def run_team_episode(
                     if jd is not None:
                         for m in jd.get("mutations") or []:
                             if isinstance(m, dict):
-                                mut_counts[json.dumps(m, sort_keys=True, separators=(",", ":"))] += 1
+                                mut_counts[
+                                    json.dumps(m, sort_keys=True, separators=(",", ":"))
+                                ] += 1
 
                 ranked_jury = sorted(
                     enumerate(j_outs),
@@ -2793,7 +2837,9 @@ async def run_team_episode(
                 win_key, win_resp, win_calls = ranked_jury[0][1]
                 ws["winning_juror"] = win_key
                 # 3rd pipe (`grok-4.7`) synthesizes repair if winning juror's draft fails checker
-                jury_runner_up_by_wave[3] = synth_lead if synth_lead != win_key else ranked_jury[-1][1][0]
+                jury_runner_up_by_wave[3] = (
+                    synth_lead if synth_lead != win_key else ranked_jury[-1][1][0]
+                )
 
                 if not win_calls:
                     parse_failure = True
@@ -2808,7 +2854,10 @@ async def run_team_episode(
                     }
                 )
                 for tc, out in zip(win_calls, j_results, strict=True):
-                    if tc.name == "stage_wave_mutations" and out.get("status") == "REJECTED_STRUCTURAL":
+                    if (
+                        tc.name == "stage_wave_mutations"
+                        and out.get("status") == "REJECTED_STRUCTURAL"
+                    ):
                         _handle_wave_rejection(
                             3,
                             "REJECTED_STRUCTURAL",
@@ -2848,7 +2897,9 @@ async def run_team_episode(
                     ]
                     roll_specs: list[ParallelCallSpec] = []
                     for _ri in range(k_roll):
-                        r_prov, r_params, _ = _resolve_seat_provider(provider_builder, w_key, r_temp)
+                        r_prov, r_params, _ = _resolve_seat_provider(
+                            provider_builder, w_key, r_temp
+                        )
                         r_msgs = _render_messages_for_provider(initial_user, roll_history, r_prov)
                         roll_specs.append(
                             ParallelCallSpec(
@@ -3066,8 +3117,15 @@ async def run_team_episode(
                             _handle_wave_rejection(cur_w, "REJECT_VIOLATION", viols)
                 elif tc.name == "commit_wave_mutations":
                     w_arg = tc.arguments.get("wave_index")
-                    w_done = int(w_arg) if isinstance(w_arg, int) and not isinstance(w_arg, bool) else cur_w
-                    if st_code in ("COMMITTED_AND_ADVANCED", "EPISODE_COMPLETED") and w_done in wave_state:
+                    w_done = (
+                        int(w_arg)
+                        if isinstance(w_arg, int) and not isinstance(w_arg, bool)
+                        else cur_w
+                    )
+                    if (
+                        st_code in ("COMMITTED_AND_ADVANCED", "EPISODE_COMPLETED")
+                        and w_done in wave_state
+                    ):
                         _finalize_commit_attribution(w_done)
                     elif st_code.startswith("COMMIT_BLOCKED_"):
                         if (
@@ -3393,7 +3451,8 @@ def import_existing_s0_baseline_cell(
                         f"S0 baseline {src_path.name} ({rec.episode_id}) steering_mode={container['steering_mode']!r}"
                     )
         if rec.scorecard.checker_calls != 0 or any(
-            t.get("name") == "run_wave_checker" and t.get("result_status") in {"PASS", "REJECT_VIOLATION"}
+            t.get("name") == "run_wave_checker"
+            and t.get("result_status") in {"PASS", "REJECT_VIOLATION"}
             for t in rec.tool_trace
         ):
             raise ValueError(
@@ -3442,7 +3501,9 @@ def import_existing_s0_baseline_cell(
                 acct.local_gpu_request_seconds = float(rec.latency_s)
             # For imported aggregate Usage, check per-turn average prompt against long_context threshold
             avg_prompt = (
-                int(u_imp.input_tokens) + int(u_imp.cache_read_tokens) + int(u_imp.cache_write_tokens)
+                int(u_imp.input_tokens)
+                + int(u_imp.cache_read_tokens)
+                + int(u_imp.cache_write_tokens)
             ) / max(1, rec.turns_used)
             imp_price = _lookup_model_price(model_key)
             imp_lc = bool(
@@ -3570,9 +3631,7 @@ async def run_cell_in_stratified_blocks(
     rec_path = records_dir / f"{cell_id}.jsonl"
     meta_path = team_logs_dir / f"{cell_id}.jsonl"
     ep_shas = {ep.episode_id: str(compute_v41_episode_sha256(ep)) for ep, _ in pairs}
-    expected_fp = cell_config_fingerprint(
-        cell_id, suite, provider_builder=provider_builder
-    )
+    expected_fp = cell_config_fingerprint(cell_id, suite, provider_builder=provider_builder)
 
     valid_by_ep = load_valid_cached_records(
         rec_path, ep_shas, expected_fingerprint=expected_fp, cell_id=cell_id
@@ -3749,7 +3808,9 @@ def run_preflight(
     report = {
         "suite": suite.value,
         "out_dir": (
-            str(out_dir.relative_to(REPO_ROOT)) if out_dir.is_relative_to(REPO_ROOT) else str(out_dir)
+            str(out_dir.relative_to(REPO_ROOT))
+            if out_dir.is_relative_to(REPO_ROOT)
+            else str(out_dir)
         ),
         "dataset_episode_count": len(episodes),
         "selected_episodes": selected_cnt,

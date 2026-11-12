@@ -64,9 +64,7 @@ LOCAL_GPU_HOURLY_USD = 1.50
 BUDGET_REGIME_STRICT = "G_TURN_12_STRICT"
 HARD_MAX_TURNS = 12
 
-_CONTROL_CHARS_RE = re.compile(
-    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff\ufffe\uffff]"
-)
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff\ufffe\uffff]")
 
 FAMILY_CANONICAL_MAP: dict[str, str] = {
     "fam_0_0": "F01",
@@ -591,7 +589,8 @@ def _raw_retail_token_equivalent_usd(
 
     prompt_per_call = (in_t + cr_t + cw_t + cw1h_t) / float(max(1, int(calls)))
     is_lc = bool(
-        price.long_context is not None and prompt_per_call > float(price.long_context.threshold_tokens)
+        price.long_context is not None
+        and prompt_per_call > float(price.long_context.threshold_tokens)
     )
     return _price_single_usage_at_row(
         price,
@@ -784,9 +783,7 @@ def _validate_provider_kind_and_cost(
                     for mk, b in pm.items():
                         mk_s = str(mk)
                         b_pk = (
-                            str(b.get("provider_kind") or "")
-                            if isinstance(b, Mapping)
-                            else ""
+                            str(b.get("provider_kind") or "") if isinstance(b, Mapping) else ""
                         ) or DEFAULT_MODEL_PROVIDERS.get(mk_s, "")
                         ok_sub = b_pk in SUBSCRIPTION_CLI_PROVIDERS
                         ok_loc = b_pk == "openai_compatible" and _is_local_model_key(mk_s)
@@ -922,9 +919,7 @@ def _load_executed_calls_ledger(
     total_wall_s = math.fsum(batch_local_max.values())
     has_unpriced = unpriced_tok > 0
     is_pure_local = (not has_unpriced) and priced_tok == 0 and local_tok >= 0
-    exec_eq: float | None = (
-        None if (has_unpriced or is_pure_local) else round(priced_usd, 4)
-    )
+    exec_eq: float | None = None if (has_unpriced or is_pure_local) else round(priced_usd, 4)
 
     return {
         "call_count": len(by_call_id),
@@ -1178,14 +1173,10 @@ def compute_cell_summary(
         if bool(r.get("execution_valid", True)) and not bool(r.get("provider_error"))
     ]
     parse_failure_recs = [
-        r
-        for r in records
-        if bool(r.get("parse_failure")) and not bool(r.get("provider_error"))
+        r for r in records if bool(r.get("parse_failure")) and not bool(r.get("provider_error"))
     ]
     turn_trunc_recs = [
-        r
-        for r in records
-        if bool(r.get("turn_truncated")) and not bool(r.get("provider_error"))
+        r for r in records if bool(r.get("turn_truncated")) and not bool(r.get("provider_error"))
     ]
 
     n_valid = len(valid_recs)
@@ -1255,7 +1246,11 @@ def compute_cell_summary(
         for t in r.get("tool_trace") or []:
             t_args = t.get("arguments") or {}
             w_idx_raw = t_args.get("wave_index", 0)
-            if not (isinstance(w_idx_raw, int) and not isinstance(w_idx_raw, bool) and w_idx_raw in (1, 2, 3)):
+            if not (
+                isinstance(w_idx_raw, int)
+                and not isinstance(w_idx_raw, bool)
+                and w_idx_raw in (1, 2, 3)
+            ):
                 continue
             t_turn = int(t.get("turn", 0))
             if t.get("name") == "read_wave_evidence" and t.get("result_status") == "OK":
@@ -1350,20 +1345,14 @@ def compute_cell_summary(
                         elif w_g >= 0.999999:
                             task_hits[tk] = task_hits.get(tk, 0) + 1
         else:
-            total_req_obligations += max(
-                1, sum(int(w.get("req_count", 0)) for w in sc_waves)
-            )
+            total_req_obligations += max(1, sum(int(w.get("req_count", 0)) for w in sc_waves))
             for w_sc in sc_waves:
                 if bool(w_sc.get("present")) and int(w_sc.get("stage34", 0)) == 0:
                     stage34_miss_waves += 1
 
     if n_eval > 0:
-        committed_unsafe_rate = round(
-            total_u_exec_count / float(max(1, total_req_obligations)), 6
-        )
-        stage34_provenance_miss_rate = round(
-            stage34_miss_waves / float(max(1, n_eval * 3)), 6
-        )
+        committed_unsafe_rate = round(total_u_exec_count / float(max(1, total_req_obligations)), 6)
+        stage34_provenance_miss_rate = round(stage34_miss_waves / float(max(1, n_eval * 3)), 6)
     else:
         committed_unsafe_rate = 1.0
         stage34_provenance_miss_rate = 1.0
@@ -1497,7 +1486,9 @@ def compute_cell_summary(
 
     env_turns_mean = (
         round(
-            math.fsum(float(m.get("env_turns_used", m.get("turns_used", 0.0))) for m in matched_logs)
+            math.fsum(
+                float(m.get("env_turns_used", m.get("turns_used", 0.0))) for m in matched_logs
+            )
             / float(len(matched_logs)),
             3,
         )
@@ -1575,8 +1566,16 @@ def compute_cell_summary(
                 b_lbl = str(m.get("boss_label") or "")
                 w_lbl = str(m.get("worker_label") or desc["model_key"])
                 for lbl, in_v, out_v in (
-                    (b_lbl, int(m.get("boss_input_tokens", 0)), int(m.get("boss_output_tokens", 0))),
-                    (w_lbl, int(m.get("worker_input_tokens", 0)), int(m.get("worker_output_tokens", 0))),
+                    (
+                        b_lbl,
+                        int(m.get("boss_input_tokens", 0)),
+                        int(m.get("boss_output_tokens", 0)),
+                    ),
+                    (
+                        w_lbl,
+                        int(m.get("worker_input_tokens", 0)),
+                        int(m.get("worker_output_tokens", 0)),
+                    ),
                 ):
                     if not lbl or lbl == "none" or (in_v == 0 and out_v == 0):
                         continue
@@ -1655,9 +1654,7 @@ def compute_cell_summary(
                 continue
             m_gpu_ex = float(m.get("executed_local_gpu_seconds", m.get("local_gpu_seconds", 0.0)))
             raw_exec_gpu_s += m_gpu_ex
-            raw_exec_gpu_req_s += float(
-                m.get("executed_local_gpu_request_seconds", m_gpu_ex)
-            )
+            raw_exec_gpu_req_s += float(m.get("executed_local_gpu_request_seconds", m_gpu_ex))
             raw_exec_cli_notional_usd += float(
                 m.get("executed_cli_notional_usd", m.get("cli_notional_usd", 0.0))
             )
@@ -1730,11 +1727,16 @@ def compute_cell_summary(
         ):
             attr_unpriced_models.add(cm)
 
-    has_attr_unpriced = bool(attr_unpriced_tokens > 0 or (attr_priced_tokens == 0 and attr_unpriced_models))
+    has_attr_unpriced = bool(
+        attr_unpriced_tokens > 0 or (attr_priced_tokens == 0 and attr_unpriced_models)
+    )
     is_attr_pure_local = bool(
         not has_attr_unpriced
         and attr_priced_tokens == 0
-        and (attr_local_tokens > 0 or (cfg_models and all(_is_local_model_key(m) for m in cfg_models)))
+        and (
+            attr_local_tokens > 0
+            or (cfg_models and all(_is_local_model_key(m) for m in cfg_models))
+        )
     )
     if is_attr_pure_local:
         priced_coverage = "self_hosted_local"
@@ -2000,9 +2002,7 @@ def render_leaderboard_svg(cells: Sequence[dict[str, Any]], *, dark: bool) -> st
         badge_bg = pal["pass_bg"] if passed_safety else pal["miss_bg"]
         badge_ink = pal["pass_ink"] if passed_safety else pal["miss_ink"]
         badge_txt = (
-            "CLEAR"
-            if passed_safety
-            else ("INVAL" if not c.get("headline_eligible") else "MISS")
+            "CLEAR" if passed_safety else ("INVAL" if not c.get("headline_eligible") else "MISS")
         )
 
         body.append(
@@ -2141,10 +2141,7 @@ def render_pareto_quota_svg(cells: Sequence[dict[str, Any]], *, dark: bool) -> s
     max_cost = max(
         [
             1.0,
-            *(
-                float(c.get("priced_retail_token_equivalent_usd") or 0.0)
-                for c in cells
-            ),
+            *(float(c.get("priced_retail_token_equivalent_usd") or 0.0) for c in cells),
         ]
     )
     body: list[str] = [
@@ -2418,7 +2415,11 @@ def render_html_dashboard(summary: Mapping[str, Any]) -> str:
         err_tip = "; ".join(c.get("redacted_error_samples") or [])
         hl_note = "" if c.get("headline_eligible") else " · INCOMPLETE/INVALID"
         eq_val = c.get("retail_api_equivalent_usd")
-        cost_attr = f"{float(eq_val):.4f}" if isinstance(eq_val, (int, float)) and not isinstance(eq_val, bool) else "-1"
+        cost_attr = (
+            f"{float(eq_val):.4f}"
+            if isinstance(eq_val, (int, float)) and not isinstance(eq_val, bool)
+            else "-1"
+        )
         eq_disp = _xml_esc(_format_retail_eq_text(c))
         rows_html.append(
             f'<tr data-kind="{_xml_esc(c["kind"])}" data-gsrr="{c["g_srr"]:.6f}" data-cost="{cost_attr}">'
@@ -2514,7 +2515,7 @@ def render_html_dashboard(summary: Mapping[str, Any]) -> str:
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>IdentityBench v4.1 — Skill &amp; Orchestration Study v2 ({_xml_esc(summary['suite'])})</title>
+  <title>IdentityBench v4.1 — Skill &amp; Orchestration Study v2 ({_xml_esc(summary["suite"])})</title>
   <style>
     :root {{
       --bg: #f8fafc; --card: #ffffff; --ink: #0f172a; --ink2: #334155; --muted: #64748b;
@@ -2560,7 +2561,7 @@ def render_html_dashboard(summary: Mapping[str, Any]) -> str:
     <header>
       <div>
         <div class="eyebrow">IdentityBench v4.1 · Skill &amp; Orchestration Study v2</div>
-        <h1>Progressive Skills, Local Pre-Stage Linting &amp; Multi-Agent Teams ({_xml_esc(summary['suite'])})</h1>
+        <h1>Progressive Skills, Local Pre-Stage Linting &amp; Multi-Agent Teams ({_xml_esc(summary["suite"])})</h1>
         <div style="color: var(--ink2); font-size: 14px;">
           10,000-draw ratio-of-means &amp; paired family-cluster BCa 95% CIs (seed {BOOTSTRAP_SEED}) · Strict G-TURN-01 (&lt;= 12 completions) · Zero metered API spend
         </div>
@@ -2586,7 +2587,7 @@ def render_html_dashboard(summary: Mapping[str, Any]) -> str:
       </div>
       <div class="kpi">
         <div class="lbl">Local GPU Wall (Attr / Exec)</div>
-        <div class="val">{summary['total_local_gpu_seconds']:.0f}s / {float(exec_tot.get('local_gpu_seconds', 0.0)):.0f}s</div>
+        <div class="val">{summary["total_local_gpu_seconds"]:.0f}s / {float(exec_tot.get("local_gpu_seconds", 0.0)):.0f}s</div>
       </div>
     </section>
 
@@ -2742,7 +2743,9 @@ def build_study_v2_report(
 
     actual_billed_usd = round(math.fsum(t["billed_usd"] for t in raw_totals_list), 6)
     if actual_billed_usd > 0.0:
-        raise ValueError(f"Non-zero metered API spend detected across study: ${actual_billed_usd:.6f}")
+        raise ValueError(
+            f"Non-zero metered API spend detected across study: ${actual_billed_usd:.6f}"
+        )
 
     attr_priced_usd = round(math.fsum(t["attr_priced_retail_usd"] for t in raw_totals_list), 4)
     attr_priced_tok = int(sum(t["attr_priced_tokens"] for t in raw_totals_list))
@@ -2777,21 +2780,25 @@ def build_study_v2_report(
         fb_priced_tok = int(sum(t["exec_priced_tokens"] for t in raw_totals_list))
         fb_unpriced_tok = int(sum(t["exec_unpriced_tokens"] for t in raw_totals_list))
         fb_local_tok = int(sum(t["exec_local_tokens"] for t in raw_totals_list))
-        fb_eq: float | None = (
-            None if (fb_unpriced_tok > 0 or fb_priced_tok == 0) else fb_priced_usd
-        )
+        fb_eq: float | None = None if (fb_unpriced_tok > 0 or fb_priced_tok == 0) else fb_priced_usd
         executed_study_totals = {
             "source": "team_logs_fallback",
             "retail_api_equivalent_usd": fb_eq,
             "retail_token_equivalent_usd": fb_eq,
             "priced_retail_token_equivalent_usd": fb_priced_usd,
-            "cli_notional_usd": round(math.fsum(t["exec_cli_notional_usd"] for t in raw_totals_list), 4),
+            "cli_notional_usd": round(
+                math.fsum(t["exec_cli_notional_usd"] for t in raw_totals_list), 4
+            ),
             "priced_tokens": fb_priced_tok,
             "unpriced_tokens": fb_unpriced_tok,
             "local_tokens": fb_local_tok,
             "local_gpu_seconds": round(math.fsum(t["exec_gpu_s"] for t in raw_totals_list), 3),
-            "local_gpu_request_seconds": round(math.fsum(t["exec_gpu_req_s"] for t in raw_totals_list), 3),
-            "shadow_gpu_tco_usd": round(math.fsum(t["exec_shadow_tco"] for t in raw_totals_list), 4),
+            "local_gpu_request_seconds": round(
+                math.fsum(t["exec_gpu_req_s"] for t in raw_totals_list), 3
+            ),
+            "shadow_gpu_tco_usd": round(
+                math.fsum(t["exec_shadow_tco"] for t in raw_totals_list), 4
+            ),
             "input_tokens": int(sum(t["exec_in_tokens"] for t in raw_totals_list)),
             "output_tokens": int(sum(t["exec_out_tokens"] for t in raw_totals_list)),
         }
@@ -2825,7 +2832,9 @@ def build_study_v2_report(
             "retail_api_equivalent_usd": total_retail_eq,
             "retail_token_equivalent_usd": total_retail_eq,
             "priced_retail_token_equivalent_usd": attr_priced_usd,
-            "cli_notional_usd": round(math.fsum(t["attr_cli_notional_usd"] for t in raw_totals_list), 4),
+            "cli_notional_usd": round(
+                math.fsum(t["attr_cli_notional_usd"] for t in raw_totals_list), 4
+            ),
             "priced_tokens": attr_priced_tok,
             "unpriced_tokens": attr_unpriced_tok,
             "local_tokens": attr_local_tok,
