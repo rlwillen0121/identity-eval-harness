@@ -1,4 +1,5 @@
 import { endToEndPct, pct, int, usd, seconds, date, escapeHTML as esc } from './format.js';
+import { vendorLogo } from './logos.js';
 
 export const costBasis = {
   retail_api: 'Retail token prices applied to the run\'s recorded tokens',
@@ -82,7 +83,7 @@ export function mount(rootEl, data, store) {
       : `${usd(model.cost_usd)} · ${costBasis[model.cost_basis] || 'Basis not recorded'}`;
     const incompleteOptTotals = data.opt_tasks.some((task) => (model.opt?.[task.id]?.total ?? 0) !== total);
     rootEl.innerHTML = `
-      <div class="detail-heading"><h3>${esc(model.name)} <span class="muted">· Model detail</span></h3><button type="button" class="text-button copy-link">Copy link</button></div>
+      <div class="detail-heading"><h3>${vendorLogo(model.vendor, model.vendor_label, 'vendor-logo detail-logo')}${esc(model.name)} <span class="muted">· ${esc(model.vendor_label)}</span></h3><button type="button" class="text-button copy-link">Copy link</button></div>
       <p class="model-id">${esc(model.id)}</p>
       <p class="copy-status muted" role="status"></p>
       ${figures([

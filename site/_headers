@@ -9,8 +9,13 @@
   Cross-Origin-Opener-Policy: same-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains
 
-/assets/*
-  Cache-Control: public, max-age=3600, must-revalidate
+# Scripts and styles keep the platform default (revalidate on every load), so a deploy is never
+# shown with an hour-old stylesheet or module. Only files that rarely change are cached longer.
+/assets/fonts/*
+  Cache-Control: public, max-age=86400
+
+/assets/img/*
+  Cache-Control: public, max-age=86400
 
 /data/*
   Cache-Control: public, max-age=300, must-revalidate

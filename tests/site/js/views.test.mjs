@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/js/table.js';
-import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/js/detail.js';
-import { heroSentence, leaderboardLede } from '../../../site/assets/js/main.js';
-import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/js/updates.js';
-import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/js/format.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/scripts/table.js';
+import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/scripts/detail.js';
+import { leaderboardLede } from '../../../site/assets/scripts/main.js';
+import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/scripts/updates.js';
+import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/scripts/format.js';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
 const sortableColumns = ['rank', 'name', 'g_srr', 'tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'];
@@ -14,15 +14,6 @@ function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-function heroExpected(models) {
-  const top = [...models].sort((a, b) => a.rank - b.rank)[0];
-  const middleRate = median(models.map((model) => model.g_srr));
-  const summary = middleRate === 0
-    ? `${models.filter((model) => model.g_srr === 0).length} of ${models.length} models resolve none.`
-    : `The median model resolves ${endToEndPct(middleRate)}.`;
-  return `${top.name} resolves ${endToEndPct(top.g_srr)} of enterprise identity scenarios end to end. ${summary}`;
 }
 
 test('table interval and cost titles match the published methods', () => {
@@ -54,7 +45,7 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
   const sample = data.models[0];
   const cells = modelCellsMarkup(sample, data, Math.max(...data.models.map((model) => model.unsafe_rate)));
   const columnMarkers = [
-    '<td class="rank-cell">', '<td><button', '<td class="resolution-cell">',
+    '<td class="rank-cell">', '<td class="identity-cell"><button', '<td class="resolution-cell">',
     '<td class="desktop-col tasks-cell">', '<td class="desktop-col"><div class="category-bars">',
     '<td class="desktop-col unsafe-cell">', '<td class="desktop-col cost-cell"',
   ].map((marker) => cells.indexOf(marker));
@@ -67,7 +58,7 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
   assert.ok(identityCell.indexOf('class="model-name"') < identityCell.indexOf('class="model-attribution"'));
   for (const check of data.screen) assert.ok(identityCell.includes(escapeHTML(check.label)), check.label);
 
-  const css = readFileSync(new URL('../../../site/assets/css/table.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../../../site/assets/styles/table.css', import.meta.url), 'utf8');
   const mobile = css.split('@media (max-width: 759px)')[1];
   assert.match(css, /\.model-attribution \{ display: contents; \}/);
   assert.match(mobile, /\.model-name \{ display: block;/);
@@ -81,7 +72,7 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
 });
 
 test('exact leaderboard lede and detailed task total use formatted suite counts', () => {
-  assert.equal(leaderboardLede({ suite: { scenarios: 180, tasks: 1080 } }), 'Models are ranked by the 180 scenarios they resolve end to end: every wave correct, nothing unsafe, nothing missed. Tasks solved, out of 1,080, gives partial credit; simple fixed policies can pass most tasks but resolve no scenario.');
+  assert.equal(leaderboardLede({ suite: { scenarios: 1180, tasks: 1080 } }), 'Ranked by the 1,180 scenarios each resolves end to end: every wave correct, nothing unsafe, nothing missed.');
   const model = data.models.find((item) => item.tasks_solved > 0);
   assert.equal(tasksSolvedSummary(model, data.suite.tasks), `${new Intl.NumberFormat('en-US').format(model.tasks_solved)} of ${new Intl.NumberFormat('en-US').format(data.suite.tasks)} tasks (${pct(model.tasks_rate)})`);
 });
@@ -195,28 +186,6 @@ test('all six category and five optimization medians use every model field rate'
   assert.equal(partial.opt_tasks.task, 0.5);
 });
 
-test('hero sentence handles positive and zero suite medians', () => {
-  assert.equal(heroSentence(data), heroExpected(data.models));
-  const positive = [
-    { rank: 2, name: 'Second', g_srr: 0.25 },
-    { rank: 1, name: 'Top', g_srr: 1 },
-  ];
-  const zeroMedian = [
-    { rank: 1, name: 'Top', g_srr: 0.25 },
-    { rank: 2, name: 'Second', g_srr: 0 },
-    { rank: 3, name: 'Third', g_srr: 0 },
-  ];
-  assert.equal(heroSentence({ models: positive }), heroExpected(positive));
-  const rankDisagreesWithMaximumRate = [
-    { rank: 2, name: 'Highest rate', g_srr: 1 },
-    { rank: 1, name: 'Ranked first', g_srr: 0.25 },
-  ];
-  assert.equal(heroSentence({ models: rankDisagreesWithMaximumRate }), heroExpected(rankDisagreesWithMaximumRate));
-  assert.match(heroSentence({ models: rankDisagreesWithMaximumRate }), /^Ranked first resolves 25\.0%/);
-  assert.equal(heroSentence({ models: zeroMedian }), heroExpected(zeroMedian));
-  assert.match(heroSentence({ models: [{ rank: 1, name: 'Zero', g_srr: 0 }] }), /Zero resolves 0%/);
-});
-
 test('updates follow history date membership, newest-first groups, and six-plus fold count', () => {
   const { groups, earliestDate } = groupUpdates(data);
   const historyDates = data.history.map((entry) => entry.date);
@@ -237,4 +206,40 @@ test('updates follow history date membership, newest-first groups, and six-plus 
     assert.equal(visibleModels.length, Math.min(group.models.length, VISIBLE_UPDATE_COUNT));
     assert.equal(hiddenModels.length, Math.max(0, entry.models.length - VISIBLE_UPDATE_COUNT));
   }
+});
+
+test('every vendor on the leaderboard has a mark, and unknown vendors fall back to an escaped monogram', async () => {
+  const { hasVendorLogo, vendorLogo, vendorLogoBody } = await import('../../../site/assets/scripts/logos.js');
+  for (const vendor of data.vendors) assert.ok(hasVendorLogo(vendor.id), `missing mark for ${vendor.id}`);
+  for (const model of data.models) {
+    const cell = identityCellMarkup(model, data.screen);
+    assert.match(cell, /<svg class="vendor-logo" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"/);
+    assert.ok(cell.includes(escapeHTML(model.vendor_label)), 'the vendor name stays in text beside its mark');
+  }
+  assert.equal(hasVendorLogo('constructor'), false);
+  assert.match(vendorLogoBody('newco', '<New>'), /<text[^>]*>&lt;<\/text>/);
+  assert.match(vendorLogo('newco', 'Newco'), />N<\/text><\/svg>$/);
+  assert.doesNotMatch(vendorLogoBody('openai'), /<text/);
+});
+
+test('self-hosted fonts exist, are preloaded from the page, and ship with their licence', () => {
+  const site = new URL('../../../site/', import.meta.url);
+  const tokens = readFileSync(new URL('assets/styles/tokens.css', site), 'utf8');
+  const fontUrls = [...tokens.matchAll(/url\("\.\.\/fonts\/([^"]+)"\)/g)].map((match) => match[1]);
+  assert.equal(fontUrls.length, 3);
+  for (const file of fontUrls) assert.ok(existsSync(new URL(`assets/fonts/${file}`, site)), file);
+  assert.equal((tokens.match(/font-display: swap;/g) || []).length, fontUrls.length);
+  assert.match(readFileSync(new URL('assets/fonts/LICENSE.txt', site), 'utf8'), /SIL Open Font License, Version 1\.1/);
+
+  const page = readFileSync(new URL('index.html', site), 'utf8');
+  const preloads = [...page.matchAll(/<link rel="preload" href="([^"]+)" as="font" type="font\/woff2" crossorigin>/g)].map((match) => match[1]);
+  assert.ok(preloads.length >= 1);
+  for (const href of preloads) {
+    assert.ok(existsSync(new URL(href, site)), href);
+    assert.ok(fontUrls.includes(href.split('/').pop()), `${href} is declared in tokens.css`);
+  }
+  // The content security policy allows only same-origin scripts, styles and fonts.
+  assert.doesNotMatch(page, /<style[\s>]/);
+  assert.doesNotMatch(page, /<script(?![^>]*\ssrc="assets\/)[^>]*>/);
+  assert.doesNotMatch(page, /<link[^>]+href="https?:\/\/(?!identitybench\.ai\/)/);
 });

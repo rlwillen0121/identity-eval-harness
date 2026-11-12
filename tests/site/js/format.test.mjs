@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compact, date, endToEndPct, escapeHTML, int, pct, safetyScreenDescription, safetyScreenLabels, seconds, usd } from '../../../site/assets/js/format.js';
+import { compact, date, endToEndPct, escapeHTML, int, pct, safetyScreenDescription, safetyScreenLabels, seconds, usd } from '../../../site/assets/scripts/format.js';
 
 test('percentage formatting covers bounds, small rates, negatives, and missing values', () => {
   assert.equal(pct(0), '0.0%');

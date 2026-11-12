@@ -1,15 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import * as field from '../../../site/assets/js/charts/field.js';
-import * as frontier from '../../../site/assets/js/charts/frontier.js';
-import * as safety from '../../../site/assets/js/charts/safety.js';
-import * as outcomes from '../../../site/assets/js/charts/outcomes.js';
-import * as anatomy from '../../../site/assets/js/charts/anatomy.js';
+import * as frontier from '../../../site/assets/scripts/charts/frontier.js';
+import * as safety from '../../../site/assets/scripts/charts/safety.js';
+import * as outcomes from '../../../site/assets/scripts/charts/outcomes.js';
+import * as anatomy from '../../../site/assets/scripts/charts/anatomy.js';
 import {installDOM, makeStore} from './dom-stub.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
-const charts = {field, frontier, safety, outcomes, anatomy};
+const charts = {frontier, safety, outcomes, anatomy};
 const states = {
   rest: {}, hover: {hover: data.models[0].id}, selected: {selected: data.models[0].id},
   filtered: {vendors: new Set([data.models[0].vendor])}
@@ -98,24 +97,6 @@ for (const [name, chart] of Object.entries(charts)) {
   });
 }
 
-test('field dots show the zero column, exact scores, lead label, and minimal chrome', () => {
-  const dom = installDOM();
-  for (const width of [328, 560, 1120]) {
-    const root = dom.root(width);
-    const store = makeStore();
-    const destroy = field.mount(root, data, store);
-    assert.equal(root.querySelector('.chart-title'), null);
-    assert.equal(root.querySelector('.chart-field-count').textContent, `${data.models.filter(m => m.g_srr === 0).length} at zero`);
-    const nodes = marks(root);
-    const zero = nodes.filter(n => data.models.find(m => m.id === n.getAttribute('data-model-id')).g_srr === 0);
-    assert.equal(new Set(zero.map(n => n.querySelector('circle').getAttribute('cy'))).size, zero.length);
-    const lead = data.models.slice().sort((a, b) => b.g_srr - a.g_srr || a.rank - b.rank)[0];
-    assert.ok(visibleLabels(root).some(n => n.getAttribute('data-label-model') === lead.id));
-    assert.equal(nodes[0].querySelector('circle').getAttribute('r'), width < 480 ? '3.5' : '4');
-    destroy();
-  }
-});
-
 test('outcomes preserves rank, four-count tooltips, positive segments and the computed caption', () => {
   const dom = installDOM();
   const root = dom.root(560);
@@ -186,7 +167,7 @@ test('safety gives every screen-clear label priority at rest and while models ar
 
 test('safety screen-clear labels remain visible during their own tooltip and distant labels have one-pixel leaders', () => {
   const dom = installDOM();
-  const css = readFileSync(new URL('../../../site/assets/css/charts.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../../../site/assets/styles/charts.css', import.meta.url), 'utf8');
   assert.match(css, /\.chart-label-leader\s*\{\s*stroke:\s*var\(--axis\);\s*stroke-width:\s*1px;/u);
   for (const width of [328, 560, 1120]) {
     const root = dom.root(width);
@@ -301,7 +282,7 @@ test('chart interaction rectangles stay inside the SVG at narrow widths', () => 
   }
 });
 
-for (const [name, chart] of Object.entries({field, frontier})) {
+for (const [name, chart] of Object.entries({frontier})) {
   test(`${name} labels every pinned model and externally hovered model, suppressing only its own tooltip label`, () => {
     const dom = installDOM();
     const root = dom.root(328);

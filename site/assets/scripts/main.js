@@ -1,4 +1,4 @@
-import { END_TO_END_INTERVAL_METHOD, endToEndPct, int, date, safetyScreenLabels } from './format.js';
+import { END_TO_END_INTERVAL_METHOD, int, date, safetyScreenLabels } from './format.js';
 import { mount as mountTable } from './table.js';
 import { mount as mountUpdates } from './updates.js';
 
@@ -70,15 +70,12 @@ function fillSummary(data) {
     item.textContent = label;
     checkList.append(item);
   }
-  const sentence = heroSentence(data);
-  if (sentence) document.getElementById('hero-title').textContent = sentence;
-  document.getElementById('turn-budget').textContent = int(data.suite.turn_budget);
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
   const figures = [
-    [int(models.length), 'models evaluated'],
+    [int(models.length), 'models'],
     [int(data.suite.scenarios), 'scenarios'],
-    [int(data.suite.decisions), 'decisions verified per run'],
-    [`${int(models.filter((m) => m.screen_clear).length)} of ${int(models.length)}`, 'models clearing the safety screen'],
+    [int(data.suite.decisions), 'decisions checked per run'],
+    [`${int(models.filter((m) => m.screen_clear).length)} of ${int(models.length)}`, 'clear the safety screen'],
   ];
   const root = document.getElementById('hero-figures');
   for (const [value, label] of figures) {
@@ -104,20 +101,19 @@ function fillSummary(data) {
 }
 
 export function leaderboardLede(data) {
-  return `Models are ranked by the ${int(data.suite.scenarios)} scenarios they resolve end to end: every wave correct, nothing unsafe, nothing missed. Tasks solved, out of ${int(data.suite.tasks)}, gives partial credit; simple fixed policies can pass most tasks but resolve no scenario.`;
+  return `Ranked by the ${int(data.suite.scenarios)} scenarios each resolves end to end: every wave correct, nothing unsafe, nothing missed.`;
 }
 
-export function heroSentence(data) {
-  const models = data.models;
-  const top = [...models].sort((a, b) => a.rank - b.rank)[0];
-  if (!top) return '';
-  const rates = models.map((model) => model.g_srr).sort((a, b) => a - b);
-  const middle = Math.floor(rates.length / 2);
-  const median = rates.length % 2 ? rates[middle] : (rates[middle - 1] + rates[middle]) / 2;
-  const summary = median === 0
-    ? `${int(models.filter((model) => model.g_srr === 0).length)} of ${int(models.length)} models resolve none.`
-    : `The median model resolves ${endToEndPct(median)}.`;
-  return `${top.name} resolves ${endToEndPct(top.g_srr)} of enterprise identity scenarios end to end. ${summary}`;
+// Chart labels are measured on a canvas, so wait briefly for the web fonts before drawing.
+async function fontsReady(limit = 1500) {
+  if (!document.fonts?.load) return;
+  const fonts = Promise.all([document.fonts.load('400 12px Inter'), document.fonts.load('400 10px "Geist Mono"')]);
+  await Promise.race([fonts.catch(() => {}), new Promise((resolve) => setTimeout(resolve, limit))]);
+}
+
+function reveal() {
+  document.documentElement.classList.remove('is-loading');
+  document.documentElement.classList.add('is-ready');
 }
 
 async function boot() {
@@ -138,6 +134,7 @@ async function boot() {
   mountTable(document.getElementById('leaderboard-root'), data, store);
   mountUpdates(document.getElementById('updates-root'), data, store);
   document.getElementById('load-status').hidden = true;
+  reveal();
   let lastSelected = store.get().selected;
   function scrollToModel(id) {
     requestAnimationFrame(() => document.getElementById(`model-${id}`)?.scrollIntoView({ block: 'start' }));
@@ -156,12 +153,12 @@ async function boot() {
   if (lastSelected) scrollToModel(lastSelected);
 
   const charts = [
-    ['chart-field', () => import('./charts/field.js')],
     ['chart-frontier', () => import('./charts/frontier.js')],
     ['chart-safety', () => import('./charts/safety.js')],
     ['chart-outcomes', () => import('./charts/outcomes.js')],
     ['chart-anatomy', () => import('./charts/anatomy.js')],
   ];
+  await fontsReady();
   await Promise.all(charts.map(async ([id, load]) => {
     const root = document.getElementById(id);
     try {
@@ -181,7 +178,9 @@ if (typeof document !== 'undefined') {
   boot().catch((error) => {
     console.error('Unable to load IdentityBench results', error);
     const status = document.getElementById('load-status');
+    reveal();
     status.hidden = false;
+    status.classList.add('is-error');
     status.textContent = 'Results could not be loaded. Please reload the page or use the full report linked in Method.';
   });
 }

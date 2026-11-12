@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/js/charts/svg.js';
-import {paretoFrontier} from '../../../site/assets/js/charts/frontier.js';
-import {stackDots} from '../../../site/assets/js/charts/field.js';
-import {shade} from '../../../site/assets/js/charts/anatomy.js';
+import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/scripts/charts/svg.js';
+import {paretoFrontier} from '../../../site/assets/scripts/charts/frontier.js';
+import {shade} from '../../../site/assets/scripts/charts/anatomy.js';
 import {installDOM} from './dom-stub.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
@@ -46,25 +45,6 @@ test('Pareto frontier excludes zeros and local cost, starts with the cheapest sc
   }
 });
 
-test('dot placement is deterministic, uses the lowest legal lane, and preserves exact x', () => {
-  for (const width of [328, 560, 1120]) for (const spacing of [8, 9]) {
-    const scale = linear([0, 1], [12, width - 22]);
-    const points = stackDots(data.models, scale, spacing);
-    assert.deepEqual(points, stackDots(data.models.slice().reverse(), scale, spacing));
-    const zero = points.filter(p => p.model.g_srr === 0);
-    assert.equal(Math.max(...zero.map(p => p.level)) + 1, zero.length);
-    for (const [i, point] of points.entries()) {
-      assert.equal(point.x, scale(point.model.g_srr));
-      for (const other of points.slice(0, i)) {
-        assert.ok(Math.hypot(point.x - other.x, (point.level - other.level) * spacing) >= spacing - 1e-9);
-      }
-      for (let lane = 0; lane < point.level; lane++) {
-        assert.ok(points.slice(0, i).some(p => p.level === lane && Math.abs(p.x - point.x) < spacing));
-      }
-    }
-  }
-});
-
 test('placeLabels stays in bounds, separates boxes and avoids obstacles', () => {
   const bounds = {left: 0, right: 180, top: 0, bottom: 100};
   const obstacle = {x: 80, y: 30, width: 25, height: 25};
@@ -92,11 +72,11 @@ test('model name sizing measures the rendered font, falls back to 6.7px per char
     measuredFont = font;
     return Array.from(value).length * 10;
   });
-  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 10 + 12);
+  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 10 + 30);
   assert.match(measuredFont, /12px.*Test Sans/u);
 
   installDOM();
-  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 6.7 + 12);
+  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 6.7 + 30);
   assert.equal(nameColumn(300, [{name: 'X'.repeat(100)}]), 300 * 0.38);
 });
 

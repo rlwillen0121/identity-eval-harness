@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createStore } from '../../../site/assets/js/main.js';
+import { createStore } from '../../../site/assets/scripts/main.js';
 
 const initialState = () => ({
   sort: { key: 'rank', dir: 'asc' },
