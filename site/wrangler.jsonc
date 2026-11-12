@@ -1,0 +1,13 @@
+// Cloudflare Worker that serves this directory as static assets (no Worker script).
+// Workers Builds uses site/ as its root directory, so the build never sees the Python harness.
+// Deployed on push to main; other branches get preview URLs.
+{
+  "name": "identitybench",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": ".",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "preview_urls": true
+}

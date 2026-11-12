@@ -15,7 +15,7 @@ python -m http.server -d site 8000
 or the Cloudflare Workers runtime, which also applies `site/_headers` and `site/.assetsignore`:
 
 ```sh
-npx wrangler@4 dev
+cd site && npx wrangler@4 dev
 ```
 
 ## Adding a model
@@ -41,8 +41,9 @@ JavaScript tests on every push and pull request that touches the site.
 
 ## Deploy
 
-The site is a Cloudflare Worker with static assets only (`wrangler.jsonc` at the repository root
-points at `site/`). Workers Builds, connected to this GitHub repository, deploys on every push to
-`main` and posts a preview URL on other branches. There is no build step: the data files are
+The site is a Cloudflare Worker with static assets only (`site/wrangler.jsonc`). Workers Builds,
+connected to this GitHub repository with `site` as its root directory and `site/*` as its build
+watch path, deploys on every push to `main` and posts a preview URL on other branches. Building
+from `site/` keeps the build from installing the Python harness. There is no build step: the data files are
 committed, and `site/.assetsignore` keeps `build.py` and this README out of the upload.
 `site/_headers` sets the content security policy and cache lifetimes.
