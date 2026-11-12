@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/js/table.js';
-import { fieldMedians } from '../../../site/assets/js/detail.js';
-import { heroSentence } from '../../../site/assets/js/main.js';
+import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/js/table.js';
+import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/js/detail.js';
+import { heroSentence, leaderboardLede } from '../../../site/assets/js/main.js';
 import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/js/updates.js';
 import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/js/format.js';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
-const sortableColumns = ['rank', 'name', 'tasks_solved', 'categories', 'g_srr', 'unsafe_rate', 'cost_usd'];
+const sortableColumns = ['rank', 'name', 'g_srr', 'tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'];
 
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -26,19 +26,41 @@ function heroExpected(models) {
 }
 
 test('table interval and cost titles match the published methods', () => {
-  const titles = new Map(columnDefinitions(data).map(([key, , title]) => [key, title]));
+  const columns = columnDefinitions(data);
+  assert.deepEqual(columns.map(([key, label]) => [key, label]), [
+    ['rank', '#'], ['name', 'Model'], ['g_srr', 'End to end'], ['tasks_solved', 'Tasks solved'],
+    ['categories', 'By category'], ['unsafe_rate', 'Unsafe'], ['cost_usd', 'Cost'],
+  ]);
+  const titles = new Map(columns.map(([key, , title]) => [key, title]));
+  assert.match(titles.get('rank'), /^Rank by .*model name\.$/);
+  assert.equal((titles.get('rank').match(/\./g) || []).length, 1);
   assert.ok(titles.get('g_srr').includes(END_TO_END_INTERVAL_METHOD));
   assert.match(titles.get('g_srr'), /95% interval/);
+  assert.match(titles.get('g_srr'), /every wave correct/);
+  assert.match(titles.get('g_srr'), /nothing missed/);
+  assert.match(titles.get('g_srr'), /count is scenarios fully resolved/);
   assert.match(titles.get('cost_usd'), /billed amount when reported/);
   assert.match(titles.get('cost_usd'), /retail token prices/);
   assert.match(titles.get('cost_usd'), /Local runs have no cost/);
 });
 
-test('zero end-to-end whiskers and mobile identity rows use consistent method and layout labels', () => {
-  const zeroWhisker = whisker({ g_srr: 0, g_srr_ci: [0, 0] });
+test('end-to-end cells include the muted perfect-scenario count and hide the whisker on mobile', () => {
+  const zeroWhisker = whisker({ g_srr: 0, g_srr_ci: [0, 0], outcomes: { perfect: 0 } }, 180);
   assert.match(zeroWhisker, /resolution-number muted">0%<\/span>/);
+  assert.match(zeroWhisker, /resolution-count muted" aria-label="0 of 180 scenarios resolved end to end">0<\/span>/);
   assert.match(zeroWhisker, /95% interval for end-to-end rate.*0% to 0%/);
   assert.doesNotMatch(zeroWhisker, /0\.0%/);
+
+  const sample = data.models[0];
+  const cells = modelCellsMarkup(sample, data, Math.max(...data.models.map((model) => model.unsafe_rate)));
+  const columnMarkers = [
+    '<td class="rank-cell">', '<td><button', '<td class="resolution-cell">',
+    '<td class="desktop-col tasks-cell">', '<td class="desktop-col"><div class="category-bars">',
+    '<td class="desktop-col unsafe-cell">', '<td class="desktop-col cost-cell"',
+  ].map((marker) => cells.indexOf(marker));
+  assert.ok(columnMarkers.every((position) => position >= 0));
+  assert.deepEqual(columnMarkers, [...columnMarkers].sort((a, b) => a - b), 'tbody uses the published column order');
+  assert.match(cells, /class="task-count">\d[\d,]*<\/span>/);
 
   const passingModel = data.models.find((model) => model.screen_clear);
   const identityCell = identityCellMarkup(passingModel, data.screen);
@@ -51,7 +73,17 @@ test('zero end-to-end whiskers and mobile identity rows use consistent method an
   assert.match(mobile, /\.model-name \{ display: block;/);
   assert.match(mobile, /\.model-attribution \{ display: block; \}/);
   assert.match(mobile, /\.vendor-label \{ display: inline; margin-left: 0; \}/);
+  assert.match(mobile, /\.desktop-col \{ display: none; \}/);
+  assert.match(mobile, /\.ci-whisker \{ display: none; \}/);
+  assert.match(mobile, /\.leaderboard-table th:nth-child\(3\) \{ width: 40%; \}/);
+  assert.doesNotMatch(mobile, /\.resolution-cell\s*\{[^}]*display:\s*none/);
   assert.match(css, /\.vendor-label \{ display: block; margin-left: 0; \}/);
+});
+
+test('exact leaderboard lede and detailed task total use formatted suite counts', () => {
+  assert.equal(leaderboardLede({ suite: { scenarios: 180, tasks: 1080 } }), 'Models are ranked by the 180 scenarios they resolve end to end: every wave correct, nothing unsafe, nothing missed. Tasks solved, out of 1,080, gives partial credit; simple fixed policies can pass most tasks but resolve no scenario.');
+  const model = data.models.find((item) => item.tasks_solved > 0);
+  assert.equal(tasksSolvedSummary(model, data.suite.tasks), `${new Intl.NumberFormat('en-US').format(model.tasks_solved)} of ${new Intl.NumberFormat('en-US').format(data.suite.tasks)} tasks (${pct(model.tasks_rate)})`);
 });
 
 test('every sortable column has independent low-to-high orders in both directions', () => {
@@ -175,6 +207,12 @@ test('hero sentence handles positive and zero suite medians', () => {
     { rank: 3, name: 'Third', g_srr: 0 },
   ];
   assert.equal(heroSentence({ models: positive }), heroExpected(positive));
+  const rankDisagreesWithMaximumRate = [
+    { rank: 2, name: 'Highest rate', g_srr: 1 },
+    { rank: 1, name: 'Ranked first', g_srr: 0.25 },
+  ];
+  assert.equal(heroSentence({ models: rankDisagreesWithMaximumRate }), heroExpected(rankDisagreesWithMaximumRate));
+  assert.match(heroSentence({ models: rankDisagreesWithMaximumRate }), /^Ranked first resolves 25\.0%/);
   assert.equal(heroSentence({ models: zeroMedian }), heroExpected(zeroMedian));
   assert.match(heroSentence({ models: [{ rank: 1, name: 'Zero', g_srr: 0 }] }), /Zero resolves 0%/);
 });

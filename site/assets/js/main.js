@@ -73,7 +73,7 @@ function fillSummary(data) {
   const sentence = heroSentence(data);
   if (sentence) document.getElementById('hero-title').textContent = sentence;
   document.getElementById('turn-budget').textContent = int(data.suite.turn_budget);
-  document.getElementById('leaderboard-lede').textContent = `Models are ranked by category tasks solved, out of ${int(data.suite.tasks)}. End to end is the share of the ${int(data.suite.scenarios)} scenarios a model resolved completely, with nothing unsafe and nothing missed; it is the harder number, and the one to read first.`;
+  document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
   const figures = [
     [int(models.length), 'models evaluated'],
     [int(data.suite.scenarios), 'scenarios'],
@@ -101,6 +101,10 @@ function fillSummary(data) {
   }
   document.getElementById('updated-date').textContent = `Updated ${date(data.updated)}`;
   document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
+}
+
+export function leaderboardLede(data) {
+  return `Models are ranked by the ${int(data.suite.scenarios)} scenarios they resolve end to end: every wave correct, nothing unsafe, nothing missed. Tasks solved, out of ${int(data.suite.tasks)}, gives partial credit; simple fixed policies can pass most tasks but resolve no scenario.`;
 }
 
 export function heroSentence(data) {

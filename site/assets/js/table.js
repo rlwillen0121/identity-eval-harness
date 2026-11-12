@@ -69,21 +69,25 @@ export function sortComparator(key, dir = 'asc') {
 }
 
 export const columnDefinitions = (data) => [
-  ['rank', '#', 'Rank by category tasks solved, end-to-end resolution, unsafe rate and model name.'],
+  ['rank', '#', 'Rank by fully solved scenario count descending, unsafe rate ascending, cost ascending with local runs at zero, then model name.'],
   ['name', 'Model', 'Model name and the organisation that provides it.'],
+  ['g_srr', 'End to end', `Scenarios resolved with every wave correct, no unsafe action, and nothing missed. The count is scenarios fully resolved; whiskers show a 95% interval for the rate computed with a ${END_TO_END_INTERVAL_METHOD}.`],
   ['tasks_solved', 'Tasks solved', `Category tasks solved out of ${int(data.suite.tasks)} tasks in this suite.`],
   ['categories', 'By category', `Solved category tasks in each governance category, out of ${int(data.suite.scenarios)} scenarios.`],
-  ['g_srr', 'End to end', `Scenarios fully resolved with no unsafe action or missed obligation. The dot shows the rate; whiskers show a 95% interval computed with a ${END_TO_END_INTERVAL_METHOD}.`],
   ['unsafe_rate', 'Unsafe', 'Committed unsafe action rate among decisions reached by the model.'],
   ['cost_usd', 'Cost', 'Run cost is the billed amount when reported; otherwise retail token prices are applied to the run\'s recorded tokens. Local runs have no cost.'],
 ];
 
-export function whisker(model) {
+function intervalGraphic(model) {
   const [lo, hi] = model.g_srr_ci.map((n) => clamp(n) * 120);
   const x = clamp(model.g_srr) * 120;
-  const rate = endToEndPct(model.g_srr);
   const intervalLabel = `95% interval for end-to-end rate: ${endToEndPct(model.g_srr_ci[0])} to ${endToEndPct(model.g_srr_ci[1])}. Computed with a ${END_TO_END_INTERVAL_METHOD}.`;
-  return `<span class="resolution-measure"><span class="resolution-number${model.g_srr ? '' : ' muted'}">${rate}</span><svg class="ci-whisker" viewBox="0 0 120 16" role="img" aria-label="${esc(intervalLabel)}" title="${esc(intervalLabel)}"><line class="ci-baseline" x1="0" x2="120" y1="8" y2="8"/><line x1="${lo}" x2="${hi}" y1="8" y2="8"/><line x1="${lo}" x2="${lo}" y1="5" y2="11"/><line x1="${hi}" x2="${hi}" y1="5" y2="11"/><circle cx="${x}" cy="8" r="2.5"/></svg></span>`;
+  return `<svg class="ci-whisker" viewBox="0 0 120 16" role="img" aria-label="${esc(intervalLabel)}" title="${esc(intervalLabel)}"><line class="ci-baseline" x1="0" x2="120" y1="8" y2="8"/><line x1="${lo}" x2="${hi}" y1="8" y2="8"/><line x1="${lo}" x2="${lo}" y1="5" y2="11"/><line x1="${hi}" x2="${hi}" y1="5" y2="11"/><circle cx="${x}" cy="8" r="2.5"/></svg>`;
+}
+
+export function whisker(model, scenarios = null) {
+  const count = scenarios === null ? '' : `<span class="resolution-count muted" aria-label="${int(model.outcomes?.perfect)} of ${int(scenarios)} scenarios resolved end to end">${int(model.outcomes?.perfect)}</span>`;
+  return `<span class="resolution-measure"><span class="resolution-number${model.g_srr ? '' : ' muted'}">${endToEndPct(model.g_srr)}</span>${count}${intervalGraphic(model)}</span>`;
 }
 
 export function identityCellMarkup(model, screen, selected = false) {
@@ -95,6 +99,20 @@ function baselineOrder(kind) {
   if (kind === 'oracle') return 0;
   if (kind === 'noop') return 1;
   return 2;
+}
+
+export function modelCellsMarkup(model, data, maxUnsafe, selected = false) {
+  const unsafeWidth = clamp(model.unsafe_rate / maxUnsafe) * 100;
+  const unsafeFill = Number(model.unsafe_rate) > 0
+    ? `<span class="unsafe-fill" style="width:${unsafeWidth}%"></span>` : '';
+  return `
+    <td class="rank-cell">${int(model.rank)}</td>
+    ${identityCellMarkup(model, data.screen, selected)}
+    <td class="resolution-cell">${whisker(model, data.suite.scenarios)}</td>
+    <td class="desktop-col tasks-cell"><div class="tasks-track" aria-hidden="true"><span class="tasks-fill" style="width:${clamp(model.tasks_rate) * 100}%"></span></div><span>${pct(model.tasks_rate)}</span><span class="task-count">${int(model.tasks_solved)}</span></td>
+    <td class="desktop-col"><div class="category-bars">${data.categories.map((category) => `<span class="category-track" role="img" aria-label="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}" title="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}"><span class="category-fill" style="height:${clamp(model.categories[category.id] / data.suite.scenarios) * 100}%"></span></span>`).join('')}</div></td>
+    <td class="desktop-col unsafe-cell"><span class="unsafe-measure"><span class="unsafe-number">${pct(model.unsafe_rate)}</span><span class="unsafe-track" aria-hidden="true">${unsafeFill}</span></span></td>
+    <td class="desktop-col cost-cell" title="${esc(costBasis[model.cost_basis] || 'Basis not recorded')}">${model.cost_basis === 'local' ? '<span class="muted">local</span>' : usd(model.cost_usd)}</td>`;
 }
 
 export function mount(rootEl, data, store) {
@@ -114,7 +132,7 @@ export function mount(rootEl, data, store) {
     <p class="category-key">Category bars, left to right: ${data.categories.map((category) => esc(category.label)).join(' · ')}</p>
     <table class="leaderboard-table">
       <caption class="sr-only">IdentityBench model results. Activate a model name to show its full results. Activate column headings to sort.</caption>
-      <thead><tr>${columns.map(([key, label, title], i) => `<th scope="col" data-key="${key}"${i > 2 ? ' class="desktop-col"' : ''}><button type="button" class="sort-button" data-sort="${key}" title="${esc(title)}">${label}<span class="sort-indicator"></span></button></th>`).join('')}</tr></thead>
+      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"${['tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'].includes(key) ? ' class="desktop-col"' : ''}><button type="button" class="sort-button" data-sort="${key}" title="${esc(title)}">${label}<span class="sort-indicator"></span></button></th>`).join('')}</tr></thead>
       <tbody></tbody>
     </table>
     <details class="baselines">
@@ -172,18 +190,7 @@ export function mount(rootEl, data, store) {
     });
     body.innerHTML = models.map((model) => {
       const selected = model.id === state.selected;
-      const unsafeWidth = clamp(model.unsafe_rate / maxUnsafe) * 100;
-      const unsafeFill = Number(model.unsafe_rate) > 0
-        ? `<span class="unsafe-fill" style="width:${unsafeWidth}%"></span>` : '';
-      return `<tr class="model-row" id="model-${esc(model.id)}" data-model-id="${esc(model.id)}">
-        <td class="rank-cell">${int(model.rank)}</td>
-        ${identityCellMarkup(model, data.screen, selected)}
-        <td class="tasks-cell"><div class="tasks-track" aria-hidden="true"><span class="tasks-fill" style="width:${clamp(model.tasks_rate) * 100}%"></span></div><span>${pct(model.tasks_rate)}</span><span class="task-count">${int(model.tasks_solved)}</span></td>
-        <td class="desktop-col"><div class="category-bars">${data.categories.map((category) => `<span class="category-track" role="img" aria-label="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}" title="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}"><span class="category-fill" style="height:${clamp(model.categories[category.id] / data.suite.scenarios) * 100}%"></span></span>`).join('')}</div></td>
-        <td class="desktop-col resolution-cell">${whisker(model)}</td>
-        <td class="desktop-col unsafe-cell"><span class="unsafe-measure"><span class="unsafe-number">${pct(model.unsafe_rate)}</span><span class="unsafe-track" aria-hidden="true">${unsafeFill}</span></span></td>
-        <td class="desktop-col cost-cell" title="${esc(costBasis[model.cost_basis] || 'Basis not recorded')}">${model.cost_basis === 'local' ? '<span class="muted">local</span>' : usd(model.cost_usd)}</td>
-      </tr>${selected ? `<tr class="detail-row"><td colspan="7"><div class="model-detail" id="detail-${esc(model.id)}" role="region" aria-label="${esc(model.name)} detail"></div></td></tr>` : ''}`;
+      return `<tr class="model-row" id="model-${esc(model.id)}" data-model-id="${esc(model.id)}">${modelCellsMarkup(model, data, maxUnsafe, selected)}</tr>${selected ? `<tr class="detail-row"><td colspan="7"><div class="model-detail" id="detail-${esc(model.id)}" role="region" aria-label="${esc(model.name)} detail"></div></td></tr>` : ''}`;
     }).join('') || '<tr class="empty-row"><td colspan="7">No models match these filters. Clear the search or choose All vendors.</td></tr>';
     const detail = body.querySelector('.model-detail');
     if (detail) cleanupDetail = mountDetail(detail, data, store);

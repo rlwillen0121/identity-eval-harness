@@ -57,6 +57,10 @@ function figures(items, className = '') {
   return `<dl class="detail-figures ${className}">${items.map(([label, value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>`;
 }
 
+export function tasksSolvedSummary(model, total) {
+  return `${int(model.tasks_solved)} of ${int(total)} tasks (${pct(model.tasks_rate)})`;
+}
+
 export function mount(rootEl, data, store) {
   const medians = cachedFieldMedians(data);
   let previous;
@@ -110,6 +114,7 @@ export function mount(rootEl, data, store) {
           <h4>Safety screen</h4>
           <ul class="screen-checks">${data.screen.map((check) => `<li>${statusGlyph(model.screen[check.id])}<span class="sr-only">${model.screen[check.id] ? 'Pass:' : 'Fail:'}</span><span>${esc(check.label)}</span></li>`).join('')}</ul>
           ${figures([
+            ['Tasks solved', tasksSolvedSummary(model, data.suite.tasks)],
             ['Average turns', `${fixed(model.avg_turns)} of ${int(data.suite.turn_budget)}`],
             ['Tool calls per scenario', fixed(model.avg_tool_calls)],
             ['Output tokens per task', fixed(model.tokens_per_task)],

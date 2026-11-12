@@ -230,6 +230,100 @@ def test_model_ranks_are_strictly_sequential() -> None:
     assert ranks == list(range(1, len(models) + 1))
 
 
+def test_live_models_use_the_exact_requested_sort_key() -> None:
+    model = {
+        "outcomes": {"perfect": 7},
+        "unsafe_rate": 0.0123,
+        "cost_usd": 4.56,
+        "cost_basis": "retail_api",
+        "name": "Exact Display Name",
+    }
+    assert BUILD.leaderboard_sort_key(model) == (-7, 0.0123, 4.56, "Exact Display Name")
+
+    local_model = {**model, "cost_usd": 999.0, "cost_basis": "local"}
+    assert BUILD.leaderboard_sort_key(local_model) == (-7, 0.0123, 0.0, "Exact Display Name")
+
+
+def test_live_model_ties_use_safety_then_effective_cost_then_exact_name() -> None:
+    def model(
+        model_id: str,
+        *,
+        perfect: int,
+        unsafe_rate: float,
+        cost_usd: float,
+        cost_basis: str,
+        name: str,
+    ) -> dict[str, Any]:
+        return {
+            "id": model_id,
+            "outcomes": {"perfect": perfect},
+            "unsafe_rate": unsafe_rate,
+            "cost_usd": cost_usd,
+            "cost_basis": cost_basis,
+            "name": name,
+        }
+
+    models = [
+        model(
+            "lower-perfect", perfect=8, unsafe_rate=0.0, cost_usd=0.0, cost_basis="local", name="A"
+        ),
+        model(
+            "riskier", perfect=9, unsafe_rate=0.02, cost_usd=0.0, cost_basis="retail_api", name="A"
+        ),
+        model(
+            "paid", perfect=9, unsafe_rate=0.01, cost_usd=4.0, cost_basis="retail_api", name="Paid"
+        ),
+        model(
+            "local-cost-is-zero",
+            perfect=9,
+            unsafe_rate=0.01,
+            cost_usd=500.0,
+            cost_basis="local",
+            name="Beta",
+        ),
+        model(
+            "billed-zero-upper",
+            perfect=9,
+            unsafe_rate=0.01,
+            cost_usd=0.0,
+            cost_basis="retail_api",
+            name="Alpha",
+        ),
+        model(
+            "billed-zero-lower",
+            perfect=9,
+            unsafe_rate=0.01,
+            cost_usd=0.0,
+            cost_basis="retail_api",
+            name="alpha",
+        ),
+        model(
+            "most-perfect",
+            perfect=10,
+            unsafe_rate=0.99,
+            cost_usd=999.0,
+            cost_basis="retail_api",
+            name="Z",
+        ),
+    ]
+
+    ordered = sorted(models, key=BUILD.leaderboard_sort_key)
+    assert [item["id"] for item in ordered] == [
+        "most-perfect",
+        "billed-zero-upper",
+        "local-cost-is-zero",
+        "billed-zero-lower",
+        "paid",
+        "riskier",
+        "lower-perfect",
+    ]
+
+
+def test_committed_models_follow_the_leaderboard_sort_key() -> None:
+    models = model_rows(load_data())
+    assert models == sorted(models, key=BUILD.leaderboard_sort_key)
+
+
 def test_category_totals_match_tasks_solved() -> None:
     for model in model_rows(load_data()):
         categories = model.get("categories")

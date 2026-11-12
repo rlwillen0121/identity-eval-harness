@@ -63,5 +63,11 @@
    "claude-fable-5-1-t0-medium",
    "claude-fable-5-2-t0-medium"
   ]
+ },
+ {
+  "date": "2026-11-11",
+  "models": [
+   "gemini-4-carbon-t0-medium"
+  ]
  }
 ]

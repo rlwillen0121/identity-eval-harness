@@ -674,6 +674,24 @@ def history_dates(history: Any) -> dict[str, str]:
     return result
 
 
+def leaderboard_sort_key(model: dict[str, Any]) -> tuple[int, float, float, str]:
+    """Order live models by fully solved scenarios, safety, cost, then display name."""
+    outcomes_data = required(model, "outcomes", "model")
+    if not isinstance(outcomes_data, dict):
+        raise BuildError("model.outcomes must be an object")
+    cost = (
+        0.0
+        if str(required(model, "cost_basis", "model")) == "local"
+        else finite_number(required(model, "cost_usd", "model"), "model.cost_usd")
+    )
+    return (
+        -as_int(required(outcomes_data, "perfect", "model.outcomes"), "model.outcomes.perfect"),
+        finite_number(required(model, "unsafe_rate", "model"), "model.unsafe_rate"),
+        cost,
+        str(required(model, "name", "model")),
+    )
+
+
 def make_payload(
     source: dict[str, Any],
     history: Any,
@@ -693,16 +711,6 @@ def make_payload(
         path = f"summary.v41_full.live_arms[{index}]"
         if as_int(required(arm, "n_completed", path), f"{path}.n_completed") != scenarios:
             raise BuildError(f"{path} is not complete ({arm.get('n_completed')} of {scenarios})")
-    raw_live.sort(
-        key=lambda arm: (
-            -as_int(required(arm, "tasks_passed_1080", "live arm"), "live arm.tasks_passed_1080"),
-            -finite_number(required(arm, "g_srr", "live arm"), "live arm.g_srr"),
-            finite_number(
-                required(arm, "committed_unsafe_rate", "live arm"), "live arm.committed_unsafe_rate"
-            ),
-            str(required(arm, "label", "live arm")).casefold(),
-        )
-    )
     models = [
         build_row(
             arm,
@@ -710,10 +718,13 @@ def make_payload(
             scenarios,
             is_baseline=False,
             first_published=dates.get(str(arm["arm_id"])),
-            rank=index + 1,
+            rank=1,
         )
-        for index, arm in enumerate(raw_live)
+        for arm in raw_live
     ]
+    models.sort(key=leaderboard_sort_key)
+    for index, model in enumerate(models, start=1):
+        model["rank"] = index
     model_ids = {str(model["id"]) for model in models}
     history_only_ids = sorted(set(dates) - model_ids)
     if history_only_ids:
