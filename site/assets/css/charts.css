@@ -113,7 +113,9 @@
 }
 .chart-tooltip[hidden] { display: none; }
 .chart-tooltip strong { display: block; font-weight: 600; }
-.chart-tip-vendor { display: block; margin-bottom: 6px; color: var(--muted); }
+.chart-tip-vendor { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; color: var(--muted); }
+.chart-tip-vendor .vendor-logo { width: 12px; height: 12px; color: inherit; }
+.chart-row-logo { fill: var(--ink); transition: opacity 120ms ease; }
 .chart-tip-hint { display: block; margin-top: 7px; color: var(--muted); font: 400 11px/1.3 var(--sans); }
 .chart-tooltip div { display: flex; justify-content: space-between; gap: 16px; }
 .chart-tooltip div span { color: var(--ink-2); }

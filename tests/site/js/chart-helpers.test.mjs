@@ -92,11 +92,11 @@ test('model name sizing measures the rendered font, falls back to 6.7px per char
     measuredFont = font;
     return Array.from(value).length * 10;
   });
-  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 10 + 12);
+  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 10 + 30);
   assert.match(measuredFont, /12px.*Test Sans/u);
 
   installDOM();
-  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 6.7 + 12);
+  assert.equal(nameColumn(1120, names), Array.from(names[1].name).length * 6.7 + 30);
   assert.equal(nameColumn(300, [{name: 'X'.repeat(100)}]), 300 * 0.38);
 });
 

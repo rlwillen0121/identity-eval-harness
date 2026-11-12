@@ -1,5 +1,6 @@
 import { END_TO_END_INTERVAL_METHOD, endToEndPct, pct, int, usd, safetyScreenDescription, escapeHTML as esc } from './format.js';
 import { mount as mountDetail, costBasis, statusGlyph } from './detail.js';
+import { vendorLogo } from './logos.js';
 
 const arrow = (dir) => `<svg class="sort-arrow" viewBox="0 0 10 12" aria-hidden="true"><path d="${dir === 'asc' ? 'M5 10V2M2 5l3-3 3 3' : 'M5 2v8M2 7l3 3 3-3'}" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 const OTHER_VENDOR = '__other__';
@@ -92,7 +93,7 @@ export function whisker(model, scenarios = null) {
 
 export function identityCellMarkup(model, screen, selected = false) {
   const screenTitle = safetyScreenDescription(screen);
-  return `<td><button type="button" class="model-name" aria-expanded="${selected}"${selected ? ` aria-controls="detail-${esc(model.id)}"` : ''}>${esc(model.name)}</button><span class="model-attribution"><span class="vendor-label">${esc(model.vendor_label)}</span>${model.screen_clear ? `<span class="screen-clear" role="img" aria-label="${esc(screenTitle)}" title="${esc(screenTitle)}">${statusGlyph(true)}</span>` : ''}</span></td>`;
+  return `<td class="identity-cell"><button type="button" class="model-name" aria-expanded="${selected}"${selected ? ` aria-controls="detail-${esc(model.id)}"` : ''}>${vendorLogo(model.vendor, model.vendor_label)}${esc(model.name)}</button><span class="model-attribution"><span class="vendor-label">${esc(model.vendor_label)}</span>${model.screen_clear ? `<span class="screen-clear" role="img" aria-label="${esc(screenTitle)}" title="${esc(screenTitle)}">${statusGlyph(true)}</span>` : ''}</span></td>`;
 }
 
 function baselineOrder(kind) {
@@ -125,7 +126,7 @@ export function mount(rootEl, data, store) {
       <input class="model-search" id="model-search" type="search" placeholder="Filter models" autocomplete="off" spellcheck="false">
       <div class="vendor-controls" role="group" aria-label="Filter by vendor">
         <button class="vendor-button" type="button" data-vendor="" aria-pressed="true">All</button>
-        ${vendorChips.map((chip) => `<button class="vendor-button" type="button"${chip.id === OTHER_VENDOR ? ' data-vendor-other' : ` data-vendor="${esc(chip.id)}"`} aria-pressed="false">${esc(chip.label)} <span class="vendor-count muted">${int(chip.count)}</span></button>`).join('')}
+        ${vendorChips.map((chip) => `<button class="vendor-button" type="button"${chip.id === OTHER_VENDOR ? ' data-vendor-other' : ` data-vendor="${esc(chip.id)}"`} aria-pressed="false">${chip.kind === 'vendor' ? vendorLogo(chip.id, chip.label) : ''}${esc(chip.label)} <span class="vendor-count muted">${int(chip.count)}</span></button>`).join('')}
       </div>
       <span class="model-count" role="status" aria-live="polite"></span>
     </div>

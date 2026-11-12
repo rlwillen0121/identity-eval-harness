@@ -1,4 +1,5 @@
 import {escapeHTML} from '../format.js';
+import {vendorLogo, vendorLogoBody} from '../logos.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -34,7 +35,7 @@ export function text(x, y, value, attrs = {}) {
 }
 
 export function tipContent(model, lines) {
-  return `<strong>${escapeHTML(model.name)}</strong><span class="chart-tip-vendor">${escapeHTML(model.vendor_label)}</span>` +
+  return `<strong>${escapeHTML(model.name)}</strong><span class="chart-tip-vendor">${vendorLogo(model.vendor, model.vendor_label)}${escapeHTML(model.vendor_label)}</span>` +
     lines.map(([label, value]) => `<div><span>${escapeHTML(label)}</span><b>${escapeHTML(value)}</b></div>`).join('') +
     '<small class="chart-tip-hint">Click to open in the table</small>';
 }
@@ -447,10 +448,14 @@ function measuredNameWidth(name, context = nameMeasureContext()) {
   return Number.isFinite(width) ? width : Array.from(String(name)).length * 6.7;
 }
 
+// Row names sit after a vendor mark: a 6px margin, the mark, then a 6px gap.
+const ROW_LOGO = 12;
+const NAME_INSET = 6 + ROW_LOGO + 6;
+
 export function nameColumn(width, models = []) {
   const context = nameMeasureContext();
   const longest = Math.max(0, ...models.map(model => measuredNameWidth(model.name, context)));
-  return Math.min(longest + 12, width * 0.38);
+  return Math.min(longest + NAME_INSET + 6, width * 0.38);
 }
 
 function fitModelName(name, width) {
@@ -464,16 +469,21 @@ function fitModelName(name, width) {
 // Both row charts use the same measured name column, outline and linked emphasis.
 export function modelRow(svg, model, {left, width, top, pitch, height}) {
   const row = el('g', {'data-row-model': model.id, class: 'chart-model-row'});
-  const label = fitModelName(model.name, Math.max(0, left - 12));
-  const name = text(6, top + height / 2 + 4, label, {class: 'chart-row-label'});
+  const label = fitModelName(model.name, Math.max(0, left - NAME_INSET - 6));
+  const name = text(NAME_INSET, top + height / 2 + 4, label, {class: 'chart-row-label'});
+  const logo = el('g', {class: 'chart-row-logo', 'aria-hidden': 'true',
+    transform: `translate(6 ${top + height / 2 - ROW_LOGO / 2}) scale(${ROW_LOGO / 24})`});
+  logo.innerHTML = vendorLogoBody(model.vendor, model.vendor_label);
   const outline = el('rect', {x: 1, y: top - (pitch - height) / 2, width: width - 2,
     height: pitch, fill: 'none', stroke: 'none', 'stroke-width': 1.5, 'pointer-events': 'none'});
-  row.append(name, outline);
+  row.append(logo, name, outline);
   svg.append(row);
   return {row, name, outline,
     sync(state, marks) {
       const style = markState(model, state);
-      name.setAttribute('opacity', style.filtered ? 0.3 : state.hover && !style.hovered ? 0.4 : 1);
+      const nameOpacity = style.filtered ? 0.3 : state.hover && !style.hovered ? 0.4 : 1;
+      name.setAttribute('opacity', nameOpacity);
+      logo.setAttribute('opacity', nameOpacity);
       name.style.fontWeight = style.active && !style.filtered ? '600' : '400';
       outline.setAttribute('stroke', style.active && !style.filtered ? 'var(--accent)' : 'none');
       for (const mark of marks) {

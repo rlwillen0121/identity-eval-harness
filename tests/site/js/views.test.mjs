@@ -54,7 +54,7 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
   const sample = data.models[0];
   const cells = modelCellsMarkup(sample, data, Math.max(...data.models.map((model) => model.unsafe_rate)));
   const columnMarkers = [
-    '<td class="rank-cell">', '<td><button', '<td class="resolution-cell">',
+    '<td class="rank-cell">', '<td class="identity-cell"><button', '<td class="resolution-cell">',
     '<td class="desktop-col tasks-cell">', '<td class="desktop-col"><div class="category-bars">',
     '<td class="desktop-col unsafe-cell">', '<td class="desktop-col cost-cell"',
   ].map((marker) => cells.indexOf(marker));
@@ -237,4 +237,18 @@ test('updates follow history date membership, newest-first groups, and six-plus 
     assert.equal(visibleModels.length, Math.min(group.models.length, VISIBLE_UPDATE_COUNT));
     assert.equal(hiddenModels.length, Math.max(0, entry.models.length - VISIBLE_UPDATE_COUNT));
   }
+});
+
+test('every vendor on the leaderboard has a mark, and unknown vendors fall back to an escaped monogram', async () => {
+  const { hasVendorLogo, vendorLogo, vendorLogoBody } = await import('../../../site/assets/js/logos.js');
+  for (const vendor of data.vendors) assert.ok(hasVendorLogo(vendor.id), `missing mark for ${vendor.id}`);
+  for (const model of data.models) {
+    const cell = identityCellMarkup(model, data.screen);
+    assert.match(cell, /<svg class="vendor-logo" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"/);
+    assert.ok(cell.includes(escapeHTML(model.vendor_label)), 'the vendor name stays in text beside its mark');
+  }
+  assert.equal(hasVendorLogo('constructor'), false);
+  assert.match(vendorLogoBody('newco', '<New>'), /<text[^>]*>&lt;<\/text>/);
+  assert.match(vendorLogo('newco', 'Newco'), />N<\/text><\/svg>$/);
+  assert.doesNotMatch(vendorLogoBody('openai'), /<text/);
 });

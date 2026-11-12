@@ -1,4 +1,5 @@
 import { date, endToEndPct, escapeHTML as esc, int } from './format.js';
+import { vendorLogo } from './logos.js';
 
 export function groupUpdates(data) {
   const modelsById = new Map(data.models.map((model) => [model.id, model]));
@@ -32,7 +33,7 @@ export function mount(root, data, store) {
         return `<section class="updates-day" aria-label="Published ${esc(date(group.date))}">
           <div class="updates-date-block"><time class="updates-date" datetime="${esc(group.date)}">${esc(date(group.date))}</time>${group.date === earliestDate ? '<span class="updates-launch">Launch</span>' : ''}</div>
           <div class="updates-day-content">
-          <ul class="updates-models" id="${listId}">${group.models.map((model, modelIndex) => `<li${modelIndex >= VISIBLE_UPDATE_COUNT ? ' hidden' : ''}><button class="update-model-button" type="button" data-model-id="${esc(model.id)}" aria-pressed="false" aria-label="Select ${esc(model.name)}, rank ${int(model.rank)}, ${endToEndPct(model.g_srr)} end to end"><span class="update-model-name">${esc(model.name)}</span><span class="update-model-meta">#${int(model.rank)} · ${endToEndPct(model.g_srr)}</span></button></li>`).join('')}</ul>
+          <ul class="updates-models" id="${listId}">${group.models.map((model, modelIndex) => `<li${modelIndex >= VISIBLE_UPDATE_COUNT ? ' hidden' : ''}><button class="update-model-button" type="button" data-model-id="${esc(model.id)}" aria-pressed="false" aria-label="Select ${esc(model.name)}, rank ${int(model.rank)}, ${endToEndPct(model.g_srr)} end to end"><span class="update-model-name">${vendorLogo(model.vendor, model.vendor_label)}${esc(model.name)}</span><span class="update-model-meta">#${int(model.rank)} · ${endToEndPct(model.g_srr)}</span></button></li>`).join('')}</ul>
             ${hiddenCount ? `<button class="updates-expand" type="button" data-hidden-count="${hiddenCount}" aria-controls="${listId}" aria-expanded="false">Show ${hiddenCount} more</button>` : ''}
           </div>
         </section>`;
