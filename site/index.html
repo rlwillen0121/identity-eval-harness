@@ -50,21 +50,15 @@
       <noscript><p class="status-note">JavaScript is needed to load the leaderboard and charts. The full report and methodology are linked below.</p></noscript>
       <div id="load-status" class="status-note" role="status">Loading benchmark results…</div>
       <section class="hero" aria-labelledby="hero-title">
-        <div class="hero-copy">
-          <p class="eyebrow">An independent benchmark</p>
-          <h1 id="hero-title">Can AI govern enterprise identity?</h1>
-          <p class="hero-description">Models act as the identity governance engine for a simulated enterprise. A deterministic verifier checks every decision.</p>
-          <p class="hero-actions">
-            <a class="button button-primary" href="#leaderboard">View the leaderboard <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M7 2v10M2.5 7.5 7 12l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-            <a class="button button-quiet" href="#method">How it is scored</a>
-          </p>
+        <h1 id="hero-title">Can AI govern enterprise identity?</h1>
+        <p class="hero-description">AI models run identity governance for a simulated enterprise. <span id="leaderboard-lede"></span></p>
+        <div class="hero-meta-row">
+          <dl class="hero-meta" id="hero-figures"></dl>
+          <a class="text-link" href="#method">How it is scored</a>
         </div>
-        <figure class="hero-figure"><div class="chart" id="chart-field"></div></figure>
-        <dl class="hero-figures" id="hero-figures"></dl>
       </section>
-      <section class="section" id="leaderboard" aria-labelledby="leaderboard-title">
-        <h2 id="leaderboard-title">Leaderboard</h2>
-        <p class="section-lede" id="leaderboard-lede"></p>
+      <section class="board" id="leaderboard" aria-labelledby="leaderboard-title">
+        <h2 class="sr-only" id="leaderboard-title">Leaderboard</h2>
         <div id="leaderboard-root"></div>
       </section>
       <section class="section" id="analysis" aria-labelledby="analysis-title">

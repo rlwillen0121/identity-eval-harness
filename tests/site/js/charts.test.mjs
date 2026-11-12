@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import * as field from '../../../site/assets/scripts/charts/field.js';
 import * as frontier from '../../../site/assets/scripts/charts/frontier.js';
 import * as safety from '../../../site/assets/scripts/charts/safety.js';
 import * as outcomes from '../../../site/assets/scripts/charts/outcomes.js';
@@ -9,7 +8,7 @@ import * as anatomy from '../../../site/assets/scripts/charts/anatomy.js';
 import {installDOM, makeStore} from './dom-stub.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
-const charts = {field, frontier, safety, outcomes, anatomy};
+const charts = {frontier, safety, outcomes, anatomy};
 const states = {
   rest: {}, hover: {hover: data.models[0].id}, selected: {selected: data.models[0].id},
   filtered: {vendors: new Set([data.models[0].vendor])}
@@ -37,10 +36,8 @@ for (const [name, chart] of Object.entries(charts)) for (const width of [328, 56
         assert.ok(svg.getAttribute('aria-label')?.trim());
       }
       const nodes = marks(root);
-      // The hero chart lists only the leading models; every other chart marks each model.
-      const expected = name === 'field' ? Math.min(field.TOP_COUNT, data.models.length) : data.models.length;
-      assert.equal(new Set(nodes.map(n => n.getAttribute('data-model-id'))).size, expected);
-      assert.equal(nodes.length, expected * (name === 'anatomy' ? data.categories.length + (width < 640 ? 0 : data.opt_tasks.length) : 1));
+      assert.equal(new Set(nodes.map(n => n.getAttribute('data-model-id'))).size, data.models.length);
+      assert.equal(nodes.length, data.models.length * (name === 'anatomy' ? data.categories.length + (width < 640 ? 0 : data.opt_tasks.length) : 1));
       for (const node of root.querySelectorAll('[tabindex]')) {
         assert.equal(node.getAttribute('role'), 'button');
         assert.equal(node.getAttribute('tabindex'), '0');
@@ -85,7 +82,7 @@ for (const [name, chart] of Object.entries(charts)) {
     node.blur();
     node.dispatchEvent({type: 'click'});
     assert.equal(store.get().selected, id);
-    const target = ['anatomy', 'outcomes', 'field'].includes(name) ? node : root.querySelector('.chart-hit-area');
+    const target = name === 'anatomy' || name === 'outcomes' ? node : root.querySelector('.chart-hit-area');
     const circle = node.querySelector('circle');
     const x = circle ? Number(circle.getAttribute('cx')) : 200;
     const y = circle ? Number(circle.getAttribute('cy')) : 70;
@@ -99,38 +96,6 @@ for (const [name, chart] of Object.entries(charts)) {
     destroy();
   });
 }
-
-test('field lists the top models in rank order with exact bars and values, and notes the models at zero', () => {
-  const dom = installDOM();
-  const top = data.models.slice().sort((a, b) => a.rank - b.rank).slice(0, field.TOP_COUNT);
-  const zero = data.models.filter(m => m.g_srr === 0);
-  for (const width of [328, 560, 1120]) {
-    const root = dom.root(width);
-    const store = makeStore();
-    const destroy = field.mount(root, data, store);
-    assert.equal(root.querySelector('.chart-title'), null);
-    assert.equal(root.querySelector('.chart-top-title').textContent, `Top ${top.length}`);
-    assert.equal(root.querySelector('.chart-top-note').textContent, `${zero.length} of ${data.models.length} models resolve none.`);
-    const rows = root.querySelectorAll('[data-row-model]');
-    assert.deepEqual(rows.map(n => n.getAttribute('data-row-model')), top.map(m => m.id));
-    const trackWidth = Number(rows[0].querySelector('.chart-top-track').getAttribute('width'));
-    assert.ok(trackWidth > width * 0.75, 'bars use most of the width');
-    for (const [i, row] of rows.entries()) {
-      assert.equal(Number(row.querySelector('.chart-top-track').getAttribute('width')), trackWidth);
-      const bar = row.querySelector('.chart-top-bar');
-      const expected = Math.max(Number(bar.getAttribute('height')), top[i].g_srr * trackWidth);
-      assert.ok(Math.abs(Number(bar.getAttribute('width')) - expected) < 1e-6, top[i].name);
-      assert.equal(row.querySelector('.chart-top-rank').textContent, String(top[i].rank));
-      assert.equal(row.querySelector('.chart-top-value').textContent, `${(top[i].g_srr * 100).toFixed(1)}%`);
-      const shown = row.querySelector('.chart-top-name').textContent;
-      assert.ok(shown === top[i].name || (shown.endsWith('…') && top[i].name.startsWith(shown.slice(0, -1).trimEnd())), shown);
-    }
-    store.set({selected: top[1].id});
-    assert.equal(rows[1].getAttribute('aria-pressed'), 'true');
-    assert.equal(rows[0].getAttribute('aria-pressed'), 'false');
-    destroy();
-  }
-});
 
 test('outcomes preserves rank, four-count tooltips, positive segments and the computed caption', () => {
   const dom = installDOM();

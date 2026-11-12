@@ -72,7 +72,7 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
 });
 
 test('exact leaderboard lede and detailed task total use formatted suite counts', () => {
-  assert.equal(leaderboardLede({ suite: { scenarios: 1180, tasks: 1080 } }), 'Ranked by the 1,180 scenarios each model resolves end to end: every wave correct, nothing unsafe, nothing missed.');
+  assert.equal(leaderboardLede({ suite: { scenarios: 1180, tasks: 1080 } }), 'Ranked by the 1,180 scenarios each resolves end to end: every wave correct, nothing unsafe, nothing missed.');
   const model = data.models.find((item) => item.tasks_solved > 0);
   assert.equal(tasksSolvedSummary(model, data.suite.tasks), `${new Intl.NumberFormat('en-US').format(model.tasks_solved)} of ${new Intl.NumberFormat('en-US').format(data.suite.tasks)} tasks (${pct(model.tasks_rate)})`);
 });

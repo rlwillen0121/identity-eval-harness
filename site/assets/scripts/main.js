@@ -101,7 +101,7 @@ function fillSummary(data) {
 }
 
 export function leaderboardLede(data) {
-  return `Ranked by the ${int(data.suite.scenarios)} scenarios each model resolves end to end: every wave correct, nothing unsafe, nothing missed.`;
+  return `Ranked by the ${int(data.suite.scenarios)} scenarios each resolves end to end: every wave correct, nothing unsafe, nothing missed.`;
 }
 
 // Chart labels are measured on a canvas, so wait briefly for the web fonts before drawing.
@@ -153,7 +153,6 @@ async function boot() {
   if (lastSelected) scrollToModel(lastSelected);
 
   const charts = [
-    ['chart-field', () => import('./charts/field.js')],
     ['chart-frontier', () => import('./charts/frontier.js')],
     ['chart-safety', () => import('./charts/safety.js')],
     ['chart-outcomes', () => import('./charts/outcomes.js')],

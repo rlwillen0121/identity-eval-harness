@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/scripts/charts/svg.js';
 import {paretoFrontier} from '../../../site/assets/scripts/charts/frontier.js';
-import {TOP_COUNT, topModels} from '../../../site/assets/scripts/charts/field.js';
 import {shade} from '../../../site/assets/scripts/charts/anatomy.js';
 import {installDOM} from './dom-stub.mjs';
 
@@ -44,16 +43,6 @@ test('Pareto frontier excludes zeros and local cost, starts with the cheapest sc
     assert.notEqual(model.cost_basis, 'local');
     if (i) assert.ok(model.g_srr > actual[i - 1].g_srr && model.cost_usd >= actual[i - 1].cost_usd);
   }
-});
-
-test('the top models are the best-ranked ones in rank order, independent of input order', () => {
-  const top = topModels(data.models);
-  assert.equal(top.length, Math.min(TOP_COUNT, data.models.length));
-  assert.deepEqual(top, topModels(data.models.slice().reverse()));
-  assert.deepEqual(top.map(model => model.rank), Array.from({length: top.length}, (_, i) => i + 1));
-  assert.deepEqual(topModels(data.models, 3).map(model => model.id), top.slice(0, 3).map(model => model.id));
-  assert.deepEqual(topModels(data.models, 0), []);
-  assert.deepEqual(topModels([]), []);
 });
 
 test('placeLabels stays in bounds, separates boxes and avoids obstacles', () => {
