@@ -74,8 +74,15 @@
 .chart-mark, .chart-heat-cell, .chart-frontier, .chart-direct-label,
 .chart-label-leader, .chart-row-label, .chart-model-row rect { transition: opacity 120ms ease; }
 .chart-model-row[role="button"] { cursor: pointer; }
-.chart-field .chart-caption { color: var(--muted); }
-.chart-field-count { fill: var(--muted); font: 400 12px/1.3 var(--sans); }
+.chart-field-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 14px; border-bottom: 1px solid var(--rule); padding-bottom: 12px; color: var(--ink); font: 600 13px/1.4 var(--sans); }
+.chart-field-scope { color: var(--muted); font: 400 11px/1.4 var(--mono); }
+.chart-field-track { fill: var(--grid); }
+.chart-field-bar { fill: var(--accent); }
+.chart-field-value { fill: var(--ink); font: 400 12px/1.3 var(--sans); font-variant-numeric: tabular-nums; }
+.chart-field-rule { stroke: var(--rule); stroke-width: 1; }
+.chart-field-count { fill: var(--ink-2); font: 400 12px/1.3 var(--sans); }
+.chart-field-zero { cursor: pointer; transition: opacity 120ms ease; }
+.chart-field-bar, .chart-field-value { transition: opacity 120ms ease; }
 .chart-outcome-key { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--ink-2); font: 400 11px/1.3 var(--sans); }
 .chart-outcome-key > span { display: inline-flex; align-items: center; gap: 5px; }
 .chart-outcome-key .chart-scale-swatch { display: inline-block; width: 14px; height: 8px; }

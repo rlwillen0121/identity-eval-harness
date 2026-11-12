@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/js/charts/svg.js';
 import {paretoFrontier} from '../../../site/assets/js/charts/frontier.js';
-import {stackDots, zeroBlock} from '../../../site/assets/js/charts/field.js';
+import {gridCells, splitField} from '../../../site/assets/js/charts/field.js';
 import {shade} from '../../../site/assets/js/charts/anatomy.js';
 import {installDOM} from './dom-stub.mjs';
 
@@ -46,37 +46,26 @@ test('Pareto frontier excludes zeros and local cost, starts with the cheapest sc
   }
 });
 
-test('dot placement is deterministic, uses the lowest legal lane, and preserves exact x', () => {
-  for (const width of [328, 560, 1120]) for (const spacing of [8, 9]) {
-    const scale = linear([0, 1], [12, width - 22]);
-    const points = stackDots(data.models, scale, spacing);
-    assert.deepEqual(points, stackDots(data.models.slice().reverse(), scale, spacing));
-    const zero = points.filter(p => p.model.g_srr === 0);
-    assert.equal(Math.max(...zero.map(p => p.level)) + 1, zero.length);
-    for (const [i, point] of points.entries()) {
-      assert.equal(point.x, scale(point.model.g_srr));
-      for (const other of points.slice(0, i)) {
-        assert.ok(Math.hypot(point.x - other.x, (point.level - other.level) * spacing) >= spacing - 1e-9);
-      }
-      for (let lane = 0; lane < point.level; lane++) {
-        assert.ok(points.slice(0, i).some(p => p.level === lane && Math.abs(p.x - point.x) < spacing));
-      }
-    }
+test('the field splits into scoring and zero groups in rank order, independent of input order', () => {
+  const {scoring, zero} = splitField(data.models);
+  assert.deepEqual(splitField(data.models.slice().reverse()), {scoring, zero});
+  assert.equal(scoring.length + zero.length, data.models.length);
+  assert.ok(scoring.every(model => model.g_srr > 0));
+  assert.ok(zero.every(model => model.g_srr === 0));
+  for (const group of [scoring, zero]) {
+    assert.deepEqual(group.map(model => model.rank), group.map(model => model.rank).slice().sort((a, b) => a - b));
   }
+  assert.deepEqual(splitField([]), {scoring: [], zero: []});
 });
 
-test('the zero block is deterministic, fills columns from the bottom and never exceeds its row count', () => {
-  const zero = data.models.filter(m => m.g_srr === 0);
-  for (const rows of [3, 4]) {
-    const block = zeroBlock(zero, rows);
-    assert.deepEqual(block, zeroBlock(zero.slice().reverse(), rows));
-    assert.equal(block.length, zero.length);
-    assert.equal(new Set(block.map(p => `${p.column},${p.level}`)).size, zero.length);
-    assert.ok(block.every(p => p.level < rows));
-    assert.equal(Math.max(...block.map(p => p.column)) + 1, Math.ceil(zero.length / rows));
-    assert.deepEqual(block.map(p => p.model.rank), block.map(p => p.model.rank).slice().sort((a, b) => a - b));
-  }
-  assert.deepEqual(zeroBlock([], 3), []);
+test('grid cells fill rows left to right and never exceed the column count', () => {
+  assert.deepEqual(gridCells(5, 3), [{column: 0, row: 0}, {column: 1, row: 0}, {column: 2, row: 0}, {column: 0, row: 1}, {column: 1, row: 1}]);
+  assert.deepEqual(gridCells(0, 4), []);
+  assert.deepEqual(gridCells(2, 0), [{column: 0, row: 0}, {column: 0, row: 1}]);
+  const cells = gridCells(19, 15.9);
+  assert.equal(new Set(cells.map(cell => `${cell.column},${cell.row}`)).size, 19);
+  assert.ok(cells.every(cell => cell.column < 15));
+  assert.equal(cells.at(-1).row, 1);
 });
 
 test('placeLabels stays in bounds, separates boxes and avoids obstacles', () => {

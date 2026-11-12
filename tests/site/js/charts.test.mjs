@@ -83,7 +83,7 @@ for (const [name, chart] of Object.entries(charts)) {
     node.blur();
     node.dispatchEvent({type: 'click'});
     assert.equal(store.get().selected, id);
-    const target = name === 'anatomy' || name === 'outcomes' ? node : root.querySelector('.chart-hit-area');
+    const target = ['anatomy', 'outcomes', 'field'].includes(name) ? node : root.querySelector('.chart-hit-area');
     const circle = node.querySelector('circle');
     const x = circle ? Number(circle.getAttribute('cx')) : 200;
     const y = circle ? Number(circle.getAttribute('cy')) : 70;
@@ -98,25 +98,38 @@ for (const [name, chart] of Object.entries(charts)) {
   });
 }
 
-test('field dots group the zero block, keep exact scores, the lead label, and minimal chrome', () => {
+test('field ranks every scoring model with an exact bar and value, and groups the rest as marks', () => {
   const dom = installDOM();
+  const scoring = data.models.filter(m => m.g_srr > 0).sort((a, b) => a.rank - b.rank);
+  const zero = data.models.filter(m => m.g_srr === 0);
   for (const width of [328, 560, 1120]) {
     const root = dom.root(width);
     const store = makeStore();
     const destroy = field.mount(root, data, store);
     assert.equal(root.querySelector('.chart-title'), null);
-    assert.equal(root.querySelector('.chart-field-count').textContent, `${data.models.filter(m => m.g_srr === 0).length} resolve none`);
-    const nodes = marks(root);
-    const zero = nodes.filter(n => data.models.find(m => m.id === n.getAttribute('data-model-id')).g_srr === 0);
-    const spots = zero.map(n => `${n.querySelector('circle').getAttribute('cx')},${n.querySelector('circle').getAttribute('cy')}`);
-    assert.equal(new Set(spots).size, zero.length, 'no two zero dots overlap');
-    assert.ok(new Set(zero.map(n => n.querySelector('circle').getAttribute('cy'))).size <= 4, 'the zero block stays at most four dots tall');
-    const scored = nodes.filter(n => !zero.includes(n));
-    const blockRight = Math.max(...zero.map(n => Number(n.querySelector('circle').getAttribute('cx'))));
-    assert.ok(scored.every(n => Number(n.querySelector('circle').getAttribute('cx')) > blockRight + 12), 'the block sits clear of the axis');
-    const lead = data.models.slice().sort((a, b) => b.g_srr - a.g_srr || a.rank - b.rank)[0];
-    assert.ok(visibleLabels(root).some(n => n.getAttribute('data-label-model') === lead.id));
-    assert.equal(nodes[0].querySelector('circle').getAttribute('r'), width < 480 ? '3.5' : '4.5');
+    assert.equal(root.querySelector('.chart-field-title').textContent, `Scenarios resolved end to endshare of ${data.suite.scenarios}`);
+    const rows = root.querySelectorAll('[data-row-model]');
+    assert.deepEqual(rows.map(n => n.getAttribute('data-row-model')), scoring.map(m => m.id));
+    const trackWidth = Number(rows[0].querySelector('.chart-field-track').getAttribute('width'));
+    assert.ok(trackWidth > width * 0.35, 'the bar track keeps most of the width');
+    for (const [i, row] of rows.entries()) {
+      const bar = row.querySelector('.chart-field-bar');
+      const track = row.querySelector('.chart-field-track');
+      assert.equal(Number(track.getAttribute('width')), trackWidth);
+      assert.equal(bar.getAttribute('x'), track.getAttribute('x'));
+      const expected = Math.max(6, scoring[i].g_srr * trackWidth);
+      assert.ok(Math.abs(Number(bar.getAttribute('width')) - expected) < 1e-6, scoring[i].name);
+      assert.equal(row.querySelector('.chart-field-value').textContent, `${(scoring[i].g_srr * 100).toFixed(1)}%`);
+    }
+    assert.equal(root.querySelector('.chart-field-count').textContent, `${zero.length} models resolved none`);
+    const zeroMarks = root.querySelectorAll('.chart-field-zero');
+    assert.deepEqual(zeroMarks.map(n => n.getAttribute('data-model-id')).sort(), zero.map(m => m.id).sort());
+    const cells = zeroMarks.map(n => n.querySelector('rect'));
+    assert.equal(new Set(cells.map(c => `${c.getAttribute('x')},${c.getAttribute('y')}`)).size, zero.length, 'no two marks overlap');
+    assert.ok(cells.every(c => Number(c.getAttribute('x')) >= 0 && Number(c.getAttribute('x')) + Number(c.getAttribute('width')) <= width));
+    store.set({selected: zero[0].id});
+    assert.equal(zeroMarks.find(n => n.getAttribute('data-model-id') === zero[0].id).getAttribute('aria-pressed'), 'true');
+    assert.equal(zeroMarks.find(n => n.getAttribute('data-model-id') === zero[0].id).getAttribute('fill'), 'var(--accent)');
     destroy();
   }
 });
@@ -306,7 +319,7 @@ test('chart interaction rectangles stay inside the SVG at narrow widths', () => 
   }
 });
 
-for (const [name, chart] of Object.entries({field, frontier})) {
+for (const [name, chart] of Object.entries({frontier})) {
   test(`${name} labels every pinned model and externally hovered model, suppressing only its own tooltip label`, () => {
     const dom = installDOM();
     const root = dom.root(328);
