@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/js/charts/svg.js';
 import {paretoFrontier} from '../../../site/assets/js/charts/frontier.js';
-import {stackDots} from '../../../site/assets/js/charts/field.js';
+import {stackDots, zeroBlock} from '../../../site/assets/js/charts/field.js';
 import {shade} from '../../../site/assets/js/charts/anatomy.js';
 import {installDOM} from './dom-stub.mjs';
 
@@ -63,6 +63,20 @@ test('dot placement is deterministic, uses the lowest legal lane, and preserves 
       }
     }
   }
+});
+
+test('the zero block is deterministic, fills columns from the bottom and never exceeds its row count', () => {
+  const zero = data.models.filter(m => m.g_srr === 0);
+  for (const rows of [3, 4]) {
+    const block = zeroBlock(zero, rows);
+    assert.deepEqual(block, zeroBlock(zero.slice().reverse(), rows));
+    assert.equal(block.length, zero.length);
+    assert.equal(new Set(block.map(p => `${p.column},${p.level}`)).size, zero.length);
+    assert.ok(block.every(p => p.level < rows));
+    assert.equal(Math.max(...block.map(p => p.column)) + 1, Math.ceil(zero.length / rows));
+    assert.deepEqual(block.map(p => p.model.rank), block.map(p => p.model.rank).slice().sort((a, b) => a - b));
+  }
+  assert.deepEqual(zeroBlock([], 3), []);
 });
 
 test('placeLabels stays in bounds, separates boxes and avoids obstacles', () => {

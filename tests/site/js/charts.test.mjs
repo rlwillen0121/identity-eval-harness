@@ -98,20 +98,25 @@ for (const [name, chart] of Object.entries(charts)) {
   });
 }
 
-test('field dots show the zero column, exact scores, lead label, and minimal chrome', () => {
+test('field dots group the zero block, keep exact scores, the lead label, and minimal chrome', () => {
   const dom = installDOM();
   for (const width of [328, 560, 1120]) {
     const root = dom.root(width);
     const store = makeStore();
     const destroy = field.mount(root, data, store);
     assert.equal(root.querySelector('.chart-title'), null);
-    assert.equal(root.querySelector('.chart-field-count').textContent, `${data.models.filter(m => m.g_srr === 0).length} at zero`);
+    assert.equal(root.querySelector('.chart-field-count').textContent, `${data.models.filter(m => m.g_srr === 0).length} resolve none`);
     const nodes = marks(root);
     const zero = nodes.filter(n => data.models.find(m => m.id === n.getAttribute('data-model-id')).g_srr === 0);
-    assert.equal(new Set(zero.map(n => n.querySelector('circle').getAttribute('cy'))).size, zero.length);
+    const spots = zero.map(n => `${n.querySelector('circle').getAttribute('cx')},${n.querySelector('circle').getAttribute('cy')}`);
+    assert.equal(new Set(spots).size, zero.length, 'no two zero dots overlap');
+    assert.ok(new Set(zero.map(n => n.querySelector('circle').getAttribute('cy'))).size <= 4, 'the zero block stays at most four dots tall');
+    const scored = nodes.filter(n => !zero.includes(n));
+    const blockRight = Math.max(...zero.map(n => Number(n.querySelector('circle').getAttribute('cx'))));
+    assert.ok(scored.every(n => Number(n.querySelector('circle').getAttribute('cx')) > blockRight + 12), 'the block sits clear of the axis');
     const lead = data.models.slice().sort((a, b) => b.g_srr - a.g_srr || a.rank - b.rank)[0];
     assert.ok(visibleLabels(root).some(n => n.getAttribute('data-label-model') === lead.id));
-    assert.equal(nodes[0].querySelector('circle').getAttribute('r'), width < 480 ? '3.5' : '4');
+    assert.equal(nodes[0].querySelector('circle').getAttribute('r'), width < 480 ? '3.5' : '4.5');
     destroy();
   }
 });
