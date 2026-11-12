@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/js/table.js';
 import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/js/detail.js';
-import { heroParts, heroSentence, leaderboardLede } from '../../../site/assets/js/main.js';
+import { leaderboardLede } from '../../../site/assets/js/main.js';
 import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/js/updates.js';
 import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/js/format.js';
 
@@ -14,15 +14,6 @@ function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-function heroExpected(models) {
-  const top = [...models].sort((a, b) => a.rank - b.rank)[0];
-  const middleRate = median(models.map((model) => model.g_srr));
-  const summary = middleRate === 0
-    ? `${models.filter((model) => model.g_srr === 0).length} of ${models.length} models resolve none.`
-    : `The median model resolves ${endToEndPct(middleRate)}.`;
-  return `${top.name} resolves ${endToEndPct(top.g_srr)} of enterprise identity scenarios end to end. ${summary}`;
 }
 
 test('table interval and cost titles match the published methods', () => {
@@ -81,7 +72,7 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
 });
 
 test('exact leaderboard lede and detailed task total use formatted suite counts', () => {
-  assert.equal(leaderboardLede({ suite: { scenarios: 180, tasks: 1080 } }), 'Models are ranked by the 180 scenarios they resolve end to end: every wave correct, nothing unsafe, nothing missed. Tasks solved, out of 1,080, gives partial credit; simple fixed policies can pass most tasks but resolve no scenario.');
+  assert.equal(leaderboardLede({ suite: { scenarios: 1180, tasks: 1080 } }), 'Ranked by the 1,180 scenarios each model resolves end to end: every wave correct, nothing unsafe, nothing missed.');
   const model = data.models.find((item) => item.tasks_solved > 0);
   assert.equal(tasksSolvedSummary(model, data.suite.tasks), `${new Intl.NumberFormat('en-US').format(model.tasks_solved)} of ${new Intl.NumberFormat('en-US').format(data.suite.tasks)} tasks (${pct(model.tasks_rate)})`);
 });
@@ -195,28 +186,6 @@ test('all six category and five optimization medians use every model field rate'
   assert.equal(partial.opt_tasks.task, 0.5);
 });
 
-test('hero sentence handles positive and zero suite medians', () => {
-  assert.equal(heroSentence(data), heroExpected(data.models));
-  const positive = [
-    { rank: 2, name: 'Second', g_srr: 0.25 },
-    { rank: 1, name: 'Top', g_srr: 1 },
-  ];
-  const zeroMedian = [
-    { rank: 1, name: 'Top', g_srr: 0.25 },
-    { rank: 2, name: 'Second', g_srr: 0 },
-    { rank: 3, name: 'Third', g_srr: 0 },
-  ];
-  assert.equal(heroSentence({ models: positive }), heroExpected(positive));
-  const rankDisagreesWithMaximumRate = [
-    { rank: 2, name: 'Highest rate', g_srr: 1 },
-    { rank: 1, name: 'Ranked first', g_srr: 0.25 },
-  ];
-  assert.equal(heroSentence({ models: rankDisagreesWithMaximumRate }), heroExpected(rankDisagreesWithMaximumRate));
-  assert.match(heroSentence({ models: rankDisagreesWithMaximumRate }), /^Ranked first resolves 25\.0%/);
-  assert.equal(heroSentence({ models: zeroMedian }), heroExpected(zeroMedian));
-  assert.match(heroSentence({ models: [{ rank: 1, name: 'Zero', g_srr: 0 }] }), /Zero resolves 0%/);
-});
-
 test('updates follow history date membership, newest-first groups, and six-plus fold count', () => {
   const { groups, earliestDate } = groupUpdates(data);
   const historyDates = data.history.map((entry) => entry.date);
@@ -251,17 +220,6 @@ test('every vendor on the leaderboard has a mark, and unknown vendors fall back 
   assert.match(vendorLogoBody('newco', '<New>'), /<text[^>]*>&lt;<\/text>/);
   assert.match(vendorLogo('newco', 'Newco'), />N<\/text><\/svg>$/);
   assert.doesNotMatch(vendorLogoBody('openai'), /<text/);
-});
-
-test('the headline splits into the leader result and the field summary, and rejoins as the hero sentence', () => {
-  const [lead, aside] = heroParts(data);
-  const top = data.models.slice().sort((a, b) => a.rank - b.rank)[0];
-  assert.ok(lead.startsWith(`${top.name} resolves `));
-  assert.ok(lead.endsWith('of enterprise identity scenarios end to end.'));
-  assert.match(aside, /^(\d+ of \d+ models resolve none|The median model resolves [\d.]+%)\.$/);
-  assert.equal(`${lead} ${aside}`, heroSentence(data));
-  assert.deepEqual(heroParts({ models: [] }), ['', '']);
-  assert.equal(heroSentence({ models: [] }), '');
 });
 
 test('self-hosted fonts exist, are preloaded from the page, and ship with their licence', () => {

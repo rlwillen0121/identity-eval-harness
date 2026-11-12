@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {linear, log, power, ticks, placeLabels, markState, tooltip, nameColumn} from '../../../site/assets/js/charts/svg.js';
 import {paretoFrontier} from '../../../site/assets/js/charts/frontier.js';
-import {gridCells, splitField} from '../../../site/assets/js/charts/field.js';
+import {TOP_COUNT, topModels} from '../../../site/assets/js/charts/field.js';
 import {shade} from '../../../site/assets/js/charts/anatomy.js';
 import {installDOM} from './dom-stub.mjs';
 
@@ -46,26 +46,14 @@ test('Pareto frontier excludes zeros and local cost, starts with the cheapest sc
   }
 });
 
-test('the field splits into scoring and zero groups in rank order, independent of input order', () => {
-  const {scoring, zero} = splitField(data.models);
-  assert.deepEqual(splitField(data.models.slice().reverse()), {scoring, zero});
-  assert.equal(scoring.length + zero.length, data.models.length);
-  assert.ok(scoring.every(model => model.g_srr > 0));
-  assert.ok(zero.every(model => model.g_srr === 0));
-  for (const group of [scoring, zero]) {
-    assert.deepEqual(group.map(model => model.rank), group.map(model => model.rank).slice().sort((a, b) => a - b));
-  }
-  assert.deepEqual(splitField([]), {scoring: [], zero: []});
-});
-
-test('grid cells fill rows left to right and never exceed the column count', () => {
-  assert.deepEqual(gridCells(5, 3), [{column: 0, row: 0}, {column: 1, row: 0}, {column: 2, row: 0}, {column: 0, row: 1}, {column: 1, row: 1}]);
-  assert.deepEqual(gridCells(0, 4), []);
-  assert.deepEqual(gridCells(2, 0), [{column: 0, row: 0}, {column: 0, row: 1}]);
-  const cells = gridCells(19, 15.9);
-  assert.equal(new Set(cells.map(cell => `${cell.column},${cell.row}`)).size, 19);
-  assert.ok(cells.every(cell => cell.column < 15));
-  assert.equal(cells.at(-1).row, 1);
+test('the top models are the best-ranked ones in rank order, independent of input order', () => {
+  const top = topModels(data.models);
+  assert.equal(top.length, Math.min(TOP_COUNT, data.models.length));
+  assert.deepEqual(top, topModels(data.models.slice().reverse()));
+  assert.deepEqual(top.map(model => model.rank), Array.from({length: top.length}, (_, i) => i + 1));
+  assert.deepEqual(topModels(data.models, 3).map(model => model.id), top.slice(0, 3).map(model => model.id));
+  assert.deepEqual(topModels(data.models, 0), []);
+  assert.deepEqual(topModels([]), []);
 });
 
 test('placeLabels stays in bounds, separates boxes and avoids obstacles', () => {

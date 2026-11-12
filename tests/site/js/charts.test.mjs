@@ -37,8 +37,10 @@ for (const [name, chart] of Object.entries(charts)) for (const width of [328, 56
         assert.ok(svg.getAttribute('aria-label')?.trim());
       }
       const nodes = marks(root);
-      assert.equal(new Set(nodes.map(n => n.getAttribute('data-model-id'))).size, data.models.length);
-      assert.equal(nodes.length, data.models.length * (name === 'anatomy' ? data.categories.length + (width < 640 ? 0 : data.opt_tasks.length) : 1));
+      // The hero chart lists only the leading models; every other chart marks each model.
+      const expected = name === 'field' ? Math.min(field.TOP_COUNT, data.models.length) : data.models.length;
+      assert.equal(new Set(nodes.map(n => n.getAttribute('data-model-id'))).size, expected);
+      assert.equal(nodes.length, expected * (name === 'anatomy' ? data.categories.length + (width < 640 ? 0 : data.opt_tasks.length) : 1));
       for (const node of root.querySelectorAll('[tabindex]')) {
         assert.equal(node.getAttribute('role'), 'button');
         assert.equal(node.getAttribute('tabindex'), '0');
@@ -98,38 +100,34 @@ for (const [name, chart] of Object.entries(charts)) {
   });
 }
 
-test('field ranks every scoring model with an exact bar and value, and groups the rest as marks', () => {
+test('field lists the top models in rank order with exact bars and values, and notes the models at zero', () => {
   const dom = installDOM();
-  const scoring = data.models.filter(m => m.g_srr > 0).sort((a, b) => a.rank - b.rank);
+  const top = data.models.slice().sort((a, b) => a.rank - b.rank).slice(0, field.TOP_COUNT);
   const zero = data.models.filter(m => m.g_srr === 0);
   for (const width of [328, 560, 1120]) {
     const root = dom.root(width);
     const store = makeStore();
     const destroy = field.mount(root, data, store);
     assert.equal(root.querySelector('.chart-title'), null);
-    assert.equal(root.querySelector('.chart-field-title').textContent, `Scenarios resolved end to endshare of ${data.suite.scenarios}`);
+    assert.equal(root.querySelector('.chart-top-title').textContent, `Top ${top.length}`);
+    assert.equal(root.querySelector('.chart-top-note').textContent, `${zero.length} of ${data.models.length} models resolve none.`);
     const rows = root.querySelectorAll('[data-row-model]');
-    assert.deepEqual(rows.map(n => n.getAttribute('data-row-model')), scoring.map(m => m.id));
-    const trackWidth = Number(rows[0].querySelector('.chart-field-track').getAttribute('width'));
-    assert.ok(trackWidth > width * 0.35, 'the bar track keeps most of the width');
+    assert.deepEqual(rows.map(n => n.getAttribute('data-row-model')), top.map(m => m.id));
+    const trackWidth = Number(rows[0].querySelector('.chart-top-track').getAttribute('width'));
+    assert.ok(trackWidth > width * 0.75, 'bars use most of the width');
     for (const [i, row] of rows.entries()) {
-      const bar = row.querySelector('.chart-field-bar');
-      const track = row.querySelector('.chart-field-track');
-      assert.equal(Number(track.getAttribute('width')), trackWidth);
-      assert.equal(bar.getAttribute('x'), track.getAttribute('x'));
-      const expected = Math.max(6, scoring[i].g_srr * trackWidth);
-      assert.ok(Math.abs(Number(bar.getAttribute('width')) - expected) < 1e-6, scoring[i].name);
-      assert.equal(row.querySelector('.chart-field-value').textContent, `${(scoring[i].g_srr * 100).toFixed(1)}%`);
+      assert.equal(Number(row.querySelector('.chart-top-track').getAttribute('width')), trackWidth);
+      const bar = row.querySelector('.chart-top-bar');
+      const expected = Math.max(Number(bar.getAttribute('height')), top[i].g_srr * trackWidth);
+      assert.ok(Math.abs(Number(bar.getAttribute('width')) - expected) < 1e-6, top[i].name);
+      assert.equal(row.querySelector('.chart-top-rank').textContent, String(top[i].rank));
+      assert.equal(row.querySelector('.chart-top-value').textContent, `${(top[i].g_srr * 100).toFixed(1)}%`);
+      const shown = row.querySelector('.chart-top-name').textContent;
+      assert.ok(shown === top[i].name || (shown.endsWith('…') && top[i].name.startsWith(shown.slice(0, -1).trimEnd())), shown);
     }
-    assert.equal(root.querySelector('.chart-field-count').textContent, `${zero.length} models resolved none`);
-    const zeroMarks = root.querySelectorAll('.chart-field-zero');
-    assert.deepEqual(zeroMarks.map(n => n.getAttribute('data-model-id')).sort(), zero.map(m => m.id).sort());
-    const cells = zeroMarks.map(n => n.querySelector('rect'));
-    assert.equal(new Set(cells.map(c => `${c.getAttribute('x')},${c.getAttribute('y')}`)).size, zero.length, 'no two marks overlap');
-    assert.ok(cells.every(c => Number(c.getAttribute('x')) >= 0 && Number(c.getAttribute('x')) + Number(c.getAttribute('width')) <= width));
-    store.set({selected: zero[0].id});
-    assert.equal(zeroMarks.find(n => n.getAttribute('data-model-id') === zero[0].id).getAttribute('aria-pressed'), 'true');
-    assert.equal(zeroMarks.find(n => n.getAttribute('data-model-id') === zero[0].id).getAttribute('fill'), 'var(--accent)');
+    store.set({selected: top[1].id});
+    assert.equal(rows[1].getAttribute('aria-pressed'), 'true');
+    assert.equal(rows[0].getAttribute('aria-pressed'), 'false');
     destroy();
   }
 });

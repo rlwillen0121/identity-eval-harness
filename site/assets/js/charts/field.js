@@ -1,116 +1,98 @@
 import {endToEndPct, int} from '../format.js';
 import {vendorLogoBody} from '../logos.js';
-import {bindMark, chart, el, linear, markPosition, markState, modelRow, nameColumn, svgCanvas, text} from './svg.js';
+import {bindMark, chart, el, markPosition, markState, svgCanvas, text} from './svg.js';
 
-// The field in two groups, each in rank order: models that resolved at least one scenario end
-// to end, and models that resolved none. The second group shares one score, so it is drawn as
-// a row of vendor marks instead of a stack of identical bars.
-export function splitField(models) {
-  const ranked = models.slice().sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
-  return {scoring: ranked.filter(model => model.g_srr > 0), zero: ranked.filter(model => !(model.g_srr > 0))};
+export const TOP_COUNT = 10;
+
+// The leading models in rank order, independent of the order of the data file.
+export function topModels(models, limit = TOP_COUNT) {
+  return models.slice().sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id)).slice(0, Math.max(0, limit));
 }
 
-// Row-major cells for a wrapped grid: the first row fills left to right, then the next.
-export function gridCells(count, columns) {
-  const perRow = Math.max(1, Math.floor(columns));
-  return Array.from({length: Math.max(0, count)}, (_, i) => ({column: i % perRow, row: Math.floor(i / perRow)}));
+function fitName(name, width) {
+  const perChar = 7.1;
+  const chars = Array.from(String(name));
+  if (chars.length * perChar <= width) return String(name);
+  const keep = Math.max(1, Math.floor(width / perChar) - 1);
+  return `${chars.slice(0, keep).join('').trimEnd()}…`;
 }
 
-const VALUE_COLUMN = 52;
-const ZERO_MARK = 14;
-const ZERO_CELL = 22;
+const VALUE_COLUMN = 58;
+const LOGO = 15;
 
 export function mount(root, data, store) {
   root.classList.add('chart-field');
-  const {scoring, zero} = splitField(data.models);
-  const leader = scoring[0] || zero[0];
+  const top = topModels(data.models);
+  const zeroCount = data.models.filter(model => !(model.g_srr > 0)).length;
   const view = chart(root, null, null, store, ({width, canvas, tip}) => {
-    const small = width < 480;
-    const pitch = small ? 22 : 24;
-    const barHeight = 6;
-    const top = 4;
-    const left = nameColumn(width, scoring);
-    const trackRight = width - VALUE_COLUMN;
-    const x = linear([0, 1], [left, trackRight]);
-    const rowsBottom = top + scoring.length * pitch;
-    const zeroColumns = Math.floor((width - 4) / ZERO_CELL);
-    const cells = gridCells(zero.length, zeroColumns);
-    const zeroRows = cells.length ? cells.at(-1).row + 1 : 0;
-    const zeroTop = rowsBottom + 12;
-    const height = zero.length ? zeroTop + 38 + zeroRows * ZERO_CELL + 2 : rowsBottom + 4;
-    const summary = [
-      `${int(scoring.length)} of ${int(data.models.length)} models resolved at least one scenario end to end; they are listed in rank order with a bar for the share resolved.`,
-      leader ? `${leader.name} leads at ${endToEndPct(leader.g_srr)}.` : '',
-      zero.length ? `${int(zero.length)} models resolved none.` : '',
-    ].filter(Boolean).join(' ');
-    const svg = svgCanvas(canvas, width, height, summary);
-
-    const lines = model => [
-      ['End to end', endToEndPct(model.g_srr)],
-      ['Scenarios resolved', `${int(model.outcomes?.perfect)} of ${int(data.suite.scenarios)}`],
-      ['Rank', `#${int(model.rank)}`],
-    ];
-
-    const rows = scoring.map((model, i) => {
-      const rowTop = top + i * pitch + (pitch - barHeight) / 2;
-      const frame = modelRow(svg, model, {left, width, top: rowTop, pitch, height: barHeight});
-      const track = el('rect', {x: left, y: rowTop, width: Math.max(0, trackRight - left), height: barHeight,
-        rx: barHeight / 2, class: 'chart-field-track'});
-      const barWidth = Math.max(barHeight, x(model.g_srr) - left);
-      const bar = el('rect', {x: left, y: rowTop, width: barWidth, height: barHeight, rx: barHeight / 2,
-        class: 'chart-field-bar', 'data-rate': model.g_srr});
-      const value = text(width - 2, rowTop + barHeight / 2 + 4, endToEndPct(model.g_srr),
-        {class: 'chart-field-value', 'text-anchor': 'end'});
-      // The whole row is the target, so short bars are as easy to point at as long ones.
-      const hit = el('rect', {x: 0, y: top + i * pitch, width, height: pitch, fill: 'transparent'});
-      frame.row.append(track, bar, value, hit);
-      const events = bindMark(frame.row, model, lines(model), store, tip,
-        () => markPosition(svg, root, left + barWidth, rowTop + barHeight / 2));
-      frame.row.addEventListener('pointermove', events.move);
-      frame.row.addEventListener('pointerleave', events.leave);
-      return {frame, marks: [bar, value]};
+    const small = width < 420;
+    const barHeight = small ? 30 : 32;
+    const pitch = barHeight + 6;
+    const trackWidth = Math.max(1, width - VALUE_COLUMN);
+    const height = Math.max(1, top.length * pitch - 6);
+    const leader = top[0];
+    const svg = svgCanvas(canvas, width, height, leader
+      ? `The ${int(top.length)} highest-ranked models by share of scenarios resolved end to end. ${leader.name} leads at ${endToEndPct(leader.g_srr)}.`
+      : 'No models to show.');
+    const rows = top.map((model, i) => {
+      const y = i * pitch;
+      const mid = y + barHeight / 2;
+      const row = el('g', {class: 'chart-top-row', 'data-row-model': model.id});
+      const fillWidth = Math.max(barHeight, Math.min(1, Math.max(0, model.g_srr)) * trackWidth);
+      const track = el('rect', {x: 0, y, width: trackWidth, height: barHeight, rx: 6, class: 'chart-top-track'});
+      const bar = el('rect', {x: 0, y, width: fillWidth, height: barHeight, rx: 6, class: 'chart-top-bar',
+        'data-rate': model.g_srr});
+      const rank = text(11, mid + 4, int(model.rank), {class: 'chart-top-rank'});
+      const logo = el('g', {class: 'chart-top-logo', 'aria-hidden': 'true',
+        transform: `translate(34 ${mid - LOGO / 2}) scale(${LOGO / 24})`});
+      logo.innerHTML = vendorLogoBody(model.vendor, model.vendor_label);
+      const name = text(58, mid + 4.5, fitName(model.name, trackWidth - 66), {class: 'chart-top-name'});
+      const value = text(width - 2, mid + 4.5, endToEndPct(model.g_srr), {class: 'chart-top-value', 'text-anchor': 'end'});
+      const outline = el('rect', {x: 0.75, y: y + 0.75, width: trackWidth - 1.5, height: barHeight - 1.5, rx: 5.5,
+        fill: 'none', stroke: 'none', 'stroke-width': 1.5, 'pointer-events': 'none'});
+      const hitTop = Math.max(0, y - 3);
+      const hit = el('rect', {x: 0, y: hitTop, width, height: Math.min(pitch, height - hitTop), fill: 'transparent'});
+      row.append(track, bar, rank, logo, name, value, outline, hit);
+      svg.append(row);
+      const events = bindMark(row, model, [
+        ['End to end', endToEndPct(model.g_srr)],
+        ['Scenarios resolved', `${int(model.outcomes?.perfect)} of ${int(data.suite.scenarios)}`],
+        ['Rank', `#${int(model.rank)}`],
+      ], store, tip, () => markPosition(svg, root, fillWidth, mid));
+      row.addEventListener('pointermove', events.move);
+      row.addEventListener('pointerleave', events.leave);
+      return {model, row, name, outline};
     });
-
-    const zeroMarks = [];
-    if (zero.length) {
-      svg.append(el('line', {x1: 0, x2: width, y1: zeroTop, y2: zeroTop, class: 'chart-field-rule'}),
-        text(0, zeroTop + 22, `${int(zero.length)} models resolved none`, {class: 'chart-field-count'}));
-      const gridTop = zeroTop + 34;
-      for (const [i, model] of zero.entries()) {
-        const cx = cells[i].column * ZERO_CELL + ZERO_CELL / 2;
-        const cy = gridTop + cells[i].row * ZERO_CELL + ZERO_CELL / 2;
-        const node = el('g', {class: 'chart-field-zero'});
-        const mark = el('g', {transform: `translate(${cx - ZERO_MARK / 2} ${cy - ZERO_MARK / 2}) scale(${ZERO_MARK / 24})`,
-          'aria-hidden': 'true'});
-        mark.innerHTML = vendorLogoBody(model.vendor, model.vendor_label);
-        node.append(mark, el('rect', {x: cx - ZERO_CELL / 2, y: cy - ZERO_CELL / 2, width: ZERO_CELL,
-          height: ZERO_CELL, fill: 'transparent'}));
-        const events = bindMark(node, model, lines(model), store, tip, () => markPosition(svg, root, cx, cy));
-        node.addEventListener('pointermove', events.move);
-        node.addEventListener('pointerleave', events.leave);
-        svg.append(node);
-        zeroMarks.push({node, model});
-      }
-    }
-
     return state => {
-      for (const {frame, marks} of rows) frame.sync(state, marks);
-      for (const {node, model} of zeroMarks) {
-        const style = markState(model, state, 'var(--ink)');
-        node.setAttribute('fill', style.color);
-        node.setAttribute('opacity', style.opacity);
-        node.setAttribute('aria-pressed', state.selected === model.id ? 'true' : 'false');
+      for (const {model, row, name, outline} of rows) {
+        const style = markState(model, state);
+        const emphasised = style.active && !style.filtered;
+        row.setAttribute('opacity', style.opacity);
+        row.setAttribute('aria-pressed', state.selected === model.id ? 'true' : 'false');
+        name.style.fontWeight = emphasised ? '600' : '500';
+        outline.setAttribute('stroke', emphasised ? 'var(--accent)' : 'none');
       }
     };
   });
-  const heading = document.createElement('p');
-  heading.className = 'chart-field-title';
-  const label = document.createElement('span');
-  label.textContent = 'Scenarios resolved end to end';
+
+  const heading = document.createElement('div');
+  heading.className = 'chart-top-header';
+  const title = document.createElement('h2');
+  title.className = 'chart-top-title';
+  title.textContent = `Top ${int(top.length)}`;
+  const chip = document.createElement('span');
+  chip.className = 'chart-chip';
+  chip.textContent = 'End to end';
   const scope = document.createElement('span');
-  scope.className = 'chart-field-scope';
-  scope.textContent = `share of ${int(data.suite.scenarios)}`;
-  heading.append(label, scope);
-  root.replaceChildren(heading, ...Array.from(root.childNodes));
+  scope.className = 'chart-top-scope';
+  scope.textContent = `of ${int(data.suite.scenarios)} scenarios`;
+  heading.append(title, chip, scope);
+
+  const footer = document.createElement('p');
+  footer.className = 'chart-top-note';
+  footer.textContent = zeroCount
+    ? `${int(zeroCount)} of ${int(data.models.length)} models resolve none.`
+    : `${int(data.models.length)} models evaluated.`;
+  root.replaceChildren(heading, ...Array.from(root.childNodes), footer);
   return () => view.destroy();
 }

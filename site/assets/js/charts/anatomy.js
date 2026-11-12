@@ -24,7 +24,7 @@ const wrapLabel = (label, maxWidth) => {
 };
 
 export function mount(root, data, store) {
-  const subtitle = 'Pass rate by category and optimisation problem; stronger shading indicates higher rates.';
+  const subtitle = 'Pass rate by category and optimisation problem.';
   const models = data.models.slice().sort((a, b) => a.rank - b.rank);
   const medians = data.categories.map(c => ({...c, rate: median(models.map(m => m.categories[c.id] / data.suite.scenarios))}))
     .sort((a, b) => a.rate - b.rate);

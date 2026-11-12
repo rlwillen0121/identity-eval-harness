@@ -8,7 +8,7 @@ const segments = [
 
 export function mount(root, data, store) {
   const models = data.models.slice().sort((a, b) => a.rank - b.rank);
-  const subtitle = "Every scenario unfolds in three waves that build on each other. Each bar splits a model's 180 scenarios by how many waves it solved.";
+  const subtitle = `Each model's ${int(data.suite.scenarios)} scenarios, by how many of the three waves it solved.`;
   const view = chart(root, 'How far do models get?', subtitle, store, ({width, canvas, tip}) => {
     const left = nameColumn(width, models);
     const top = 6;

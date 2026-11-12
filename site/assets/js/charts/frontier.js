@@ -14,7 +14,7 @@ export function paretoFrontier(models, metric = 'g_srr') {
 
 export function mount(root, data, store) {
   let metric = 'g_srr';
-  const subtitle = 'Run cost (log USD) versus resolution. Cost is the amount billed when reported; otherwise retail token prices are applied to the run\'s recorded tokens. Local runs have no cost.';
+  const subtitle = 'Run cost on a log scale. The line traces the best result at each cost.';
   const view = chart(root, 'What does resolution cost?', subtitle, store, ({width, canvas, tip}) => {
     const plot = {left: 44, right: width - 18, top: 22, bottom: 312};
     const paid = data.models.filter(m => m.cost_basis !== 'local' && m.cost_usd > 0);
