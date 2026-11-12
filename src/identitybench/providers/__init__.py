@@ -1,4 +1,4 @@
-"""Model providers (SPEC §11.1).
+"""Model providers (``archive/specs/SPEC-v1.md`` §11.1).
 
 - ``base``: the ``Provider`` contract and request/response types.
 - ``anthropic_api``: Anthropic Messages API (``anthropic``, ``anthropic_compatible``).

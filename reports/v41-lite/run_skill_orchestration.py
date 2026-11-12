@@ -33,6 +33,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from identitybench.envfile import _load_dotenv_if_present
 from identitybench.providers._cli import ACTION_SCHEMA_NAME
 from identitybench.providers.base import (
     GenerationParams,
@@ -46,14 +47,13 @@ from identitybench.providers.base import (
     Usage,
 )
 from identitybench.providers.factory import ModelSpec, make_provider
-from identitybench.v4.jcs import jcs_sha256
-from identitybench.v4.runner import (
+from identitybench.v41 import render
+from identitybench.v41.jcs import jcs_sha256
+from identitybench.v41.turns import (
     V4_AGENT_TURN_SCHEMA,
     _extract_v4_turn_tool_calls,
     _is_malformed_cli_function_call_error,
-    _load_dotenv_if_present,
 )
-from identitybench.v41 import render
 
 _ORIG_RENDER_CLI_SYSTEM = render.render_cli_system_prompt
 

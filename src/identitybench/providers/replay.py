@@ -1,6 +1,7 @@
-"""Replay provider: serves recorded responses by cache key, for CI and re-scoring (SPEC §11.1).
+"""Replay provider: serves recorded responses by cache key, for CI and re-scoring
+(``archive/specs/SPEC-v1.md`` §11.1).
 
-The runner computes each request's cache key (SPEC §11.4) and passes it in
+The runner computes each request's cache key (``archive/specs/SPEC-v1.md`` §11.4) and passes it in
 ``request.params.extra["cache_key"]``. A key with no recording comes back as an error response
 (scored INVALID), never as a fabricated answer. ``has`` tells a caller whether a key is
 recorded at all, since a recorded provider error comes back as an error response too.
@@ -12,7 +13,7 @@ a ``responses.jsonl`` file with one record per line::
      "cost_usd": 0.0123, "cost_source": "metered"}
 
 ``cost_usd`` and ``cost_source`` (optional, together) are what the answer cost when it was
-recorded, as the recording run priced it (``schemas.predictions.PredictionUsage``): a replay
+recorded, as the recording run priced it: a replay
 spends nothing, but the answer it serves still cost that, and ``recorded_cost`` hands it to the
 runner so a replayed prediction keeps its cost provenance. Other fields of a record (the
 runner's ``config_id`` and ``fresh``) are ignored here.
@@ -28,7 +29,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Literal, get_args
 
 from identitybench.providers._json import sanitize_response
 from identitybench.providers._subprocess import redact, redact_diagnostics
@@ -40,7 +41,8 @@ from identitybench.providers.base import (
     Usage,
     hash_endpoint,
 )
-from identitybench.schemas.predictions import CostSource
+
+CostSource = Literal["metered", "reported", "unmetered", "unknown"]
 
 CACHE_KEY_PARAM = "cache_key"
 
@@ -91,7 +93,7 @@ def response_from_dict(data: Mapping[str, Any]) -> ModelResponse:
 
 @dataclass(frozen=True)
 class RecordedCost:
-    """What a recorded answer cost when it was produced: ``PredictionUsage``'s ``cost_usd`` and
+    """What a recorded answer cost when it was produced: ``cost_usd`` and
     ``cost_source`` for that one call."""
 
     cost_usd: float | None

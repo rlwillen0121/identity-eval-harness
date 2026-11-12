@@ -22,7 +22,7 @@ from typing import Any
 import yaml
 from pydantic import Field, model_validator
 
-from identitybench.providers._cli import ACTION_SCHEMA_NAME
+from identitybench.providers._cli import ACTION_SCHEMA_NAME, base_child_env
 from identitybench.providers.base import (
     GenerationParams,
     Message,
@@ -34,18 +34,12 @@ from identitybench.providers.base import (
     Usage,
 )
 from identitybench.providers.factory import ModelSpec, make_provider
-from identitybench.v4.jcs import jcs_sha256
-from identitybench.v4.runner import (
-    V4_AGENT_TURN_SCHEMA,
-    _extract_v4_turn_tool_calls,
-    _is_malformed_cli_function_call_error,
-    _load_dotenv_if_present,
-)
-from identitybench.v4.schemas import _FrozenModelV4
 from identitybench.v41 import render
+from identitybench.v41._base import _FrozenModelV4
 from identitybench.v41.baselines import ALL_V41_BASELINES, run_v41_baseline_on_episode
 from identitybench.v41.checker import make_semantic_checker
 from identitybench.v41.env import V41AgentEnvironment, bounded_tool_arguments
+from identitybench.v41.jcs import jcs_sha256
 from identitybench.v41.schemas import (
     DatasetSealV41,
     EpisodeScorecardV41,
@@ -60,6 +54,11 @@ from identitybench.v41.schemas import (
     _TokenBudgetConfigV41,
 )
 from identitybench.v41.scoring import score_episode, summarize_suite_v41
+from identitybench.v41.turns import (
+    V4_AGENT_TURN_SCHEMA,
+    _extract_v4_turn_tool_calls,
+    _is_malformed_cli_function_call_error,
+)
 
 CALL_CAP_EXCEEDED: dict[str, Any] = {"status": "CALL_CAP_EXCEEDED"}
 MAX_PARSE_REPROMPTS_V41 = 2
@@ -752,8 +751,9 @@ def _git_state(root: Path) -> tuple[str, bool]:
     sha, dirty = "unknown", False
     try:
         p = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "-c", "core.fsmonitor=false", "rev-parse", "HEAD"],
             cwd=str(root),
+            env=base_child_env(),
             capture_output=True,
             text=True,
             timeout=5.0,
@@ -762,8 +762,9 @@ def _git_state(root: Path) -> tuple[str, bool]:
         if p.returncode == 0 and p.stdout.strip():
             sha = p.stdout.strip()
         s = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "-c", "core.fsmonitor=false", "status", "--porcelain"],
             cwd=str(root),
+            env=base_child_env(),
             capture_output=True,
             text=True,
             timeout=5.0,
@@ -821,9 +822,6 @@ async def run_v41_experiment_async(
     if config.max_episodes is not None:
         pairs = pairs[: config.max_episodes]
     ep_sha = {ep.episode_id: compute_v41_episode_sha256(ep) for ep, _ in pairs}
-
-    if any(m.provider != "baseline" for m in config.models):
-        _load_dotenv_if_present(root)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     records_dir = out_dir / "records"

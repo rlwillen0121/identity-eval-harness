@@ -1,4 +1,5 @@
-"""Which environment variable holds the API key for a configured endpoint (SPEC §11.1)."""
+"""Which environment variable holds the API key for a configured endpoint
+(``archive/specs/SPEC-v1.md`` §11.1)."""
 
 from __future__ import annotations
 

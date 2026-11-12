@@ -16,7 +16,6 @@ from identitybench.providers.factory import PROVIDER_KINDS, ModelSpec, make_prov
 from identitybench.providers.grok_cli import GrokCliProvider
 from identitybench.providers.openai_compat import OpenAICompatProvider
 from identitybench.providers.replay import ReplayProvider
-from identitybench.runner.cache import key_for_request
 
 
 @pytest.fixture
@@ -216,7 +215,7 @@ def openrouter_spec(**extra: Any) -> ModelSpec:
     )
 
 
-def test_routing_preference_reaches_the_request_and_the_cache_key(monkeypatch) -> None:
+def test_routing_preference_reaches_the_request_and_endpoint_identity(monkeypatch) -> None:
     """A different routing can change which host answers, so it must change the cache key."""
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     routed = make_provider(openrouter_spec(provider_routing=ROUTING))
@@ -226,11 +225,7 @@ def test_routing_preference_reaches_the_request_and_the_cache_key(monkeypatch) -
     assert routed.request_params(request)["extra_body"] == {"provider": ROUTING}
     assert "extra_body" not in plain.request_params(request)
 
-    def key(p: Provider) -> str:
-        return key_for_request(p.kind, p.model, p.endpoint_identity(), request, 0)
-
     assert routed.endpoint_identity() != plain.endpoint_identity()
-    assert key(routed) != key(plain)
 
 
 SPEC_16_MODELS: list[dict[str, Any]] = [

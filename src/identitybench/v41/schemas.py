@@ -18,7 +18,7 @@ from pydantic import (
     model_validator,
 )
 
-from identitybench.v4.schemas import (
+from identitybench.v41._base import (
     OrchestrationTopologyId,
     SteeringMode,
     WaveExecutionMode,

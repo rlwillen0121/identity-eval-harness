@@ -9,18 +9,17 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-# Temporary coordination allowance: another worker is deleting these files. Empty afterward.
-PENDING_DELETION = {"docs/ORGAI-BRIDGE.md", "docs/orgai-desktop-eval.md"}
 MAX_BYTES = 5 * 1024 * 1024
 HOME = re.compile(r"/(?:Users|home)/([^/\s\"'`]+)(?:/|(?=[\s\"'`]|$))")
 PLACEHOLDERS = {"user", "username", "alice", "bob", "example", "youruser", "yourname"}
 IP = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 PRIVATE_NETWORKS = tuple(
-    ipaddress.ip_network(network) for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+    ipaddress.ip_network(network)
+    for network in ("10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16")
 )
 PRIVATE_HOST = re.compile(
     r"(?<![\w.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+"
-    r"(?:local|ts\.net|tailscale\.net)(?![\w.-])",
+    r"(?:local|lan|internal|home\.arpa|ts\.net|tailscale\.net)(?![\w.-])",
     re.IGNORECASE,
 )
 
@@ -42,7 +41,8 @@ def violations(text: str) -> list[str]:
                 continue
             if any(address in network for network in PRIVATE_NETWORKS):
                 found.append(f"{line_no}: private IP")
-        if PRIVATE_HOST.search(line):
+        # This enum member is code, not an internal DNS name. Keep DNS case-insensitive.
+        if any(match[0] != "ExitCode.INTERNAL" for match in PRIVATE_HOST.finditer(line)):
             found.append(f"{line_no}: private hostname")
         if "CPA_" in line or "CLIProxy" in line:
             found.append(f"{line_no}: private proxy name")
@@ -58,7 +58,7 @@ def tracked_violations(root: Path) -> list[str]:
         pytest.skip("repository hygiene requires a Git checkout")
     found = []
     for name in result.stdout.decode().split("\0"):
-        if not name or name.startswith("tests/") or name in PENDING_DELETION:
+        if not name or name.startswith("tests/"):
             continue
         path = root / name
         # Scan a symlink's tracked target text, without reading anything outside the repo.
@@ -92,7 +92,13 @@ def test_tracked_text_is_machine_neutral():
         "172.16.0.1",
         "172.31.255.255",
         "192.168.2.3",
+        "100.64.0.0",
+        "100.127.255.255",
         "https://machine.local:8443",
+        "https://machine.lan:8443",
+        "machine.internal",
+        "MACHINE.INTERNAL",
+        "machine.home.arpa",
         "host.tail123.ts.net",
         "host.tailscale.net",
         "CPA_CLIENT_API_KEY",
@@ -112,10 +118,13 @@ def test_hygiene_detects_private_details(text):
         "~/.local/bin/muse",
         "172.15.0.1",
         "172.32.0.1",
+        "100.63.255.255",
+        "100.128.0.0",
         "127.0.0.1",
         "https://example.com",
         "LOCAL_PROXY_API_KEY",
         "not.localhost",
+        "ExitCode.INTERNAL",
         "1.2.3.999",
     ],
 )
@@ -162,6 +171,7 @@ def test_no_edit_agents_require_shell_approval():
         "lane-security",
         "lane-oracle",
         "lane-stats",
+        "lane-blind-conformance",
     }
     assert required <= agents.keys()
     for name, agent in agents.items():
@@ -180,3 +190,14 @@ def test_no_edit_agents_require_shell_approval():
         if name == "review" or name.startswith("lane-"):
             for command in ("rm *", "git push*", "git commit*", "git reset*", "git checkout*"):
                 assert bash[command] == "deny"
+
+
+def test_implement_cannot_run_live_evaluations():
+    agents = json.loads((ROOT / "opencode.json").read_text())["agent"]
+    bash = agents["implement"]["permission"]["bash"]
+    assert bash["uv run identitybench v41 run*"] == "deny"
+    assert bash["*run_skill_orchestration*"] == "deny"
+    assert (
+        agents["lane-blind-conformance"]["permission"]["bash"]["uv run pytest tests/conformance*"]
+        == "allow"
+    )

@@ -285,9 +285,9 @@ class AnthropicProvider:
             client = self._get_client()
             if params["max_tokens"] > STREAMING_THRESHOLD_TOKENS:
                 async with client.messages.stream(**params) as stream:
-                    message = await stream.get_final_message()
+                    message = cast(ApiMessage, await stream.get_final_message())
             else:
-                message = cast(ApiMessage, await client.messages.create(**params))
+                message = await client.messages.create(**params)
         except anthropic.APIStatusError as exc:
             return self._fail(
                 f"{type(exc).__name__} {exc.status_code}: {exc.message}",
@@ -386,7 +386,7 @@ class AnthropicProvider:
         blocks = (response.raw or {}).get(ASSISTANT_CONTENT_KEY)
         if not response.tool_calls or not isinstance(blocks, list):
             return
-        valid = [dict(block) for block in cast(list[Any], blocks) if isinstance(block, dict)]
+        valid = [dict(block) for block in blocks if isinstance(block, dict)]
         if valid:
             self._remember_tool_turn(valid, response.tool_calls)
 

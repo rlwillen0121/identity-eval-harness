@@ -31,7 +31,8 @@ The CLIs can't take a multi-turn transcript or native tools, so transcripts are 
 single user message and requests with tools are rejected (``capabilities().native_tools`` is
 False for every CLI provider).
 
-A CLI's endpoint identity (SPEC §11.4) covers more than its version and the model: the harness's
+A CLI's endpoint identity (``archive/specs/SPEC-v1.md`` §11.4) covers more than its version and
+the model: the harness's
 own setup (fixed flags, disabled features, the private home's contents, environment rules) and
 the provider's default effort change the prompt or the model's behaviour too, so they are hashed
 in as well (``CliProvider.setup_revision``). Changing that setup invalidates cached responses
@@ -253,7 +254,7 @@ def structured_text(
     """``(response text, CLI text to keep in raw)`` for a CLI result.
 
     ``ModelResponse.text`` must agree with ``parsed``: anything that reads the text later (cache
-    inspection, the judge, re-extraction) has to see the answer that was scored. So the CLI's own
+    inspection and later JSON extraction) have to see the answer that was scored. So the CLI's own
     text is used only when it *is* the structured output; otherwise the text is the structured
     output serialized and the CLI's text is returned separately for ``raw["cli_text"]``.
     """
@@ -278,7 +279,8 @@ def probe_version(binary: str, env: EnvItems | None = None) -> str:
     """``<binary> --version`` (first line), cached per binary and environment for the life of
     the process.
 
-    Part of a CLI provider's endpoint identity (SPEC §11.4): upgrading the CLI changes the system
+    Part of a CLI provider's endpoint identity (``archive/specs/SPEC-v1.md`` §11.4): upgrading
+    the CLI changes the system
     prompt and agent scaffolding around the model, so cached responses from an older CLI must not
     be reused.
 

@@ -1,4 +1,5 @@
-"""Model specs (one ``models:`` entry of an experiment config, SPEC §16) and the provider factory.
+"""Model specs (one ``models:`` entry of an experiment config, ``archive/specs/SPEC-v1.md`` §16)
+and the provider factory.
 
 Endpoint and constructor fields that can't apply to a provider kind are rejected rather than
 ignored: a ``base_url_env`` on a CLI provider, an ``effort`` for Cursor or a misspelled ``extra``
@@ -138,7 +139,8 @@ class ModelSpec(BaseModel):
     """Environment variable holding the base URL (API kinds only; never a literal URL)."""
     api_key_env: str | None = None
     cache_namespace: str | None = None
-    """Bump when a self-hosted deployment changes behind the same URL and name (SPEC §11.4)."""
+    """Bump when a self-hosted deployment changes behind the same URL and name
+    (``archive/specs/SPEC-v1.md`` §11.4)."""
     effort: str | None = None
     """Reasoning effort; None means the provider kind's default (``DEFAULT_EFFORT``)."""
     temperature: float | None = None
