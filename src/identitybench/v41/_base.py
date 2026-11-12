@@ -28,14 +28,15 @@ class _FrozenModelV4(BaseModel, metaclass=_FrozenModelMeta):
 
 
 class WaveExecutionMode(StrEnum):
-    """Multi-wave state transition mode (SPEC-v4.md §2.3, App. A.1)."""
+    """Multi-wave state transition mode (``archive/specs/SPEC-v4.md`` §2.3, App. A.1)."""
 
     COUPLED = "COUPLED"
     DIAGNOSTIC_RESET = "DIAGNOSTIC_RESET"
 
 
 class OrchestrationTopologyId(StrEnum):
-    """Standardized agent -> subagent orchestration topologies (SPEC-v4.md §3.1.1, App. A.1)."""
+    """Standardized agent -> subagent orchestration topologies
+    (``archive/specs/SPEC-v4.md`` §3.1.1, App. A.1)."""
 
     T0_SINGLE_MONOLITH = "T0_SINGLE_MONOLITH"
     T1_DOMAIN_SPECIALISTS = "T1_DOMAIN_SPECIALISTS"
@@ -46,7 +47,7 @@ class OrchestrationTopologyId(StrEnum):
 
 
 class SteeringMode(StrEnum):
-    """Identity Engineering Team steering mode (SPEC-v4.md §5.2, App. A.1)."""
+    """Identity Engineering Team steering mode (``archive/specs/SPEC-v4.md`` §3.3.2, App. A.1)."""
 
     UNSTEERED = "UNSTEERED"
     CHECKPOINT_STEERED = "CHECKPOINT_STEERED"

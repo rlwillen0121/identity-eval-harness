@@ -95,13 +95,6 @@ python_version = "3.12"
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = [
-  "identitybench.providers.*",
-  "identitybench.report.*",
-]
-ignore_errors = true
-
 [tool.coverage.run]
 source = ["identitybench"]
 branch = true

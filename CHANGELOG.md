@@ -25,10 +25,10 @@ Notable changes are recorded here in Keep a Changelog format. Dates below come f
 
 - `v41 run` rejects datasets that do not match the pinned release digests. `--allow-unpinned-dataset` explicitly permits a non-release dataset and is recorded in the manifest.
 - `v41 validate` requires a sealed directory by default; pass `--in-memory` for a generator check without a seal.
-- `v41 verify` must pass before publication; older artifacts without enough replay context can remain unverifiable.
+- `v41 verify` must exit 0 with no mismatches before publication. `--allow-unverifiable` is permitted only when every unverifiable record and its reason are listed in the report `METHOD.md`; all remaining records must replay and match recomputed scores.
 - Resume revalidates cached records and archives rejected records to `*.rejected.jsonl` before rerunning missing or invalid cells. Rejected sidecars are not accepted trial records.
 
-## 2026-10-27
+## 2026-10-26
 
 ### Added
 

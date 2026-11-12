@@ -11,7 +11,11 @@
           "*": "deny",
           "implement": "allow",
           "review": "allow",
-          "lane-blind-conformance": "allow"
+          "lane-blind-conformance": "allow",
+          "lane-rules": "allow",
+          "lane-security": "allow",
+          "lane-oracle": "allow",
+          "lane-stats": "allow"
         },
         "bash": {
           "*": "ask",
@@ -37,7 +41,11 @@
       "mode": "subagent",
       "permission": {
         "edit": "allow",
-        "task": "deny"
+        "task": "deny",
+        "bash": {
+          "uv run identitybench v41 run*": "deny",
+          "*run_skill_orchestration*": "deny"
+        }
       }
     },
     "review": {
@@ -215,6 +223,36 @@
           "git commit*": "deny",
           "git reset*": "deny",
           "git checkout*": "deny"
+        }
+      }
+    },
+    "lane-blind-conformance": {
+      "description": "IdentityBench blind conformance review lane. Read-only; derives expectations from rendered policy and normative specs only; no live models.",
+      "mode": "subagent",
+      "permission": {
+        "edit": "deny",
+        "task": "deny",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "ls*": "allow",
+          "rg *": "allow",
+          "grep *": "allow",
+          "cat *": "allow",
+          "uv run ruff check*": "allow",
+          "uv run mypy*": "allow",
+          "uv run identitybench v41 validate*": "allow",
+          "uv run identitybench v41 score*": "allow",
+          "uv run identitybench v41 verify*": "allow",
+          "rm *": "deny",
+          "git push*": "deny",
+          "git commit*": "deny",
+          "git reset*": "deny",
+          "git checkout*": "deny",
+          "uv run pytest tests/conformance*": "allow"
         }
       }
     }

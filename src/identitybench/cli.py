@@ -44,7 +44,8 @@ _PROJECT_NAME = "identitybench"
 
 
 _EPILOG = (
-    "Exit codes: 0 ok; 1 check failed; 2 usage error; 3 invalid or missing input; "
+    "Exit codes: 0 ok; 1 check failed; 2 usage error or unverifiable v41 verify records; "
+    "3 invalid or missing input; "
     "4 run incomplete (resume it); 70 internal error (a bug); 130 interrupted."
 )
 
@@ -270,6 +271,7 @@ def _run_v41_validation(
     double_build: bool,
     json_out: Path | None,
     in_memory: bool = False,
+    allow_unpinned_dataset: bool = False,
 ) -> None:
     """Validate a v4.1 split via `v41 validate`; exits FAILED on fail."""
     with _errors("v4.1 dataset"):
@@ -288,6 +290,7 @@ def _run_v41_validation(
             suite=ring,
             double_build=double_build,
             in_memory=in_memory,
+            allow_unpinned=allow_unpinned_dataset,
         )
         if json_out is not None:
             _write_json(json_out, report.model_dump(mode="json"))
@@ -361,10 +364,25 @@ def v41_validate(
             "--in-memory", help="Validate an in-memory build without claiming seal verification."
         ),
     ] = False,
+    allow_unpinned_dataset: Annotated[
+        bool,
+        typer.Option(
+            "--allow-unpinned-dataset",
+            help="Allow a dataset that differs from the released digest pins.",
+        ),
+    ] = False,
 ) -> None:
     """Validate an IdentityBench v4.1 dataset split (seal, oracle replay, baselines,
     negatives, token budget)."""
-    _run_v41_validation(_session(ctx), dataset, suite, double_build, json_out, in_memory)
+    _run_v41_validation(
+        _session(ctx),
+        dataset,
+        suite,
+        double_build,
+        json_out,
+        in_memory,
+        allow_unpinned_dataset,
+    )
 
 
 @v41_app.command("score")
@@ -487,6 +505,13 @@ def v41_verify_cmd(
     json_out: Annotated[
         bool, typer.Option("--json", help="Emit verification counts and reasons.")
     ] = False,
+    allow_unverifiable: Annotated[
+        bool,
+        typer.Option(
+            "--allow-unverifiable",
+            help="Exit successfully when records cannot be replay-verified.",
+        ),
+    ] = False,
 ) -> None:
     """Replay recorded actions offline and compare scores against the pinned dataset."""
     with _errors("v41 verify"):
@@ -507,4 +532,8 @@ def v41_verify_cmd(
                 f"{detail['status']}: {detail['reason']}"
             )
     if any(counts["mismatch"] for counts in result["models"].values()):
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=int(ExitCode.FAILED))
+    if not allow_unverifiable and any(
+        counts["unverifiable"] for counts in result["models"].values()
+    ):
+        raise typer.Exit(code=int(ExitCode.USAGE))

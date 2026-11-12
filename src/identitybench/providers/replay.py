@@ -1,6 +1,7 @@
-"""Replay provider: serves recorded responses by cache key, for CI and re-scoring (SPEC §11.1).
+"""Replay provider: serves recorded responses by cache key, for CI and re-scoring
+(``archive/specs/SPEC-v1.md`` §11.1).
 
-The runner computes each request's cache key (SPEC §11.4) and passes it in
+The runner computes each request's cache key (``archive/specs/SPEC-v1.md`` §11.4) and passes it in
 ``request.params.extra["cache_key"]``. A key with no recording comes back as an error response
 (scored INVALID), never as a fabricated answer. ``has`` tells a caller whether a key is
 recorded at all, since a recorded provider error comes back as an error response too.

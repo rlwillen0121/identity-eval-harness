@@ -194,8 +194,13 @@ def test_verify_cli_detects_journal_tampering_and_reports_missing_context(tmp_pa
     journal.unlink()
     (tmp_path / "manifest.json").unlink()
     result = cli.invoke(app, args)
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 2, result.output
     assert json.loads(result.output)["models"]["gold"]["unverifiable"] == 2
+    allowed = cli.invoke(app, [*args, "--allow-unverifiable"])
+    assert allowed.exit_code == 0, allowed.output
+    allowed_json = json.loads(allowed.output)
+    assert allowed_json["models"]["gold"]["unverifiable"] == 2
+    assert all(detail["reason"] for detail in allowed_json["details"])
 
 
 def test_verify_cli_checks_summaries_and_seals(tmp_path: Path) -> None:

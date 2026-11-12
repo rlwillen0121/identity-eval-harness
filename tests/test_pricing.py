@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from datetime import date
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from identitybench.pricing import (
     PRICING_ENV,
     SOURCE_PRICING_PATH,
     PricingTable,
+    Rates,
     cost_usd,
     default_pricing_path,
     load_pricing,
@@ -105,6 +107,12 @@ def test_reasoning_tokens_not_double_counted() -> None:
     a = Usage(output_tokens=1000)
     b = Usage(output_tokens=1000, reasoning_tokens=800)
     assert cost_usd("claude-opus-5-5", a) == cost_usd("claude-opus-5-5", b)
+
+
+@pytest.mark.parametrize("tokens", [-(10**12), 10**400, float("nan"), float("inf")])
+def test_cost_handles_untrusted_token_counts(tokens: int | float) -> None:
+    amount = Rates(input=1, output=2).cost(Usage(output_tokens=tokens))
+    assert math.isfinite(amount) and amount >= 0
 
 
 def test_haiku_long_context_tier() -> None:

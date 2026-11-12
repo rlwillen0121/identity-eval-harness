@@ -22,8 +22,7 @@ from typing import Any
 import yaml
 from pydantic import Field, model_validator
 
-from identitybench.envfile import _load_dotenv_if_present
-from identitybench.providers._cli import ACTION_SCHEMA_NAME
+from identitybench.providers._cli import ACTION_SCHEMA_NAME, base_child_env
 from identitybench.providers.base import (
     GenerationParams,
     Message,
@@ -752,8 +751,9 @@ def _git_state(root: Path) -> tuple[str, bool]:
     sha, dirty = "unknown", False
     try:
         p = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "-c", "core.fsmonitor=false", "rev-parse", "HEAD"],
             cwd=str(root),
+            env=base_child_env(),
             capture_output=True,
             text=True,
             timeout=5.0,
@@ -762,8 +762,9 @@ def _git_state(root: Path) -> tuple[str, bool]:
         if p.returncode == 0 and p.stdout.strip():
             sha = p.stdout.strip()
         s = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "-c", "core.fsmonitor=false", "status", "--porcelain"],
             cwd=str(root),
+            env=base_child_env(),
             capture_output=True,
             text=True,
             timeout=5.0,
@@ -821,9 +822,6 @@ async def run_v41_experiment_async(
     if config.max_episodes is not None:
         pairs = pairs[: config.max_episodes]
     ep_sha = {ep.episode_id: compute_v41_episode_sha256(ep) for ep, _ in pairs}
-
-    if any(m.provider != "baseline" for m in config.models):
-        _load_dotenv_if_present(root)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     records_dir = out_dir / "records"

@@ -7,6 +7,6 @@ tools: Read, Grep, Glob, Edit, Write, Bash
 Follow [AGENTS.md](../../AGENTS.md) `implement` lane.
 - Edit only the files named in your task.
 - Run free local verification (`uv run pytest`, `uv run ruff check .`, `uv run mypy --strict src`, `uv run identitybench v41 validate --suite <suite> --double-build`, `identitybench v41 verify --run <dir>`, deterministic baselines).
-- NEVER run `identitybench v41 run` against live model providers (`anthropic`, `openai_compatible`, `google_genai`, `claude_cli`, `codex_cli`, `gemini_cli`, `agy_cli`, `muse_cli`).
+- NEVER run `identitybench v41 run` against live model providers (`anthropic`, `anthropic_compatible`, `openai_compatible`, `claude_cli`, `codex_cli`, `grok_cli`, `agy_cli`, `cursor_cli`, `muse_cli`).
 - Never hand-edit frozen dataset JSONLs or mutate `SEAL.json`.
 - Never log or commit secrets or private endpoint URLs.

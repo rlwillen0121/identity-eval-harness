@@ -49,7 +49,8 @@ Base URL and key are always passed to the SDK explicitly, so it never falls back
 ``api_key_env``, ``OPENAI_API_KEY`` is used only for the vendor endpoint (no ``base_url_env``,
 or ``OPENAI_BASE_URL``, the variable it conventionally pairs with). A custom ``base_url_env``
 reads its paired variable instead (``LOCAL_LLM_BASE_URL`` -> ``LOCAL_LLM_API_KEY``, as in
-``.env.example``), and sends a placeholder when that is unset, so the SPEC §16 self-hosted entry
+``.env.example``), and sends a placeholder when that is unset, so the
+``archive/specs/SPEC-v1.md`` §16 self-hosted entry
 works against a key-protected server and never hands a real OpenAI key to a LAN server.
 """
 

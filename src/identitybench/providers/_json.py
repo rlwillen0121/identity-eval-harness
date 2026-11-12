@@ -1,4 +1,5 @@
-"""JSON decoding for providers: safe object decoding and tolerant extraction (SPEC §11.3).
+"""JSON decoding for providers: safe object decoding and tolerant extraction
+(``archive/specs/SPEC-v1.md`` §11.3).
 
 ``load_object`` is the one place provider code decodes JSON it didn't produce. It never raises:
 invalid JSON, a non-object and nesting deeper than the decoder supports (``RecursionError``,
@@ -43,7 +44,7 @@ import math
 import re
 from collections.abc import Collection, Iterator
 from dataclasses import fields
-from typing import Any
+from typing import Any, cast
 
 from identitybench.providers.base import ModelResponse, Usage
 
@@ -178,7 +179,7 @@ def _top_level_objects(text: str) -> Iterator[tuple[int, int, dict[str, Any]]]:
             start = text.find("{", start + 1)
             continue
         if isinstance(value, dict):
-            yield start, end, value
+            yield start, end, cast(dict[str, Any], value)
             start = text.find("{", end)
         else:
             start = text.find("{", start + 1)
@@ -318,19 +319,21 @@ def extract_json_object(
         return whole
 
     try:
-        objects = [value for _, _, value in _top_level_objects(_blank_code_fences(stripped))]
+        objects: list[dict[str, Any]] = [
+            value for _, _, value in _top_level_objects(_blank_code_fences(stripped))
+        ]
     except _TooDeep:
         return None
     if not objects:
         return None
     if schema_keys is not None:
         answer_like = frozenset(schema_keys) | frozenset(required_keys or ())
-        for value in reversed(objects):
+        for value in objects[::-1]:
             if answer_like & value.keys():
                 return value
     elif required_keys:
         required = frozenset(required_keys)
-        for value in reversed(objects):
+        for value in objects[::-1]:
             if required <= value.keys():
                 return value
     return objects[-1]

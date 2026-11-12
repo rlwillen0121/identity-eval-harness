@@ -1,6 +1,7 @@
 """Markdown escaping for report text, including untrusted case data and model output.
 
-Justifications, reviewer notes and rationales can carry attacks (SPEC §8.4), and a report is
+Justifications, reviewer notes and rationales can carry attacks
+(``archive/specs/SPEC-v1.md`` §8.4), and a report is
 read on GitHub and in editors that render Markdown and inline HTML. So text never reaches the
 Markdown as markup:
 

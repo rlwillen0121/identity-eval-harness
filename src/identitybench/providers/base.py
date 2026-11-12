@@ -1,4 +1,4 @@
-"""Provider contract (SPEC §11.1).
+"""Provider contract (``archive/specs/SPEC-v1.md`` §11.1).
 
 Every model access path implements ``Provider``: native APIs (Anthropic, OpenAI-compatible,
 Anthropic-compatible), subscription CLIs (``claude -p``, ``codex exec``, ``grok -p``), the replay
@@ -133,7 +133,8 @@ class Provider(Protocol):
     model: str
 
     def endpoint_identity(self) -> str:
-        """Non-secret identity of where requests go (SPEC §11.4). Never includes keys or raw
+        """Non-secret identity of where requests go (``archive/specs/SPEC-v1.md`` §11.4). Never
+        includes keys or raw
         private URLs; use ``hash_endpoint`` for URLs."""
         ...
 

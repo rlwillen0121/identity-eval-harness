@@ -1,16 +1,10 @@
-# Dated public list prices in USD per 1M tokens (SPEC §11.4). Two uses:
-#
-# - metered API cost: a commercial API entry (provider kind `anthropic`, or `openai_compatible`
-#   on OpenAI's endpoint) is billed from its row at run time. Self-hosted models cost $0 here,
-#   and an access path that states each call's cost (a subscription CLI, a billing gateway)
-#   records that figure instead: the runner never applies this table to it.
-# - API-equivalent cost: the report prices a subscription CLI's recorded tokens at its model's
-#   row (report.api_equivalent), labelled as such and never mixed into API cost, so a model run
-#   through a subscription still gets a list-price figure. An `unmetered` `openai_compatible`
-#   entry (an endpoint that charges this caller nothing per call, in front of the vendor's
-#   hosted model) is priced the same way at the row for its label, its public model name, never
-#   its route; registered self-hosted labels (`report.api_equivalent.SELF_HOSTED`) are never
-#   priced, and no row should be keyed on a self-hosted deployment's label.
+# Dated public token list prices in USD per 1M tokens (``archive/specs/SPEC-v1.md`` §11.4).
+# The v4.1 runner records cost reported by the provider and does not apply this table.
+# Offline study/reporting code can use `identitybench.pricing` for API-equivalent estimates:
+# recorded subscription CLI or unmetered hosted-endpoint tokens priced at the vendor's model
+# row, with those estimates labeled separately from actual API charges. Consumers use
+# `report.api_equivalent.CACHE_TTL` for CLI cache-write rates and exclude labels listed in
+# `report.api_equivalent.SELF_HOSTED`; don't add rows keyed by a self-hosted deployment label.
 #
 # Fields per model:
 #   input, output                 required

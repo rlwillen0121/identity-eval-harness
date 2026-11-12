@@ -418,7 +418,7 @@ Every published number traces back to its inputs.
   files no longer match. `SHA256SUMS` lists every file, `DATASET_CARD.md` and `PROBE.json`
   included, so once a dataset has runs nothing in its directory changes: the committed
   `datasets/identitybench-v1` is frozen, and corrections to its card go to
-  `datasets/ERRATA.md` ([`v1-release.md`](v1-release.md#the-dataset-is-frozen-once-a-leaderboard-run-starts)).
+  `archive/notes/ERRATA.md` ([`v1-release.md`](v1-release.md#the-dataset-is-frozen-once-a-leaderboard-run-starts)).
 - **Prompts.** `render.prompt.prompt_sha256(variant)` hashes the variant's files with
   `TEMPLATE_VERSION`, and for few-shot variants also `render.fewshot.SELECTION_VERSION` and
   `tasks.ideal.IDEAL_VERSION`. Tool-use prompts use `render.tools.tool_prompt_sha256`, which
@@ -521,7 +521,7 @@ Few-shot variants and `repair` are refused in tool-use mode.
    leaderboard models' blind answers flag units where two agree against gold, and the same
    models classify them (`identitybench audit panel`, `audit adjudicate`; `panel/`).
    `identitybench audit export` writes blind sheets for an optional human audit. Disagreements found there or in post-leaderboard triage are classified and logged in
-   `datasets/ERRATA.md`.
+   `archive/notes/ERRATA.md`.
 
 ## How-tos
 
