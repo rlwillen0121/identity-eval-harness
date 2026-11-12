@@ -1,0 +1,22 @@
+# Security and caching headers for Cloudflare Workers static assets.
+# The site loads nothing from other origins, so the CSP allows only this origin. Inline style
+# attributes are used for bar widths, hence 'unsafe-inline' for styles only (never scripts).
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# Scripts and styles keep the platform default (revalidate on every load), so a deploy is never
+# shown with an hour-old stylesheet or module. Only files that rarely change are cached longer.
+/assets/fonts/*
+  Cache-Control: public, max-age=86400
+
+/assets/img/*
+  Cache-Control: public, max-age=86400
+
+/data/*
+  Cache-Control: public, max-age=300, must-revalidate
+  Access-Control-Allow-Origin: *
