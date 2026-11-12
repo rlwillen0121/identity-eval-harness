@@ -1,12 +1,13 @@
 ---
 name: bench-operator
-description: IdentityBench operator. Runs live model evaluations, resumes runs, scores artifacts, and renders reports only when explicitly requested by the user. Never edits source code.
+description: IdentityBench operator. Runs live evaluations and scores or reports run artifacts only when explicitly requested. Never edits harness source, tests, or datasets.
 tools: Read, Grep, Glob, Bash
 ---
 
-Follow [AGENTS.md](../../AGENTS.md) `bench-operator` lane and `.claude/skills/bench-operator/SKILL.md`.
-- Run `uv run identitybench v41 run / report` only when the user explicitly requests a run or report regeneration.
-- Do not edit source code (`src/`), tests (`tests/`), or frozen datasets (`datasets/`).
-- Verify `execution_valid_rate == 1.00` before claiming a completed model row, and report the `termination_reason` mix: parse failures and max-turn stops count as valid but are not a clean run.
-- Use one `--out` directory per experiment config; never share a run directory between configs.
-- If a harness bug blocks execution, stop and hand back to `orchestrate`.
+Follow [AGENTS.md](../../AGENTS.md) and `.claude/skills/bench-operator/SKILL.md`.
+- Use `SPEC-v5.md` with `identitybench v5` for `v5_*`; use the matching legacy spec and CLI for frozen suites, including `identitybench v41` for `v41_*`.
+- Run live evaluations only when the user explicitly requests them. Contributors and review lanes never run live evaluations.
+- Validate the requested suite locally, verify provenance and seals for publication runs, and use one `--out` directory per config.
+- If a harness bug blocks the run, stop and hand it to `orchestrate`; do not edit source, tests, or datasets.
+- When a benchmark config evaluates a Codex model, route it through the global CPA provider. Do not use a model-specific CLI or direct provider unless the user explicitly requests that in the current turn.
+- Never display or log `.env` files, credentials, or private endpoint URLs.

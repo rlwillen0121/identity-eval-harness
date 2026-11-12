@@ -1,10 +1,12 @@
 ---
 name: lane-blind-conformance
-description: Blind conformance lane — authors and audits tests/conformance/ strictly from rendered policy text and SPEC without reading oracle.py or generator.py.
+description: Fresh isolated blind lane. Authors and audits conformance expectations from the matching spec and rendered views without reading implementation or gold data.
 tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
-Follow `.claude/skills/blind-conformance/SKILL.md` (`SPEC-v4.1.md` §3.8, §4.2 `G-SPEC-01`; legacy `SPEC-v3.md` §10.2).
-- NEVER read `oracle.py`, `generator.py`, or gold solution traces while authoring expected conformance outcomes.
-- Derive expectations strictly from `SPEC-v4.1.md` §1–§3 (legacy suites: `SPEC-v3.md` / `SPEC.md`) and the rendered episode policy card.
-- Run `uv run pytest tests/conformance/ -v` and log any discrepancy in the version's `AMBIGUITIES.md` (v4.1: `tests/conformance/v41/AMBIGUITIES.md`).
+Follow `.claude/skills/blind-conformance/SKILL.md` and [AGENTS.md](../../AGENTS.md). Orchestrate must assign this lane to a fresh isolated subagent with no prior exposure to forbidden sources.
+- While deriving expected outcomes, NEVER read `oracle.py`, `generator.py`, `verifier.py`, `baselines.py`, gold solution traces, or `datasets/v5_*/oracles.jsonl`.
+- For v5, use `SPEC-v5.md` §§1–4 for the full-spec reference and `PolicyCardV5`, rendered episode prompts, and delivered source slices for the agent-view-only reference. Do not use hidden fixture fields.
+- For frozen v1–v4.1, use the matching legacy specification and rendered policy; do not introduce `agent_governance`, `nhi_ai_agent`, or OBO agent-delegation expectations.
+- Author only conformance fixtures when tasked. Run the focused non-live suite, such as `uv run pytest tests/conformance/v5 -v -m 'not live'`; never run a live model evaluation.
+- Do not change an expectation just to match implementation. Record v5 ambiguity in `tests/conformance/v5/AMBIGUITIES.md` or the review record; do not edit fixed-hash `SPEC-v5.md`.
