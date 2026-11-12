@@ -16,19 +16,20 @@ export function mount(root, data, store) {
   let metric = 'g_srr';
   const subtitle = 'Run cost (log USD) versus resolution. Cost is the amount billed when reported; otherwise retail token prices are applied to the run\'s recorded tokens. Local runs have no cost.';
   const view = chart(root, 'What does resolution cost?', subtitle, store, ({width, canvas, tip}) => {
-    const plot = {left: 44, right: width - 18, top: 24, bottom: 300};
+    const plot = {left: 44, right: width - 18, top: 22, bottom: 312};
     const paid = data.models.filter(m => m.cost_basis !== 'local' && m.cost_usd > 0);
     const local = data.models.filter(m => m.cost_basis === 'local');
     const logStart = plot.left + (local.length ? 52 : 0);
     const minCost = Math.min(1, ...paid.map(m => m.cost_usd));
     const maxCost = Math.max(300, ...paid.map(m => m.cost_usd)) * 1.12;
     const x = log([minCost, maxCost], [logStart, plot.right - 6]);
-    const y = linear([0, 1], [plot.bottom, plot.top]);
+    // The scale stops short of the plot's top edge so a label fits beside a model near 100%.
+    const y = linear([0, 1], [plot.bottom, plot.top + 26]);
     const frontier = paretoFrontier(data.models, metric);
     const lead = data.models.reduce((a, b) => a[metric] > b[metric] ? a : b);
     const metricLabel = metric === 'g_srr' ? 'end-to-end resolution' : 'tasks solved';
     const leadRate = metric === 'g_srr' ? endToEndPct(lead[metric]) : pct(lead[metric], 1);
-    const svg = svgCanvas(canvas, width, 354,
+    const svg = svgCanvas(canvas, width, 366,
       `${lead.name} has the highest ${metricLabel} at ${leadRate}; ${frontier.length} paid models form the cost frontier. Local runs are shown separately.`);
     yAxis(svg, plot, y, ticks(0, 1, 4), v => pct(v, 0));
     svg.append(text(plot.left, 12, metric === 'g_srr' ? 'End to end' : 'Tasks solved', {class: 'chart-axis-title'}));
@@ -41,7 +42,7 @@ export function mount(root, data, store) {
       svg.append(el('line', {x1: divider, x2: divider, y1: plot.top, y2: plot.bottom, class: 'chart-axis'}),
         text(plot.left + 12, plot.bottom + 20, 'local', {'text-anchor': 'middle', class: 'chart-tick'}));
     }
-    svg.append(text((logStart + plot.right) / 2, 344, 'Run cost · USD', {'text-anchor': 'middle', class: 'chart-axis-title'}));
+    svg.append(text((logStart + plot.right) / 2, 356, 'Run cost · USD', {'text-anchor': 'middle', class: 'chart-axis-title'}));
     const frontierPoints = frontier.map(m => ({x: x(m.cost_usd), y: y(m[metric])}));
     const line = el('path', {d: stepPath(frontierPoints, plot.right), class: 'chart-frontier'});
     svg.append(line);

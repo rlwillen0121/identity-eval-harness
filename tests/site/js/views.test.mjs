@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/js/table.js';
 import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/js/detail.js';
-import { heroSentence, leaderboardLede } from '../../../site/assets/js/main.js';
+import { heroParts, heroSentence, leaderboardLede } from '../../../site/assets/js/main.js';
 import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/js/updates.js';
 import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/js/format.js';
 
@@ -251,4 +251,37 @@ test('every vendor on the leaderboard has a mark, and unknown vendors fall back 
   assert.match(vendorLogoBody('newco', '<New>'), /<text[^>]*>&lt;<\/text>/);
   assert.match(vendorLogo('newco', 'Newco'), />N<\/text><\/svg>$/);
   assert.doesNotMatch(vendorLogoBody('openai'), /<text/);
+});
+
+test('the headline splits into the leader result and the field summary, and rejoins as the hero sentence', () => {
+  const [lead, aside] = heroParts(data);
+  const top = data.models.slice().sort((a, b) => a.rank - b.rank)[0];
+  assert.ok(lead.startsWith(`${top.name} resolves `));
+  assert.ok(lead.endsWith('of enterprise identity scenarios end to end.'));
+  assert.match(aside, /^(\d+ of \d+ models resolve none|The median model resolves [\d.]+%)\.$/);
+  assert.equal(`${lead} ${aside}`, heroSentence(data));
+  assert.deepEqual(heroParts({ models: [] }), ['', '']);
+  assert.equal(heroSentence({ models: [] }), '');
+});
+
+test('self-hosted fonts exist, are preloaded from the page, and ship with their licence', () => {
+  const site = new URL('../../../site/', import.meta.url);
+  const tokens = readFileSync(new URL('assets/css/tokens.css', site), 'utf8');
+  const fontUrls = [...tokens.matchAll(/url\("\.\.\/fonts\/([^"]+)"\)/g)].map((match) => match[1]);
+  assert.equal(fontUrls.length, 3);
+  for (const file of fontUrls) assert.ok(existsSync(new URL(`assets/fonts/${file}`, site)), file);
+  assert.equal((tokens.match(/font-display: swap;/g) || []).length, fontUrls.length);
+  assert.match(readFileSync(new URL('assets/fonts/LICENSE.txt', site), 'utf8'), /SIL Open Font License, Version 1\.1/);
+
+  const page = readFileSync(new URL('index.html', site), 'utf8');
+  const preloads = [...page.matchAll(/<link rel="preload" href="([^"]+)" as="font" type="font\/woff2" crossorigin>/g)].map((match) => match[1]);
+  assert.ok(preloads.length >= 1);
+  for (const href of preloads) {
+    assert.ok(existsSync(new URL(href, site)), href);
+    assert.ok(fontUrls.includes(href.split('/').pop()), `${href} is declared in tokens.css`);
+  }
+  // The content security policy allows only same-origin scripts, styles and fonts.
+  assert.doesNotMatch(page, /<style[\s>]/);
+  assert.doesNotMatch(page, /<script(?![^>]*\ssrc="assets\/)[^>]*>/);
+  assert.doesNotMatch(page, /<link[^>]+href="https?:\/\/(?!identitybench\.ai\/)/);
 });

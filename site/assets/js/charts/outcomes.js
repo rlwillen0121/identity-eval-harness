@@ -12,7 +12,7 @@ export function mount(root, data, store) {
   const view = chart(root, 'How far do models get?', subtitle, store, ({width, canvas, tip}) => {
     const left = nameColumn(width, models);
     const top = 6;
-    const pitch = 14;
+    const pitch = 17;
     const height = top + models.length * pitch + 4;
     const barWidth = width - left - 4;
     const svg = svgCanvas(canvas, width, height,

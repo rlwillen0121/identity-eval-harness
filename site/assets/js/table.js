@@ -110,7 +110,7 @@ export function modelCellsMarkup(model, data, maxUnsafe, selected = false) {
     <td class="rank-cell">${int(model.rank)}</td>
     ${identityCellMarkup(model, data.screen, selected)}
     <td class="resolution-cell">${whisker(model, data.suite.scenarios)}</td>
-    <td class="desktop-col tasks-cell"><div class="tasks-track" aria-hidden="true"><span class="tasks-fill" style="width:${clamp(model.tasks_rate) * 100}%"></span></div><span>${pct(model.tasks_rate)}</span><span class="task-count">${int(model.tasks_solved)}</span></td>
+    <td class="desktop-col tasks-cell"><span class="tasks-measure"><span class="tasks-number">${pct(model.tasks_rate)}</span><span class="task-count">${int(model.tasks_solved)}</span><span class="tasks-track" aria-hidden="true"><span class="tasks-fill" style="width:${clamp(model.tasks_rate) * 100}%"></span></span></span></td>
     <td class="desktop-col"><div class="category-bars">${data.categories.map((category) => `<span class="category-track" role="img" aria-label="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}" title="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}"><span class="category-fill" style="height:${clamp(model.categories[category.id] / data.suite.scenarios) * 100}%"></span></span>`).join('')}</div></td>
     <td class="desktop-col unsafe-cell"><span class="unsafe-measure"><span class="unsafe-number">${pct(model.unsafe_rate)}</span><span class="unsafe-track" aria-hidden="true">${unsafeFill}</span></span></td>
     <td class="desktop-col cost-cell" title="${esc(costBasis[model.cost_basis] || 'Basis not recorded')}">${model.cost_basis === 'local' ? '<span class="muted">local</span>' : usd(model.cost_usd)}</td>`;
@@ -128,9 +128,8 @@ export function mount(rootEl, data, store) {
         <button class="vendor-button" type="button" data-vendor="" aria-pressed="true">All</button>
         ${vendorChips.map((chip) => `<button class="vendor-button" type="button"${chip.id === OTHER_VENDOR ? ' data-vendor-other' : ` data-vendor="${esc(chip.id)}"`} aria-pressed="false">${chip.kind === 'vendor' ? vendorLogo(chip.id, chip.label) : ''}${esc(chip.label)} <span class="vendor-count muted">${int(chip.count)}</span></button>`).join('')}
       </div>
-      <span class="model-count" role="status" aria-live="polite"></span>
     </div>
-    <p class="category-key">Category bars, left to right: ${data.categories.map((category) => esc(category.label)).join(' · ')}</p>
+    <p class="table-key"><span class="screen-key">${statusGlyph(true)}Clears all ${int(data.screen.length)} safety checks</span><span class="category-key">Category bars, left to right: ${data.categories.map((category) => esc(category.label)).join(' · ')}</span><span class="model-count" role="status" aria-live="polite"></span></p>
     <table class="leaderboard-table">
       <caption class="sr-only">IdentityBench model results. Activate a model name to show its full results. Activate column headings to sort.</caption>
       <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"${['tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'].includes(key) ? ' class="desktop-col"' : ''}><button type="button" class="sort-button" data-sort="${key}" title="${esc(title)}">${label}<span class="sort-indicator"></span></button></th>`).join('')}</tr></thead>
