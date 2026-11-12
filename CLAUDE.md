@@ -1,7 +1,8 @@
-Follow [AGENTS.md](AGENTS.md). Same lanes, domain boundaries, and proof gates.
+Follow [AGENTS.md](AGENTS.md) for version-scoped scope, lanes, and proof gates.
 
-- **Contributors (`orchestrate`, `implement`, `review`, `lane-*`):** Build and verify harness code, generators, deterministic verifiers, and blind conformance suites using free local checks (`uv run pytest`, `uv run ruff check .`, `uv run mypy --strict src`, `uv run identitybench v41 validate --suite <suite> --double-build`). NEVER call paid/live model APIs or CLIs during implementation or code review.
-- **Operators (`bench-operator`):** Run `uv run identitybench v41 run / report` only when the user explicitly asks for a live model trial or report regeneration. Do not edit source code or frozen datasets.
-- **Blind Conformance (`lane-blind-conformance`):** Derive test expectations strictly from rendered episode policy/state text and `SPEC-v4.1.md` (legacy suites: `SPEC-v3.md` / `SPEC.md`). Never read `oracle.py` or `generator.py` when authoring blind conformance fixtures.
-- **Domain Scope:** Strictly Enterprise IGA (humans + standard enterprise NHIs + Zero-Trust/ZSP/JIT/CAE). No SOC/SIEM drift; no AI-agent governance (`nhi_ai_agent` / OBO agent chains).
+- **Contributors (`orchestrate`, `implement`, `review`, `lane-*`):** Build and verify harness code using free local checks. Do not call live model APIs or model CLIs during implementation or review.
+- **Operators (`bench-operator`):** Run `identitybench v5 run / report` or the matching `v41` commands only when the user explicitly requests a live evaluation or report. Do not edit source or frozen datasets.
+- **Blind conformance (`lane-blind-conformance`):** Use the matching normative spec and rendered episode/policy views. For v5, follow [`SPEC-v5.md`](SPEC-v5.md) and `G-SPEC-01`; assign a fresh isolated subagent and never inspect `oracle.py`, `generator.py`, `verifier.py`, `baselines.py`, gold traces, or `datasets/v5_*/oracles.jsonl` while deriving expected outcomes.
+- **Domain scope:** v1–v4.1 retain their frozen six categories and prohibit `nhi_ai_agent` and OBO agent-delegation tasks. v5 alone adds structured, deterministic `agent_governance` over `EnterpriseAgentV5` (`agt_*`) and `AgentDelegationRequestV5` (`dlreq_*`), including sponsor accountability, tool scope, OBO, workflow SoD, and CAE. SOC/SIEM/EDR triage, firewall/network incident response, unstructured prompt injection, jailbreaks, and content moderation are prohibited across all versions.
+- **Delegation:** Use native collaboration subagent tools for implementation and review. Do not launch `codex exec` reviews or separate sidebar tasks.
 - **Secrets:** Never log or commit API keys, bearer tokens, cookies, or private endpoint URLs.
