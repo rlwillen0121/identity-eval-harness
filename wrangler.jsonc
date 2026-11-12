@@ -1,0 +1,12 @@
+// Cloudflare Worker that serves the static leaderboard in site/ (no Worker script).
+// Deployed by Workers Builds on push to main; other branches get preview URLs.
+{
+  "name": "identitybench",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./site",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "preview_urls": true
+}
