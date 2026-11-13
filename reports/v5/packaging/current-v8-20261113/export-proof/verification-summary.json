@@ -1,0 +1,27 @@
+{
+  "base_head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+  "base_tree_sha256": "cbbfdaff9bdf12550d700dcf022616ef680b5a3f",
+  "git_archive_sha256": "d6405b2579e18e24646a81f3a7fade68f15c723e7c8b605fa3e1ff9f3a85af0d",
+  "import_owner_checkout_absent": true,
+  "import_proof_exit_code": 0,
+  "overlay_bytes": 169328766,
+  "overlay_files": 172,
+  "overlay_unique_paths": 172,
+  "post_test_export_files_match_pretest_manifest": true,
+  "post_test_owner_hashes_match": true,
+  "root_inventory_files_unchanged": true,
+  "root_reported_source_health_status": "RELEASED separately by orchestrator; not rerun by this export worker",
+  "schema": "identitybench.v5.current-v8.export-proof-summary.v1",
+  "scope": "Selected export portability only; no full-suite, milestone, dataset-seal, v8-release, or qualification claim.",
+  "selected_exported_tests": {
+    "errors": 0,
+    "exit_code": 1,
+    "failure_nodeid": "tests/v5/test_validation.py::test_shared_origin_qualification_binds_reviewed_card_v2_artifact",
+    "failures": 1,
+    "files": 36,
+    "passes": 1389,
+    "skips": 0
+  },
+  "status": "HOLD",
+  "uv_sync_exit_code": 0
+}

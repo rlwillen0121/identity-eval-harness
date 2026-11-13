@@ -1,0 +1,57 @@
+{
+  "argv": [
+    "uv",
+    "run",
+    "--no-env-file",
+    "identitybench",
+    "--no-env-file",
+    "v41",
+    "validate",
+    "--suite",
+    "v41_full",
+    "--double-build"
+  ],
+  "category_counts": {
+    "datasets": 45,
+    "source": 38,
+    "specifications": 4
+  },
+  "changed_frozen_paths": [],
+  "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+  "elapsed_monotonic_ns": 174078418084,
+  "elapsed_seconds": 174.078418084,
+  "exit_code": 0,
+  "finished_utc": "2026-11-13T05:40:33.830591+00:00",
+  "frozen_diff_after_path_count": 0,
+  "frozen_diff_after_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "frozen_diff_before_path_count": 0,
+  "frozen_diff_before_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "frozen_hashes_unchanged": true,
+  "frozen_path_count": 87,
+  "head_unchanged": true,
+  "no_provider_or_model_run": true,
+  "post_head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+  "post_run_hashes_path": "post-run.json",
+  "post_run_hashes_sha256": "984f0be5b668661e750ce5fade58446f7fa9b3f6d362ec74f1d475e30cdac67d",
+  "pre_head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+  "proof_limits": [
+    "No v5 validation, full pytest, or whole source-health check was run.",
+    "This offline regression does not establish dataset freeze, M5, G-SPEC, publication, or model evaluation approval."
+  ],
+  "scope": "offline frozen v41_full validation only; not whole source health or publication proof",
+  "spec_v5_matches_pinned_after": true,
+  "spec_v5_matches_pinned_before": true,
+  "spec_v5_sha256_after": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+  "spec_v5_sha256_before": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+  "started_utc": "2026-11-13T05:37:39.752576+00:00",
+  "stderr": {
+    "bytes": 100,
+    "path": "stderr.raw",
+    "sha256": "2beeceb7d4bbd2e8d37ff0507016e036719dd2654ac6775fa17e94ae381efc39"
+  },
+  "stdout": {
+    "bytes": 490,
+    "path": "stdout.raw",
+    "sha256": "773c5ef1da0675dd15123919539b8e28fbeea5bb9043ae9c0a7c5b9d0948c351"
+  }
+}

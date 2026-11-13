@@ -213,7 +213,42 @@ def _jcs(value: Any) -> str:
     if isinstance(value, float):
         if value != value or value in (float("inf"), float("-inf")):
             raise ValueError("JCS does not allow non-finite numbers")
-        return "0" if value == 0 else json.dumps(value, allow_nan=False)
+        if value == 0:
+            return "0"
+
+        magnitude = abs(value)
+        representation = repr(magnitude).lower()
+        if "e" in representation:
+            mantissa, exponent_text = representation.split("e", 1)
+            exponent = int(exponent_text)
+        else:
+            mantissa = representation
+            exponent = 0
+
+        whole, _, fraction = mantissa.partition(".")
+        digits = whole + fraction
+        decimal_position = len(whole) + exponent
+        leading_zero_count = len(digits) - len(digits.lstrip("0"))
+        digits = digits.lstrip("0")
+        decimal_position -= leading_zero_count
+        digits = digits.rstrip("0") or "0"
+
+        if 1e-6 <= magnitude < 1e21:
+            if decimal_position <= 0:
+                number = f"0.{('0' * -decimal_position)}{digits}"
+            elif decimal_position >= len(digits):
+                number = f"{digits}{('0' * (decimal_position - len(digits)))}"
+            else:
+                number = f"{digits[:decimal_position]}.{digits[decimal_position:]}"
+        else:
+            number_exponent = decimal_position - 1
+            significand = digits[0]
+            if len(digits) > 1:
+                significand += f".{digits[1:]}"
+            exponent_sign = "+" if number_exponent >= 0 else ""
+            number = f"{significand}e{exponent_sign}{number_exponent}"
+
+        return f"-{number}" if value < 0 else number
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, (tuple, list)):

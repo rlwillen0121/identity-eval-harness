@@ -1,0 +1,28 @@
+{
+  "duration_seconds": 15.057,
+  "exit_code": 0,
+  "export_root": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout",
+  "modules": {
+    "identitybench": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src/identitybench/__init__.py",
+    "identitybench.v5.conformance_process": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src/identitybench/v5/conformance_process.py",
+    "identitybench.v5.conformance_safety_domain": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src/identitybench/v5/conformance_safety_domain.py",
+    "identitybench.v5.report": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src/identitybench/v5/report.py",
+    "identitybench.v5.validation": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src/identitybench/v5/validation.py"
+  },
+  "owner_checkout_present_on_sys_path": false,
+  "owner_checkout_removed_before_imports": true,
+  "script_path": "import-proof-check.py",
+  "stderr_path": "import-proof.stderr.txt",
+  "stdout_path": "import-proof.stdout.txt",
+  "sys_path": [
+    "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src",
+    "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/tests",
+    "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src",
+    "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/tests",
+    "/Users/ryanwillen/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python312.zip",
+    "/Users/ryanwillen/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12",
+    "/Users/ryanwillen/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/lib-dynload",
+    "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv/lib/python3.12/site-packages",
+    "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src"
+  ]
+}

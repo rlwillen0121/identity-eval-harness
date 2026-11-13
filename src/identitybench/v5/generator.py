@@ -206,6 +206,8 @@ class V5Cell:
 
 def plan_v5_cells(suite: V5Suite | str, seed: int = DEFAULT_V5_SEED) -> tuple[V5Cell, ...]:
     """Return the exact family x regime x replicate layout required for ``suite``."""
+    if type(seed) is not int:
+        raise TypeError("seed must be an integer")
     ring = V5Suite(suite)
     offset = V5_SUITE_SEED_OFFSETS[ring.value]
     cells: list[V5Cell] = []
@@ -321,6 +323,8 @@ class _FamilyProfile:
     sync_mode: ConnectorSyncModeV5 = "FULL_SNAPSHOT"
     provisioning_mode: str = "AUTOMATED_WRITE"
     audit_stale: bool = False
+    post_close_aggregation: bool = False
+    conversion_pending_mover: bool = True
     mass_delete: bool = False
     disconnected: bool = False
     unmapped_drift: bool = False
@@ -338,12 +342,22 @@ class _FamilyProfile:
 
 
 FAMILY_PROFILES: dict[str, _FamilyProfile] = {
-    "F01": _FamilyProfile(audit_stale=True),
+    "F01": _FamilyProfile(audit_stale=True, conversion_pending_mover=False),
     "F02": _FamilyProfile(hr_collision=True, multi_engagement=True),
-    "F03": _FamilyProfile(transport="JDBC_SQL", sync_mode="DELTA_CURSOR", group_deny=True),
+    "F03": _FamilyProfile(
+        transport="JDBC_SQL",
+        sync_mode="DELTA_CURSOR",
+        group_deny=True,
+        conversion_pending_mover=False,
+    ),
     "F04": _FamilyProfile(transport="FLAT_FILE_SFTP", mass_delete=True, stale_parent_custody=True),
-    "F05": _FamilyProfile(disconnected=True, unmapped_drift=True, shared_break_glass=True),
-    "F06": _FamilyProfile(),
+    "F05": _FamilyProfile(
+        disconnected=True,
+        unmapped_drift=True,
+        shared_break_glass=True,
+        post_close_aggregation=True,
+    ),
+    "F06": _FamilyProfile(disconnected=True),
     "F07": _FamilyProfile(retro_shock=True),
     "F08": _FamilyProfile(recursive_cae=True),
     "F09": _FamilyProfile(transport="JDBC_SQL", sync_mode="DELTA_CURSOR", sequential_uar=True),
@@ -673,11 +687,11 @@ def _build_world(
             engagement(
                 "boomerang_new",
                 "CONTRACTOR",
-                "CONTRACTOR_TO_FTE_PENDING",
+                "CONTRACTOR_TO_FTE_PENDING" if profile.conversion_pending_mover else "ACTIVE",
                 "/d/p",
                 prior="/d/l",
                 manager=person["alice"],
-                conversion=True,
+                conversion=profile.conversion_pending_mover,
             ),
         ),
         "reviewer": (engagement("reviewer", manager=person["alice"]),),
@@ -770,7 +784,7 @@ def _build_world(
         groups[ids["group"]["deny_wire"]] = s.GroupV5(
             group_id=ids["group"]["deny_wire"],
             effect="DENY",
-            scope_path="/d/t",
+            scope_path="/d/p",
             capabilities=("wire",),
             evidence_id=_evidence(cell, "group:deny_wire"),
         )
@@ -823,7 +837,8 @@ def _build_world(
         transport = profile.transport
         sync_mode = profile.sync_mode
         expected_rows = len(account_ids) if transport == "FLAT_FILE_SFTP" else None
-        audit_wm = clock1 - (86_401 if profile.audit_stale else 300)
+        audit_age = 86_401 if profile.audit_stale else 60 if profile.post_close_aggregation else 300
+        audit_wm = clock1 - audit_age
         connector_schemas[connector_id] = s.ConnectorSchemaV5(
             connector_id=connector_id,
             app_id="fin",
@@ -998,7 +1013,7 @@ def _build_world(
 
     hr_feeds: list[s.HRSourceFeedSpecV5] = []
     feed_assertions = []
-    asserted_names = ("alice", "reviewer") if profile.hr_collision else ("alice",)
+    asserted_names = ("alice", "reviewer", "approver") if profile.hr_collision else ("alice",)
     for name in asserted_names:
         source_email = email[name]
         if profile.hr_collision and name == "reviewer":
@@ -1036,9 +1051,9 @@ def _build_world(
                 emp_immutable_id=people[person[name]].emp_immutable_id,
                 email=email["alice"] if name == "reviewer" else email[name],
                 affiliation="FTE",
-                raw_status_code="ACTIVE",
+                raw_status_code="TERM" if name == "approver" else "ACTIVE",
             )
-            for name in ("reviewer", "alice")
+            for name in ("reviewer", "alice", "approver")
         )
         hr_feeds.append(
             s.HRSourceFeedSpecV5(
@@ -1048,7 +1063,7 @@ def _build_world(
                 authorized_affiliations=("FTE",),
                 precedence_rank=2,
                 correlation_strategy="IMMUTABLE_EMP_ID_THEN_EMAIL",
-                status_code_map=(("ACTIVE", "ACTIVE"),),
+                status_code_map=(("ACTIVE", "ACTIVE"), ("TERM", "TERMINATED")),
                 assertions=collision_assertions,
                 evidence_id=_evidence(cell, "feed:legacy"),
             )
@@ -1384,6 +1399,14 @@ def _build_world(
     ids["person_names"] = person
     ids["role_names"] = role
     ids["grant_names"] = grant
+    ids["evidence_names"] = {
+        label: _evidence(cell, label)
+        for label in (
+            "group:deny_wire",
+            "uar:item:third:first",
+            "uar:item:third:second",
+        )
+    }
     return world, ids, profile
 
 
@@ -2268,13 +2291,19 @@ def _build_episode_plan(
     tuple[s.JMLTraceEventV5, ...],
     s.PhaseWorkQueueV5,
 ]:
+    from identitybench.v5.family_couplings import (
+        prepare_initial_family_world,
+        prepare_phase2_family_world,
+    )
     from identitybench.v5.oracle import evaluate_phase_with_trace
     from identitybench.v5.policy_card import render_policy_card
     from identitybench.v5.runtime import ViewV5, apply_phase1, build_visible_prior_ledger
 
     overlay = _regime_overlay(cell.regime_id, cell)
     initial_world, ids, profile = _build_world(cell, overlay)
+    initial_world = prepare_initial_family_world(cell, initial_world, ids)
     phase2_seed_world, delta_people = _build_phase2_world(initial_world, ids, profile, cell)
+    phase2_seed_world = prepare_phase2_family_world(cell, phase2_seed_world, ids)
     seeded_optimizations = dict(initial_world.optimization_tasks)
     seeded_optimizations.update(phase2_seed_world.optimization_tasks)
     initial_world = initial_world.model_copy(
@@ -2423,8 +2452,10 @@ def write_v5_dataset(
         raise ValueError(f"writing {ring.value} requires explicit freeze=True")
     dataset = build_v5_dataset(ring, seed)
     seal = {
+        "spec_version": "SPEC-v5.0",
         "suite": ring.value,
         "seed": seed,
+        "generator_params": {"suite": ring.value, "seed": seed},
         "episode_count": len(dataset.episodes),
         "family_count": len({episode.family_id for episode in dataset.episodes}),
         "episodes_sha256": hashlib.sha256(dataset.episodes_bytes).hexdigest(),

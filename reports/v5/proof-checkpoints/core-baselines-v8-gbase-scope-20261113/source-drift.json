@@ -1,0 +1,106 @@
+{
+  "accepted_scoring_and_report_hashes_match_task": {
+    "src/identitybench/v5/report.py": true,
+    "src/identitybench/v5/scoring.py": true
+  },
+  "all_relevant_report_regrade_sources_unchanged_during_regrade": true,
+  "all_v5_source_paths_changed_during_regrade": [
+    "src/identitybench/v5/validation.py"
+  ],
+  "changes_vs_prior_outside_accepted_scoring_report_updates": {
+    "src/identitybench/v5/validation.py": {
+      "current_pre_run_sha256": "40dc152d55182d09476ce8b597adf62a232c405528a99e3812a0caccb5bba92f",
+      "previous_sha256": "b9d4b2ba021197c39898f8d50cb0f9deeb8585550b1f972beb39e46576989e0e"
+    }
+  },
+  "note": "validation.py changed between pre-run and post-run captures during concurrent validation work; report regrades were not validation or whole-source-health checks.",
+  "prior_report_regrade_hashes_that_differ": {
+    "src/identitybench/v5/report.py": {
+      "current_pre_run_sha256": "d7b604de702d2e6d08c8cfcd77bd35044e092a7229e2e972e56f636c9b21c1ac",
+      "previous_sha256": "e7d2f196ca87f57e3f8a403503c1d6c3e0b77bbe1b7ee664e20daf48d7fb974e"
+    },
+    "src/identitybench/v5/scoring.py": {
+      "current_pre_run_sha256": "64c65ac5825f14afa54fc70316aa5c7a3a81351bb55b5aca119ea6cfd329921e",
+      "previous_sha256": "eba7269d2cf94e689cd27f06192e7f0b1b1b4f039f340e37760783ab15338d4e"
+    },
+    "src/identitybench/v5/validation.py": {
+      "current_pre_run_sha256": "40dc152d55182d09476ce8b597adf62a232c405528a99e3812a0caccb5bba92f",
+      "previous_sha256": "b9d4b2ba021197c39898f8d50cb0f9deeb8585550b1f972beb39e46576989e0e"
+    }
+  },
+  "prior_report_regrade_hashes_unchanged_paths": [
+    "src/identitybench/cli.py",
+    "src/identitybench/v4/jcs.py",
+    "src/identitybench/v5/baselines.py",
+    "src/identitybench/v5/cli.py",
+    "src/identitybench/v5/generator.py",
+    "src/identitybench/v5/oracle.py",
+    "src/identitybench/v5/policy_card.py",
+    "src/identitybench/v5/runner.py",
+    "src/identitybench/v5/runtime.py",
+    "src/identitybench/v5/schemas.py",
+    "src/identitybench/v5/state_machine.py"
+  ],
+  "relevant_report_regrade_source_paths": [
+    "src/identitybench/cli.py",
+    "src/identitybench/v4/jcs.py",
+    "src/identitybench/v5/cli.py",
+    "src/identitybench/v5/baselines.py",
+    "src/identitybench/v5/scoring.py",
+    "src/identitybench/v5/report.py",
+    "src/identitybench/v5/runner.py",
+    "src/identitybench/v5/runtime.py",
+    "src/identitybench/v5/provider_accounting.py",
+    "src/identitybench/v5/state_machine.py",
+    "src/identitybench/v5/schemas.py"
+  ],
+  "relevant_source_hashes_after": {
+    "src/identitybench/cli.py": "2fefe0350e3d9064ccf8c07429f8523f5db59c9c671436d0492c4cce3817153f",
+    "src/identitybench/v4/jcs.py": "74606637a3d3d828343bf7b9133d38bd140385c863b942d7eae6ce4611542081",
+    "src/identitybench/v5/baselines.py": "f46700c21fc6707854683b572d809b1f7febcdca5af09d9dc4b88a25e14e7153",
+    "src/identitybench/v5/cli.py": "e8ddcc0cd6e3df858d3311dc6891808b600b073a04104795216b88f2f4f03228",
+    "src/identitybench/v5/provider_accounting.py": "5024d84f37941ee1710a86a4947b384b7c7ab65a7101d7a9ee2b345ffe3b0c4e",
+    "src/identitybench/v5/report.py": "d7b604de702d2e6d08c8cfcd77bd35044e092a7229e2e972e56f636c9b21c1ac",
+    "src/identitybench/v5/runner.py": "3ea52754e9ff44eda32de3741790f2124cd5b30a3ebfde4b915cc1cb67b1465d",
+    "src/identitybench/v5/runtime.py": "7fb1732d135c9ae1bfe0de09053c56ecaaf4dc280b38cd2535a94fec614553d2",
+    "src/identitybench/v5/schemas.py": "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7",
+    "src/identitybench/v5/scoring.py": "64c65ac5825f14afa54fc70316aa5c7a3a81351bb55b5aca119ea6cfd329921e",
+    "src/identitybench/v5/state_machine.py": "e78f4b09c196ffa6c6386ab6e2b70db480de7a059bf5b1d8b240c3e15c2fbc78"
+  },
+  "relevant_source_hashes_before": {
+    "src/identitybench/cli.py": "2fefe0350e3d9064ccf8c07429f8523f5db59c9c671436d0492c4cce3817153f",
+    "src/identitybench/v4/jcs.py": "74606637a3d3d828343bf7b9133d38bd140385c863b942d7eae6ce4611542081",
+    "src/identitybench/v5/baselines.py": "f46700c21fc6707854683b572d809b1f7febcdca5af09d9dc4b88a25e14e7153",
+    "src/identitybench/v5/cli.py": "e8ddcc0cd6e3df858d3311dc6891808b600b073a04104795216b88f2f4f03228",
+    "src/identitybench/v5/provider_accounting.py": "5024d84f37941ee1710a86a4947b384b7c7ab65a7101d7a9ee2b345ffe3b0c4e",
+    "src/identitybench/v5/report.py": "d7b604de702d2e6d08c8cfcd77bd35044e092a7229e2e972e56f636c9b21c1ac",
+    "src/identitybench/v5/runner.py": "3ea52754e9ff44eda32de3741790f2124cd5b30a3ebfde4b915cc1cb67b1465d",
+    "src/identitybench/v5/runtime.py": "7fb1732d135c9ae1bfe0de09053c56ecaaf4dc280b38cd2535a94fec614553d2",
+    "src/identitybench/v5/schemas.py": "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7",
+    "src/identitybench/v5/scoring.py": "64c65ac5825f14afa54fc70316aa5c7a3a81351bb55b5aca119ea6cfd329921e",
+    "src/identitybench/v5/state_machine.py": "e78f4b09c196ffa6c6386ab6e2b70db480de7a059bf5b1d8b240c3e15c2fbc78"
+  },
+  "relevant_source_paths_changed_during_regrade": [],
+  "source_hash_differences_between_pre_and_post": {
+    "src/identitybench/v5/validation.py": {
+      "post_run_sha256": "3c0ab818b26b8a562ebb8dab1e92cb1c03f017087459b586ceb8404f93fe6ada",
+      "pre_run_sha256": "40dc152d55182d09476ce8b597adf62a232c405528a99e3812a0caccb5bba92f"
+    }
+  },
+  "source_paths_not_covered_by_previous_hash_capture": [
+    "src/identitybench/v5/__init__.py",
+    "src/identitybench/v5/conformance_process.py",
+    "src/identitybench/v5/conformance_production.py",
+    "src/identitybench/v5/conformance_safety_domain.py",
+    "src/identitybench/v5/conformance_shared.py",
+    "src/identitybench/v5/family_couplings.py",
+    "src/identitybench/v5/negative_proofs.py",
+    "src/identitybench/v5/oracle_p2.py",
+    "src/identitybench/v5/oracle_requests.py",
+    "src/identitybench/v5/provider_accounting.py",
+    "src/identitybench/v5/scope_algebra.py",
+    "src/identitybench/v5/shortcut_proofs.py",
+    "src/identitybench/v5/verifier.py"
+  ],
+  "whole_source_health_claim": false
+}

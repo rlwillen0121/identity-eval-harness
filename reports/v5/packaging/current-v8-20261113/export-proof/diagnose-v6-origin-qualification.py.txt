@@ -1,0 +1,11 @@
+import hashlib,json,os,sys
+from pathlib import Path
+owner=Path("/Users/ryanwillen/orca/projects/identity-eval-harness").resolve(); root=Path(os.environ["EXPORT_ROOT"]).resolve()
+def under_owner(p):
+ try: Path(p or os.getcwd()).resolve().relative_to(owner); return True
+ except (OSError,ValueError): return False
+sys.path[:]=[p for p in sys.path if not under_owner(p)]; sys.path[:0]=[str(root/"src"),str(root/"tests"),str(root/"tests/v5")]
+from identitybench.v5.validation import _validate_shared_qualification
+repo=Path.cwd(); p=repo/"reports/v5/conformance/review/fresh-card-only-v2-v6-source-origin-adjudication-2026-11-12.json"; raw=p.read_bytes(); adjudication=json.loads(raw); evidence=adjudication["evidence"]; audit=next(row for row in evidence if row["path"].endswith("fresh-card-only-v2-ready-audit.json")); capture_path=adjudication["scope"]["capture_manifest_path"]; capture_raw=(repo/capture_path).read_bytes(); qualification={"kind":"author_origin","adjudication":{"path":p.relative_to(repo).as_posix(),"sha256":hashlib.sha256(raw).hexdigest()},"origin_audit":{"path":audit["path"],"sha256":audit["raw_sha256"]}}; errors=[]; gaps=[]
+qualified=_validate_shared_qualification("agent_view_only",qualification,source_profile="fresh_card_only_v2",author_origin="fresh_independent_card_only_author_v2",closure_sha="c"*64,capture_raw_sha=hashlib.sha256(capture_raw).hexdigest(),capture_logical_sha=adjudication["scope"]["capture_manifest_logical_sha256"],capture_manifest_path=capture_path,captured_source_files_count=adjudication["scope"]["captured_source_files_count"],runtime_manifest={},repository_root=repo,errors=errors,gaps=gaps)
+print(json.dumps({"qualified":qualified,"errors":errors,"gaps":gaps,"evidence_paths":[row["path"] for row in evidence],"capture_manifest_path":capture_path,"capture_source_files_count":adjudication["scope"]["captured_source_files_count"]},indent=2))

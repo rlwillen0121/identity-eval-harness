@@ -1,0 +1,696 @@
+{
+  "accepted_document_boundary": {
+    "normative_contract": "SPEC-v5.md on the exact base HEAD remains the sole normative v5 spec.",
+    "pinned_protocol_docs": [
+      {
+        "path": "reports/v5/conformance/protocol/safety-domain-contract.v1.md",
+        "role": "coordinator input pin; not a spec amendment",
+        "sha256": "3ae44209db03a2af6bffa733e4609c03510c6bad37592823d42640f2c2a47042"
+      },
+      {
+        "path": "reports/v5/conformance/protocol/source-origin-chain.v1.md",
+        "role": "coordinator input pin; not a spec amendment",
+        "sha256": "87e3e9f98da27d270c309b6dbf8cb013aa76a36cf27484dc8cbd94677d270dc2"
+      },
+      {
+        "path": "reports/v5/conformance/protocol/author-wire-contract.v1.md",
+        "role": "coordinator input pin; not a spec amendment",
+        "sha256": "f4f022bb447f7fc51ba3e45ee8fe6a4c7ddc586c791f02f84db6660174f07cd8"
+      },
+      {
+        "path": "reports/v5/conformance/protocol/author-wire-contract-auxiliary-supplement.v1.md",
+        "role": "coordinator input pin; not a spec amendment",
+        "sha256": "f733e9f50887fa5b4d5e054268054a87a1ce6f148dc7d52ed099e2d1644ecc74"
+      },
+      {
+        "path": "reports/v5/conformance/protocol/author-wire-structural-clarification.v2.md",
+        "role": "coordinator input pin; not a spec amendment",
+        "sha256": "78949378a1e1a6975b0dcf5130d8ab7c5f8b4373c03998432db1280bc8d78a61"
+      }
+    ],
+    "reviewable_unapproved_proposals": [
+      {
+        "path": "reports/v5/SPEC-v5-clarifications-proposed.md",
+        "sha256": "dfc4eb011ddebadb7943228ea09bfb4624cc9fecb1ea7367188a37145a87a4de",
+        "status": "unapproved proposal; excluded from candidate"
+      },
+      {
+        "path": "reports/v5/SPEC-v5-first-stage-clarification-proposed.md",
+        "sha256": "8a357d52758cd7b4b4f77ddc99b2d4c9738cb144f9218d4e421665630ced69f6",
+        "status": "unapproved proposal; excluded from candidate"
+      }
+    ]
+  },
+  "current_dirty_source_test_dataset_scope": {
+    "counts": {
+      "config": 1,
+      "dataset": 12,
+      "source": 19,
+      "test": 63
+    },
+    "file_count": 95,
+    "note": "All current modified/untracked v5 source, tests, datasets, and project config in this bounded scope are present in the 146-path core refresh group.",
+    "paths": [
+      "datasets/v5_core/SEAL.json",
+      "datasets/v5_core/episodes.jsonl",
+      "datasets/v5_core/oracles.jsonl",
+      "datasets/v5_dev/SEAL.json",
+      "datasets/v5_dev/episodes.jsonl",
+      "datasets/v5_dev/oracles.jsonl",
+      "datasets/v5_full/SEAL.json",
+      "datasets/v5_full/episodes.jsonl",
+      "datasets/v5_full/oracles.jsonl",
+      "datasets/v5_lite/SEAL.json",
+      "datasets/v5_lite/episodes.jsonl",
+      "datasets/v5_lite/oracles.jsonl",
+      "pyproject.toml",
+      "src/identitybench/cli.py",
+      "src/identitybench/v5/cli.py",
+      "src/identitybench/v5/conformance_process.py",
+      "src/identitybench/v5/conformance_production.py",
+      "src/identitybench/v5/conformance_safety_domain.py",
+      "src/identitybench/v5/conformance_shared.py",
+      "src/identitybench/v5/family_couplings.py",
+      "src/identitybench/v5/generator.py",
+      "src/identitybench/v5/negative_proofs.py",
+      "src/identitybench/v5/oracle.py",
+      "src/identitybench/v5/policy_card.py",
+      "src/identitybench/v5/provider_accounting.py",
+      "src/identitybench/v5/report.py",
+      "src/identitybench/v5/runner.py",
+      "src/identitybench/v5/runtime.py",
+      "src/identitybench/v5/schemas.py",
+      "src/identitybench/v5/scoring.py",
+      "src/identitybench/v5/shortcut_proofs.py",
+      "src/identitybench/v5/validation.py",
+      "tests/conformance/v5/AMBIGUITIES.md",
+      "tests/conformance/v5/agent_view_reference.py",
+      "tests/conformance/v5/agent_view_requests.py",
+      "tests/conformance/v5/agent_view_reviews.py",
+      "tests/conformance/v5/agent_view_safety.py",
+      "tests/conformance/v5/bounded_full_spec_reference/AMBIGUITIES.md",
+      "tests/conformance/v5/bounded_full_spec_reference/__init__.py",
+      "tests/conformance/v5/bounded_full_spec_reference/common.py",
+      "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.jsonl",
+      "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.provenance.json",
+      "tests/conformance/v5/bounded_full_spec_reference/phase1.py",
+      "tests/conformance/v5/bounded_full_spec_reference/phase2.py",
+      "tests/conformance/v5/bounded_full_spec_reference/read_audit.json",
+      "tests/conformance/v5/bounded_full_spec_reference/read_audit_recovery.json",
+      "tests/conformance/v5/bounded_full_spec_reference/safety.py",
+      "tests/conformance/v5/bounded_full_spec_reference/submission.py",
+      "tests/conformance/v5/bounded_full_spec_reference/test_reference.py",
+      "tests/conformance/v5/bounded_full_spec_reference/trace.py",
+      "tests/conformance/v5/bounded_full_spec_reference/worker.py",
+      "tests/conformance/v5/fresh_card_only_v2/AMBIGUITIES.md",
+      "tests/conformance/v5/fresh_card_only_v2/fixtures/structural_wire_cases.jsonl",
+      "tests/conformance/v5/fresh_card_only_v2/fixtures/structural_wire_cases.provenance.json",
+      "tests/conformance/v5/fresh_card_only_v2/test_worker.py",
+      "tests/conformance/v5/fresh_card_only_v2/worker.py",
+      "tests/conformance/v5/fresh_full_spec_v2/AMBIGUITIES.md",
+      "tests/conformance/v5/fresh_full_spec_v2/__init__.py",
+      "tests/conformance/v5/fresh_full_spec_v2/apply.py",
+      "tests/conformance/v5/fresh_full_spec_v2/common.py",
+      "tests/conformance/v5/fresh_full_spec_v2/phase1.py",
+      "tests/conformance/v5/fresh_full_spec_v2/phase2.py",
+      "tests/conformance/v5/fresh_full_spec_v2/policy.py",
+      "tests/conformance/v5/fresh_full_spec_v2/submission.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_apply.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_derive_phase.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_submission.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_trace.py",
+      "tests/conformance/v5/fresh_full_spec_v2/trace.py",
+      "tests/conformance/v5/fresh_full_spec_v2/worker.py",
+      "tests/conformance/v5/shared_agent_view_worker.py",
+      "tests/conformance/v5/shared_full_spec_worker.py",
+      "tests/conformance/v5/test_agent_view_reference.py",
+      "tests/conformance/v5/test_conformance_v5.py",
+      "tests/conformance/v5/test_shared_agent_view_worker.py",
+      "tests/conformance/v5/test_shared_full_spec_worker.py",
+      "tests/v5/test_cli.py",
+      "tests/v5/test_conformance_process.py",
+      "tests/v5/test_conformance_production.py",
+      "tests/v5/test_conformance_safety_domain.py",
+      "tests/v5/test_conformance_shared.py",
+      "tests/v5/test_family_couplings.py",
+      "tests/v5/test_generator.py",
+      "tests/v5/test_negative_proofs.py",
+      "tests/v5/test_oracle.py",
+      "tests/v5/test_policy_card.py",
+      "tests/v5/test_prepare_safety_domain_corpus_v1.py",
+      "tests/v5/test_provider_accounting.py",
+      "tests/v5/test_report.py",
+      "tests/v5/test_runner.py",
+      "tests/v5/test_runtime.py",
+      "tests/v5/test_schemas.py",
+      "tests/v5/test_scoring.py",
+      "tests/v5/test_shortcut_proofs.py",
+      "tests/v5/test_validation.py"
+    ]
+  },
+  "export_closure_gaps": [
+    {
+      "detail": "The proposed 172 paths are an overlay on exact tracked base HEAD f790e751c26d9667db588b95f9ef65cebe0f24e1, not a self-contained source archive. A future export must recreate that base tree and preserve repository-relative paths.",
+      "id": "candidate_is_overlay_not_standalone_checkout"
+    },
+    {
+      "detail": "Tests and coordinator derive or use repository-relative reports/v5 and datasets/v5 paths. Export validation must run from the exported repository root with the expected tree layout.",
+      "id": "repository_root_working_directory"
+    },
+    {
+      "detail": "pyproject.toml is in the candidate (Ruff exclusion change only); uv.lock and unchanged project modules are base-HEAD dependencies. The interpreter/environment and installed dependencies were not exported or verified here.",
+      "id": "locked_python_environment"
+    },
+    {
+      "detail": "The historical dependency manifest lists an optional 43-file, 212105560-byte v1-v3 manifest graph. That count is historical and was not remeasured; the current candidate adds only the seven fixed-v3 archive paths directly read by the new inventory test. Full v1-v3 replay/rebuild is not claimed.",
+      "id": "complete_shared_input_manifest_replay"
+    },
+    {
+      "detail": "The new test monkeypatches assert_protocol_pins for synthetic runs and the fixed-v3 inventory test does not invoke a full request-plan/receipt workflow. The five pinned protocol files and three pinned source modules are included for normal coordinator operation; no end-to-end coordinator run was performed.",
+      "id": "coordinator_runtime_vs_test_path"
+    },
+    {
+      "detail": "The v8 manifest metadata records RELEASED/PASS and points to v7 plus v5 dataset seals/oracles/episodes. Required v7 and v5 data are in the candidate, but neither v8 release validation nor dataset seal validation was rerun.",
+      "id": "release_and_seal_validation"
+    },
+    {
+      "detail": "Retired/uncertified agent/full-spec reference outputs and v6 origin/capture records are included only because tests consume them. Their presence does not qualify them as current proof.",
+      "id": "historical_reference_fixture_qualification"
+    },
+    {
+      "detail": "No fresh-directory overlay, import-provenance check, dependency installation, focused test run, source-health gate, or new proof artifact exists from this task.",
+      "id": "portability_proof_not_run"
+    }
+  ],
+  "optional_or_excluded_paths": [
+    {
+      "path": "reports/v5/conformance/shared_inputs/v3-cursor-literal/",
+      "status": "pending review; no direct test read; excluded"
+    },
+    {
+      "path": "reports/v5/conformance/inputs/v8/manifest.pending-review.json",
+      "status": "pending-review sidecar; excluded from released 13-file package"
+    },
+    {
+      "path": "reports/v5/SPEC-v5-clarifications-proposed.md",
+      "status": "unapproved proposal; separately reviewable; excluded"
+    },
+    {
+      "path": "reports/v5/SPEC-v5-first-stage-clarification-proposed.md",
+      "status": "unapproved proposal; separately reviewable; excluded"
+    },
+    {
+      "path": "reports/v5/dataset_snapshots/",
+      "status": "not direct test dependency; preserved and excluded"
+    },
+    {
+      "path": "reports/v5/conformance/input_history/",
+      "status": "not direct test dependency; preserved and excluded"
+    },
+    {
+      "path": "reports/v5/conformance/shared_results/ (all paths except 8 listed exact paths)",
+      "status": "not scanned or included; no blanket add"
+    },
+    {
+      "path": "reports/v41-skill-orch-v2/",
+      "status": "11 foreign untracked files untouched and excluded"
+    }
+  ],
+  "proof_state": {
+    "commit": "NOT_DONE",
+    "export": "NOT_RUN",
+    "hash_inventory": "current for all 172 candidate paths; coordinator/helper hashes match root-accepted values",
+    "protocol_source_pin_readback": "all eight expected current hashes match the coordinator constants",
+    "review_or_publication_claim": "NOT_MADE",
+    "root_reported_source_health_and_four_validators": "RELEASED (orchestrator-reported; not independently verified by this inventory task)",
+    "source_health_claim_by_inventory_worker": "NOT_MADE",
+    "staging": "NOT_DONE",
+    "static_path_analysis": "completed",
+    "tests": "NOT_RUN"
+  },
+  "proposed_candidate_groups": [
+    {
+      "bytes": 99499172,
+      "file_count": 146,
+      "id": "core_v5_source_test_dataset_and_historical_test_fixtures",
+      "paths": [
+        "datasets/v5_core/SEAL.json",
+        "datasets/v5_core/episodes.jsonl",
+        "datasets/v5_core/oracles.jsonl",
+        "datasets/v5_dev/SEAL.json",
+        "datasets/v5_dev/episodes.jsonl",
+        "datasets/v5_dev/oracles.jsonl",
+        "datasets/v5_full/SEAL.json",
+        "datasets/v5_full/episodes.jsonl",
+        "datasets/v5_full/oracles.jsonl",
+        "datasets/v5_lite/SEAL.json",
+        "datasets/v5_lite/episodes.jsonl",
+        "datasets/v5_lite/oracles.jsonl",
+        "pyproject.toml",
+        "reports/v5/conformance/inputs/spec-sections-1-4/SPEC-v5-sections-1-4.md",
+        "reports/v5/conformance/inputs/spec-sections-1-4/manifest.json",
+        "reports/v5/conformance/inputs/v4/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v4/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v4/v5_full/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v4/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v5/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v6/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v6/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_full/rendered-card.txt",
+        "reports/v5/conformance/inputs/v6/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v6/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/manifest.json",
+        "reports/v5/conformance/inputs/v7/v5_core/projection-receipt.json",
+        "reports/v5/conformance/inputs/v7/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_dev/projection-receipt.json",
+        "reports/v5/conformance/inputs/v7/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_full/projection-receipt.json",
+        "reports/v5/conformance/inputs/v7/v5_full/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_lite/projection-receipt.json",
+        "reports/v5/conformance/inputs/v7/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/native_audit/fresh-card-only-v2-origin-message-classification.json",
+        "reports/v5/conformance/native_audit/fresh-card-only-v2-ready-audit.json",
+        "reports/v5/conformance/native_audit/fresh-full-spec-v2-v6-suffix-audit.json",
+        "reports/v5/conformance/review/fresh-card-only-v2-v6-source-origin-adjudication-2026-11-12.json",
+        "reports/v5/conformance/review/fresh-full-spec-v2-v6-source-origin-ineligible-2026-11-12.json",
+        "reports/v5/conformance/shared_inputs/family_map.json",
+        "reports/v5/conformance/shared_inputs/v2/family_map.json",
+        "reports/v5/conformance/shared_inputs/v3/family_map.json",
+        "reports/v5/conformance/shared_inputs/v3/manifest.json",
+        "reports/v5/conformance/shared_inputs/v3/phase_checkpoint.json",
+        "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture-run-manifest.json",
+        "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/agent_view/fresh_card_only_v2/capture-manifest.json",
+        "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/full_spec/fresh_full_spec_v3/capture-manifest.json",
+        "reports/v5/conformance/v5_core/agent_view_reference.json",
+        "reports/v5/conformance/v5_dev/agent_view_reference.json",
+        "reports/v5/conformance/v5_dev/full_spec_reference.json",
+        "reports/v5/conformance/v5_full/agent_view_reference.json",
+        "reports/v5/conformance/v5_lite/agent_view_reference.json",
+        "src/identitybench/cli.py",
+        "src/identitybench/v5/cli.py",
+        "src/identitybench/v5/conformance_process.py",
+        "src/identitybench/v5/conformance_production.py",
+        "src/identitybench/v5/conformance_safety_domain.py",
+        "src/identitybench/v5/conformance_shared.py",
+        "src/identitybench/v5/family_couplings.py",
+        "src/identitybench/v5/generator.py",
+        "src/identitybench/v5/negative_proofs.py",
+        "src/identitybench/v5/oracle.py",
+        "src/identitybench/v5/policy_card.py",
+        "src/identitybench/v5/provider_accounting.py",
+        "src/identitybench/v5/report.py",
+        "src/identitybench/v5/runner.py",
+        "src/identitybench/v5/runtime.py",
+        "src/identitybench/v5/schemas.py",
+        "src/identitybench/v5/scoring.py",
+        "src/identitybench/v5/shortcut_proofs.py",
+        "src/identitybench/v5/validation.py",
+        "tests/conformance/v5/AMBIGUITIES.md",
+        "tests/conformance/v5/agent_view_reference.py",
+        "tests/conformance/v5/agent_view_requests.py",
+        "tests/conformance/v5/agent_view_reviews.py",
+        "tests/conformance/v5/agent_view_safety.py",
+        "tests/conformance/v5/bounded_full_spec_reference/AMBIGUITIES.md",
+        "tests/conformance/v5/bounded_full_spec_reference/__init__.py",
+        "tests/conformance/v5/bounded_full_spec_reference/common.py",
+        "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.jsonl",
+        "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.provenance.json",
+        "tests/conformance/v5/bounded_full_spec_reference/phase1.py",
+        "tests/conformance/v5/bounded_full_spec_reference/phase2.py",
+        "tests/conformance/v5/bounded_full_spec_reference/read_audit.json",
+        "tests/conformance/v5/bounded_full_spec_reference/read_audit_recovery.json",
+        "tests/conformance/v5/bounded_full_spec_reference/safety.py",
+        "tests/conformance/v5/bounded_full_spec_reference/submission.py",
+        "tests/conformance/v5/bounded_full_spec_reference/test_reference.py",
+        "tests/conformance/v5/bounded_full_spec_reference/trace.py",
+        "tests/conformance/v5/bounded_full_spec_reference/worker.py",
+        "tests/conformance/v5/fresh_card_only_v2/AMBIGUITIES.md",
+        "tests/conformance/v5/fresh_card_only_v2/fixtures/structural_wire_cases.jsonl",
+        "tests/conformance/v5/fresh_card_only_v2/fixtures/structural_wire_cases.provenance.json",
+        "tests/conformance/v5/fresh_card_only_v2/test_worker.py",
+        "tests/conformance/v5/fresh_card_only_v2/worker.py",
+        "tests/conformance/v5/fresh_full_spec_v2/AMBIGUITIES.md",
+        "tests/conformance/v5/fresh_full_spec_v2/__init__.py",
+        "tests/conformance/v5/fresh_full_spec_v2/apply.py",
+        "tests/conformance/v5/fresh_full_spec_v2/common.py",
+        "tests/conformance/v5/fresh_full_spec_v2/phase1.py",
+        "tests/conformance/v5/fresh_full_spec_v2/phase2.py",
+        "tests/conformance/v5/fresh_full_spec_v2/policy.py",
+        "tests/conformance/v5/fresh_full_spec_v2/submission.py",
+        "tests/conformance/v5/fresh_full_spec_v2/test_apply.py",
+        "tests/conformance/v5/fresh_full_spec_v2/test_derive_phase.py",
+        "tests/conformance/v5/fresh_full_spec_v2/test_submission.py",
+        "tests/conformance/v5/fresh_full_spec_v2/test_trace.py",
+        "tests/conformance/v5/fresh_full_spec_v2/trace.py",
+        "tests/conformance/v5/fresh_full_spec_v2/worker.py",
+        "tests/conformance/v5/shared_agent_view_worker.py",
+        "tests/conformance/v5/shared_full_spec_worker.py",
+        "tests/conformance/v5/test_agent_view_reference.py",
+        "tests/conformance/v5/test_conformance_v5.py",
+        "tests/conformance/v5/test_shared_agent_view_worker.py",
+        "tests/conformance/v5/test_shared_full_spec_worker.py",
+        "tests/v5/test_cli.py",
+        "tests/v5/test_conformance_process.py",
+        "tests/v5/test_conformance_production.py",
+        "tests/v5/test_conformance_safety_domain.py",
+        "tests/v5/test_conformance_shared.py",
+        "tests/v5/test_family_couplings.py",
+        "tests/v5/test_generator.py",
+        "tests/v5/test_negative_proofs.py",
+        "tests/v5/test_oracle.py",
+        "tests/v5/test_policy_card.py",
+        "tests/v5/test_prepare_safety_domain_corpus_v1.py",
+        "tests/v5/test_provider_accounting.py",
+        "tests/v5/test_report.py",
+        "tests/v5/test_runner.py",
+        "tests/v5/test_runtime.py",
+        "tests/v5/test_schemas.py",
+        "tests/v5/test_scoring.py",
+        "tests/v5/test_shortcut_proofs.py",
+        "tests/v5/test_validation.py"
+      ],
+      "role": "Refresh of the 136-path historical candidate, six accepted overlays, and four later source/test/audit additions."
+    },
+    {
+      "bytes": 16899663,
+      "file_count": 13,
+      "id": "released_v8_public_input_package",
+      "paths": [
+        "reports/v5/conformance/inputs/v8/manifest.json",
+        "reports/v5/conformance/inputs/v8/v5_core/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_dev/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_full/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_full/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_lite/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_lite/selected-episodes.jsonl"
+      ],
+      "role": "Complete 13-file v8 public-input release. Five files are read directly by the current fresh-card test; receipts and manifest bind the release."
+    },
+    {
+      "bytes": 145767,
+      "file_count": 1,
+      "id": "coordinator_helper",
+      "paths": [
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py"
+      ],
+      "role": "Helper imported directly by the new synthetic and fixed-source-inventory test."
+    },
+    {
+      "bytes": 52727408,
+      "file_count": 7,
+      "id": "fixed_v3_inventory_test_inputs",
+      "paths": [
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/corpus-snapshot-manifest-v1.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/family_map.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/manifest.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/phase_checkpoint.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/stimuli/phase_inputs.jsonl",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/stimuli/recipes.jsonl",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/stimuli/traces.jsonl"
+      ],
+      "role": "Seven exact source snapshot files read by _approved_v3_source_inventory in the new actual-inventory test."
+    },
+    {
+      "bytes": 56756,
+      "file_count": 5,
+      "id": "coordinator_protocol_pin_inputs",
+      "paths": [
+        "reports/v5/conformance/protocol/author-wire-contract-auxiliary-supplement.v1.md",
+        "reports/v5/conformance/protocol/author-wire-contract.v1.md",
+        "reports/v5/conformance/protocol/author-wire-structural-clarification.v2.md",
+        "reports/v5/conformance/protocol/safety-domain-contract.v1.md",
+        "reports/v5/conformance/protocol/source-origin-chain.v1.md"
+      ],
+      "role": "Five exact documents read by coordinator assert_protocol_pins during ordinary coordinator operation; pin hashes match the helper constants."
+    }
+  ],
+  "schema": "identitybench.v5.current-v8-packaging-dependency-manifest.v1",
+  "snapshot": {
+    "branch": "feat/v5-harness",
+    "captured_at_utc": "2026-11-13T07:41:02Z",
+    "inventory_path": "reports/v5/packaging/current-v8-20261113/inventory.json",
+    "proposed_candidate_bytes": 169328766,
+    "proposed_candidate_file_count": 172,
+    "repository_head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+    "root_reported_release_status": "Root reports source-health/four validators RELEASED with source/test/report fixtures frozen; this packaging worker did not rerun those checks.",
+    "scope": "Static path-dependency analysis only. No tests/export/staging; no benchmark execution."
+  },
+  "static_test_dependency_edges": [
+    {
+      "id": "sealed_v5_datasets",
+      "note": "All four suites require their SEAL.json, episodes.jsonl, and oracles.jsonl for the proposed source/test run.",
+      "paths": [
+        "datasets/v5_core/SEAL.json",
+        "datasets/v5_core/episodes.jsonl",
+        "datasets/v5_core/oracles.jsonl",
+        "datasets/v5_dev/SEAL.json",
+        "datasets/v5_dev/episodes.jsonl",
+        "datasets/v5_dev/oracles.jsonl",
+        "datasets/v5_full/SEAL.json",
+        "datasets/v5_full/episodes.jsonl",
+        "datasets/v5_full/oracles.jsonl",
+        "datasets/v5_lite/SEAL.json",
+        "datasets/v5_lite/episodes.jsonl",
+        "datasets/v5_lite/oracles.jsonl"
+      ],
+      "status": "included_data_inputs; seals not reverified in this packaging pass",
+      "tests": [
+        "tests/conformance/v5/test_conformance_v5.py",
+        "tests/conformance/v5/test_shared_full_spec_worker.py",
+        "tests/v5/*"
+      ]
+    },
+    {
+      "id": "historical_v4_packets_and_reference_outputs",
+      "paths": [
+        "reports/v5/conformance/inputs/v4/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v4/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v4/v5_full/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v4/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v4/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/v5_core/agent_view_reference.json",
+        "reports/v5/conformance/v5_dev/agent_view_reference.json",
+        "reports/v5/conformance/v5_dev/full_spec_reference.json",
+        "reports/v5/conformance/v5_full/agent_view_reference.json",
+        "reports/v5/conformance/v5_lite/agent_view_reference.json"
+      ],
+      "status": "historical/test fixtures only; reference outputs are retired or uncertified and are not current proof",
+      "tests": [
+        "tests/conformance/v5/test_agent_view_reference.py"
+      ]
+    },
+    {
+      "id": "historical_v5_dev_packet",
+      "paths": [
+        "reports/v5/conformance/inputs/v5/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt"
+      ],
+      "status": "historical public packet fixture; test input only",
+      "tests": [
+        "tests/conformance/v5/test_shared_agent_view_worker.py"
+      ]
+    },
+    {
+      "id": "historical_v6_packets",
+      "paths": [
+        "reports/v5/conformance/inputs/v6/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v6/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v6/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v6/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v6/v5_full/rendered-card.txt"
+      ],
+      "status": "historical packet/card fixtures; test inputs only",
+      "tests": [
+        "tests/conformance/v5/fresh_full_spec_v2/test_derive_phase.py",
+        "tests/conformance/v5/fresh_full_spec_v2/test_submission.py"
+      ]
+    },
+    {
+      "direct_test_reads": [
+        "reports/v5/conformance/inputs/v7/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_full/rendered-card.txt"
+      ],
+      "id": "historical_v7_public_packets",
+      "paths": [
+        "reports/v5/conformance/inputs/v7/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/v5_full/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v7/v5_full/rendered-card.txt",
+        "reports/v5/conformance/inputs/v7/manifest.json",
+        "reports/v5/conformance/inputs/v7/v5_dev/projection-receipt.json",
+        "reports/v5/conformance/inputs/v7/v5_lite/projection-receipt.json",
+        "reports/v5/conformance/inputs/v7/v5_core/projection-receipt.json",
+        "reports/v5/conformance/inputs/v7/v5_full/projection-receipt.json"
+      ],
+      "status": "v7 packet/card files are direct test reads; manifest and receipts are retained to keep the released public input package and read-audit provenance together",
+      "tests": [
+        "tests/conformance/v5/bounded_full_spec_reference/test_reference.py"
+      ]
+    },
+    {
+      "direct_test_reads": [
+        "reports/v5/conformance/inputs/v8/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_full/selected-episodes.jsonl"
+      ],
+      "id": "current_v8_released_public_input_package",
+      "paths": [
+        "reports/v5/conformance/inputs/v8/manifest.json",
+        "reports/v5/conformance/inputs/v8/v5_dev/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_dev/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_dev/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_lite/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_lite/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_lite/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_core/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_core/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_core/selected-episodes.jsonl",
+        "reports/v5/conformance/inputs/v8/v5_full/projection-receipt.json",
+        "reports/v5/conformance/inputs/v8/v5_full/rendered-card.txt",
+        "reports/v5/conformance/inputs/v8/v5_full/selected-episodes.jsonl"
+      ],
+      "status": "manifest metadata says RELEASED/PASS; no release revalidation in this pass; receipts/manifest accompany the public package but are not read by test_worker.py",
+      "tests": [
+        "tests/conformance/v5/fresh_card_only_v2/test_worker.py"
+      ]
+    },
+    {
+      "id": "conformance_shared_metadata",
+      "paths": [
+        "reports/v5/conformance/shared_inputs/family_map.json",
+        "reports/v5/conformance/shared_inputs/v2/family_map.json",
+        "reports/v5/conformance/shared_inputs/v3/family_map.json",
+        "reports/v5/conformance/shared_inputs/v3/manifest.json",
+        "reports/v5/conformance/shared_inputs/v3/phase_checkpoint.json"
+      ],
+      "status": "direct path/hash fixtures; not a full archived corpus closure",
+      "tests": [
+        "tests/v5/test_conformance_shared.py",
+        "tests/v5/test_validation.py"
+      ]
+    },
+    {
+      "id": "v6_origin_review_and_capture_manifest_fixtures",
+      "paths": [
+        "reports/v5/conformance/native_audit/fresh-card-only-v2-origin-message-classification.json",
+        "reports/v5/conformance/native_audit/fresh-card-only-v2-ready-audit.json",
+        "reports/v5/conformance/native_audit/fresh-full-spec-v2-v6-suffix-audit.json",
+        "reports/v5/conformance/review/fresh-card-only-v2-v6-source-origin-adjudication-2026-11-12.json",
+        "reports/v5/conformance/review/fresh-full-spec-v2-v6-source-origin-ineligible-2026-11-12.json",
+        "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture-run-manifest.json",
+        "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/agent_view/fresh_card_only_v2/capture-manifest.json",
+        "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/full_spec/fresh_full_spec_v3/capture-manifest.json"
+      ],
+      "status": "historical test-only qualification fixtures; not current proof",
+      "tests": [
+        "tests/v5/test_validation.py"
+      ]
+    },
+    {
+      "direct_test_reads": [
+        "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.jsonl",
+        "tests/conformance/v5/fresh_card_only_v2/fixtures/structural_wire_cases.jsonl",
+        "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.provenance.json"
+      ],
+      "id": "structural_wire_fixture_packages",
+      "paths": [
+        "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.jsonl",
+        "tests/conformance/v5/bounded_full_spec_reference/fixtures/structural_wire_cases.provenance.json",
+        "tests/conformance/v5/fresh_card_only_v2/fixtures/structural_wire_cases.jsonl",
+        "tests/conformance/v5/fresh_card_only_v2/fixtures/structural_wire_cases.provenance.json"
+      ],
+      "status": "JSONL fixtures are direct reads; companion provenance is retained where present, with the fresh-card provenance file not established as a direct read",
+      "tests": [
+        "tests/conformance/v5/bounded_full_spec_reference/test_reference.py",
+        "tests/conformance/v5/fresh_card_only_v2/test_worker.py"
+      ]
+    },
+    {
+      "id": "v3_actual_inventory_static_inputs",
+      "paths": [
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/corpus-snapshot-manifest-v1.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/family_map.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/manifest.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/phase_checkpoint.json",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/stimuli/phase_inputs.jsonl",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/stimuli/recipes.jsonl",
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/reports/v5/conformance/shared_inputs/v3-cursor-literal/stimuli/traces.jsonl"
+      ],
+      "status": "direct reads by _approved_v3_source_inventory; immutable snapshot fixture bytes, not a new qualification result",
+      "tests": [
+        "tests/v5/test_prepare_safety_domain_corpus_v1.py::test_fixed_v3_public_inventory_is_complete_and_identity_only"
+      ]
+    },
+    {
+      "id": "coordinator_helper_import",
+      "paths": [
+        "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py"
+      ],
+      "status": "directly loaded by importlib.util.spec_from_file_location",
+      "tests": [
+        "tests/v5/test_prepare_safety_domain_corpus_v1.py"
+      ]
+    },
+    {
+      "id": "coordinator_protocol_pins_for_non_test_operation",
+      "paths": [
+        "reports/v5/conformance/protocol/safety-domain-contract.v1.md",
+        "reports/v5/conformance/protocol/source-origin-chain.v1.md",
+        "reports/v5/conformance/protocol/author-wire-contract.v1.md",
+        "reports/v5/conformance/protocol/author-wire-contract-auxiliary-supplement.v1.md",
+        "reports/v5/conformance/protocol/author-wire-structural-clarification.v2.md",
+        "src/identitybench/v5/conformance_safety_domain.py",
+        "src/identitybench/v5/conformance_shared.py",
+        "src/identitybench/v5/conformance_process.py"
+      ],
+      "status": "five documents and three source hashes match constants in the coordinator; these are runtime operation pins, not reads made by the monkeypatched synthetic tests",
+      "tests": []
+    },
+    {
+      "id": "bounded_spec_audit_supporting_source",
+      "paths": [
+        "reports/v5/conformance/inputs/spec-sections-1-4/manifest.json",
+        "reports/v5/conformance/inputs/spec-sections-1-4/SPEC-v5-sections-1-4.md"
+      ],
+      "status": "retained to keep the included bounded read-audit source slice self-contained; not a direct pytest file read",
+      "tests": []
+    }
+  ],
+  "status": "PROPOSED_ONLY_HOLD"
+}

@@ -1,0 +1,12 @@
+{
+  "applied": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONPATH": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src:/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/tests",
+    "TMPDIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/tmp",
+    "UV_CACHE_DIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/uv-cache",
+    "UV_PROJECT_ENVIRONMENT": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv",
+    "UV_PYTHON_DOWNLOADS": "never"
+  },
+  "credential_handling": "credential-like variables were filtered by name; variable names/values are not recorded; no dotenv file was read"
+}

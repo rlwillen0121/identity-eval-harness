@@ -1256,6 +1256,25 @@ def _phase1_accounts(ctx: _PhaseContext, conn_results: Mapping[str, dict[str, An
         group_by_account = {
             aid: _group_fp(ctx, world.idp_accounts[aid])[0] for aid in active_accounts
         }
+        effective_allow_groups_by_id: dict[str, CapabilityFootprint] = {}
+        for group_aid in active_accounts:
+            group_acct = world.idp_accounts[group_aid]
+            group_deny = _group_fp(ctx, group_acct)[1]
+            for group_id in group_closure(group_acct, world.groups):
+                group = world.groups[group_id]
+                if group.effect != "ALLOW":
+                    continue
+                group_caps = set(group.capabilities)
+                for role_id in group.granted_role_ids:
+                    group_caps.update(world.roles[role_id].capabilities)
+                group_fp = (
+                    capability_footprint(ctx.catalog, group_caps, (group.scope_path,))
+                    - group_deny
+                )
+                if group_fp:
+                    effective_allow_groups_by_id[group_id] = (
+                        effective_allow_groups_by_id.get(group_id, frozenset()) | group_fp
+                    )
         group_fp = (
             frozenset().union(*group_by_account.values()) if group_by_account else frozenset()
         )
@@ -1285,22 +1304,8 @@ def _phase1_accounts(ctx: _PhaseContext, conn_results: Mapping[str, dict[str, An
                 plans[aid]["sod_pruned_grant_ids"].add(gid)
                 plans[aid].setdefault("sod_pruned_by_group_ids", {})[gid] = tuple(
                     group_id
-                    for group_id in group_closure(acct, world.groups)
-                    if world.groups[group_id].effect == "ALLOW"
-                    and sod_witnesses(
-                        fp,
-                        capability_footprint(
-                            ctx.catalog,
-                            set(world.groups[group_id].capabilities).union(
-                                *(
-                                    set(world.roles[role_id].capabilities)
-                                    for role_id in world.groups[group_id].granted_role_ids
-                                )
-                            ),
-                            (world.groups[group_id].scope_path,),
-                        ),
-                        ctx.sod_rules,
-                    )
+                    for group_id, group_fp in sorted(effective_allow_groups_by_id.items())
+                    if sod_witnesses(fp, group_fp, ctx.sod_rules)
                 )
         k_kept = set(group_fp)
         earlier_kept: list[tuple[str, str, CapabilityFootprint]] = []
@@ -1440,7 +1445,8 @@ def _phase1_accounts(ctx: _PhaseContext, conn_results: Mapping[str, dict[str, An
                                     f"CC-V5-01:{world.idp_accounts[cc.monitor_account_id].evidence_id}",
                                 )
                             )
-                # DENY groups can save a retained grant from raw group SoD.
+                # DENY groups can save a retained grant by masking a cell that
+                # would otherwise conflict with the grant's trace.
                 raw_fp = capability_footprint(
                     ctx.catalog,
                     world.roles[world.grants[gid].role_id].capabilities,
@@ -1448,18 +1454,20 @@ def _phase1_accounts(ctx: _PhaseContext, conn_results: Mapping[str, dict[str, An
                 )
                 raw_witnesses = sod_witnesses(raw_fp, before, ctx.sod_rules)
                 if raw_witnesses:
-                    group_deny = _group_fp(ctx, acct)[1]
                     for group_id in group_closure(acct, world.groups):
                         group = world.groups[group_id]
-                        if group.effect != "ALLOW":
+                        if group.effect != "DENY":
                             continue
                         group_caps = set(group.capabilities)
                         for role_id in group.granted_role_ids:
                             group_caps.update(world.roles[role_id].capabilities)
-                        group_fp = capability_footprint(
+                        denied_fp = capability_footprint(
                             ctx.catalog, group_caps, (group.scope_path,)
                         )
-                        if sod_witnesses(raw_fp, group_fp - group_deny, ctx.sod_rules):
+                        masked_witnesses = sod_witnesses(
+                            raw_fp & denied_fp, before, ctx.sod_rules
+                        )
+                        if raw_witnesses & masked_witnesses:
                             cites.append(f"SOD-V5-01:{group.evidence_id}")
             for cc in world.compensating_controls.values():
                 if cc.cc_id in live_controls:

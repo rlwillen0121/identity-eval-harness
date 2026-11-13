@@ -1,0 +1,760 @@
+{
+  "suites": {
+    "v5_dev": {
+      "source_episode_sha256": "0ce39ff37c5defecfca324a1e0d87b28aa6c4fb51754f2666a1ca6ed4bf4faec",
+      "seal_episode_binding": {
+        "episode_count": 12,
+        "episodes_sha256": "0ce39ff37c5defecfca324a1e0d87b28aa6c4fb51754f2666a1ca6ed4bf4faec"
+      },
+      "episodes": [
+        {
+          "episode_id": "v5_dev_ep_0c1bd072e1eede39e572",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_dev_ep_18c533d42f7cf5dbc399",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_dev_ep_3367a05bf62050971b48",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_dev_ep_625b3a01944c670ba676",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_dev_ep_62f0a3ed98cb91f33dad",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_dev_ep_647cac08078e7a51f44f",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_dev_ep_848f94b0de6db4b18bb6",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_dev_ep_af92c36b651ce0c8270c",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_dev_ep_c5a518f4feb5bb747f4d",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_dev_ep_d9b1c59fbd802c98fa97",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_dev_ep_d9da5ba7e65c1998e13b",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_dev_ep_fd885fb6b4b7ada9e16f",
+          "family_id": "F08"
+        }
+      ]
+    },
+    "v5_lite": {
+      "source_episode_sha256": "d35a1c164a1c3700ed180aa0d14dcb5a4c4aa7c93fa301284f0138e54f057974",
+      "seal_episode_binding": {
+        "episode_count": 24,
+        "episodes_sha256": "d35a1c164a1c3700ed180aa0d14dcb5a4c4aa7c93fa301284f0138e54f057974"
+      },
+      "episodes": [
+        {
+          "episode_id": "v5_lite_ep_07c5a24fc0848fd46f7b",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_lite_ep_0823a2433a87a1cefcc2",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_lite_ep_39f219d4f9d8f821a5dc",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_lite_ep_3b50721d72bc39dbf76a",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_lite_ep_40d704a6b57720b8a240",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_lite_ep_43ab5e0ae04fb60e3ea0",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_lite_ep_5010ad86fbcfed3b06ad",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_lite_ep_59cc6b4749723cad9add",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_lite_ep_6110c5fd06ca1725895a",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_lite_ep_61560e2d43fd333d8a18",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_lite_ep_6229f0574e58ed1b981f",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_lite_ep_6445782ca1a77741619e",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_lite_ep_86df4f1b392d861ef4fe",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_lite_ep_a2264b7144225043de66",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_lite_ep_a7db4ff7bb2395bb41b1",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_lite_ep_a8212b1d55357e2a9c4f",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_lite_ep_abe7971ead9a8cf1730e",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_lite_ep_d4f004513ca06674b0a6",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_lite_ep_d8a1f8b3b23baa10f7a3",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_lite_ep_e021c70d9399e8877e7f",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_lite_ep_f448e47000eb29b42473",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_lite_ep_f6b00b055074d4eb6b52",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_lite_ep_fc0981c3a4c040d319b6",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_lite_ep_fd70c61d914a82dcf4ae",
+          "family_id": "F12"
+        }
+      ]
+    },
+    "v5_core": {
+      "source_episode_sha256": "cc0eceaae31f1e80fc1a16460d2210d2ecf9c51758a5648c40a484f9583a0038",
+      "seal_episode_binding": {
+        "episode_count": 48,
+        "episodes_sha256": "cc0eceaae31f1e80fc1a16460d2210d2ecf9c51758a5648c40a484f9583a0038"
+      },
+      "episodes": [
+        {
+          "episode_id": "v5_core_ep_0174c9c9b135420d9f68",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_core_ep_08aec13a31a21147ea77",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_core_ep_109d16d46f54d28b75b1",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_core_ep_176ce5474d925d85500c",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_core_ep_22f93b7f87d7646016e8",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_core_ep_2b9d0a53caf521657497",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_core_ep_4938097e92503592ff0a",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_core_ep_4a0131768fadde7cda34",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_core_ep_4aad1f62908c0fe84b22",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_core_ep_4acd0b080cc8ce3bff14",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_core_ep_4f75c80a11dc58f4f324",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_core_ep_51885c7b0e40c057a250",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_core_ep_51fa1496c2e5ea57b3f1",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_core_ep_5705a2c78c495a781620",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_core_ep_58762babcd25265081f5",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_core_ep_5e4a25daa406bd83f1a7",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_core_ep_60812e2649d249267b68",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_core_ep_6698b87e251857f7ea55",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_core_ep_6d54ddb4420959cedb37",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_core_ep_72ba785875d6c8beddb7",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_core_ep_7a38ada8ec6c0b3fa91c",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_core_ep_817a2aac0304c78e1d49",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_core_ep_a29a979b6dd405fd070f",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_core_ep_a4038d6427d8e16c56df",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_core_ep_a9a2206b710b1f71d1b9",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_core_ep_a9fd85839008647f4d67",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_core_ep_ae2cb9201feafc833cc0",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_core_ep_afaaa5eac61e60a71acc",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_core_ep_b180898c85f6fffc92a6",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_core_ep_b181c98c2e21d6c9019b",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_core_ep_b60a4a7bb51842361f45",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_core_ep_c1ff93934566865356c1",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_core_ep_c8cc1ccf9f29a3be1690",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_core_ep_c9712215edad449fa1c3",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_core_ep_c9f6df0d3866e387cbe7",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_core_ep_ca4f2e72df816db223b6",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_core_ep_cf5569b3c605cfc225a3",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_core_ep_d946b7fb9d05180070c4",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_core_ep_daa0a86c1804370b9f03",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_core_ep_db7c5874fa60b0473467",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_core_ep_e288265c76117708e9e6",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_core_ep_eabe062895936f6e6bfc",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_core_ep_ec80b98795dd9f14201c",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_core_ep_f749e7276564b3bef14b",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_core_ep_f8870f63a9e4712a2108",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_core_ep_fb214f07156a52b63f33",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_core_ep_fcaa9c4ce71e20cc9597",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_core_ep_fe28bc02c9d7d94eeed9",
+          "family_id": "F02"
+        }
+      ]
+    },
+    "v5_full": {
+      "source_episode_sha256": "9ebfd92ccb1ca3a37f9184962d3e5de434d27082810f9598775ebdb068476464",
+      "seal_episode_binding": {
+        "episode_count": 96,
+        "episodes_sha256": "9ebfd92ccb1ca3a37f9184962d3e5de434d27082810f9598775ebdb068476464"
+      },
+      "episodes": [
+        {
+          "episode_id": "v5_full_ep_00c09b3afb8aa0971376",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_02ae8d868f925aea8fdf",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_040e17ebf2464afce396",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_056a20cd573825342581",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_05ddcdb0f919e7e3df13",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_0d4a3d108b33149b3c1f",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_0de21eef31f0fe250d58",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_13010a8ae40716f200b9",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_15f87df86d0f4f6eebcf",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_17700ea7d40e1d8b0885",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_17d16fb093bc0c99a319",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_19a3a4a13ae3abbcc812",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_1a3c7b64417834f06cf3",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_1b28f964740ad5b90b1f",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_1c46571041513347c61c",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_20837bd2992f6063b582",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_full_ep_22d4e746589dce649b86",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_2343e09e2abcb97cbcfd",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_2687fce23dfdc0de44da",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_29242cee874811aa2ecb",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_2b712143de7e4ebff9b3",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_2c522f9646e7f9e850d9",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_30e930cc35dc1b1284ca",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_34db951eea54f6c7c5b3",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_3777cd9525e15de53407",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_3d081c8c4d1ceb0ee4cc",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_full_ep_3e0b57e304eacfe2b5ae",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_41e300afd38657c8aada",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_42e81d182e9dfa009a3a",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_48ca55c2748be61dfdae",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_4c6792c331195c19484c",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_4dd3de7db300eac73acb",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_full_ep_50a5e94c52bf14d52ae8",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_57a3119ffa58c4b2a868",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_59fbc96a316b900a2f28",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_5e75f83f4655bb824673",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_full_ep_60f2369feaa714c2f4d1",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_638361e2697f1d4b548a",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_65360e339d1c0cf88954",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_6627407fc38313b4d0c8",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_67aba31fec5030eb6781",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_6ce9e57835f68249ae9f",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_70e59b94590006406248",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_71c9b37806000fc29442",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_73a2158d5aee302e3c33",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_73dc88845280043689ab",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_7a1e6c4720aa9a4491d3",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_7b0fda972be3f8111ceb",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_7c1f1cad8326203c30ff",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_8281963f8597f04d4876",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_876165703d2b9a9f2b05",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_8833138be20971116916",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_90c60b3b343c50e7c261",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_90f290e87af6cf693db6",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_914176a71345a7f1c6df",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_91cbf916f3ba5f3a7d74",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_9622a3b343ac8f752e01",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_985695852c49fa2ea902",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_9960c5ad855f40f49cc6",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_9abd3689e94cdf083bcc",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_9bd404b289dcf305c58b",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_full_ep_9ff960bcc0b1945ebad9",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_a15e9d9da5b1ded79ae7",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_a20e287944df088926e0",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_a2fb637a40859f5ce5e1",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_a5b24341cf940455cb2e",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_a5d4f118bea0725de304",
+          "family_id": "F07"
+        },
+        {
+          "episode_id": "v5_full_ep_a5f0a8da947a46cf66ab",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_aa73bc898106b83436c3",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_b1391d9ff16c6530d3d9",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_b3678e388058b86b469c",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_b77892d9666511598d4d",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_b99545d536c5ef45e0b3",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_ba7bba801c216b000ffd",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_c28c45ddab3be266428a",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_c3830ba472ab133b5324",
+          "family_id": "F12"
+        },
+        {
+          "episode_id": "v5_full_ep_c4e06792a6ea932691c8",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_c7a305c6c80b602d414b",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_cccd3566e5a1d129ee28",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_cce02dc8daaf2930f4b4",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_d13e379d33a407fdbca6",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_d1e6d44efa8c71eb0690",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_d45529c43ec7b242f4a2",
+          "family_id": "F10"
+        },
+        {
+          "episode_id": "v5_full_ep_d8668d22c07de4b9c295",
+          "family_id": "F09"
+        },
+        {
+          "episode_id": "v5_full_ep_e04d7389b2a721551696",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_full_ep_e1091bead76f5b02013f",
+          "family_id": "F04"
+        },
+        {
+          "episode_id": "v5_full_ep_e1403881671e2dad30ec",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_e1ebd44e46f044c30c77",
+          "family_id": "F11"
+        },
+        {
+          "episode_id": "v5_full_ep_e92784041bff12b01e98",
+          "family_id": "F05"
+        },
+        {
+          "episode_id": "v5_full_ep_e94cd6d68116a9dd4f73",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_f61e4eef90f61955249c",
+          "family_id": "F03"
+        },
+        {
+          "episode_id": "v5_full_ep_fae3f447ce42bdaba377",
+          "family_id": "F08"
+        },
+        {
+          "episode_id": "v5_full_ep_faece70fbca02904a7e4",
+          "family_id": "F06"
+        },
+        {
+          "episode_id": "v5_full_ep_fdb44ba79a66f0ce6f76",
+          "family_id": "F01"
+        },
+        {
+          "episode_id": "v5_full_ep_fdde22be5a61f1c8a0d0",
+          "family_id": "F02"
+        },
+        {
+          "episode_id": "v5_full_ep_fef283b4d7513cb8210d",
+          "family_id": "F11"
+        }
+      ]
+    }
+  }
+}

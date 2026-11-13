@@ -1,0 +1,19 @@
+import json, os, sys
+from pathlib import Path
+owner=Path("/Users/ryanwillen/orca/projects/identity-eval-harness").resolve()
+root=Path(os.environ["EXPORT_ROOT"]).resolve()
+def under_owner(raw):
+    try: Path(raw or os.getcwd()).resolve().relative_to(owner); return True
+    except (OSError, ValueError): return False
+sys.path[:]=[p for p in sys.path if not under_owner(p)]
+sys.path[:0]=[str(root/"src"),str(root/"tests")]
+import identitybench
+import identitybench.v5.validation as validation
+import identitybench.v5.conformance_process as process
+import identitybench.v5.conformance_safety_domain as safety_domain
+import identitybench.v5.report as report
+modules={m.__name__:str(Path(m.__file__).resolve()) for m in (identitybench,validation,process,safety_domain,report)}
+for name,path in modules.items(): Path(path).relative_to(root)
+owner_on_sys_path=any(under_owner(p) for p in sys.path)
+if owner_on_sys_path: raise SystemExit("owner checkout remains on sys.path")
+print(json.dumps({"export_root":str(root),"owner_checkout_present_on_sys_path":owner_on_sys_path,"modules":modules,"sys_path":[str(Path(p or os.getcwd()).resolve()) for p in sys.path]},sort_keys=True))

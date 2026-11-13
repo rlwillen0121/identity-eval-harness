@@ -225,6 +225,9 @@ def _id_pattern(prefix: str) -> re.Pattern[str]:
     return re.compile(rf"^{re.escape(prefix)}[a-z0-9_]+$")
 
 
+_CUSTODIAN_GRANT_ID_RE = re.compile(r"^cust__camp_[a-z0-9_]+__acct_[a-z0-9_]+$")
+
+
 _ID_PATTERNS_BY_FIELD: dict[str, tuple[re.Pattern[str], ...]] = {
     "person_id": (_id_pattern("pers_"),),
     "manager_person_id": (_id_pattern("pers_"),),
@@ -363,6 +366,7 @@ _ID_PATTERNS_BY_FIELD: dict[str, tuple[re.Pattern[str], ...]] = {
 }
 
 _ID_PATTERNS_BY_MODEL_FIELD: dict[tuple[str, str], tuple[re.Pattern[str], ...]] = {
+    ("GrantV5", "grant_id"): (_id_pattern("grant_"), _CUSTODIAN_GRANT_ID_RE),
     ("JITRequestV5", "request_id"): (_id_pattern("req_"),),
     ("AgentDelegationRequestV5", "request_id"): (_id_pattern("dlreq_"),),
     ("AgentDelegationRequestV5", "target_entity_id"): (_id_pattern("dlreq_"),),
@@ -390,7 +394,7 @@ _TUPLE_ID_POSITIONS_BY_MODEL_FIELD: dict[
     ),
     ("TerminalWorldStateV5", "terminal_standing_grants_by_account"): (
         (0, (_id_pattern("acct_"),)),
-        (1, (_id_pattern("grant_"), re.compile(r"^cust__[a-z0-9_]+$"))),
+        (1, (_id_pattern("grant_"), _CUSTODIAN_GRANT_ID_RE)),
     ),
     ("TerminalWorldStateV5", "terminal_eligible_grants_by_account"): (
         (0, (_id_pattern("acct_"),)),

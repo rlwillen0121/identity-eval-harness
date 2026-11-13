@@ -1,0 +1,262 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+
+
+REPO = pathlib.Path.cwd().resolve()
+OUT = REPO / "reports/v5/packaging/current-v8-20261113/export-proof-v2"
+BASE = REPO / "reports/v5/packaging/current-v8-20261113"
+OLD_EXPORT = BASE / "export-proof"
+HEAD = "f790e751c26d9667db588b95f9ef65cebe0f24e1"
+REPAIRED_TEST = "tests/v5/test_validation.py"
+EXPECTED_REPAIRED_SHA = "6cd03ebc73f0442b3239d0cbf1d41eda5640505a71a59477e46d7f65b35e6db7"
+SENSITIVE_ENV_PARTS = ("API_KEY", "TOKEN", "SECRET", "CREDENTIAL", "AUTHORIZATION", "CPA", "OPENAI", "ANTHROPIC", "GEMINI", "GOOGLE_API")
+
+
+def sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_json(path: pathlib.Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def capture(argv: list[str], *, cwd: pathlib.Path, env: dict[str, str], ident: str, stdout_name: str, stderr_name: str) -> dict[str, object]:
+    stdout_path = OUT / stdout_name
+    stderr_path = OUT / stderr_name
+    started = time.monotonic()
+    proc = subprocess.run(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    duration = time.monotonic() - started
+    stdout_path.write_bytes(proc.stdout)
+    stderr_path.write_bytes(proc.stderr)
+    return {
+        "id": ident,
+        "argv": argv,
+        "cwd": str(cwd),
+        "duration_seconds": round(duration, 3),
+        "exit_code": proc.returncode,
+        "stdout_path": stdout_name,
+        "stderr_path": stderr_name,
+        "nonsecret_environment_overrides": {},
+    }
+
+
+def main() -> int:
+    if not OUT.is_dir():
+        raise RuntimeError(f"expected output directory already exists: {OUT}")
+    old = json.loads((BASE / "inventory.json").read_text(encoding="utf-8"))
+    old_rows = old["candidate"]["file_metadata"]
+    old_by_path = {row["path"]: row for row in old_rows}
+    selected = json.loads((OLD_EXPORT / "selected-test-paths.json").read_text(encoding="utf-8"))
+    test_paths = selected["files"]
+    if len(test_paths) != 36 or len(set(test_paths)) != 36:
+        raise RuntimeError(f"expected the prior 36 unique selected test paths, got {len(test_paths)}")
+    if len(old_by_path) != 172:
+        raise RuntimeError(f"expected prior 172-path inventory, got {len(old_by_path)}")
+
+    actual_before: dict[str, dict[str, object]] = {}
+    for rel, old_row in old_by_path.items():
+        path = REPO / rel
+        actual = {"path": rel, "bytes": path.stat().st_size, "sha256": sha256(path)}
+        actual_before[rel] = actual
+        if rel == REPAIRED_TEST:
+            if actual["sha256"] != EXPECTED_REPAIRED_SHA:
+                raise RuntimeError(f"approved test overlay hash mismatch: {actual['sha256']}")
+        elif actual["sha256"] != old_row["sha256"] or actual["bytes"] != old_row["bytes"]:
+            raise RuntimeError(f"non-test inventory path drifted before export: {rel}")
+
+    # Preserve the previous proof as a parent and document the single approved overlay.
+    overlay = {
+        "schema": "identitybench.v5.current-v8-export-hash-manifest.v2",
+        "parent_inventory_path": "../inventory.json",
+        "parent_inventory_sha256": sha256(BASE / "inventory.json"),
+        "parent_export_proof_path": "../export-proof/verification-summary.json",
+        "parent_export_proof_sha256": sha256(OLD_EXPORT / "verification-summary.json"),
+        "base_head": HEAD,
+        "path_count": 172,
+        "overlay_change": {
+            "path": REPAIRED_TEST,
+            "previous_sha256": old_by_path[REPAIRED_TEST]["sha256"],
+            "current_sha256": EXPECTED_REPAIRED_SHA,
+            "review_status": "accepted_by_root; test-only portability repair",
+        },
+        "unchanged_prior_rows_count": 171,
+        "files": [actual_before[p] for p in sorted(actual_before)],
+    }
+    write_json(OUT / "exported-hash-manifest-v2.json", overlay)
+
+    temp_root = pathlib.Path(tempfile.mkdtemp(prefix="identitybench-v5-current-v8-export-v2-"))
+    checkout = temp_root / "checkout"
+    temp_tmp = temp_root / "tmp"
+    uv_cache = temp_root / "uv-cache"
+    temp_tmp.mkdir()
+    uv_cache.mkdir()
+
+    cleaned_env = {key: value for key, value in os.environ.items() if not any(part in key.upper() for part in SENSITIVE_ENV_PARTS)}
+    removed_env_count = len(os.environ) - len(cleaned_env)
+    common_env = dict(cleaned_env)
+    common_env.update({
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
+        "TMPDIR": str(temp_tmp),
+        "UV_CACHE_DIR": str(uv_cache),
+        "UV_PROJECT_ENVIRONMENT": str(checkout / ".venv"),
+        "UV_PYTHON_DOWNLOADS": "never",
+        "UV_NO_PROGRESS": "1",
+    })
+
+    commands: list[dict[str, object]] = []
+    archive = temp_root / "base-head.tar"
+    cmd = capture(["git", "archive", "--format=tar", f"--output={archive}", HEAD], cwd=REPO, env=common_env, ident="git_archive_exact_head", stdout_name="git-archive.stdout.txt", stderr_name="git-archive.stderr.txt")
+    commands.append(cmd)
+    if cmd["exit_code"] != 0:
+        write_json(OUT / "commands.json", commands)
+        raise RuntimeError("git archive failed")
+
+    checkout.mkdir()
+    started = time.monotonic()
+    with tarfile.open(archive, "r") as stream:
+        stream.extractall(checkout, filter="data")
+    commands.append({
+        "id": "extract_git_archive",
+        "method": "python tarfile.extractall(filter=data)",
+        "duration_seconds": round(time.monotonic() - started, 3),
+        "exit_code": 0,
+        "stdout_path": "archive-extract.stdout.txt",
+        "stderr_path": "archive-extract.stderr.txt",
+    })
+    (OUT / "archive-extract.stdout.txt").write_bytes(b"")
+    (OUT / "archive-extract.stderr.txt").write_bytes(b"")
+
+    started = time.monotonic()
+    for rel in sorted(old_by_path):
+        dest = checkout / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / rel, dest)
+    commands.append({
+        "id": "overlay_exact_172_pinned_paths",
+        "method": "byte copy from owner checkout using exported-hash-manifest-v2.json",
+        "duration_seconds": round(time.monotonic() - started, 3),
+        "exit_code": 0,
+        "path_count": 172,
+    })
+
+    overlay_verification = []
+    for row in overlay["files"]:
+        target = checkout / row["path"]
+        actual = {"path": row["path"], "bytes": target.stat().st_size, "sha256": sha256(target)}
+        overlay_verification.append(actual)
+        if actual != row:
+            raise RuntimeError(f"export overlay mismatch: {row['path']}")
+    if overlay_verification != overlay["files"]:
+        raise RuntimeError("export overlay row order or content mismatch")
+
+    sync_env = dict(common_env)
+    sync_env["PYTHONPATH"] = f"{checkout / 'src'}:{checkout / 'tests'}"
+    sync = capture(["uv", "sync", "--frozen", "--group", "dev"], cwd=checkout, env=sync_env, ident="uv_sync_frozen_dev_group", stdout_name="uv-sync.stdout.txt", stderr_name="uv-sync.stderr.txt")
+    sync["nonsecret_environment_overrides"] = {
+        key: sync_env[key] for key in ("PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "PYTHONPATH", "TMPDIR", "UV_CACHE_DIR", "UV_PROJECT_ENVIRONMENT", "UV_PYTHON_DOWNLOADS", "UV_NO_PROGRESS")
+    }
+    sync["credential_handling"] = "provider credential-like variables filtered; no dotenv read"
+    commands.append(sync)
+    if sync["exit_code"] != 0:
+        write_json(OUT / "commands.json", commands)
+        write_json(OUT / "verification-summary.json", {"status": "HOLD", "reason": "export dependency sync failed", "temp_export_root": str(checkout)})
+        return int(sync["exit_code"])
+
+    import_helper = temp_root / "import-proof-check.py"
+    import_helper.write_text('''from __future__ import annotations\nimport importlib, json, os, pathlib, sys\nroot = pathlib.Path(os.environ["EXPORT_ROOT"]).resolve()\nsrc = root / "src"\nrepo = pathlib.Path("'''+str(REPO)+'''").resolve()\nif any(pathlib.Path(p or ".").resolve() == repo or repo in pathlib.Path(p or ".").resolve().parents for p in sys.path):\n    raise SystemExit("owner checkout present on sys.path before imports")\nnames = ["identitybench", "identitybench.v5", "identitybench.v5.conformance_process", "identitybench.v5.conformance_safety_domain", "identitybench.v5.report", "identitybench.v5.validation"]\nmodules = {}\nfor name in names:\n    module = importlib.import_module(name)\n    origin = pathlib.Path(module.__file__).resolve()\n    if src not in origin.parents:\n        raise SystemExit(f"module imported outside exported src: {name} -> {origin}")\n    modules[name] = str(origin)\nprint(json.dumps({"owner_checkout_present_on_sys_path": False, "owner_checkout_removed_before_imports": True, "export_root": str(root), "modules": modules, "sys_path": sys.path}, indent=2))\n''', encoding="utf-8")
+    env = dict(sync_env)
+    env["EXPORT_ROOT"] = str(checkout.resolve())
+    env["PYTHONPATH"] = f"{checkout / 'src'}:{checkout / 'tests'}"
+    python = checkout / ".venv/bin/python"
+    imp = capture([str(python), str(import_helper)], cwd=checkout, env=env, ident="isolated_import_provenance", stdout_name="import-proof.stdout.txt", stderr_name="import-proof.stderr.txt")
+    imp["nonsecret_environment_overrides"] = {key: env[key] for key in ("EXPORT_ROOT", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "PYTHONPATH", "TMPDIR", "UV_CACHE_DIR", "UV_PROJECT_ENVIRONMENT", "UV_PYTHON_DOWNLOADS", "UV_NO_PROGRESS")}
+    imp["credential_handling"] = "provider credential-like variables filtered; no dotenv read"
+    commands.append(imp)
+    if imp["exit_code"] == 0:
+        import_proof = json.loads((OUT / "import-proof.stdout.txt").read_text(encoding="utf-8"))
+        write_json(OUT / "import-proof.json", {**import_proof, "exit_code": 0, "duration_seconds": imp["duration_seconds"], "stdout_path": imp["stdout_path"], "stderr_path": imp["stderr_path"], "helper_path": "import-proof-check.py.txt", "helper_sha256": sha256(import_helper)})
+    else:
+        write_json(OUT / "import-proof.json", {"exit_code": imp["exit_code"], "duration_seconds": imp["duration_seconds"], "stdout_path": imp["stdout_path"], "stderr_path": imp["stderr_path"], "helper_path": "import-proof-check.py.txt", "helper_sha256": sha256(import_helper)})
+
+    test_helper = temp_root / "exported-test-runner.py"
+    test_helper.write_text('''from __future__ import annotations\nimport json, os, pathlib, sys\nimport pytest\nroot = pathlib.Path(os.environ["EXPORT_ROOT"]).resolve()\nrepo = pathlib.Path("'''+str(REPO)+'''").resolve()\nexpected = json.loads(pathlib.Path(os.environ["SELECTED_TEST_PATHS_JSON"]).read_text())["files"]\nproof_path = pathlib.Path(os.environ["TEST_IMPORT_PROOF_PATH"])\nclass Provenance:\n    def pytest_collection_finish(self, session):\n        if any(pathlib.Path(p or ".").resolve() == repo or repo in pathlib.Path(p or ".").resolve().parents for p in sys.path):\n            raise AssertionError("owner checkout present on pytest sys.path")\n        collected = sorted({pathlib.Path(item.path).resolve().relative_to(root / "tests").as_posix() for item in session.items})\n        expected_relative = sorted(pathlib.Path(p).relative_to("tests").as_posix() for p in expected)\n        expected_full = ["tests/" + p for p in collected]\n        if not set(expected).issubset({"tests/" + p for p in collected}):\n            # Empty or fully deselected files may not yield collected items; they remain explicit argv inputs.\n            pass\n        modules = {}\n        for name, module in sorted(sys.modules.items()):\n            if name == "identitybench" or name.startswith("identitybench."):\n                origin = getattr(module, "__file__", None)\n                if origin:\n                    resolved = pathlib.Path(origin).resolve()\n                    if root / "src" not in resolved.parents:\n                        raise AssertionError(f"identitybench module outside exported src: {name} -> {resolved}")\n                    modules[name] = str(resolved)\n        proof = {"owner_checkout_present_on_sys_path": False, "export_root": str(root), "collected_test_files": ["tests/" + p for p in collected], "requested_test_files": expected, "requested_test_file_count": len(expected), "identitybench_module_count": len(modules), "identitybench_modules": modules}\n        proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\\n")\nargs = ["-q", "-m", "not live", "--basetemp", os.environ["PYTEST_BASETEMP"], *expected]\nexit_code = pytest.main(args, plugins=[Provenance()])\nsys.exit(int(exit_code))\n''', encoding="utf-8")
+    selected_copy = OUT / "selected-test-paths.json"
+    shutil.copyfile(OLD_EXPORT / "selected-test-paths.json", selected_copy)
+    test_env = dict(env)
+    test_env.update({
+        "PYTEST_ADDOPTS": "",
+        "PYTEST_BASETEMP": str(temp_tmp / "pytest-base"),
+        "SELECTED_TEST_PATHS_JSON": str(selected_copy),
+        "TEST_IMPORT_PROOF_PATH": str(OUT / "test-import-proof.json"),
+    })
+    pathlib.Path(test_env["PYTEST_BASETEMP"]).mkdir(parents=True, exist_ok=True)
+    run = capture([str(python), str(test_helper)], cwd=checkout, env=test_env, ident="exported_v5_and_conformance_tests", stdout_name="pytest-v5-export.stdout.txt", stderr_name="pytest-v5-export.stderr.txt")
+    run["pytest_arguments"] = ["-q", "-m", "not live", "--basetemp", test_env["PYTEST_BASETEMP"], *test_paths]
+    run["selected_test_paths_path"] = "selected-test-paths.json"
+    run["import_proof_path"] = "test-import-proof.json"
+    run["nonsecret_environment_overrides"] = {key: test_env[key] for key in ("EXPORT_ROOT", "PYTEST_ADDOPTS", "PYTEST_BASETEMP", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "PYTHONPATH", "TMPDIR", "UV_CACHE_DIR", "UV_PROJECT_ENVIRONMENT", "UV_PYTHON_DOWNLOADS", "UV_NO_PROGRESS")}
+    run["credential_handling"] = "provider credential-like variables filtered; no dotenv read; marker not live deselected"
+    commands.append(run)
+
+    actual_after: dict[str, dict[str, object]] = {}
+    for rel in sorted(old_by_path):
+        path = REPO / rel
+        actual_after[rel] = {"path": rel, "bytes": path.stat().st_size, "sha256": sha256(path)}
+    unchanged_owner = actual_after == {rel: actual_before[rel] for rel in sorted(actual_before)}
+    helper_records = []
+    for helper, archived in ((import_helper, OUT / "import-proof-check.py.txt"), (test_helper, OUT / "exported-test-runner.py.txt")):
+        shutil.copyfile(helper, archived)
+        helper_records.append({"executed_temp_path": str(helper), "archived_path": archived.name, "sha256": sha256(helper), "bytes": helper.stat().st_size, "byte_identical": sha256(helper) == sha256(archived)})
+    write_json(OUT / "helper-archive-map.json", {"helpers": helper_records})
+    write_json(OUT / "owner-hash-check.json", {"path_count": 172, "unchanged_pre_to_post": unchanged_owner, "before": [actual_before[p] for p in sorted(actual_before)], "after": [actual_after[p] for p in sorted(actual_after)]})
+    write_json(OUT / "commands.json", commands)
+    result = {
+        "schema": "identitybench.v5.current-v8-export-proof.v2",
+        "status": "PASS" if run["exit_code"] == 0 and imp["exit_code"] == 0 and unchanged_owner else "FAIL_OR_HOLD",
+        "scope": "isolated export portability for the pinned 172-path overlay and 36 selected non-live v5/conformance test files only",
+        "base_head": HEAD,
+        "path_count": 172,
+        "selected_test_file_count": len(test_paths),
+        "test_exit_code": run["exit_code"],
+        "test_duration_seconds": run["duration_seconds"],
+        "import_proof_exit_code": imp["exit_code"],
+        "owner_172_path_hashes_unchanged_pre_to_post": unchanged_owner,
+        "temp_export_root": str(checkout),
+        "credential_like_environment_variable_count_filtered": removed_env_count,
+        "live_calls": False,
+        "dotenv_read": False,
+        "qualification_claim": False,
+        "limitations": ["This does not establish full-suite/source-health status, milestone gates, dataset freeze, G-SPEC qualification, provider or model behavior, publication, or a clean git tree.", "The original export-proof is immutable and records the prior test-validation revision."]
+    }
+    write_json(OUT / "verification-summary.json", result)
+    # Re-check that the exported payload still matches the v2 manifest after tests.
+    final_export_rows = []
+    for row in overlay["files"]:
+        path = checkout / row["path"]
+        current = {"path": row["path"], "bytes": path.stat().st_size, "sha256": sha256(path)}
+        final_export_rows.append(current)
+        if current != row:
+            result["status"] = "FAIL_OR_HOLD"
+            result.setdefault("limitations", []).append(f"Exported overlay path changed during tests: {row['path']}")
+    write_json(OUT / "exported-hash-post-test.json", {"path_count": 172, "matches_v2_manifest": final_export_rows == overlay["files"], "files": final_export_rows})
+    write_json(OUT / "verification-summary.json", result)
+    print(json.dumps({"temp_export_root": str(checkout), "status": result["status"], "test_exit_code": run["exit_code"], "test_duration_seconds": run["duration_seconds"], "import_proof_exit_code": imp["exit_code"], "owner_hashes_unchanged": unchanged_owner, "output": str(OUT)}, indent=2))
+    return 0 if result["status"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

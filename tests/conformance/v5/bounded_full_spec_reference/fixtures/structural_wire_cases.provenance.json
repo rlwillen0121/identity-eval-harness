@@ -1,0 +1,19 @@
+{
+  "source_path": "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/public-inputs.jsonl",
+  "source_sha256": "d192afde952bb68ec915b61cc8df2853c04956878ab53a82fe07838fb320b6a1",
+  "ordered_case_ids": [
+    "rc_000084",
+    "tr_001284"
+  ],
+  "canonical_input_sha256": [
+    {
+      "case_id": "rc_000084",
+      "sha256": "56e5aea8289845a7812a0899463c501e7bdf4044502873f0c0ce4c3ded9ea844"
+    },
+    {
+      "case_id": "tr_001284",
+      "sha256": "08302aff35009f4d31244e5f6079004a87442abad8ad0b21b9f8ecf9990bea09"
+    }
+  ],
+  "fixture_sha256": "b54d30ea4224c9a25ec877cd3b62007a9c1c614d639986429f5969b0f5db3c28"
+}

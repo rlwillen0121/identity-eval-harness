@@ -1,0 +1,51 @@
+{
+  "argv": [
+    "uv",
+    "run",
+    "--no-env-file",
+    "pytest",
+    "-q",
+    "-m",
+    "not live"
+  ],
+  "changed_paths_by_category": {
+    "dataset_hashes": [],
+    "foreign_v41_report_hashes": [],
+    "report_fixture_and_coordinator_hashes": [],
+    "source_test_spec_governance_hashes": []
+  },
+  "dataset_changed_count": 0,
+  "elapsed_monotonic_ns": 728827302083,
+  "elapsed_seconds": 728.827302083,
+  "exact_command": "uv run --no-env-file pytest -q -m not live",
+  "exit_code": 0,
+  "finished_utc": "2026-11-13T07:51:57.815648+00:00",
+  "foreign_v41_report_changed_count": 0,
+  "git_dirty_after": true,
+  "git_dirty_before": true,
+  "id": "03-pytest",
+  "post_snapshot_path": "snapshots/03-pytest-after.json",
+  "pre_snapshot_path": "snapshots/03-pytest-before.json",
+  "preflight_expected_hash_matches": {
+    "SPEC-v5.md": true,
+    "frozen_input_manifest_unchanged": true,
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py": true,
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/corpus-snapshot-manifest-v1.json": true,
+    "tests/v5/test_prepare_safety_domain_corpus_v1.py": true
+  },
+  "preflight_hashes": {
+    "SPEC-v5.md": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py": "5b40d2306b7433892eb57f936e881c25124cdda56865896822a1ad79d80eb27c",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/corpus-snapshot-manifest-v1.json": "4cc6bb44a09bf5517599303962c3088ed11c78c4632f35646b34983da83130c8",
+    "tests/v5/test_prepare_safety_domain_corpus_v1.py": "f09e2d98ebd25802e68dbf6f00ce13b80769b14d4158f914fa159a59f7791998"
+  },
+  "report_fixture_and_coordinator_changed_count": 0,
+  "source_test_spec_governance_changed_count": 0,
+  "started_utc": "2026-11-13T07:39:48.987018+00:00",
+  "stderr_bytes": 0,
+  "stderr_path": "stderr/03-pytest.raw",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_bytes": 9600,
+  "stdout_path": "stdout/03-pytest.raw",
+  "stdout_sha256": "b7573442da7b7cccc790a62d09b9eb6f19a384b18d72cdd8e21c53a1af45b849"
+}

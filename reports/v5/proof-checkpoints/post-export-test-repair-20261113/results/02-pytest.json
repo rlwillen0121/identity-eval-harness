@@ -1,0 +1,52 @@
+{
+  "actual_native_service_tier_observable": false,
+  "after_snapshot_path": "snapshots/02-pytest-after.json",
+  "after_snapshot_sha256": "cd39b0d3635e06bc74a6c59646b37ec6551b9cd8da29d9fc4e92f4b3b7974602",
+  "argv": [
+    "uv",
+    "run",
+    "--no-env-file",
+    "pytest",
+    "-q",
+    "-m",
+    "not live"
+  ],
+  "before_snapshot_path": "snapshots/02-pytest-before.json",
+  "before_snapshot_sha256": "cd39b0d3635e06bc74a6c59646b37ec6551b9cd8da29d9fc4e92f4b3b7974602",
+  "changed_path_counts": {
+    "configuration_governance": 0,
+    "fixed_report_fixtures_and_coordinator": 0,
+    "foreign_v41_indexed_and_untracked": 0,
+    "packaging_python_copies": 0,
+    "report_python_coordinator_successor": 0,
+    "source": 0,
+    "tests": 0,
+    "v5_datasets": 0
+  },
+  "changed_paths_by_category": {
+    "configuration_governance": [],
+    "fixed_report_fixtures_and_coordinator": [],
+    "foreign_v41_indexed_and_untracked": [],
+    "packaging_python_copies": [],
+    "report_python_coordinator_successor": [],
+    "source": [],
+    "tests": [],
+    "v5_datasets": []
+  },
+  "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+  "elapsed_monotonic_ns": 730823590708,
+  "elapsed_seconds": 730.823590708,
+  "ended_at_utc": "2026-11-13T08:53:45.344313+00:00",
+  "exact_command": "uv run --no-env-file pytest -q -m not live",
+  "exit_code": 0,
+  "id": "02-pytest",
+  "preflight_checks": {},
+  "requested_service_tier": "fast",
+  "started_at_utc": "2026-11-13T08:41:34.527241+00:00",
+  "stderr_bytes": 0,
+  "stderr_path": "stderr/02-pytest.raw",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_bytes": 9600,
+  "stdout_path": "stdout/02-pytest.raw",
+  "stdout_sha256": "b7573442da7b7cccc790a62d09b9eb6f19a384b18d72cdd8e21c53a1af45b849"
+}

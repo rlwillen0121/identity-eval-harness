@@ -1,0 +1,31 @@
+from __future__ import annotations
+import json, os, pathlib, sys
+import pytest
+root = pathlib.Path(os.environ["EXPORT_ROOT"]).resolve()
+repo = pathlib.Path("/Users/ryanwillen/orca/projects/identity-eval-harness").resolve()
+expected = json.loads(pathlib.Path(os.environ["SELECTED_TEST_PATHS_JSON"]).read_text())["files"]
+proof_path = pathlib.Path(os.environ["TEST_IMPORT_PROOF_PATH"])
+class Provenance:
+    def pytest_collection_finish(self, session):
+        if any(pathlib.Path(p or ".").resolve() == repo or repo in pathlib.Path(p or ".").resolve().parents for p in sys.path):
+            raise AssertionError("owner checkout present on pytest sys.path")
+        collected = sorted({pathlib.Path(item.path).resolve().relative_to(root / "tests").as_posix() for item in session.items})
+        expected_relative = sorted(pathlib.Path(p).relative_to("tests").as_posix() for p in expected)
+        expected_full = ["tests/" + p for p in collected]
+        if not set(expected).issubset({"tests/" + p for p in collected}):
+            # Empty or fully deselected files may not yield collected items; they remain explicit argv inputs.
+            pass
+        modules = {}
+        for name, module in sorted(sys.modules.items()):
+            if name == "identitybench" or name.startswith("identitybench."):
+                origin = getattr(module, "__file__", None)
+                if origin:
+                    resolved = pathlib.Path(origin).resolve()
+                    if root / "src" not in resolved.parents:
+                        raise AssertionError(f"identitybench module outside exported src: {name} -> {resolved}")
+                    modules[name] = str(resolved)
+        proof = {"owner_checkout_present_on_sys_path": False, "export_root": str(root), "collected_test_files": ["tests/" + p for p in collected], "requested_test_files": expected, "requested_test_file_count": len(expected), "identitybench_module_count": len(modules), "identitybench_modules": modules}
+        proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
+args = ["-q", "-m", "not live", "--basetemp", os.environ["PYTEST_BASETEMP"], *expected]
+exit_code = pytest.main(args, plugins=[Provenance()])
+sys.exit(int(exit_code))

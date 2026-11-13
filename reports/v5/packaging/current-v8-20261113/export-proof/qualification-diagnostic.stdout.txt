@@ -1,0 +1,17 @@
+{
+  "qualified": false,
+  "errors": [
+    "agent_view_only card-only session cwd differs from repository"
+  ],
+  "gaps": [
+    "agent_view_only card-only native audit lacks a matched root spawn binding"
+  ],
+  "evidence_paths": [
+    "reports/v5/conformance/native_audit/fresh-card-only-v2-ready-audit.json",
+    "reports/v5/conformance/native_audit/fresh-card-only-v2-origin-message-classification.json",
+    "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/agent_view/fresh_card_only_v2/capture-manifest.json",
+    "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture-run-manifest.json"
+  ],
+  "capture_manifest_path": "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/agent_view/fresh_card_only_v2/capture-manifest.json",
+  "capture_source_files_count": 2
+}

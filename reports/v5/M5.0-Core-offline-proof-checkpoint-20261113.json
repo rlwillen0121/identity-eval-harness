@@ -1,0 +1,215 @@
+{
+  "schema": "identitybench.v5.m5_core.offline_proof_checkpoint.v1",
+  "checkpointed_at_utc": "2026-11-13T09:04:02Z",
+  "status": "INCOMPLETE_BLOCKED",
+  "milestone_approval": false,
+  "scope": "Offline proof checkpoint for the current public v8 inputs and fixed SPEC-v5 contract. No live model evaluation or provider request was run.",
+  "identity": {
+    "branch": "feat/v5-harness",
+    "base_head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+    "upstream": null,
+    "worktree_clean": false,
+    "local_checkpoint_commit_created": false,
+    "foreign_v41_wip_paths_preserved": 11,
+    "spec_v5_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+    "validation_py_sha256": "18ded6b8228610a83a2097233d27732a9122703a1ed4e3ec7c3646e7f296a64b",
+    "test_validation_sha256": "6cd03ebc73f0442b3239d0cbf1d41eda5640505a71a59477e46d7f65b35e6db7",
+    "public_input_version": "v8",
+    "benchmark_provider_requests": 0,
+    "benchmark_model_tokens": 0,
+    "native_collaboration_inference_included_in_model_token_claim": false
+  },
+  "offline_gates": [
+    {
+      "gate": "G-TOK-01",
+      "status": "FAIL",
+      "suite_scope": ["v5_dev", "v5_lite", "v5_core", "v5_full"],
+      "card_token_limit_o200k": 3200,
+      "max_card_tokens_o200k": 16556,
+      "logical_input_token_limit_o200k": 9600,
+      "max_logical_input_tokens_o200k": 26733,
+      "cap_increase_proposed": false
+    },
+    {
+      "gate": "USER-INITIAL-TEXT-01",
+      "status": "FAIL",
+      "separate_from_g_tok_01": true,
+      "initial_text_limit_o200k": 3200,
+      "max_initial_text_tokens_o200k": 17459
+    },
+    {
+      "gate": "G-TURN-01",
+      "status": "PASS",
+      "max_turns": 6,
+      "max_calls_per_turn": 4,
+      "oracle_replay_rate": 1.0
+    },
+    {
+      "gate": "G-DET-01",
+      "status": "PASS",
+      "suite_scope": ["v5_dev", "v5_lite", "v5_core", "v5_full"],
+      "double_build_and_seal_match": true
+    },
+    {
+      "gate": "G-QUERY-01",
+      "status": "PASS",
+      "suite_scope": ["v5_dev", "v5_lite", "v5_core", "v5_full"]
+    },
+    {
+      "gate": "G-NONINTERFERENCE-V5",
+      "status": "PASS",
+      "suite_scope": ["v5_dev", "v5_lite", "v5_core", "v5_full"]
+    },
+    {
+      "gate": "G-BASE-01",
+      "status": "PASS",
+      "deterministic_suite_validator_complete": true,
+      "core_oracle_replay_episodes": 48,
+      "core_oracle_replay_gsrr": 1.0,
+      "core_oracle_replay_turns": 6,
+      "nonoracle_baselines": 6,
+      "each_nonoracle_gsrr": 0.0,
+      "each_nonoracle_semantic_exact_match": 0.0,
+      "numeric_run_metrics_are_not_the_whole_gate": true
+    },
+    {
+      "gate": "G-SPEC-01",
+      "status": "FAIL",
+      "card_origin_chain": "INELIGIBLE_CONFIRMED_FORBIDDEN_READ",
+      "full_spec_origin_chain": "MISSING_CHANGED_PHASE1_EVIDENCE",
+      "binding_status": "Current stale/malformed bindings and unqualified references remain.",
+      "independent_100_percent_agreement_established": false,
+      "new_independent_conformance_corpus_frozen": false
+    },
+    {
+      "gate": "G-ECON-01",
+      "status": "UNMEASURED",
+      "deferred_by_zero_live_scope": true,
+      "reason": "No live trials were run; this gate is outside the offline checkpoint."
+    },
+    {
+      "gate": "G-CAL-01..03",
+      "status": "UNMEASURED",
+      "deferred_by_zero_live_scope": true,
+      "reason": "No live calibration trials were run; this gate is outside the offline checkpoint."
+    }
+  ],
+  "proof_state": {
+    "source_health_prior_checkpoint": {
+      "status": "PASS_FOR_CAPTURED_INPUT_SET_ONLY",
+      "run_id": "source-health-v8-recheck-20261113",
+      "ruff_exit_code": 0,
+      "mypy_strict_exit_code": 0,
+      "mypy_source_module_count": 233,
+      "pytest_exit_code": 0,
+      "pytest_passed": 8598,
+      "pytest_skipped": 24,
+      "artifact_bindings_independently_verified": 42,
+      "source_health_milestone_proven": false,
+      "artifact_summary_sha256": "e0aec5a9d8b5e3d11f7b6508d6d1015cd98beaf62fcab956b5a9437201762648",
+      "gate_summary_sha256": "b8080f2fc6c1c12ab7a4167f899b472259409f0301d63db56a7ec01c9a5d3809",
+      "artifact_manifest_sha256": "acad5545c770cbc916112d16078414329ac15e10324e9d907f5ac0864cd0da05",
+      "limitation": "Captured checks predate the accepted test-only portability repair; deterministic validation still fails G-TOK-01 and G-SPEC-01."
+    },
+    "post_export_test_repair": {
+      "status": "TOOL_CHECKS_PASS_FOR_CAPTURED_INPUT_SET",
+      "ruff_exit_code": 0,
+      "ruff_elapsed_seconds": 1.011,
+      "full_nonlive_pytest_exit_code": 0,
+      "full_nonlive_pytest_elapsed_seconds": 730.824,
+      "full_nonlive_pytest_stdout_bytes": 9600,
+      "full_nonlive_pytest_stderr_bytes": 0,
+      "full_nonlive_pytest_counts": {"passed": 8598, "skipped": 24},
+      "source_hashes_match_prior_successful_mypy_input": true,
+      "pre_post_and_boundary_snapshots_unchanged": true,
+      "independent_final_readback": {
+        "status": "ACCEPTED",
+        "artifact_bindings_verified": 15,
+        "equal_snapshots_verified": 5,
+        "unchanged_source_paths": 235,
+        "unchanged_test_paths": 305,
+        "unchanged_config_governance_paths": 114,
+        "unchanged_report_fixture_and_coordinator_paths": 129,
+        "unchanged_report_python_paths": 33,
+        "unchanged_foreign_v41_paths": 124,
+        "unchanged_v5_dataset_artifacts": 12,
+        "packaging_python_paths": 0
+      },
+      "source_health_gate_qualified": false,
+      "source_health_gate_limit": "The deterministic v5 validations still fail G-TOK-01 and G-SPEC-01.",
+      "summary_sha256": "c0e4df96e5d0741b925f93ba777d8f16f92b91e38e645a816a36739cfa193e63",
+      "artifact_manifest_sha256": "e6d85129dcc9f1b94a6a11a6ea29d9bc9afebf5f53fe6e50dfcc885c33ac6681",
+      "test_file_sha256": "6cd03ebc73f0442b3239d0cbf1d41eda5640505a71a59477e46d7f65b35e6db7",
+      "prior_helper_inclusive_ruff_attempt": "27 helper-script diagnostics; preserved separately before the later passing whole-tree Ruff capture."
+    },
+    "export_v2": {
+      "status": "PASS",
+      "base_head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+      "overlay_paths": 172,
+      "overlay_bytes": 169331628,
+      "test_file_changed_from_prior_inventory": "tests/v5/test_validation.py only",
+      "other_overlay_paths_unchanged": 171,
+      "selected_test_files": 36,
+      "selected_tests_exit_code": 0,
+      "selected_test_duration_seconds": 119.134,
+      "imported_identitybench_modules": 71,
+      "owner_checkout_absent_from_sys_path": true,
+      "owner_overlay_hashes_unchanged": true,
+      "owner_export_file_bindings_verified": 344,
+      "final_summary_sha256": "01dc08a2a025cb5f57b5b3354e8be3de8e48eb06a9d7428a462fb0de9569decd",
+      "exported_hash_manifest_sha256": "f5812d779d44fdc47cf718665db0c602506af238563a404caa60c26bacf0e7ce",
+      "owner_hash_check_sha256": "4e22a54dab1624502a6dd273aff5795cd15d1cf7f8cb28dd6b6e47694aec6ad0",
+      "test_import_proof_sha256": "1f0123dda56ee5b84496aaf8e7253112285c18a6f7e1ebf5e0d04b1ddf4de172"
+    },
+    "frozen_v41_regression": {
+      "status": "PASS",
+      "suite": "v41_full",
+      "episodes": 180,
+      "frozen_hashes_unchanged": true,
+      "head_unchanged": true,
+      "result_json_sha256": "1177c728eb4badcbde06fdacd72b29d56962702bc831910bf76ea327916bc985"
+    }
+  },
+  "provenance_and_normative_status": {
+    "card_chain_disqualification": "The actual v2 audit metadata confirms a literal cat of a denied prior-audit path; root context attestations cannot override it.",
+    "full_spec_chain_gap": "The changed-path phase1.py ALLOWED event is absent; the chain remains unqualified.",
+    "source_origin_qualification": false,
+    "proposal_decisions_pending": ["non-account ETag preimages", "first-stage A/B eligibility"],
+    "proposal_sha256": {
+      "reports/v5/SPEC-v5-clarifications-proposed.md": "6215a52da05b0693e40a602daa259c9873ab4f897c0f2dd7cab96ac5d4fef0cd",
+      "reports/v5/SPEC-v5-first-stage-clarification-proposed.md": "2937511d3e814522b8692b09d5ae037d04c05cec1f4c3ab6edfbdc92a4077390"
+    },
+    "proposal_status": "UNAPPROVED; SPEC-v5 remains unchanged.",
+    "proposal_footer_update": "Only the phrase 'diagnostic limit' changed to 'user-required limit' in each informational footer; formulas and proposed conventions are unchanged.",
+    "formal_card_prototype": {
+      "version": "formal-v2",
+      "token_range": [11846, 11848],
+      "status": "OVER_CAP_PARTIAL_NOT_SHIPPED",
+      "impossibility_proof": false
+    },
+    "security_disposition": "Not assessed by this checkpoint; no no-P1 claim."
+  },
+  "artifact_hashes": {
+    "SPEC-v5.md": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+    "reports/v5/conformance/inputs/v8/manifest.json": "8d42a11e9affb488b2cfe3b056200762cdf294ea3add8abee381b0e68dabd8ac",
+    "reports/v5/proof-checkpoints/core-baselines-v8-20261113/baseline-proof.json": "38a619eebfbf820eb707265ab5dd99f39687b88f47e33a962c803e2a0a11c66f",
+    "reports/v5/proof-checkpoints/core-baselines-v8-gbase-scope-20261113/comparison.json": "2e76ca24e280ead66c4f8200d7335532c7117c6529c932cedb488c7befb0b1a3",
+    "reports/v5/proof-checkpoints/frozen-v41-regression-20261113/result.json": "1177c728eb4badcbde06fdacd72b29d56962702bc831910bf76ea327916bc985",
+    "reports/v5/packaging/current-v8-20261113/export-proof-v2/verification-summary.json": "01dc08a2a025cb5f57b5b3354e8be3de8e48eb06a9d7428a462fb0de9569decd",
+    "reports/v5/packaging/current-v8-20261113/export-proof-v2/exported-hash-manifest-v2.json": "f5812d779d44fdc47cf718665db0c602506af238563a404caa60c26bacf0e7ce",
+    "reports/v5/packaging/current-v8-20261113/export-proof-v2/owner-hash-check.json": "4e22a54dab1624502a6dd273aff5795cd15d1cf7f8cb28dd6b6e47694aec6ad0",
+    "reports/v5/packaging/current-v8-20261113/export-proof-v2/test-import-proof.json": "1f0123dda56ee5b84496aaf8e7253112285c18a6f7e1ebf5e0d04b1ddf4de172",
+    "reports/v5/proof-checkpoints/post-export-test-repair-20261113/summary.json": "c0e4df96e5d0741b925f93ba777d8f16f92b91e38e645a816a36739cfa193e63",
+    "reports/v5/proof-checkpoints/post-export-test-repair-20261113/artifact-sha256.json": "e6d85129dcc9f1b94a6a11a6ea29d9bc9afebf5f53fe6e50dfcc885c33ac6681",
+    "reports/v5/token-feasibility-formal-v2/assessment.md": "ec23e04d2007b4e4c38cf67e03e6e8c3502697d03f8f98607536b9617703c1e7",
+    "reports/v5/token-feasibility-formal-v2/measurements.json": "f7edbc4d8264b4778f2a97ef3c4d465bdb36a9c4e071c4252640d659a963ea25"
+  },
+  "not_claimed": [
+    "M5.0-Core milestone approval",
+    "G-SPEC qualification or 100 percent independent conformance agreement",
+    "new independent conformance corpus freeze",
+    "economics or calibration",
+    "live model or provider behavior",
+    "clean Git tree, upstream publication, pull request, release, or no-P1 security disposition"
+  ]
+}

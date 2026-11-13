@@ -75,6 +75,7 @@ packages = ["src/identitybench"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+extend-exclude = ["reports/v5/conformance/shared_results/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]

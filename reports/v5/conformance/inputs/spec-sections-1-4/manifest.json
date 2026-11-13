@@ -1,0 +1,14 @@
+{
+  "additional_normative_content": false,
+  "excerpt_byte_count": 226384,
+  "excerpt_ends_before_appendix_a": true,
+  "excerpt_path": "SPEC-v5-sections-1-4.md",
+  "excerpt_sha256": "93724b3e5c780c7013b95c43b65977eda86643c255e5bad74651ed9e25e15f3b",
+  "excerpt_starts_at_section_1": true,
+  "line_count": 2176,
+  "line_end_inclusive": 2254,
+  "line_start_inclusive": 79,
+  "schema_version": "identitybench.v5.spec-excerpt-manifest.v1",
+  "source_path": "SPEC-v5.md",
+  "source_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43"
+}
