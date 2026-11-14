@@ -12,7 +12,7 @@ Use this skill at the `M5.0-Core` milestone and before any v5 dataset freeze or 
 
 ## 1. Native Review Composition
 
-The `review` lane composes independent, read-only subagents for the hidden lanes in `AGENTS.md`. Dispatch all delegated reviews through the current native collaboration subagent tools. Do not invoke `codex exec`, model-specific review CLIs, or separate sidebar threads.
+The `review` lane composes independent, read-only subagents for the hidden lanes in `AGENTS.md`. Dispatch required independent lanes and ordinary reviews through the current native collaboration subagent tools. Explicitly requested named spec/adversarial reviewers unavailable through native tools follow the narrow CPA exception in section 2. Do not invoke `codex exec`, model-specific review CLIs, direct provider routes, or separate sidebar threads.
 
 - **`lane-rules` (always on):** Check `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, the matching normative spec, and changed files for contradictions or scope drift. Preserve the six-category boundary for v1–v4.1, including the prohibition on `nhi_ai_agent`, `EnterpriseAgentV5`, and OBO agent-delegation tasks; allow structured `agent_governance` only in v5; prohibit SOC/SIEM/EDR, firewall/network incident response, unstructured prompt injection, jailbreak, and moderation work across every version.
 - **`lane-security` (always on):** Review relevant sandbox isolation, secret handling, dataset seals, and development-only tuning hygiene. Follow the matching version's actual implementation and spec; report unverified controls as unverified.
@@ -24,7 +24,13 @@ Keep hidden lanes hidden unless the user asks for an audit transcript. The orche
 
 ## 2. Requested Adversarial Review
 
-When the user requests an independent adversarial review, dispatch it through the native collaboration tools using the model, effort, and service tier required by `AGENTS.md` and current task instructions. Record the selected route and task basis in the handoff or review record. Do not substitute a model CLI or direct provider route.
+When the user requests an independent adversarial review, use native collaboration tools by default and preserve the model, effort, and service tier required by `AGENTS.md` and current task instructions.
+
+When the user explicitly requests a named spec/adversarial reviewer unavailable through native tools, the `review` parent may call that model through the existing configured CPA connection under the [named-reviewer exception](../../../AGENTS.md#named-spec-and-adversarial-reviewer-exception). The explicit request authorizes that route without another routing-permission question. Use protected local configuration; never print credentials for validation or include credentials or private endpoint URLs in prompts, command output, logs, patches, review artifacts, or handoffs.
+
+Record requested and effective non-secret provider/connection identifiers, model, effort, service tier, task basis, and the exact candidate content hash, including any uncommitted review inputs. Identify unsupported or unverified settings, retain evidence of the response, and report failed calls honestly. If the configured route cannot perform the requested review, report the limitation without a fallback model or route. Do not use direct providers, model-specific CLIs, `codex exec`, or separate sidebar threads.
+
+This exception applies only to the requested spec/adversarial review. It does not authorize implementation dispatch outside native tools or live benchmark trials, replace required independent lanes, or relax fresh blind-conformance isolation and its forbidden-source boundary.
 
 Ask reviewers to hunt for:
 
