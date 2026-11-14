@@ -1,0 +1,44 @@
+......F................................................................. [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+..............                                                           [100%]
+=================================== FAILURES ===================================
+_____ test_fresh_full_spec_profile_is_pinned_and_excludes_retired_sources ______
+
+    def test_fresh_full_spec_profile_is_pinned_and_excludes_retired_sources() -> None:
+        fresh = _resolve_source_profile("full_spec")
+        historical = _resolve_source_profile("full_spec", "fresh_full_spec_v2")
+        legacy = _resolve_source_profile("full_spec", "legacy_diagnostic")
+    
+        assert fresh.profile_id == "fresh_full_spec_v3"
+        assert fresh.author_origin == "fresh_full_spec_v2"
+        assert fresh.entrypoint == "tests/conformance/v5/fresh_full_spec_v2/worker.py"
+        assert fresh.entrypoint_module == "tests.conformance.v5.fresh_full_spec_v2.worker"
+>       assert fresh.source_files == (
+            "src/identitybench/__init__.py",
+            "src/identitybench/v5/__init__.py",
+            "src/identitybench/v5/schemas.py",
+            "src/identitybench/v5/scope_algebra.py",
+            "SPEC-v5.md",
+            "tests/__init__.py",
+            "tests/conformance/__init__.py",
+            "tests/conformance/v5/fresh_full_spec_v2/__init__.py",
+            "tests/conformance/v5/fresh_full_spec_v2/common.py",
+            "tests/conformance/v5/fresh_full_spec_v2/policy.py",
+            "tests/conformance/v5/fresh_full_spec_v2/phase1.py",
+            "tests/conformance/v5/fresh_full_spec_v2/phase2.py",
+            "tests/conformance/v5/fresh_full_spec_v2/submission.py",
+            "tests/conformance/v5/fresh_full_spec_v2/apply.py",
+            "tests/conformance/v5/fresh_full_spec_v2/trace.py",
+            "tests/conformance/v5/fresh_full_spec_v2/worker.py",
+        )
+E       AssertionError: assert ('src/identit...it__.py', ...) == ('src/identit...it__.py', ...)
+E         
+E         At index 3 diff: 'SPEC-v5.md' != 'src/identitybench/v5/scope_algebra.py'
+E         Right contains one more item: 'tests/conformance/v5/fresh_full_spec_v2/worker.py'
+E         Use -v to get more diff
+
+tests/v5/test_conformance_process.py:521: AssertionError
+=========================== short test summary info ============================
+FAILED tests/v5/test_conformance_process.py::test_fresh_full_spec_profile_is_pinned_and_excludes_retired_sources
+1 failed, 229 passed in 32.49s

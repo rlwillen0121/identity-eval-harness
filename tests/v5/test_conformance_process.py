@@ -522,7 +522,6 @@ def test_fresh_full_spec_profile_is_pinned_and_excludes_retired_sources() -> Non
         "src/identitybench/__init__.py",
         "src/identitybench/v5/__init__.py",
         "src/identitybench/v5/schemas.py",
-        "src/identitybench/v5/scope_algebra.py",
         "SPEC-v5.md",
         "tests/__init__.py",
         "tests/conformance/__init__.py",
