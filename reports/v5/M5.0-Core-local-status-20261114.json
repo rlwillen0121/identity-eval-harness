@@ -1,0 +1,148 @@
+{
+  "artifact": "M5.0-Core local evidence checkpoint",
+  "captured_at_utc": "2026-11-14T02:31:13Z",
+  "captured_at_local": "2026-11-13T20:31:13-06:00",
+  "status": "INCOMPLETE",
+  "identity": {
+    "branch": "feat/v5-harness",
+    "head": "fe727fe8800a251dac818e35af6a07f8d2e1680a",
+    "upstream_configured": false,
+    "remote_queried": false,
+    "push_performed": false
+  },
+  "normative_sources": {
+    "SPEC-v5.md": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+    "SPEC-v5-ADDENDUM-01.md": "bf0cb575a9ea20e2995164b3e34b696f1828b4e0870f198731cc7c9624c0c9e9",
+    "SPEC-v5-DIRECTIVE-01.md": "d3b01715cf277730de027ef66ec2ea66f304b5ff388ebc9cb138aedd0cc98405",
+    "current_policy_card_renderer_sha256": "95cbbd83b1c926a157dba1c59ba8fe2cb3f1c352f65b5a38b7e9fe9b86937843"
+  },
+  "approved_budgets": {
+    "logical_tokens_per_episode": 9600,
+    "policy_card_tokens": 3200,
+    "v5_core_mean_actual_input_tokens": 23500,
+    "v5_core_mean_actual_output_tokens": 4800,
+    "v5_core_output_p95_tokens": 10500,
+    "v5_core_aggregate_input_plus_output_tokens": 1450000,
+    "unmatched_cost_ceiling_usd": 12.0,
+    "per_completion_output_cap": 8192,
+    "post_completion_output_stop_threshold": 14500,
+    "limit_change_authorized": false,
+    "source_sections": "SPEC-v5.md §§4.2–4.3"
+  },
+  "token_measurements": {
+    "tokenizer": "o200k_base",
+    "current_policy_card_serialized_min": 17409,
+    "current_policy_card_serialized_max": 17411,
+    "current_rules_markdown_tokens": 16810,
+    "current_v5_dev_logical_envelope_min": 27202,
+    "current_v5_dev_logical_envelope_max": 27586,
+    "policy_card_max_over_limit_tokens": 14211,
+    "logical_envelope_max_over_limit_tokens": 17986,
+    "structure_report": {
+      "path": "reports/v5/token-card-structure-v1.json",
+      "sha256": "f32ac3a1a4fa03bc6f7dbbd5349aa2f795b758c44c9e0dd4fecdd9e2571c783d"
+    },
+    "exact_alias_candidate": {
+      "path": "reports/v5/policy-lossless-alias-v1/verification.json",
+      "sha256": "673f3b1d3f607fa1a638b64b311a250f361abafebefd0980238a0417f63ccf4f",
+      "roundtrip_byte_equal": true,
+      "card_tokens_min": 17408,
+      "card_tokens_max": 17410,
+      "savings_tokens": 1,
+      "max_tokens_over_card_limit": 14210,
+      "viable": false
+    },
+    "duplicate_disclosure_counterfactual": {
+      "applied_to_source": false,
+      "removed_summary_claim_count": 8,
+      "tokens_saved": 330,
+      "card_tokens_after_min": 17079,
+      "card_tokens_after_max": 17081,
+      "max_tokens_over_card_limit": 13881
+    },
+    "dev_compact_observation_candidate": {
+      "path": "reports/v5/dev-compact-observation-v1/measurement.json",
+      "sha256": "3c0dbde4c0cbed0ff292a7ba22554bc225981ec05996fd5bb1fdb7e3621d5719",
+      "suite": "v5_dev",
+      "sealed": false,
+      "measurement_capture_head": "871fec33d9398d5e60e2737f0e030165c17622ae",
+      "episode_count": 12,
+      "policy_card_included": false,
+      "no_card_candidate_max_tokens": 9601,
+      "logical_limit_tokens": 9600,
+      "is_g_tok_01_pass": false
+    },
+    "nested_default_elision": {
+      "path": "reports/v5/nested-default-elision-v1.json",
+      "sha256": "6725b8d6d5d9f5ad4323be3fe92432a5cfbc9e87b0830fd38596166778c7a5e1",
+      "normative_wire_format": false,
+      "gate_pass_claim": false
+    }
+  },
+  "scoped_regression_evidence": {
+    "capture_commit": "62390a98c896b87dc9eca9edf7f4ea52e081f95e",
+    "status": "PASS",
+    "passed": 230,
+    "failed": 0,
+    "pytest_duration_seconds": 33.07,
+    "scope": "Four v5 source files and three focused test modules; not whole-suite source-health",
+    "results_path": "reports/v5/proof-checkpoints/approved-contract-component-regressions-repair1-20261113/results.json",
+    "results_sha256": "efa903a926be452872664737821d16949713751eff0a243fe9d60dd37371bbf8",
+    "pytest_log_path": "reports/v5/proof-checkpoints/approved-contract-component-regressions-repair1-20261113/pytest.log",
+    "pytest_log_sha256": "771d648e99f3c437df7b67165cabba58e86d46b737d7be3837111b6789ba65f9",
+    "ruff_scoped_pass": true
+  },
+  "local_milestones": [
+    {
+      "commit": "934e38e45708ce8dd9b680b5c6acd5dfeae46fe4",
+      "parent": "642ee66aa082bb98a15fcfdc2d19c963735ecb22",
+      "title": "feat(v5): adopt approved ETag and first-stage clarifications"
+    },
+    {
+      "commit": "871fec33d9398d5e60e2737f0e030165c17622ae",
+      "parent": "934e38e45708ce8dd9b680b5c6acd5dfeae46fe4",
+      "title": "docs(v5): record original co-sign consumption directive"
+    },
+    {
+      "commit": "cf3542fda097b181c3ada5eac6a0b0d48d49f15c",
+      "parent": "871fec33d9398d5e60e2737f0e030165c17622ae",
+      "title": "feat(v5): add dev-only compact observation candidate"
+    },
+    {
+      "commit": "23c91de815b78d33f5b503c5376618b15165f3a8",
+      "parent": "cf3542fda097b181c3ada5eac6a0b0d48d49f15c",
+      "title": "docs(v5): record bounded token reduction experiments"
+    },
+    {
+      "commit": "62390a98c896b87dc9eca9edf7f4ea52e081f95e",
+      "parent": "23c91de815b78d33f5b503c5376618b15165f3a8",
+      "title": "feat(v5): bind conformance proofs to approved contract"
+    },
+    {
+      "commit": "fe727fe8800a251dac818e35af6a07f8d2e1680a",
+      "parent": "62390a98c896b87dc9eca9edf7f4ea52e081f95e",
+      "title": "test(v5): preserve historical conformance profile expectations"
+    }
+  ],
+  "gates": {
+    "G-TOK-01": "measured failure",
+    "G-SPEC-01": "open; full-spec author active and unqualified per coordinator at capture; agent-view reference deferred; no freeze or comparison authorized",
+    "G-ECON-01": "untested; no provider or benchmark trial calls in this checkpoint",
+    "G-CAL": "untested; no provider or benchmark trial calls in this checkpoint",
+    "dataset_freeze_or_current_card_determinism": "not claimed; approved card differs from historical sealed episode cards"
+  },
+  "historical_shipped_v5_dev_episodes_sha256": "6d599c71eac51c33ce19117a9c9646e5520b67e385429a5c6d61f874112c9a25",
+  "restricted_artifacts_read": false,
+  "tests_run_for_this_checkpoint": 0,
+  "provider_or_benchmark_invocations_for_this_checkpoint": 0,
+  "git_state_before_report_writes": {
+    "index_clean": true,
+    "tracked_worktree_clean": true,
+    "preexisting_untracked_status_entries": 25080,
+    "untracked_names_enumerated": false
+  },
+  "writes_authorized": [
+    "reports/v5/M5.0-Core-local-status-20261114.md",
+    "reports/v5/M5.0-Core-local-status-20261114.json"
+  ]
+}
