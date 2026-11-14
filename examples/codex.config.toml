@@ -1,5 +1,5 @@
 # Follow AGENTS.md.
-# v5.0 / M5.0-Core follows SPEC-v5.md and approved SPEC-v5-ADDENDUM-01.md; v1-v4.1 retain the frozen six-category boundary.
+# v5.0 / M5.0-Core uses SPEC-v5.md, approved SPEC-v5-ADDENDUM-01.md, and the original user directive recorded in SPEC-v5-DIRECTIVE-01.md; v1-v4.1 retain the frozen six-category boundary.
 # v5 alone adds structured deterministic agent_governance over EnterpriseAgentV5 and OBO delegation entities.
 # Contributors use native collaboration subagents and free local checks; do not call model APIs or CLIs during implementation/review.
 # Live v5 or matching v41 runs are exclusive to bench-operator when explicitly requested by the user.
