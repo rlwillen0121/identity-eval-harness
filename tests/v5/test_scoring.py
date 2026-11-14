@@ -9,7 +9,12 @@ from identitybench.providers.base import ModelResponse, ProviderCapabilities, Us
 from identitybench.v5.baselines import run_v5_baseline_on_episode
 from identitybench.v5.generator import build_v5_episode, plan_v5_cells
 from identitybench.v5.provider_accounting import provider_fingerprint_sha256_v5
-from identitybench.v5.runner import RunConfigV5, _phase_trajectory, run_v5_agent_episode
+from identitybench.v5.runner import (
+    RunConfigV5,
+    TrajectorySnapshotV5,
+    _phase_trajectory,
+    run_v5_agent_episode,
+)
 from identitybench.v5.runtime import RuntimeV5, structural_errors
 from identitybench.v5.scoring import (
     CORE_FAMILIES_V5,
@@ -374,6 +379,52 @@ def test_semantic_and_action_metrics_ignore_precondition_and_citation_stages() -
     assert scored.action_srr_last_stage == 1
     assert scored.g_srr_first_stage == 0
     assert scored.repair_lift == 0
+
+
+def test_first_stage_eligibility_is_snapshot_local_after_a_phase_two_commit_failure() -> None:
+    valid = _assessment()
+    phase2_without_commit = PhaseSnapshotSetV5(
+        first_stage=valid,
+        last_stage=valid,
+    )
+
+    scored = score_episode(
+        _episode(
+            phase1=_phase(valid),
+            phase2=phase2_without_commit,
+            p1_committed=True,
+            p2_opened=True,
+            p2_committed=False,
+        )
+    )
+
+    assert scored.g_srr_commit == 0
+    assert scored.g_srr_first_stage == 1
+    assert scored.repair_lift == -1
+
+
+def test_first_stage_score_is_zero_when_either_first_snapshot_is_missing_or_fails() -> None:
+    valid = _assessment()
+    failed_own_ledger = _assessment(stages=(True, True, True, False, True))
+    failed_first = PhaseSnapshotSetV5(
+        first_stage=failed_own_ledger,
+        commit=valid,
+        last_stage=valid,
+    )
+
+    cases = (
+        _episode(
+            phase1=PhaseSnapshotSetV5(),
+            phase2=PhaseSnapshotSetV5(),
+            p1_committed=False,
+            p2_opened=False,
+            p2_committed=False,
+        ),
+        _episode(phase1=_phase(valid), phase2=PhaseSnapshotSetV5(), p2_committed=False),
+        _episode(phase1=failed_first, phase2=_phase(valid)),
+    )
+
+    assert all(score_episode(item).g_srr_first_stage == 0 for item in cases)
 
 
 def test_unobserved_phase_is_separate_and_commit_safety_is_reported_separately() -> None:
@@ -746,6 +797,54 @@ def test_execution_adapter_grades_raw_boundaries_and_uses_induced_p2_for_propaga
     assert scoring_input.phase1.commit is not None
     assert scoring_input.phase1.commit.stage4_ok
     assert not ledger_input.phase1.commit.stage4_ok
+
+    first_stage = execution.phase1.first_stage
+    assert first_stage is not None
+    first_citation = next(cite for mutation in first_stage.mutations for cite in mutation.cite)
+    first_evidence_id = first_citation.split(":", 1)[1]
+    assert first_evidence_id in first_stage.read_ledger
+
+    def remove_first_stage_read(
+        snapshot: TrajectorySnapshotV5,
+    ) -> TrajectorySnapshotV5:
+        if snapshot == first_stage:
+            return replace(
+                snapshot,
+                read_ledger=tuple(
+                    evidence_id
+                    for evidence_id in snapshot.read_ledger
+                    if evidence_id != first_evidence_id
+                ),
+            )
+        return snapshot
+
+    first_ledger_only_phase1 = replace(
+        execution.phase1,
+        attempts=tuple(remove_first_stage_read(snapshot) for snapshot in execution.phase1.attempts),
+        stage_attempts=tuple(
+            remove_first_stage_read(snapshot) for snapshot in execution.phase1.stage_attempts
+        ),
+        first_stage=remove_first_stage_read(first_stage),
+        last_stage=(
+            None
+            if execution.phase1.last_stage is None
+            else remove_first_stage_read(execution.phase1.last_stage)
+        ),
+    )
+    first_ledger_only_execution = replace(execution, phase1=first_ledger_only_phase1)
+    first_ledger_input, first_ledger_score = score_execution_v5(
+        first_ledger_only_execution,
+        episode,
+        sealed_oracle,
+    )
+
+    assert first_ledger_input.phase1.first_stage is not None
+    assert not first_ledger_input.phase1.first_stage.stage4_ok
+    assert first_ledger_input.phase1.commit is not None
+    assert first_ledger_input.phase1.commit.stage4_ok
+    assert first_ledger_score.g_srr_first_stage == 0
+    assert first_ledger_score.g_srr_commit == 1
+    assert first_ledger_score.repair_lift == 1
 
 
 @pytest.mark.parametrize(
