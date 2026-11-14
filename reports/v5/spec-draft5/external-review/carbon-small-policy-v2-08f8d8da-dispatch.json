@@ -1,0 +1,28 @@
+{
+  "candidate_sha256": "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104",
+  "scope": "Limited actual request-policy/generation/recovery/observability clause review ONLY",
+  "requested_model": "gemini-4-carbon-high",
+  "requested_effort": "high",
+  "requested_service_tier": "priority",
+  "requested_max_output_tokens": 65536,
+  "streaming": true,
+  "route": "global_cpa_configured_route",
+  "api": "chat/completions",
+  "wire_controls": {
+    "Accept": "text/event-stream",
+    "Accept-Encoding": "identity",
+    "redirects": "disabled"
+  },
+  "capture_helper_sha256": "39376646b122a3c7006c9f428926e272af92983ca80b03ab61e2b1ab9c9f8eda",
+  "packet_sha256": "e6fa99f96886f8bb964c6a3a87f7c4373325507133e358bf9e31bac0e2d32e97",
+  "packet_characters": 7544,
+  "prompt_sha256": "95c4d422ff26e7c28491da9c0c921d1b64dbd4c7d40a7399870f31cfd1183127",
+  "prompt_characters": 8448,
+  "catalog_provenance": "scoped-catalog-c7410b68.json, prior actual advertised Carbon-high alias; no extra probe issued",
+  "socket_read_timeout_seconds": 600,
+  "overall_hard_wall_seconds": 600,
+  "purpose": "actual_specification_revision_review_not_benchmark",
+  "independence": "No peer/internal opinions",
+  "script_sha256": "44d5175bddb878e59d5af8d381cd975e761d76114d35cd1dcfcbe28c9c01cc2a",
+  "source_snapshot": "input-candidate-08f8d8da.md"
+}

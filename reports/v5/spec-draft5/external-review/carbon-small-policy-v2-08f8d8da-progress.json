@@ -1,0 +1,17 @@
+{
+  "observation": "raw_line",
+  "elapsed_seconds": 579.8976926254109,
+  "http_status": 200,
+  "content_type": "text/event-stream",
+  "content_encoding": "identity",
+  "raw_bytes": 240,
+  "decoded_bytes": 240,
+  "raw_lines": 60,
+  "events": 0,
+  "comments": 30,
+  "visible_chars": 0,
+  "done_marker": false,
+  "terminal_event": false,
+  "candidate_sha256": "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104",
+  "updated_at": "2026-11-14T08:43:02.148521+00:00"
+}

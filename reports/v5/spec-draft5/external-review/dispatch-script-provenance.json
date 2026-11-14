@@ -1,0 +1,18 @@
+{
+  "initial_script": "run_reviews_initial.py",
+  "initial_script_sha256": "1b5b08fbda13ad126ef7d6ac8c39dc9ee99c05f8745f58e8bfe8115616cb91c9",
+  "initial_script_identity_basis": "Reconstructed exactly by reversing the bounded recapture edits; original tool invocation contains initial source. Hash was not measured before initial dispatch.",
+  "recapture_script": "run_reviews.py",
+  "recapture_script_sha256": "98f50f85e80001e3b42fe868751ec9e41d5dcd445e4d78fedb9db1385d30308c",
+  "original_gemini_response_status": "UNAVAILABLE",
+  "original_gemini_usage": "UNAVAILABLE",
+  "original_gemini_error": "RuntimeError during output capture; no truncation inferred",
+  "bounded_recapture": {
+    "model": "gemini-4-carbon-high",
+    "reasoning_effort": "high",
+    "service_tier": "priority",
+    "max_output_tokens": 64000,
+    "metadata_advertised_max_completion_tokens": 1048576,
+    "same_independent_prompt": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "script": "run_reviews_chat.py",
+  "script_sha256": "dd65067f7fa907bde9520fb952b80831882285cd9d3f73003833f28ca7263bcd",
+  "protocol": "CPA chat/completions",
+  "reason": "Completed Responses envelope omitted output field; no recoverable review text",
+  "model": "gemini-4-carbon-high",
+  "effort": "high",
+  "service_tier": "priority",
+  "max_tokens": 65536,
+  "immutable_candidate_git_commit": "68da5e46368948c2affcb9ebb3415a7ccf26601d",
+  "candidate_sha256": "6cd516ad39c829130286c7a0a4a6dfefa38960401332b0921d4914e72e519671"
+}

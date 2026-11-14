@@ -1,0 +1,13 @@
+{
+  "retrieved_at": "2026-11-14T08:22:27.583709+00:00",
+  "route": "global_cpa_configured_route",
+  "models": [
+    {
+      "context_length": 1000000,
+      "id": "claude-opus-5-5-high",
+      "max_completion_tokens": 128000,
+      "object": "model",
+      "owned_by": "antigravity"
+    }
+  ]
+}

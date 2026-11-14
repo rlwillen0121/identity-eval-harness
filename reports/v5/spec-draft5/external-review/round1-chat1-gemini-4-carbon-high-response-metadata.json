@@ -1,0 +1,37 @@
+{
+  "response_id": "BQr4arvOA8rliLMPuuTGwQk",
+  "response_model": "gemini-4-carbon",
+  "response_status": "chat_completion_returned",
+  "response_effort": "UNAVAILABLE",
+  "response_service_tier": "UNAVAILABLE",
+  "usage": {
+    "completion_tokens": 3,
+    "total_tokens": 123009,
+    "prompt_tokens": 90241,
+    "completion_tokens_details": {
+      "reasoning_tokens": 32765
+    }
+  },
+  "incomplete_details": null,
+  "error": null,
+  "top_level_keys": [
+    "choices",
+    "created",
+    "id",
+    "model",
+    "object",
+    "usage"
+  ],
+  "choices_shape": [
+    {
+      "finish_reason": "max_tokens",
+      "message_keys": [
+        "content",
+        "reasoning_content",
+        "role",
+        "tool_calls"
+      ],
+      "content_type": "str"
+    }
+  ]
+}

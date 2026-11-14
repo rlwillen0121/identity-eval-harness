@@ -1,0 +1,13 @@
+{
+  "candidate_sha256": "6cd516ad39c829130286c7a0a4a6dfefa38960401332b0921d4914e72e519671",
+  "candidate_bytes": 267771,
+  "prompt_sha256": "fc462f4c3fe8ad0928d43a9bf5256e4bd7e535489c580ffcc131406180f4c1dd",
+  "prompt_characters": 279424,
+  "source_documents": [
+    "SPEC-v5.0-draft.5.md",
+    "SPEC-v5-ADDENDUM-01.md",
+    "SPEC-v5-DIRECTIVE-01.md"
+  ],
+  "independence": "Same neutral first-round instructions; no internal or external review opinions included.",
+  "review_not_benchmark": true
+}

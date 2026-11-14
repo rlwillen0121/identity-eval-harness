@@ -1,0 +1,20 @@
+{
+  "retrieved_at": "2026-11-14T08:00:31.832868+00:00",
+  "route": "global_cpa_configured_route",
+  "models": [
+    {
+      "context_length": 1048576,
+      "id": "gemini-4-carbon-high",
+      "max_completion_tokens": 1048576,
+      "object": "model",
+      "owned_by": "antigravity"
+    },
+    {
+      "context_length": 1000000,
+      "id": "claude-opus-5-5-high",
+      "max_completion_tokens": 128000,
+      "object": "model",
+      "owned_by": "antigravity"
+    }
+  ]
+}

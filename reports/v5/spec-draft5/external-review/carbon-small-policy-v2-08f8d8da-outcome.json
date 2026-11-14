@@ -1,0 +1,32 @@
+{
+  "candidate_sha256": "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104",
+  "review_scope": "Limited actual request-policy/generation/recovery/observability clause review ONLY",
+  "outcome": "INCOMPLETE_NO_CARBON_VERDICT",
+  "raw_status_path": "carbon-small-policy-v2-08f8d8da-status.json",
+  "raw_status_sha256": "a3108389f48642f2b2f76cc31c9081139ad9ceda8c30582d0c9c3d97fb3f89fe",
+  "requested_model": "gemini-4-carbon-high",
+  "requested_effort": "high",
+  "requested_service_tier": "priority",
+  "response_model": "UNAVAILABLE",
+  "effective_effort": "UNAVAILABLE",
+  "effective_service_tier": "UNAVAILABLE",
+  "usage": "UNAVAILABLE_NOT_ZERO",
+  "observed_http_status": 200,
+  "observed_content_type": "text/event-stream",
+  "observed_content_encoding": "identity",
+  "safe_counts": {
+    "raw_bytes": 240,
+    "decoded_bytes": 240,
+    "raw_lines": 60,
+    "comments": 30,
+    "events": 0,
+    "visible_chars": 0,
+    "done_marker": false,
+    "terminal_event": false
+  },
+  "overall_hard_wall_seconds": 600,
+  "provider_side_cancellation_confirmed": false,
+  "inference_followups": "STOPPED_no_additional_calls",
+  "interpretation": "Configured connection returned an open HTTP200 identity SSE stream with comment heartbeats only. No model data event or terminal review arrived in the bound. Backend cause and upstream model state remain unknown.",
+  "revision_consensus": false
+}

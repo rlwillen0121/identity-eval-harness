@@ -1,0 +1,7 @@
+{
+  "script": "run_revision_reviews.py",
+  "sha256": "1f18ef493b8b7670475fa9b0048ddcfa8000e47778ec57593549ecf026019ccb",
+  "candidate_sha256": "095f2ea08fc9266c5157d70c268ced96e8a48a59d0dc89e3a55583753dccf900",
+  "transport_rationale": "Parent verified official Carbon guide: nonstreaming segment 32768 inclusive, streaming segment 65536; CPA executor strips non-Claude maxOutputTokens. Streaming avoids documented nonstream segment constraint without model/provider substitution.",
+  "source": "https://docs.cloud.google.cn/gemini-enterprise-agent-platform/models/guides/gemini-4-carbon"
+}

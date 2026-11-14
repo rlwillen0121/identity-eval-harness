@@ -1,0 +1,14 @@
+{
+  "started_at": "2026-11-14T07:13:08.169229+00:00",
+  "candidate_sha256": "6cd516ad39c829130286c7a0a4a6dfefa38960401332b0921d4914e72e519671",
+  "requested_model": "gemini-4-carbon-high",
+  "requested_effort": "high",
+  "requested_service_tier": "priority",
+  "requested_max_output_tokens": 65536,
+  "route": "global_cpa_configured_route",
+  "purpose": "independent_specification_review_not_benchmark",
+  "finished_at": "2026-11-14T07:19:18.589710+00:00",
+  "dispatch_status": "ERROR",
+  "error_type": "RuntimeError",
+  "error_classification": "NO_REVIEW_TEXT"
+}
