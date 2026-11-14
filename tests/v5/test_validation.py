@@ -483,13 +483,14 @@ def test_shared_freeze_accepts_hash_bound_v3_sidecar_reference(
             proof_scope="full_shared_conformance",
             case_manifest_sha256=case_manifest_sha256,
             case_index_sha256=case_index_sha256,
+            normative_contract_id=None,
             assert_current=lambda: None,
         )
         return token, None
 
     monkeypatch.setattr("identitybench.v5.validation._verify_shared_freeze", verify_freeze)
 
-    errors, _gaps, evidence = _validate_shared_proof_receipt(
+    errors, gaps, evidence = _validate_shared_proof_receipt(
         artifact_root / "receipt.json",
         canonical_json_bytes(receipt) + b"\n",
         receipt,
@@ -498,8 +499,9 @@ def test_shared_freeze_accepts_hash_bound_v3_sidecar_reference(
     )
 
     assert evidence["blind_freeze_verified"] is True
+    assert evidence["normative_contract_status"] == "historical_base_spec_only"
+    assert any("historical v3 freeze" in gap for gap in gaps)
     assert not any("sidecar" in error for error in errors)
-
     mismatched_sidecar = {
         **sidecar,
         "materialization_contract_id": "identitybench.v5.materialization-contract.unknown",
@@ -515,6 +517,49 @@ def test_shared_freeze_accepts_hash_bound_v3_sidecar_reference(
     rejected = _blind_gate(receipt_path, artifacts, repository_root=repository_root)
     assert rejected.status is GateStatusV5.FAIL
     assert any("shared proof validation failed closed" in error for error in rejected.errors)
+
+
+def test_current_v4_shared_proof_requires_versioned_production_profile(
+    tmp_path: Path,
+) -> None:
+    freeze_value = {
+        "schema_version": validation_module.SHARED_FREEZE_SCHEMA_V5_CURRENT,
+    }
+
+    def validate_profile(source_profile: str) -> list[str]:
+        errors: list[str] = []
+        gaps: list[str] = []
+        entry = {
+            "wire_evaluator_id": "production",
+            "source_profile": source_profile,
+            "author_origin": "production_adapter",
+            "source_closure_sha256": "a" * 64,
+            "source_capture_manifest": None,
+            "runtime_manifest": None,
+            "runtime_archive": None,
+            "dependency_manifest": None,
+            "run_manifest": None,
+        }
+        validation_module._validate_shared_evaluator_entry(
+            "production",
+            entry,
+            freeze_value,
+            {},
+            repository_root=tmp_path,
+            freeze_sha256="b" * 64,
+            errors=errors,
+            gaps=gaps,
+        )
+        return errors
+
+    assert any(
+        "current v4 freeze does not use the production_v4 source profile" in error
+        for error in validate_profile("production_v3")
+    )
+    assert not any(
+        "current v4 freeze does not use the production_v4 source profile" in error
+        for error in validate_profile("production_v4")
+    )
 
 
 def test_v3_manifest_uses_its_explicit_ordered_index_and_checkpoint_layout() -> None:

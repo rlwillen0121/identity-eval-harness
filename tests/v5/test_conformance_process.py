@@ -10,6 +10,7 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from identitybench.v5.conformance_process import (
     SourceProfile,
     _case_index_sha256,
     _child_runner_source,
+    _copy_frozen_dependencies,
     _freeze_cases,
     _hash_stdlib_tree,
     _namespace_packages_for_profile,
@@ -32,6 +34,7 @@ from identitybench.v5.conformance_process import (
     _validate_diagnostic_phase_batch_scope,
     _validate_relative_source,
     _validate_v1_proof_scope_count,
+    _validate_v4_normative_contract,
     _verify_artifact_chronology,
     _verify_capture_manifest,
     _verify_evaluator_audits,
@@ -40,6 +43,7 @@ from identitybench.v5.conformance_process import (
     _verify_full_shared_v3_protocol_sidecar,
     _verify_full_shared_v3_run_manifest,
     _verify_source_snapshot,
+    archive_frozen_source_snapshot,
     capture_source_closure,
     run_frozen_evaluator,
     verify_blind_freeze_receipt,
@@ -518,6 +522,7 @@ def test_fresh_full_spec_profile_is_pinned_and_excludes_retired_sources() -> Non
         "src/identitybench/__init__.py",
         "src/identitybench/v5/__init__.py",
         "src/identitybench/v5/schemas.py",
+        "src/identitybench/v5/scope_algebra.py",
         "SPEC-v5.md",
         "tests/__init__.py",
         "tests/conformance/__init__.py",
@@ -547,6 +552,61 @@ def test_fresh_full_spec_profile_is_pinned_and_excludes_retired_sources() -> Non
         _resolve_source_profile("full_spec", "caller_supplied_profile")
 
 
+def test_approved_full_spec_profile_is_explicit_and_keeps_agent_view_blind() -> None:
+    profile = _resolve_source_profile("full_spec", "approved_full_spec_v1")
+    agent_view = _resolve_source_profile("agent_view")
+
+    assert profile.author_origin == "approved_full_spec_author_v1"
+    assert profile.entrypoint == (
+        "tests/conformance/v5/approved_full_spec_v1/reference.py"
+    )
+    assert profile.entrypoint_module == (
+        "tests.conformance.v5.approved_full_spec_v1.reference"
+    )
+    assert profile.normative_contract_id == (
+        "identitybench.v5.normative-contract.addendum-01.directive-01.v1"
+    )
+    assert profile.source_files == (
+        "src/identitybench/__init__.py",
+        "src/identitybench/v5/__init__.py",
+        "src/identitybench/v5/schemas.py",
+        "src/identitybench/v5/scope_algebra.py",
+        "SPEC-v5.md",
+        "SPEC-v5-ADDENDUM-01.md",
+        "SPEC-v5-DIRECTIVE-01.md",
+        "tests/__init__.py",
+        "tests/conformance/__init__.py",
+        "tests/conformance/v5/approved_full_spec_v1/reference.py",
+        "tests/conformance/v5/approved_full_spec_v1/test_reference.py",
+        "tests/conformance/v5/approved_full_spec_v1/AMBIGUITIES.md",
+    )
+    assert _resolve_source_profile("full_spec").profile_id == "fresh_full_spec_v3"
+    assert "SPEC-v5-ADDENDUM-01.md" not in agent_view.source_files
+    assert "SPEC-v5-DIRECTIVE-01.md" not in agent_view.source_files
+
+
+def test_v4_freeze_contract_requires_the_exact_versioned_normative_tuple(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = {
+        "contract_id": "identitybench.v5.normative-contract.addendum-01.directive-01.v1",
+        "base_spec": {"path": "SPEC-v5.md", "sha256": "a" * 64},
+        "approved_addendum": {
+            "path": "SPEC-v5-ADDENDUM-01.md",
+            "sha256": "b" * 64,
+        },
+        "approved_directive": {
+            "path": "SPEC-v5-DIRECTIVE-01.md",
+            "sha256": "c" * 64,
+        },
+    }
+    monkeypatch.setattr(process_module, "approved_v5_normative_contract", lambda: contract)
+
+    assert _validate_v4_normative_contract(contract) == contract["contract_id"]
+    with pytest.raises(SharedRuntimeError, match="normative contract is unsupported or stale"):
+        _validate_v4_normative_contract({**contract, "approved_directive": {"sha256": "d" * 64}})
+
+
 def test_fresh_card_only_profile_is_exact_and_excludes_spec_and_old_references() -> None:
     fresh = _resolve_source_profile("agent_view")
     historical = _resolve_source_profile("agent_view", "agent_view_v1")
@@ -563,6 +623,176 @@ def test_fresh_card_only_profile_is_exact_and_excludes_spec_and_old_references()
     assert not any("reference" in path or "old" in path for path in fresh.source_files)
     assert historical.profile_id == "agent_view_v1"
     assert historical.source_files != fresh.source_files
+
+
+def test_approved_full_spec_entrypoint_uses_the_shared_case_transport(
+    tmp_path: Path,
+) -> None:
+    profile = _resolve_source_profile("full_spec", "approved_full_spec_v1")
+    source_root = tmp_path / "source"
+    dependency_root = tmp_path / "dependencies"
+    dependency_root.mkdir()
+    repository_root = Path(__file__).resolve().parents[2]
+    for relative in profile.source_files:
+        target = source_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if relative.endswith("/reference.py"):
+            target.write_text(
+                "from identitybench.v5.schemas import AtomicMutationV5\n"
+                "def evaluate_shared_input(case):\n"
+                "    return {'case_id': case['case_id'], 'operation': case['operation'], "
+                "'schema_loaded': str(AtomicMutationV5).startswith('typing.Annotated')}\n",
+                encoding="utf-8",
+            )
+        elif relative.startswith("src/identitybench/") and relative.endswith(".py"):
+            target.write_bytes((repository_root / relative).read_bytes())
+        elif relative.endswith(".py"):
+            target.write_text("# inert synthetic closure support\n", encoding="utf-8")
+        else:
+            target.write_text("synthetic normative or author artifact\n", encoding="utf-8")
+    _copy_frozen_dependencies(
+        dependency_root,
+        sha256_bytes,
+        ("annotated-types", "pydantic", "pydantic-core", "typing-extensions", "typing-inspection"),
+    )
+    script = _child_runner_source(
+        source_root,
+        dependency_root,
+        source_root / profile.entrypoint,
+        "full_spec",
+        profile.entrypoint_module,
+        runtime_files=(
+            ("/System/Library/CoreServices/SystemVersion.plist",)
+            if Path("/System/Library/CoreServices/SystemVersion.plist").is_file()
+            else ()
+        ),
+        source_profile=profile.profile_id,
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", script],
+        input=canonical_json_bytes({"case_id": "synthetic-current-case", "operation": "safety"}),
+        capture_output=True,
+        check=False,
+        cwd=source_root,
+        env={"PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"},
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    assert strict_json_loads(completed.stdout) == {
+        "case_id": "synthetic-current-case",
+        "operation": "safety",
+        "schema_loaded": True,
+    }
+    audit = strict_json_loads(completed.stderr)
+    assert isinstance(audit, dict)
+    assert (
+        "source:tests/conformance/v5/approved_full_spec_v1/reference.py"
+        in audit["read_paths"]
+    )
+    assert "source:src/identitybench/v5/schemas.py" in audit["read_paths"]
+    assert not any(
+        "SPEC-v5-ADDENDUM-01.md" in path or "SPEC-v5-DIRECTIVE-01.md" in path
+        for path in audit["read_paths"]
+    )
+    _validate_audit_receipt(audit)
+
+
+def test_source_capture_rejects_an_uncaptured_public_schema_dependency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = SourceProfile(
+        evaluator_id="agent_view",
+        profile_id="synthetic_missing_schema",
+        author_origin="synthetic_test_only",
+        source_files=("synthetic_reference.py",),
+        entrypoint="synthetic_reference.py",
+        entrypoint_module=None,
+    )
+    monkeypatch.setitem(
+        process_module._SOURCE_PROFILES["agent_view"],
+        profile.profile_id,
+        profile,
+    )
+    (tmp_path / "synthetic_reference.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(SharedRuntimeError, match=r"does not capture the public schemas\.py"):
+        capture_source_closure(
+            "agent_view",
+            source_profile=profile.profile_id,
+            repository_root=tmp_path,
+            result_root=tmp_path / "capture",
+        )
+    assert not (tmp_path / "capture").exists()
+
+
+def test_current_profiles_capture_and_archive_under_approved_results_root(
+    tmp_path: Path,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    synthetic_root = tmp_path / "synthetic-repository"
+    synthetic_root.mkdir()
+    current_results_root = synthetic_root / (
+        "reports/v5/conformance/shared_results/approved_addendum_v1"
+    )
+    profiles = (
+        _resolve_source_profile("full_spec", "approved_full_spec_v1"),
+        _resolve_source_profile("production", "production_v4"),
+    )
+    for profile in profiles:
+        for relative in profile.source_files:
+            destination = synthetic_root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source = repository_root / relative
+            if source.is_file() and (
+                relative.startswith("src/identitybench/")
+                or relative in {"SPEC-v5.md", "SPEC-v5-ADDENDUM-01.md", "SPEC-v5-DIRECTIVE-01.md"}
+            ):
+                destination.write_bytes(source.read_bytes())
+            else:
+                destination.write_text("synthetic profile source\n", encoding="utf-8")
+        capture = capture_source_closure(
+            profile.evaluator_id,
+            source_profile=profile.profile_id,
+            repository_root=synthetic_root,
+        )
+        assert Path(capture["capture_path"]).is_relative_to(current_results_root)
+        if profile.profile_id == "approved_full_spec_v1":
+            source_rows = {
+                row["path"]: row["sha256"] for row in capture["source_files"]
+            }
+            assert source_rows["src/identitybench/v5/scope_algebra.py"] == (
+                "ea639f4c8061a6e911fe53ddb024d1ac904c5da10e01600c6c98fca8db264db7"
+            )
+
+    current_results_root.mkdir(parents=True, exist_ok=True)
+    base = _frozen_worker(tmp_path, "def evaluate_shared_input(case): return {}\n")
+    try:
+        for evaluator_id, profile_id in (
+            ("full_spec", "approved_full_spec_v1"),
+            ("production", "production_v4"),
+        ):
+            evaluator = replace(
+                base,
+                evaluator_id=evaluator_id,
+                source_profile=profile_id,
+                author_origin=(
+                    "approved_full_spec_author_v1"
+                    if evaluator_id == "full_spec"
+                    else "production_adapter"
+                ),
+                source_bytes={
+                    "src/identitybench/v5/normative_contract.py": b"synthetic pinned source\n"
+                },
+            )
+            archive = archive_frozen_source_snapshot(
+                evaluator,
+                repository_root=synthetic_root,
+            )
+            assert Path(archive["archive_path"]).is_relative_to(current_results_root)
+    finally:
+        base.close()
 
 
 def test_fresh_full_spec_v3_profile_reuses_the_authors_v2_runtime_directory() -> None:
@@ -989,6 +1219,161 @@ def test_production_v3_profile_closes_cold_scoring_import_with_v3_schema(
     assert "source:src/identitybench/v3/schemas.py" in green_audit["read_paths"]
     assert "identitybench.v3.schemas" in green_audit["import_names"]
     _validate_audit_receipt(green_audit)
+
+
+def test_production_v4_profile_stages_current_contract_dependency(
+    tmp_path: Path,
+) -> None:
+    profile = _resolve_source_profile("production", "production_v4")
+    production_v3 = _resolve_source_profile("production", "production_v3")
+    assert profile.source_files == (
+        *production_v3.source_files,
+        "src/identitybench/v5/normative_contract.py",
+    )
+    assert "src/identitybench/v5/normative_contract.py" not in production_v3.source_files
+    assert "src/identitybench/v5/normative_contract.py" in (
+        process_module._runtime_inventory_for_profile(profile)
+    )
+    assert _namespace_packages_for_profile(profile) == [
+        "identitybench.v3",
+        "identitybench.v4",
+    ]
+
+    repository_root = Path(__file__).resolve().parents[2]
+    source_root = tmp_path / "source"
+    dependency_root = tmp_path / "dependencies"
+    dependency_root.mkdir()
+    for relative in profile.source_files:
+        target = source_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if relative in {
+            "src/identitybench/__init__.py",
+            "src/identitybench/v5/__init__.py",
+            "src/identitybench/v5/schemas.py",
+            "src/identitybench/v5/conformance_shared.py",
+            "src/identitybench/v5/normative_contract.py",
+        }:
+            target.write_bytes((repository_root / relative).read_bytes())
+        else:
+            target.write_text("# synthetic production closure support\n", encoding="utf-8")
+    entrypoint = source_root / profile.entrypoint
+    entrypoint.write_text(
+        "from identitybench.v5 import conformance_shared, normative_contract\n"
+        "def evaluate_shared_input(case):\n"
+        "    return {'case_id': case['case_id'], 'protocol': conformance_shared.PROTOCOL, "
+        "'contract_id': normative_contract.V5_APPROVED_CONFORMANCE_CONTRACT_ID}\n",
+        encoding="utf-8",
+    )
+    _copy_frozen_dependencies(
+        dependency_root,
+        sha256_bytes,
+        ("annotated-types", "pydantic", "pydantic-core", "typing-extensions", "typing-inspection"),
+    )
+    script = _child_runner_source(
+        source_root,
+        dependency_root,
+        entrypoint,
+        "production",
+        profile.entrypoint_module,
+        runtime_files=(
+            ("/System/Library/CoreServices/SystemVersion.plist",)
+            if Path("/System/Library/CoreServices/SystemVersion.plist").is_file()
+            else ()
+        ),
+        source_profile=profile.profile_id,
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", script],
+        input=canonical_json_bytes({"case_id": "synthetic-current-production"}),
+        capture_output=True,
+        check=False,
+        cwd=source_root,
+        env={"PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"},
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    assert strict_json_loads(completed.stdout) == {
+        "case_id": "synthetic-current-production",
+        "protocol": PROTOCOL,
+        "contract_id": "identitybench.v5.normative-contract.addendum-01.directive-01.v1",
+    }
+    audit = strict_json_loads(completed.stderr)
+    assert isinstance(audit, dict)
+    assert "source:src/identitybench/v5/conformance_shared.py" in audit["read_paths"]
+    assert "source:src/identitybench/v5/normative_contract.py" in audit["read_paths"]
+    assert "identitybench.v5.normative_contract" in audit["import_names"]
+    _validate_audit_receipt(audit)
+
+
+def test_default_production_profile_imports_current_shared_module_without_normative_file(
+    tmp_path: Path,
+) -> None:
+    profile = _resolve_source_profile("production")
+    assert profile.profile_id == "production_v1"
+    assert "src/identitybench/v5/normative_contract.py" not in profile.source_files
+
+    repository_root = Path(__file__).resolve().parents[2]
+    source_root = tmp_path / "source"
+    dependency_root = tmp_path / "dependencies"
+    dependency_root.mkdir()
+    current_sources = {
+        "src/identitybench/__init__.py",
+        "src/identitybench/v5/__init__.py",
+        "src/identitybench/v5/schemas.py",
+        "src/identitybench/v5/conformance_shared.py",
+    }
+    for relative in profile.source_files:
+        target = source_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if relative in current_sources:
+            target.write_bytes((repository_root / relative).read_bytes())
+        else:
+            target.write_text("# synthetic production closure support\n", encoding="utf-8")
+    entrypoint = source_root / profile.entrypoint
+    entrypoint.write_text(
+        "from identitybench.v5 import conformance_shared\n"
+        "def evaluate_shared_input(case):\n"
+        "    return {'case_id': case['case_id'], 'protocol': conformance_shared.PROTOCOL}\n",
+        encoding="utf-8",
+    )
+    _copy_frozen_dependencies(
+        dependency_root,
+        sha256_bytes,
+        ("annotated-types", "pydantic", "pydantic-core", "typing-extensions", "typing-inspection"),
+    )
+    script = _child_runner_source(
+        source_root,
+        dependency_root,
+        entrypoint,
+        "production",
+        profile.entrypoint_module,
+        runtime_files=(
+            ("/System/Library/CoreServices/SystemVersion.plist",)
+            if Path("/System/Library/CoreServices/SystemVersion.plist").is_file()
+            else ()
+        ),
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", script],
+        input=canonical_json_bytes({"case_id": "synthetic-default-production"}),
+        capture_output=True,
+        check=False,
+        cwd=source_root,
+        env={"PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"},
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    assert strict_json_loads(completed.stdout) == {
+        "case_id": "synthetic-default-production",
+        "protocol": PROTOCOL,
+    }
+    audit = strict_json_loads(completed.stderr)
+    assert isinstance(audit, dict)
+    assert "source:src/identitybench/v5/conformance_shared.py" in audit["read_paths"]
+    assert "identitybench.v5.normative_contract" not in audit["import_names"]
+    _validate_audit_receipt(audit)
 
 
 def test_fresh_full_spec_entrypoint_loads_in_pinned_package_context(tmp_path: Path) -> None:
