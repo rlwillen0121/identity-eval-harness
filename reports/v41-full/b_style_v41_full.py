@@ -168,6 +168,7 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "claude-opus-5-5-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "claude-sonnet-5-5-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "gemini-4-argon-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
+    "gemini-4-carbon-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "muse-spark-1.3-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "muse-wonder-1.0-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "grok-4.7-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
@@ -182,9 +183,11 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "minimax-m3-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (MoE)"},
     "qwen3.8-flash-next-local": {"tier": "open_weight", "class_label": "Local GPU (MoE Flash)"},
     "qwen3.8-27b-exl3-4bit-local": {"tier": "open_weight", "class_label": "Local GPU (27B 4-bit)"},
+    "gemini-4-hydrogen-t0-medium": {"tier": "fast_small", "class_label": "Fast / Flash"},
     "gemini-3.8-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Flash"},
     "claude-haiku-5-5-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "claude-fable-5-1-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
+    "claude-fable-5-2-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "glm-5.3-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small (MoE)"},
     "gpt-6-luna-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "mistral-large-4-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
@@ -228,7 +231,7 @@ def add_header_v41_full(
     title: str,
     subtitle: str,
     pal: V41BPalette = B_PALETTES["light"],
-    date_label: str = "26 OCT 2026",
+    date_label: str = "13 NOV 2026",
 ) -> None:
     svg.text(100, 68, "IDENTITYBENCH V4.1 FULL", 20, pal.muted, bold=True)
     svg.text(
@@ -433,6 +436,9 @@ def render_v41_safety_screen(rows: Sequence[V41BStyleRow], theme_name: str = "li
 def render_v41_model_tiers(rows: Sequence[V41BStyleRow], theme_name: str = "light") -> str:
     """Clean model class comparison chart (`b-model-tiers`)."""
     pal = B_PALETTES[theme_name]
+    missing = [r.model_id for r in rows if r.model_id not in MODEL_TIER_META_V41]
+    if missing:
+        raise ValueError(f"MODEL_TIER_META_V41 missing model IDs: {missing}")
     row_step, cur_y = 64, 290
     tier_blocks: list[tuple[str, str, str, list[V41BStyleRow], int, int]] = []
     for tier_key, tier_title, bar_color, pill_bg in pal.tier_defs:

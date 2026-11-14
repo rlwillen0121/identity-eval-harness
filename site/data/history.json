@@ -69,5 +69,11 @@
   "models": [
    "gemini-4-carbon-t0-medium"
   ]
+ },
+ {
+  "date": "2026-11-13",
+  "models": [
+   "gemini-4-hydrogen-t0-medium"
+  ]
  }
 ]

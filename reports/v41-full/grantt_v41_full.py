@@ -523,7 +523,7 @@ def build_grantt_fig_tokens_svg(
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
         f'<rect width="{W}" height="{H}" rx="{16 * scale:.0f}" fill="{t["surface_raised"]}" stroke="{t["border"]}" stroke-width="{1 * scale:.1f}"/>',
-        f'<text x="{pad_x:.1f}" y="{38 * scale:.1f}" font-family="{FONT}" font-size="{20 * scale:.1f}" font-weight="600" fill="{t["ink"]}" letter-spacing="-0.01em">Astra, Sol, and Terra solve the most tasks with 4–5× fewer tokens than the field median (v41_full)</text>',
+        f'<text x="{pad_x:.1f}" y="{38 * scale:.1f}" font-family="{FONT}" font-size="{20 * scale:.1f}" font-weight="600" fill="{t["ink"]}" letter-spacing="-0.01em">Astra, Sol, and Terra solve 88%–99.6% of tasks with 4–5× fewer tokens than the field median (v41_full)</text>',
     ]
 
     leg_y = 66 * scale
