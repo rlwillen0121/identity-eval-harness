@@ -279,6 +279,37 @@ async def test_non_fatal_error_events_do_not_fail_a_completed_turn() -> None:
     assert response.text == "answer"
 
 
+async def test_empty_completed_action_protocol_turn_is_ok_empty_text() -> None:
+    completed_without_message = (
+        {"type": "thread.started", "thread_id": "th_123"},
+        {"type": "turn.started"},
+        {"type": "error", "message": "reconnecting"},
+        {"type": "turn.completed", "usage": VERIFIED_USAGE},
+    )
+    action = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
+    for final_message in ("", None):
+        runner = FakeRunner(codex_run(final_message, *completed_without_message))
+        response = await provider(runner).complete(action)
+        assert response.ok
+        assert response.error is None
+        assert response.text == ""
+        assert response.parsed is None
+        assert response.stop_reason == "completed"
+
+    non_action = replace(action, schema_name="access_request_decision")
+    non_action_runner = FakeRunner(
+        codex_run(
+            None,
+            {"type": "thread.started", "thread_id": "th_123"},
+            {"type": "turn.started"},
+            {"type": "turn.completed", "usage": VERIFIED_USAGE},
+        )
+    )
+    non_action_response = await provider(non_action_runner).complete(non_action)
+    assert non_action_response.error is not None
+    assert "no final message" in non_action_response.error
+
+
 async def test_rate_limit_is_retried_and_stale_output_is_cleared() -> None:
     seen_stale: list[bool] = []
 

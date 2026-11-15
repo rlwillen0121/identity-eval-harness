@@ -204,6 +204,7 @@ class CodexCliProvider(CliProvider):
         errors: list[str] = []
         streamed_text: str | None = None
         turn_completed = False
+        turn_failed = False
         for event in events:
             kind = event.get("type")
             if kind == "thread.started" and event.get("thread_id"):
@@ -227,6 +228,8 @@ class CodexCliProvider(CliProvider):
             elif (message := _agent_message(event)) is not None:
                 streamed_text = message
             elif (error := _event_error(event)) is not None:
+                if kind == "turn.failed":
+                    turn_failed = True
                 errors.append(error)
 
         text: str | None = None
@@ -234,6 +237,14 @@ class CodexCliProvider(CliProvider):
             text = (io_dir / OUTPUT_FILE).read_text(encoding="utf-8").strip() or None
         if text is None and streamed_text:
             text = streamed_text.strip() or None
+        if (
+            text is None
+            and turn_completed
+            and not turn_failed
+            and result.returncode == 0
+            and request.schema_name == ACTION_SCHEMA_NAME
+        ):
+            text = ""
 
         response = ModelResponse(
             text=text,
