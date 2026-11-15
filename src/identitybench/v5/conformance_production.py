@@ -590,7 +590,10 @@ def _materialize_source(
         case,
         use_induced_phase1_ledger=case["operation"] == "score_trace",
     )
-    base_plan: JSONValue = _jsonable(gold.mutations)
+    base_plan: JSONValue = sorted(
+        (_jsonable(row) for row in gold.mutations),
+        key=lambda row: (cast(str, row["mutation_kind"]), cast(str, row["target_entity_id"])),
+    )
     return _materialize_candidate_source(case, source, base_plan)
 
 

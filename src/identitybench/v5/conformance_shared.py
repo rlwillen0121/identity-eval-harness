@@ -215,7 +215,12 @@ SCORE_METRIC_KEYS = frozenset(
 )
 SNAPSHOT_BOUNDARIES = frozenset({"FIRST_STAGE", "LAST_STAGE", "COMMIT"})
 FROZEN_SPEC_SHA256 = "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43"
-PINNED_PUBLIC_SCHEMA_SHA256 = "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7"
+HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256 = (
+    "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7"
+)
+PINNED_PUBLIC_SCHEMA_SHA256 = (
+    "83d0eece8060ca0a906071b979c8ed0db7c56efe031eb6a459f6b853dfb0b424"
+)
 LEGACY_FAMILY_MAP_SHA256 = "3916a4778c6f2f745c7077cca31910b7c3f4f72f5041d25549f1dcbba1bd77c1"
 FAMILY_MAP_V2_VERSION = "identitybench.v5.shared-family-map.v2"
 FAMILY_MAP_V2_BINDING_PROVENANCE = (
@@ -749,15 +754,59 @@ def verify_case_index(
         )
 
 
-def freeze_source_closure(spec: EvaluatorClosure) -> FrozenClosure:
+def _normative_contract_roles(
+    contract_id: object,
+) -> tuple[dict[str, JSONValue], dict[str, tuple[str, str]]]:
     from identitybench.v5.normative_contract import (
         V5_APPROVED_ADDENDUM_PATH,
         V5_APPROVED_CONFORMANCE_CONTRACT_ID,
         V5_APPROVED_DIRECTIVE_PATH,
         V5_BASE_SPEC_PATH,
+        V5_DRAFT5_SPEC_PATH,
+        V5_PROMOTED_DRAFT5_CONTRACT_ID,
         approved_v5_normative_contract,
+        promoted_v5_normative_contract,
     )
 
+    try:
+        if contract_id == V5_APPROVED_CONFORMANCE_CONTRACT_ID:
+            contract = approved_v5_normative_contract()
+            roles = {
+                V5_BASE_SPEC_PATH: ("normative_spec", contract["base_spec"]["sha256"]),
+                V5_APPROVED_ADDENDUM_PATH: (
+                    "normative_addendum",
+                    contract["approved_addendum"]["sha256"],
+                ),
+                V5_APPROVED_DIRECTIVE_PATH: (
+                    "normative_directive",
+                    contract["approved_directive"]["sha256"],
+                ),
+            }
+            return contract, roles
+        if contract_id == V5_PROMOTED_DRAFT5_CONTRACT_ID:
+            contract = promoted_v5_normative_contract()
+            roles = {
+                V5_BASE_SPEC_PATH: ("normative_spec", contract["base_spec"]["sha256"]),
+                V5_DRAFT5_SPEC_PATH: (
+                    "normative_protocol_spec",
+                    contract["protocol_revision_spec"]["sha256"],
+                ),
+                V5_APPROVED_ADDENDUM_PATH: (
+                    "normative_addendum",
+                    contract["approved_addendum"]["sha256"],
+                ),
+                V5_APPROVED_DIRECTIVE_PATH: (
+                    "normative_directive",
+                    contract["approved_directive"]["sha256"],
+                ),
+            }
+            return contract, roles
+    except RuntimeError as error:
+        raise ConformanceProtocolError(str(error)) from error
+    raise ConformanceProtocolError("normative contract is not registered for full_spec")
+
+
+def freeze_source_closure(spec: EvaluatorClosure) -> FrozenClosure:
     if spec.evaluator_id not in EVALUATOR_IDS:
         raise ConformanceProtocolError("unknown evaluator_id")
     if not spec.entrypoint_module or any(
@@ -799,28 +848,11 @@ def freeze_source_closure(spec: EvaluatorClosure) -> FrozenClosure:
         raise ConformanceProtocolError("dependency_lock_sha256 must be lowercase SHA-256 hex")
     normative_contract: dict[str, JSONValue] | None = None
     if spec.normative_contract_id is not None:
-        if (
-            spec.evaluator_id != "full_spec"
-            or spec.normative_contract_id != V5_APPROVED_CONFORMANCE_CONTRACT_ID
-        ):
+        if spec.evaluator_id != "full_spec":
             raise ConformanceProtocolError("normative contract is not registered for full_spec")
-        try:
-            normative_contract = approved_v5_normative_contract()
-        except RuntimeError as error:
-            raise ConformanceProtocolError(str(error)) from error
+        normative_contract, expected_roles = _normative_contract_roles(spec.normative_contract_id)
         role_by_path = {
             item.relative_path: item for item in frozen_files
-        }
-        expected_roles = {
-            V5_BASE_SPEC_PATH: ("normative_spec", normative_contract["base_spec"]["sha256"]),
-            V5_APPROVED_ADDENDUM_PATH: (
-                "normative_addendum",
-                normative_contract["approved_addendum"]["sha256"],
-            ),
-            V5_APPROVED_DIRECTIVE_PATH: (
-                "normative_directive",
-                normative_contract["approved_directive"]["sha256"],
-            ),
         }
         if any(
             path not in role_by_path
@@ -1076,7 +1108,7 @@ def _bind_public_artifacts(cases: Sequence[FrozenCase], closures: Sequence[Froze
         V5_APPROVED_ADDENDUM_PATH,
         V5_APPROVED_DIRECTIVE_PATH,
         V5_BASE_SPEC_PATH,
-        approved_v5_normative_contract,
+        V5_DRAFT5_SPEC_PATH,
     )
 
     schemas: dict[str, set[str]] = {
@@ -1112,38 +1144,29 @@ def _bind_public_artifacts(cases: Sequence[FrozenCase], closures: Sequence[Froze
     current_contract = full_closure.manifest.get("normative_contract")
     if current_contract is None:
         if any(
-            file.relative_path in {V5_APPROVED_ADDENDUM_PATH, V5_APPROVED_DIRECTIVE_PATH}
+            file.relative_path
+            in {V5_APPROVED_ADDENDUM_PATH, V5_APPROVED_DIRECTIVE_PATH, V5_DRAFT5_SPEC_PATH}
             for file in full_closure.files
         ):
             raise ConformanceProtocolError(
                 "historical full_spec closure cannot include newly approved normative inputs"
             )
     else:
-        try:
-            expected_contract = approved_v5_normative_contract()
-        except RuntimeError as error:
-            raise ConformanceProtocolError(str(error)) from error
+        contract_id = (
+            current_contract.get("contract_id") if isinstance(current_contract, dict) else None
+        )
+        expected_contract, expected_role_rows = _normative_contract_roles(contract_id)
         if current_contract != expected_contract:
             raise ConformanceProtocolError("full_spec closure normative contract differs")
-        expected_role_rows = {
-            V5_BASE_SPEC_PATH: ("normative_spec", expected_contract["base_spec"]["sha256"]),
-            V5_APPROVED_ADDENDUM_PATH: (
-                "normative_addendum",
-                expected_contract["approved_addendum"]["sha256"],
-            ),
-            V5_APPROVED_DIRECTIVE_PATH: (
-                "normative_directive",
-                expected_contract["approved_directive"]["sha256"],
-            ),
-        }
         observed_rows = {
             file.relative_path: (file.role, file.sha256) for file in full_closure.files
         }
         if any(observed_rows.get(path) != binding for path, binding in expected_role_rows.items()):
             raise ConformanceProtocolError("full_spec closure normative file bindings differ")
     if any(
-        file.relative_path in {V5_APPROVED_ADDENDUM_PATH, V5_APPROVED_DIRECTIVE_PATH}
-        or file.role in {"normative_addendum", "normative_directive"}
+        file.relative_path
+        in {V5_APPROVED_ADDENDUM_PATH, V5_APPROVED_DIRECTIVE_PATH, V5_DRAFT5_SPEC_PATH}
+        or file.role in {"normative_addendum", "normative_directive", "normative_protocol_spec"}
         for file in agent_closure.files
     ):
         raise ConformanceProtocolError("agent_view closure cannot contain normative-only inputs")

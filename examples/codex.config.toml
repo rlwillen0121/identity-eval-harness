@@ -1,5 +1,5 @@
 # Follow AGENTS.md.
-# v5.0 / M5.0-Core uses SPEC-v5.md, approved SPEC-v5-ADDENDUM-01.md, and the original user directive recorded in SPEC-v5-DIRECTIVE-01.md; v1-v4.1 retain the frozen six-category boundary.
+# v5.0 / M5.0-Core uses SPEC-v5.0-draft.5.md (08f8d8da..., superseding §0.4-listed protocol/resource/schema/ceiling/inference/gate sections) together with fixed SPEC-v5.md (6bc0adfa...), approved SPEC-v5-ADDENDUM-01.md, and SPEC-v5-DIRECTIVE-01.md; v1-v4.1 retain the frozen six-category boundary.
 # v5 alone adds structured deterministic agent_governance over EnterpriseAgentV5 and OBO delegation entities.
 # Contributors use free local checks; implementation, ordinary review, and required independent lanes use native collaboration subagents.
 # AGENTS.md's named-reviewer exception lets the review parent call an explicitly requested spec/adversarial model unavailable through native tools using the existing configured CPA connection, without another routing-permission question.

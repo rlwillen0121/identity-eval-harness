@@ -1,7 +1,7 @@
 # Draft 5.0-draft.5 changelog
 
-**Status:** `REVIEW_PENDING`  
-**Source:** Complete candidate copy/revision of `SPEC-v5.md`, SHA-256 `6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43`. The active source file remains unchanged.
+**Status:** `CONVERGED_CONSENSUS` / `APPROVED_FOR_IMPLEMENTATION` (exact `SPEC-v5.0-draft.5.md` SHA-256 `08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104`)
+**Source:** Complete candidate copy/revision of `SPEC-v5.md`, SHA-256 `6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43`. Fixed `SPEC-v5.md`, `SPEC-v5-ADDENDUM-01.md`, and `SPEC-v5-DIRECTIVE-01.md` remain unchanged.
 
 ## Changes by section
 
@@ -114,4 +114,13 @@ The final small Carbon v2 attempt [status](external-review/carbon-small-policy-v
 
 The concrete blocker is a usable Carbon review through the configured CPA connection, not permission pending. **Two-model consensus is not achieved; source implementation migration has not started.** Helper P2 closure (29 tests, implementer-reported and independently rerun by native review) remains supporting review-infrastructure evidence only.
 
-[Final review-status report](external-review/REVIEW-STATUS-08f8d8da.md) and [frozen safe manifest](external-review/CHECKPOINT-MANIFEST.json), SHA-256 `a385a7586d29a3e0a85b00946067b4caa2c9b2074c677445d69cc167c6a008c6`, preserve 50 safe artifact hashes and the excluded-private boundary. The two owner-refreshed metadata files are hash-verified separately; the preliminary manifest is not final evidence. Only this changelog and review packet changed. Candidate/source/datasets/seals/governance and commits remain untouched; no source-health, milestone, live evaluation, or publication claim is made.
+[Final review-status report](external-review/REVIEW-STATUS-08f8d8da.md) and [frozen safe manifest](external-review/CHECKPOINT-MANIFEST.json), SHA-256 `a385a7586d29a3e0a85b00946067b4caa2c9b2074c677445d69cc167c6a008c6`, preserve the pre-round-5 CPA evidence boundary (50 safe artifact hashes and the excluded-private boundary). The two owner-refreshed metadata files are hash-verified separately; the preliminary manifest is not final evidence.
+
+## Round 5 native Gemini Carbon closure & two-model consensus
+
+**Status updated to `CONVERGED_CONSENSUS` / `APPROVED_FOR_IMPLEMENTATION` on exact candidate `08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104`.**
+
+- **Independent native Gemini 4 Carbon High Round 5 (`spec-carbon`, board `#5`):** Dispatched via native Antigravity `swarm` collaboration subagent under strict peer-review isolation (`0` repo modifications, `0` reads of `reports/v5/spec-draft5/*` or Opus review artifacts), with exact SHA-256 verification of `SPEC-v5.0-draft.5.md`, `SPEC-v5.md`, `SPEC-v5-ADDENDUM-01.md`, and `SPEC-v5-DIRECTIVE-01.md`. Returned **`PASS WITH NONBLOCKING NOTES`, `0 P0 / 0 P1 / 4 P2-NOTE / 4 P3-NOTE`** ([review](external-review/round5-native-gemini-4-carbon-high-08f8d8da-review.md), SHA-256 `d61d933c48e6b0064eb14dbe0e6aebcab4702d2dd728df794a8533a166a7d6e5`; [status](external-review/round5-native-gemini-4-carbon-high-08f8d8da-status.json)), confirming no further candidate revision round is required.
+- **Two-model consensus:** Opus 5.5 High Round 4 (`PASS WITH NONBLOCKING NOTES`, `0 P0 / 0 P1 / 0 P2`) + independent native Gemini 4 Carbon High Round 5 (`PASS WITH NONBLOCKING NOTES`, `0 P0 / 0 P1 / 4 P2-NOTE / 4 P3-NOTE`) converge on the exact frozen candidate bytes `08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104`.
+- **Nonblocking note routing (`SC-01`..`SC-08`):** `SC-01`..`SC-07` are routed directly to `M5.0-Core` implementation verification (`schemas.py`, `runner.py`, `provider_accounting.py`, `scoring.py`, `report.py`, `policy_card.py`, and frozen preflight/manifest artifacts) as detailed in [REVIEW-PACKET.md](REVIEW-PACKET.md), while `SC-08` is editorial-only; consensus-accepted specification bytes `08f8d8da…` remain frozen.
+- **Scope boundary:** Two-model specification consensus authorizes `M5.0-Core` implementation promotion and §0.5 (`RULES-R2-14`) joint governance-file promotion. It does not by itself establish `Proven for source-health`, `Proven for milestone-gate`, `G-SPEC-01`, `G-DET-01`, `G-BASE-01`, `G-QUERY-01`, `G-IGA-REVIEW-01`, live evaluation, or `Proven for publication`, which depend on completing the `M5.0-Core` implementation and validation gates.

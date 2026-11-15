@@ -21,12 +21,41 @@ V5_APPROVED_CONFORMANCE_CONTRACT_ID = (
 V5_APPROVED_FULL_SPEC_PROFILE = "approved_full_spec_v1"
 V5_APPROVED_FULL_SPEC_AUTHOR_ORIGIN = "approved_full_spec_author_v1"
 
+V5_DRAFT5_SPEC_PATH = "SPEC-v5.0-draft.5.md"
+V5_DRAFT5_SPEC_SHA256 = "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104"
+V5_PROMOTED_DRAFT5_CONTRACT_ID = "identitybench.v5.normative-contract.draft5-consensus.v1"
+V5_PROMOTED_DRAFT5_FULL_SPEC_PROFILE = "promoted_draft5_full_spec_v1"
+V5_PROMOTED_DRAFT5_FULL_SPEC_AUTHOR_ORIGIN = "fresh_promoted_draft5_full_spec_author_v1"
+V5_PROMOTED_DRAFT5_AGENT_VIEW_PROFILE = "promoted_draft5_card_only_v1"
+V5_PROMOTED_DRAFT5_AGENT_VIEW_AUTHOR_ORIGIN = "fresh_promoted_draft5_card_only_author_v1"
+V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE = "production_v5"
+
 
 def approved_v5_normative_contract() -> dict[str, Any]:
     """Return the exact metadata binding for the approved current v5 contract."""
     return {
         "contract_id": V5_APPROVED_CONFORMANCE_CONTRACT_ID,
         "base_spec": {"path": V5_BASE_SPEC_PATH, "sha256": V5_BASE_SPEC_SHA256},
+        "approved_addendum": {
+            "path": V5_APPROVED_ADDENDUM_PATH,
+            "sha256": V5_APPROVED_ADDENDUM_SHA256,
+        },
+        "approved_directive": {
+            "path": V5_APPROVED_DIRECTIVE_PATH,
+            "sha256": V5_APPROVED_DIRECTIVE_SHA256,
+        },
+    }
+
+
+def promoted_v5_normative_contract() -> dict[str, Any]:
+    """Return the 4-document metadata binding for the promoted draft.5 v5 contract."""
+    return {
+        "contract_id": V5_PROMOTED_DRAFT5_CONTRACT_ID,
+        "base_spec": {"path": V5_BASE_SPEC_PATH, "sha256": V5_BASE_SPEC_SHA256},
+        "protocol_revision_spec": {
+            "path": V5_DRAFT5_SPEC_PATH,
+            "sha256": V5_DRAFT5_SPEC_SHA256,
+        },
         "approved_addendum": {
             "path": V5_APPROVED_ADDENDUM_PATH,
             "sha256": V5_APPROVED_ADDENDUM_SHA256,

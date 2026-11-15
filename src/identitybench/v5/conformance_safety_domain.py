@@ -26,7 +26,7 @@ from .schemas import (
 )
 
 WIRE_PROTOCOL_V1 = "identitybench.v5.shared-conformance.v1"
-PINNED_SCHEMA_SHA256_V1 = "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7"
+PINNED_SCHEMA_SHA256_V1 = "83d0eece8060ca0a906071b979c8ed0db7c56efe031eb6a459f6b853dfb0b424"
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _EVALUATORS = frozenset({"full_spec_blind", "agent_view_only"})
 _MATERIALIZATION_ARTIFACT_NAMES = (

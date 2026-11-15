@@ -80,7 +80,7 @@ def _public_case(case_id: str = "case-1") -> dict[str, object]:
             "q2_slice_ids_p1": [],
         },
         "rendered_card": "",
-        "schema_sha256": "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7",
+        "schema_sha256": PINNED_PUBLIC_SCHEMA_SHA256,
         "stimulus": {},
     }
 
@@ -2826,3 +2826,85 @@ def test_stdlib_manifest_hashes_bytecode_cache_files(tmp_path: Path) -> None:
 def test_stdlib_roots_do_not_include_the_repository() -> None:
     repository = Path(__file__).resolve().parents[2]
     assert all(root != repository and repository not in root.parents for root in _stdlib_roots())
+
+
+def test_promoted_draft5_profiles_resolution_and_contract_binding() -> None:
+    from identitybench.v5.normative_contract import (
+        V5_APPROVED_ADDENDUM_PATH,
+        V5_APPROVED_DIRECTIVE_PATH,
+        V5_APPROVED_FULL_SPEC_PROFILE,
+        V5_DRAFT5_SPEC_PATH,
+        V5_PROMOTED_DRAFT5_AGENT_VIEW_AUTHOR_ORIGIN,
+        V5_PROMOTED_DRAFT5_AGENT_VIEW_PROFILE,
+        V5_PROMOTED_DRAFT5_CONTRACT_ID,
+        V5_PROMOTED_DRAFT5_FULL_SPEC_AUTHOR_ORIGIN,
+        V5_PROMOTED_DRAFT5_FULL_SPEC_PROFILE,
+        V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE,
+        approved_v5_normative_contract,
+        promoted_v5_normative_contract,
+    )
+
+    prod_v4 = _resolve_source_profile("production", "production_v4")
+    prod_v5 = _resolve_source_profile("production", V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE)
+    assert prod_v5.profile_id == "production_v5"
+    assert prod_v5.author_origin == "production_adapter"
+    assert prod_v5.entrypoint == prod_v4.entrypoint
+    assert prod_v5.entrypoint_module is None
+    assert prod_v5.normative_contract_id is None
+    assert prod_v5.source_files == (
+        *prod_v4.source_files,
+        "src/identitybench/v5/topologies.py",
+    )
+    assert process_module._runtime_inventory_for_profile(prod_v5) == (
+        process_module._runtime_inventory_for_profile(prod_v4)
+    )
+    assert _namespace_packages_for_profile(prod_v5) == ["identitybench.v3", "identitybench.v4"]
+
+    full_draft5 = _resolve_source_profile("full_spec", V5_PROMOTED_DRAFT5_FULL_SPEC_PROFILE)
+    assert full_draft5.profile_id == "promoted_draft5_full_spec_v1"
+    assert full_draft5.author_origin == V5_PROMOTED_DRAFT5_FULL_SPEC_AUTHOR_ORIGIN
+    assert (
+        full_draft5.entrypoint
+        == "tests/conformance/v5/promoted_draft5_full_spec_v1/reference.py"
+    )
+    assert (
+        full_draft5.entrypoint_module
+        == "tests.conformance.v5.promoted_draft5_full_spec_v1.reference"
+    )
+    assert full_draft5.normative_contract_id == V5_PROMOTED_DRAFT5_CONTRACT_ID
+    assert full_draft5.source_files == (
+        "src/identitybench/__init__.py",
+        "src/identitybench/v5/__init__.py",
+        "src/identitybench/v5/schemas.py",
+        "src/identitybench/v5/scope_algebra.py",
+        "SPEC-v5.md",
+        V5_DRAFT5_SPEC_PATH,
+        V5_APPROVED_ADDENDUM_PATH,
+        V5_APPROVED_DIRECTIVE_PATH,
+        "tests/__init__.py",
+        "tests/conformance/__init__.py",
+        "tests/conformance/v5/promoted_draft5_full_spec_v1/reference.py",
+    )
+    assert process_module._profile_normative_contract(full_draft5) == (
+        promoted_v5_normative_contract()
+    )
+
+    approved_full = _resolve_source_profile("full_spec", V5_APPROVED_FULL_SPEC_PROFILE)
+    assert process_module._profile_normative_contract(approved_full) == (
+        approved_v5_normative_contract()
+    )
+
+    card_draft5 = _resolve_source_profile("agent_view", V5_PROMOTED_DRAFT5_AGENT_VIEW_PROFILE)
+    assert card_draft5.profile_id == "promoted_draft5_card_only_v1"
+    assert card_draft5.author_origin == V5_PROMOTED_DRAFT5_AGENT_VIEW_AUTHOR_ORIGIN
+    assert (
+        card_draft5.entrypoint
+        == "tests/conformance/v5/promoted_draft5_card_only_v1/worker.py"
+    )
+    assert card_draft5.entrypoint_module is None
+    assert card_draft5.normative_contract_id is None
+    assert process_module._profile_normative_contract(card_draft5) is None
+    assert card_draft5.source_files == (
+        "src/identitybench/v5/schemas.py",
+        "tests/conformance/v5/promoted_draft5_card_only_v1/worker.py",
+    )

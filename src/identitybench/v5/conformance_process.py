@@ -22,10 +22,12 @@ import sysconfig
 import tempfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from weakref import WeakSet
 
 from identitybench.v5.normative_contract import (
     V5_APPROVED_ADDENDUM_PATH,
@@ -34,11 +36,22 @@ from identitybench.v5.normative_contract import (
     V5_APPROVED_FULL_SPEC_AUTHOR_ORIGIN,
     V5_APPROVED_FULL_SPEC_PROFILE,
     V5_BASE_SPEC_SHA256,
+    V5_DRAFT5_SPEC_PATH,
+    V5_PROMOTED_DRAFT5_AGENT_VIEW_AUTHOR_ORIGIN,
+    V5_PROMOTED_DRAFT5_AGENT_VIEW_PROFILE,
+    V5_PROMOTED_DRAFT5_CONTRACT_ID,
+    V5_PROMOTED_DRAFT5_FULL_SPEC_AUTHOR_ORIGIN,
+    V5_PROMOTED_DRAFT5_FULL_SPEC_PROFILE,
+    V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE,
     approved_v5_normative_contract,
+    promoted_v5_normative_contract,
 )
 
+if TYPE_CHECKING:
+    from identitybench.v5.conformance_shared import FrozenCase
+
 _PROTOCOL = "identitybench.v5.shared-conformance.v1"
-_SCHEMA_SHA256 = "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7"
+_SCHEMA_SHA256 = "83d0eece8060ca0a906071b979c8ed0db7c56efe031eb6a459f6b853dfb0b424"
 _SPEC_SHA256 = V5_BASE_SPEC_SHA256
 _APPROVED_RESULT_ROOT = "reports/v5/conformance/shared_results/approved_addendum_v1"
 _DIAGNOSTIC_PHASE_BATCH_ROOT = (
@@ -168,6 +181,10 @@ _PRODUCTION_V4_FILES = (
     *_PRODUCTION_V3_FILES,
     "src/identitybench/v5/normative_contract.py",
 )
+_PRODUCTION_V5_FILES = (
+    *_PRODUCTION_V4_FILES,
+    "src/identitybench/v5/topologies.py",
+)
 _APPROVED_FULL_SPEC_PINNED_SOURCES = (
     (
         "src/identitybench/v5/scope_algebra.py",
@@ -251,8 +268,34 @@ _APPROVED_FULL_SPEC_V1_FILES = (
     "tests/conformance/v5/approved_full_spec_v1/test_reference.py",
     "tests/conformance/v5/approved_full_spec_v1/AMBIGUITIES.md",
 )
+_PROMOTED_DRAFT5_FULL_SPEC_V1_FILES = (
+    *_COMMON_SOURCE,
+    "src/identitybench/v5/scope_algebra.py",
+    "SPEC-v5.md",
+    V5_DRAFT5_SPEC_PATH,
+    V5_APPROVED_ADDENDUM_PATH,
+    V5_APPROVED_DIRECTIVE_PATH,
+    "tests/__init__.py",
+    "tests/conformance/__init__.py",
+    "tests/conformance/v5/promoted_draft5_full_spec_v1/reference.py",
+)
+_PROMOTED_DRAFT5_CARD_ONLY_V1_FILES = (
+    "src/identitybench/v5/schemas.py",
+    "tests/conformance/v5/promoted_draft5_card_only_v1/worker.py",
+)
 _SOURCE_PROFILES: dict[str, dict[str, SourceProfile]] = {
     "full_spec": {
+        V5_PROMOTED_DRAFT5_FULL_SPEC_PROFILE: SourceProfile(
+            evaluator_id="full_spec",
+            profile_id=V5_PROMOTED_DRAFT5_FULL_SPEC_PROFILE,
+            author_origin=V5_PROMOTED_DRAFT5_FULL_SPEC_AUTHOR_ORIGIN,
+            source_files=_PROMOTED_DRAFT5_FULL_SPEC_V1_FILES,
+            entrypoint="tests/conformance/v5/promoted_draft5_full_spec_v1/reference.py",
+            entrypoint_module=(
+                "tests.conformance.v5.promoted_draft5_full_spec_v1.reference"
+            ),
+            normative_contract_id=V5_PROMOTED_DRAFT5_CONTRACT_ID,
+        ),
         V5_APPROVED_FULL_SPEC_PROFILE: SourceProfile(
             evaluator_id="full_spec",
             profile_id=V5_APPROVED_FULL_SPEC_PROFILE,
@@ -301,6 +344,14 @@ _SOURCE_PROFILES: dict[str, dict[str, SourceProfile]] = {
         ),
     },
     "agent_view": {
+        V5_PROMOTED_DRAFT5_AGENT_VIEW_PROFILE: SourceProfile(
+            evaluator_id="agent_view",
+            profile_id=V5_PROMOTED_DRAFT5_AGENT_VIEW_PROFILE,
+            author_origin=V5_PROMOTED_DRAFT5_AGENT_VIEW_AUTHOR_ORIGIN,
+            source_files=_PROMOTED_DRAFT5_CARD_ONLY_V1_FILES,
+            entrypoint="tests/conformance/v5/promoted_draft5_card_only_v1/worker.py",
+            entrypoint_module=None,
+        ),
         "fresh_card_only_v2": SourceProfile(
             evaluator_id="agent_view",
             profile_id="fresh_card_only_v2",
@@ -359,6 +410,14 @@ _SOURCE_PROFILES: dict[str, dict[str, SourceProfile]] = {
             entrypoint=_ENTRYPOINTS["production"],
             entrypoint_module=None,
         ),
+        V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE: SourceProfile(
+            evaluator_id="production",
+            profile_id=V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE,
+            author_origin="production_adapter",
+            source_files=_PRODUCTION_V5_FILES,
+            entrypoint=_ENTRYPOINTS["production"],
+            entrypoint_module=None,
+        ),
     },
 }
 _DEFAULT_SOURCE_PROFILE = {
@@ -386,16 +445,22 @@ def _resolve_source_profile(evaluator_id: str, source_profile: str | None = None
 def _profile_normative_contract(profile: SourceProfile) -> dict[str, Any] | None:
     if profile.normative_contract_id is None:
         return None
-    if (
-        profile.evaluator_id != "full_spec"
-        or profile.profile_id != V5_APPROVED_FULL_SPEC_PROFILE
-        or profile.normative_contract_id != V5_APPROVED_CONFORMANCE_CONTRACT_ID
-    ):
+    if profile.evaluator_id != "full_spec":
         raise SharedRuntimeError("source profile has an unregistered normative contract")
     try:
-        return approved_v5_normative_contract()
+        if (
+            profile.profile_id == V5_APPROVED_FULL_SPEC_PROFILE
+            and profile.normative_contract_id == V5_APPROVED_CONFORMANCE_CONTRACT_ID
+        ):
+            return approved_v5_normative_contract()
+        if (
+            profile.profile_id == V5_PROMOTED_DRAFT5_FULL_SPEC_PROFILE
+            and profile.normative_contract_id == V5_PROMOTED_DRAFT5_CONTRACT_ID
+        ):
+            return promoted_v5_normative_contract()
     except RuntimeError as error:
         raise SharedRuntimeError(str(error)) from error
+    raise SharedRuntimeError("source profile has an unregistered normative contract")
 
 
 def _profile_pinned_source_hashes(profile: SourceProfile) -> dict[str, str]:
@@ -415,7 +480,8 @@ def _profile_pinned_source_hashes(profile: SourceProfile) -> dict[str, str]:
 def _runtime_inventory_for_profile(profile: SourceProfile) -> tuple[str, ...]:
     return (
         _CURRENT_RUNTIME_INVENTORY
-        if profile.normative_contract_id is not None or profile.profile_id == "production_v4"
+        if profile.normative_contract_id is not None
+        or profile.profile_id in {"production_v4", V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE}
         else _RUNTIME_INVENTORY
     )
 
@@ -431,7 +497,11 @@ def _validate_v4_normative_contract(value: object) -> str:
 def _namespace_packages_for_profile(profile: SourceProfile) -> list[str] | None:
     if profile.evaluator_id != "production":
         return None
-    if profile.profile_id in {"production_v3", "production_v4"}:
+    if profile.profile_id in {
+        "production_v3",
+        "production_v4",
+        V5_PROMOTED_DRAFT5_PRODUCTION_PROFILE,
+    }:
         return ["identitybench.v3", "identitybench.v4"]
     return ["identitybench.v4"]
 
@@ -440,6 +510,7 @@ _FORBIDDEN_PARTS = frozenset(
     {
         "oracle.py",
         "oracle_p2.py",
+        "oracle_requests.py",
         "generator.py",
         "verifier.py",
         "baselines.py",
@@ -496,6 +567,156 @@ class FrozenEvaluator:
         """Remove this evaluator's isolated snapshot after all runs finish."""
         _remove_readonly_tree(Path(self._temporary_directory.name))
         self._temporary_directory.cleanup()
+
+
+class DiagnosticProductionReceipt(TypedDict):
+    schema_version: Literal["identitybench.v5.production-diagnostic-run.v1"]
+    diagnostic_only: Literal[True]
+    g_spec_01: Literal["not_evaluated"]
+    agent_view: Literal["outstanding"]
+    author_independence: Literal["not_asserted"]
+    normative_contract: dict[str, Any]
+    normative_contract_sha256: str
+    diagnostic_freeze_manifest_sha256: str
+    execution: dict[str, Any]
+
+
+_DIAGNOSTIC_CASE_INVENTORY_ISSUER = object()
+
+
+class _DiagnosticCaseInventory:
+    """Factory-issued immutable case binding for diagnostic evaluator handles."""
+
+    __slots__ = (
+        "__weakref__",
+        "_issuer",
+        "case_bytes",
+        "case_sha256",
+        "inventory",
+        "manifest_sha256",
+    )
+
+    inventory: tuple[tuple[str, str], ...]
+    manifest_sha256: str
+    case_bytes: Mapping[str, bytes]
+    case_sha256: Mapping[str, str]
+    _issuer: object
+
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        raise SharedRuntimeError("diagnostic case inventories must be factory-issued")
+
+    def __setattr__(self, _name: str, _value: object) -> None:
+        raise AttributeError("diagnostic case inventories are immutable")
+
+
+_ISSUED_DIAGNOSTIC_CASE_INVENTORIES: WeakSet[_DiagnosticCaseInventory] = WeakSet()
+
+
+@dataclass(frozen=True)
+class DiagnosticFullSpecEvaluator:
+    """A full-spec freeze prepared for diagnostic use only."""
+
+    evaluator: FrozenEvaluator = field(repr=False)
+    case_snapshot: _DiagnosticCaseInventory = field(repr=False)
+    diagnostic_only: Literal[True] = True
+
+    @property
+    def case_inventory(self) -> tuple[tuple[str, str], ...]:
+        return self.case_snapshot.inventory
+
+    @property
+    def case_manifest_sha256(self) -> str:
+        return self.case_snapshot.manifest_sha256
+
+    @property
+    def source_closure_sha256(self) -> str:
+        return self.evaluator.source_closure_sha256
+
+    @property
+    def source_profile(self) -> str:
+        return self.evaluator.source_profile
+
+    def close(self) -> None:
+        self.evaluator.close()
+
+
+@dataclass(frozen=True)
+class DiagnosticProductionEvaluator:
+    """A production_v4 freeze that cannot enter the qualified receipt path."""
+
+    evaluator: FrozenEvaluator = field(repr=False)
+    case_snapshot: _DiagnosticCaseInventory = field(repr=False)
+    normative_contract: Mapping[str, Any]
+    manifest: Mapping[str, Any]
+    manifest_sha256: str
+    diagnostic_only: Literal[True] = True
+
+    @property
+    def case_inventory(self) -> tuple[tuple[str, str], ...]:
+        return self.case_snapshot.inventory
+
+    @property
+    def case_manifest_sha256(self) -> str:
+        return self.case_snapshot.manifest_sha256
+
+    @property
+    def source_closure_sha256(self) -> str:
+        return self.evaluator.source_closure_sha256
+
+    @property
+    def source_profile(self) -> str:
+        return self.evaluator.source_profile
+
+    def close(self) -> None:
+        self.evaluator.close()
+
+
+@dataclass(frozen=True)
+class DiagnosticComparison:
+    """Nonqualifying pairwise result; it is not a PairedComparison."""
+
+    case_id: str
+    input_sha256: str
+    status: Literal["MATCH", "MISMATCH", "INCOMPLETE"]
+    diagnostic_only: Literal[True]
+    g_spec_01: Literal["not_evaluated"]
+    agent_view: Literal["outstanding"]
+    author_independence: Literal["not_asserted"]
+    normative_contract_id: str
+    normative_contract_sha256: str
+    case_manifest_sha256: str
+    diagnostic_freeze_manifest_sha256: str
+    source_closure_sha256_by_evaluator: Mapping[str, str]
+    wire_evaluator_id_by_slot: Mapping[str, str]
+    execution_status_by_evaluator: Mapping[str, str]
+    payload_sha256_by_evaluator: Mapping[str, str | None]
+    materialization_sha256_by_evaluator: Mapping[str, str | None]
+    mismatch_paths: tuple[str, ...]
+    gaps: tuple[Mapping[str, Any], ...]
+
+    def to_record(self) -> dict[str, Any]:
+        """Return the explicitly disqualified diagnostic record as JSON data."""
+        return {
+            "schema_version": "identitybench.v5.full-spec-production-diagnostic-comparison.v1",
+            "diagnostic_only": self.diagnostic_only,
+            "g_spec_01": self.g_spec_01,
+            "agent_view": self.agent_view,
+            "author_independence": self.author_independence,
+            "case_id": self.case_id,
+            "input_sha256": self.input_sha256,
+            "status": self.status,
+            "normative_contract_id": self.normative_contract_id,
+            "normative_contract_sha256": self.normative_contract_sha256,
+            "case_manifest_sha256": self.case_manifest_sha256,
+            "diagnostic_freeze_manifest_sha256": self.diagnostic_freeze_manifest_sha256,
+            "source_closure_sha256_by_evaluator": dict(self.source_closure_sha256_by_evaluator),
+            "wire_evaluator_id_by_slot": dict(self.wire_evaluator_id_by_slot),
+            "execution_status_by_evaluator": dict(self.execution_status_by_evaluator),
+            "payload_sha256_by_evaluator": dict(self.payload_sha256_by_evaluator),
+            "materialization_sha256_by_evaluator": dict(self.materialization_sha256_by_evaluator),
+            "mismatch_paths": list(self.mismatch_paths),
+            "gaps": [dict(gap) for gap in self.gaps],
+        }
 
 
 @dataclass(frozen=True)
@@ -698,6 +919,10 @@ def archive_frozen_source_snapshot(
     """Persist frozen source and transport inventory bytes for later recheck."""
     from identitybench.v5.conformance_shared import canonical_json_bytes, sha256_bytes
 
+    if isinstance(evaluator, (DiagnosticFullSpecEvaluator, DiagnosticProductionEvaluator)):
+        raise SharedRuntimeError(
+            "diagnostic evaluator snapshots cannot be archived as qualified source snapshots"
+        )
     root = (repository_root or _repository_root()).resolve(strict=True)
     archive_root = (
         _APPROVED_RESULT_ROOT
@@ -1431,6 +1656,105 @@ def freeze_shared_evaluator(
     )
 
 
+def freeze_production_diagnostic(
+    cases: Sequence[FrozenCase],
+    *,
+    source_profile: str,
+    source_snapshot_root: Path | None = None,
+    repository_root: Path | None = None,
+    temporary_root: Path | None = None,
+) -> DiagnosticProductionEvaluator:
+    """Freeze production_v4 for a two-party diagnostic, never a proof gate.
+
+    This route accepts already frozen public cases and deliberately has no
+    ``VerifiedBlindFreeze`` parameter. Its result type and manifest remain
+    disjoint from the qualified production freeze path.
+    """
+    from identitybench.v5.conformance_shared import (
+        canonical_json_bytes,
+        sha256_bytes,
+    )
+
+    if source_profile != "production_v4":
+        raise SharedRuntimeError("production diagnostic requires source_profile='production_v4'")
+    root = (repository_root or _repository_root()).resolve(strict=True)
+    profile = _resolve_source_profile("production", source_profile)
+    if "src/identitybench/v5/normative_contract.py" not in profile.source_files:
+        raise SharedRuntimeError("production_v4 source closure omits the current contract module")
+    contract = _current_v5_normative_contract()
+
+    cases_by_id, hashes, case_manifest_sha, case_inventory = _diagnostic_frozen_case_inventory(
+        cases
+    )
+    runtime = _runtime_manifest(root, sha256_bytes, _PRODUCTION_DEPENDENCIES)
+    evaluator = _freeze_evaluator(
+        "production",
+        profile,
+        root,
+        cases_by_id,
+        hashes,
+        case_manifest_sha,
+        runtime,
+        temporary_root,
+        source_snapshot_root,
+        None,
+        canonical_json_bytes,
+        sha256_bytes,
+    )
+    if evaluator.blind_freeze is not None:
+        evaluator.close()
+        raise SharedRuntimeError("production diagnostic unexpectedly received a proof token")
+    evaluator, case_snapshot = _seal_diagnostic_case_inventory(
+        evaluator, case_inventory, case_manifest_sha
+    )
+
+    manifest_payload = _diagnostic_production_manifest_payload(
+        evaluator, case_inventory, case_manifest_sha, contract, canonical_json_bytes, sha256_bytes
+    )
+    manifest_sha = sha256_bytes(canonical_json_bytes(manifest_payload))
+    manifest = {**manifest_payload, "manifest_sha256": manifest_sha}
+    frozen = DiagnosticProductionEvaluator(
+        evaluator=evaluator,
+        case_snapshot=case_snapshot,
+        normative_contract=contract,
+        manifest=manifest,
+        manifest_sha256=manifest_sha,
+    )
+    _verify_diagnostic_production_evaluator(frozen)
+    return frozen
+
+
+def prepare_full_spec_diagnostic(
+    evaluator: FrozenEvaluator,
+) -> DiagnosticFullSpecEvaluator:
+    """Validate and seal a full-spec evaluator for diagnostic comparisons."""
+    from identitybench.v5.conformance_shared import sha256_bytes
+
+    if (
+        not isinstance(evaluator, FrozenEvaluator)
+        or evaluator.evaluator_id != "full_spec"
+        or evaluator.source_profile != V5_APPROVED_FULL_SPEC_PROFILE
+        or evaluator.blind_freeze is not None
+    ):
+        raise SharedRuntimeError("diagnostic preparation requires the current full-spec freeze")
+    contract = _current_v5_normative_contract()
+    if evaluator.manifest.get("normative_contract") != contract:
+        raise SharedRuntimeError("full-spec freeze does not bind the current normative contract")
+    _verify_frozen_closure_manifest(evaluator)
+    _verify_frozen_profile(evaluator)
+    _verify_source_snapshot(evaluator, sha256_bytes)
+    inventory, manifest_sha256 = _verified_evaluator_case_inventory(evaluator)
+    sealed_evaluator, case_snapshot = _seal_diagnostic_case_inventory(
+        evaluator, inventory, manifest_sha256
+    )
+    prepared = DiagnosticFullSpecEvaluator(
+        evaluator=sealed_evaluator,
+        case_snapshot=case_snapshot,
+    )
+    _verify_diagnostic_full_spec_evaluator(prepared)
+    return prepared
+
+
 def run_frozen_evaluator(
     corpus: FrozenCorpus | FrozenEvaluator,
     evaluator_id: str,
@@ -1439,13 +1763,14 @@ def run_frozen_evaluator(
     timeout_seconds: float = 20.0,
 ) -> dict[str, Any]:
     """Run one frozen evaluator in a new process and return its outer receipt."""
-    from identitybench.v5.conformance_shared import (
-        sha256_bytes,
-        strict_json_loads,
-    )
+    from identitybench.v5.conformance_shared import sha256_bytes
 
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
+    if isinstance(corpus, (DiagnosticFullSpecEvaluator, DiagnosticProductionEvaluator)):
+        raise SharedRuntimeError(
+            "diagnostic evaluator freezes cannot use the qualified runner"
+        )
     if isinstance(corpus, FrozenEvaluator):
         evaluator = corpus if corpus.evaluator_id == evaluator_id else None
     else:
@@ -1468,6 +1793,104 @@ def run_frozen_evaluator(
             raise SharedRuntimeError("production case manifest no longer matches the blind freeze")
     elif evaluator.blind_freeze is not None:
         raise SharedRuntimeError("blind evaluator unexpectedly carries a production gate token")
+    return _run_frozen_evaluator_process(evaluator, case_id, timeout_seconds)
+
+
+def _resolve_qualified_evaluator(
+    corpus: FrozenCorpus | FrozenEvaluator,
+    evaluator_id: str,
+) -> FrozenEvaluator:
+    if isinstance(corpus, (DiagnosticFullSpecEvaluator, DiagnosticProductionEvaluator)):
+        raise SharedRuntimeError(
+            "diagnostic evaluator freezes cannot use the qualified runner"
+        )
+    if isinstance(corpus, FrozenEvaluator):
+        evaluator = corpus if corpus.evaluator_id == evaluator_id else None
+    else:
+        evaluator = corpus.evaluators.get(evaluator_id)
+    if evaluator is None:
+        raise SharedRuntimeError(f"unknown frozen evaluator: {evaluator_id}")
+    return evaluator
+
+
+def _assert_case_blind_freeze(
+    evaluator: FrozenEvaluator,
+    case_id: str,
+    input_sha: str,
+) -> None:
+    if evaluator.evaluator_id == "production":
+        if evaluator.blind_freeze is None:
+            raise SharedRuntimeError("production execution has no verified blind-freeze token")
+        evaluator.blind_freeze.assert_current()
+        if (case_id, input_sha) not in evaluator.blind_freeze.case_inventory:
+            raise SharedRuntimeError("production case is absent from the verified blind inventory")
+        if evaluator.case_manifest_sha256 != evaluator.blind_freeze.case_manifest_sha256:
+            raise SharedRuntimeError("production case manifest no longer matches the blind freeze")
+    elif evaluator.blind_freeze is not None:
+        raise SharedRuntimeError("blind evaluator unexpectedly carries a production gate token")
+
+
+def run_frozen_evaluator_cases(
+    corpus: FrozenCorpus | FrozenEvaluator,
+    evaluator_id: str,
+    case_ids: Sequence[str],
+    *,
+    timeout_seconds: float = 60.0,
+) -> dict[str, dict[str, Any]]:
+    """Run multiple frozen cases in one isolated evaluator process."""
+    from identitybench.v5.conformance_shared import sha256_bytes
+
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    evaluator = _resolve_qualified_evaluator(corpus, evaluator_id)
+    for case_id in case_ids:
+        raw_case = evaluator.case_bytes.get(case_id)
+        input_sha = evaluator.case_sha256.get(case_id)
+        if raw_case is None or input_sha is None:
+            raise SharedRuntimeError(f"case was not frozen before execution: {case_id}")
+        if sha256_bytes(raw_case) != input_sha:
+            raise SharedRuntimeError(f"frozen public case bytes changed: {case_id}")
+        _assert_case_blind_freeze(evaluator, case_id, input_sha)
+    return _run_frozen_evaluator_cases_process(evaluator, case_ids, timeout_seconds)
+
+
+def run_diagnostic_production_evaluator(
+    frozen: DiagnosticProductionEvaluator,
+    case_id: str,
+    *,
+    timeout_seconds: float = 20.0,
+) -> DiagnosticProductionReceipt:
+    """Run one diagnostic production case and return a disqualified receipt."""
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    _verify_diagnostic_production_evaluator(frozen)
+    execution = _run_frozen_evaluator_process(frozen.evaluator, case_id, timeout_seconds)
+    return {
+        "schema_version": "identitybench.v5.production-diagnostic-run.v1",
+        "diagnostic_only": True,
+        "g_spec_01": "not_evaluated",
+        "agent_view": "outstanding",
+        "author_independence": "not_asserted",
+        "normative_contract": dict(frozen.normative_contract),
+        "normative_contract_sha256": str(frozen.manifest["normative_contract_sha256"]),
+        "diagnostic_freeze_manifest_sha256": frozen.manifest_sha256,
+        "execution": execution,
+    }
+
+
+def _run_frozen_evaluator_process(
+    evaluator: FrozenEvaluator,
+    case_id: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    from identitybench.v5.conformance_shared import sha256_bytes, strict_json_loads
+
+    raw_case = evaluator.case_bytes.get(case_id)
+    input_sha = evaluator.case_sha256.get(case_id)
+    if raw_case is None or input_sha is None:
+        raise SharedRuntimeError(f"case was not frozen before execution: {case_id}")
+    if sha256_bytes(raw_case) != input_sha:
+        raise SharedRuntimeError(f"frozen public case bytes changed: {case_id}")
     _verify_frozen_profile(evaluator)
     _verify_source_snapshot(evaluator, sha256_bytes)
 
@@ -1534,7 +1957,7 @@ def run_frozen_evaluator(
         )
     receipt = {
         "protocol": _PROTOCOL,
-        "evaluator_id": evaluator_id,
+        "evaluator_id": evaluator.evaluator_id,
         "source_profile": evaluator.source_profile,
         "author_origin": evaluator.author_origin,
         "case_id": case_id,
@@ -1555,6 +1978,767 @@ def run_frozen_evaluator(
         receipt["blind_freeze_receipt_sha256"] = evaluator.blind_freeze.receipt_sha256
         receipt["blind_freeze_scope"] = evaluator.blind_freeze.proof_scope
     return receipt
+
+
+def _run_frozen_evaluator_cases_process(
+    evaluator: FrozenEvaluator,
+    case_ids: Sequence[str],
+    timeout_seconds: float,
+) -> dict[str, dict[str, Any]]:
+    from identitybench.v5.conformance_shared import (
+        canonical_json_bytes,
+        sha256_bytes,
+        strict_json_loads,
+    )
+
+    if not case_ids:
+        return {}
+    raw_cases: list[bytes] = []
+    input_shas: dict[str, str] = {}
+    for case_id in case_ids:
+        raw_case = evaluator.case_bytes.get(case_id)
+        input_sha = evaluator.case_sha256.get(case_id)
+        if raw_case is None or input_sha is None:
+            raise SharedRuntimeError(f"case was not frozen before execution: {case_id}")
+        if sha256_bytes(raw_case) != input_sha:
+            raise SharedRuntimeError(f"frozen public case bytes changed: {case_id}")
+        raw_cases.append(raw_case)
+        input_shas[case_id] = input_sha
+    _verify_frozen_profile(evaluator)
+    _verify_source_snapshot(evaluator, sha256_bytes)
+
+    entrypoint = evaluator.stage_root / evaluator.entrypoint
+    runtime_files = evaluator.runtime_file_hashes
+    script = _child_runner_source(
+        evaluator.stage_root,
+        evaluator.dependency_root,
+        entrypoint,
+        evaluator.evaluator_id,
+        evaluator.entrypoint_module,
+        tuple(runtime_files),
+        source_profile=evaluator.source_profile,
+    )
+    env = _clean_child_environment()
+    command = [sys.executable, "-I", "-S", "-c", script]
+    batch_stdin = b"[" + b",".join(raw_cases) + b"]"
+    try:
+        completed = subprocess.run(
+            command,
+            input=batch_stdin,
+            capture_output=True,
+            cwd=evaluator.stage_root,
+            env=env,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        out_bytes = b"" if exc.stdout is None else _bytes(exc.stdout)
+        err_bytes = b"" if exc.stderr is None else _bytes(exc.stderr)
+        return {
+            case_id: _failed_receipt(
+                evaluator,
+                case_id,
+                input_shas[case_id],
+                "timeout",
+                out_bytes,
+                err_bytes,
+                sha256_bytes,
+            )
+            for case_id in case_ids
+        }
+    audit: Any = None
+    audit_error: str | None = None
+    try:
+        audit = strict_json_loads(completed.stderr)
+        if not isinstance(audit, dict):
+            raise ValueError("audit output is not an object")
+    except Exception as exc:
+        audit_error = f"audit output is invalid: {type(exc).__name__}"
+    try:
+        results = strict_json_loads(completed.stdout)
+        if not isinstance(results, list) or len(results) != len(case_ids):
+            raise ValueError("batch author output is not a matching list")
+        if completed.returncode != 0:
+            raise ValueError("worker process exited unsuccessfully")
+        if audit_error is not None:
+            raise ValueError(audit_error)
+        _validate_audit_receipt(audit)
+    except Exception as exc:
+        reason = f"{type(exc).__name__}: {exc}"
+        return {
+            case_id: _failed_receipt(
+                evaluator,
+                case_id,
+                input_shas[case_id],
+                reason,
+                completed.stdout,
+                completed.stderr,
+                sha256_bytes,
+                audit=audit if isinstance(audit, dict) else None,
+            )
+            for case_id in case_ids
+        }
+    receipts: dict[str, dict[str, Any]] = {}
+    stderr_sha = sha256_bytes(completed.stderr)
+    raw_stderr_b64 = base64.b64encode(completed.stderr).decode("ascii")
+    for case_id, item in zip(case_ids, results, strict=True):
+        if not isinstance(item, dict):
+            receipts[case_id] = _failed_receipt(
+                evaluator,
+                case_id,
+                input_shas[case_id],
+                "ValueError: batch item result is not a JSON object",
+                completed.stdout,
+                completed.stderr,
+                sha256_bytes,
+                audit=audit,
+            )
+            continue
+        item_bytes = canonical_json_bytes(item)
+        item_sha = sha256_bytes(item_bytes)
+        receipt = {
+            "protocol": _PROTOCOL,
+            "evaluator_id": evaluator.evaluator_id,
+            "source_profile": evaluator.source_profile,
+            "author_origin": evaluator.author_origin,
+            "case_id": case_id,
+            "input_sha256": input_shas[case_id],
+            "source_closure_sha256": evaluator.source_closure_sha256,
+            "case_manifest_sha256": evaluator.case_manifest_sha256,
+            "execution_status": "ok",
+            "result": item,
+            "audit": audit,
+            "result_sha256": item_sha,
+            "stdout_sha256": item_sha,
+            "stderr_sha256": stderr_sha,
+            "raw_stdout_b64": base64.b64encode(item_bytes).decode("ascii"),
+            "raw_stderr_b64": raw_stderr_b64,
+            "exit_code": completed.returncode,
+        }
+        if evaluator.blind_freeze is not None:
+            receipt["blind_freeze_receipt_sha256"] = evaluator.blind_freeze.receipt_sha256
+            receipt["blind_freeze_scope"] = evaluator.blind_freeze.proof_scope
+        receipts[case_id] = receipt
+    return receipts
+
+
+def _current_v5_normative_contract() -> dict[str, Any]:
+    profile = _resolve_source_profile("full_spec", V5_APPROVED_FULL_SPEC_PROFILE)
+    contract = _profile_normative_contract(profile)
+    if (
+        contract is None
+        or _validate_v4_normative_contract(contract) != V5_APPROVED_CONFORMANCE_CONTRACT_ID
+    ):
+        raise SharedRuntimeError("current v5 diagnostic contract is unavailable or stale")
+    return contract
+
+
+def _diagnostic_production_manifest_payload(
+    evaluator: FrozenEvaluator,
+    case_inventory: tuple[tuple[str, str], ...],
+    case_manifest_sha256: str,
+    contract: Mapping[str, Any],
+    canonical_json_bytes: Any,
+    sha256_bytes: Any,
+) -> dict[str, Any]:
+    return {
+        "format": "identitybench.v5.production-diagnostic-freeze.v1",
+        "diagnostic_only": True,
+        "g_spec_01": "not_evaluated",
+        "agent_view": "outstanding",
+        "author_independence": "not_asserted",
+        "evaluator_id": "production",
+        "source_profile": evaluator.source_profile,
+        "production_source_closure_sha256": evaluator.source_closure_sha256,
+        "case_count": len(case_inventory),
+        "case_inventory": [
+            {"case_id": case_id, "input_sha256": digest} for case_id, digest in case_inventory
+        ],
+        "case_manifest_sha256": case_manifest_sha256,
+        "normative_contract": dict(contract),
+        "normative_contract_sha256": sha256_bytes(canonical_json_bytes(dict(contract))),
+    }
+
+
+def _verified_evaluator_case_inventory(
+    evaluator: FrozenEvaluator,
+) -> tuple[tuple[tuple[str, str], ...], str]:
+    from identitybench.v5.conformance_shared import (
+        canonical_json_bytes,
+        freeze_case,
+        sha256_bytes,
+        strict_json_loads,
+    )
+
+    if set(evaluator.case_bytes) != set(evaluator.case_sha256):
+        raise SharedRuntimeError("frozen evaluator case and digest inventories differ")
+    inventory: list[tuple[str, str]] = []
+    ordered_cases: list[dict[str, str]] = []
+    for case_id, raw in evaluator.case_bytes.items():
+        if not isinstance(raw, bytes):
+            raise SharedRuntimeError("frozen evaluator case bytes are invalid")
+        try:
+            value = strict_json_loads(raw)
+        except Exception as error:
+            raise SharedRuntimeError("frozen evaluator case JSON is invalid") from error
+        if not isinstance(value, dict):
+            raise SharedRuntimeError("frozen evaluator case is not an object")
+        case = freeze_case(value)
+        digest = sha256_bytes(raw)
+        if (
+            case.case_id != case_id
+            or case.canonical_bytes != raw
+            or case.input_sha256 != digest
+            or evaluator.case_sha256.get(case_id) != digest
+        ):
+            raise SharedRuntimeError("frozen evaluator case bytes differ from their identity")
+        inventory.append((case_id, digest))
+        ordered_cases.append({"case_id": case_id, "input_sha256": digest})
+    if not inventory:
+        raise SharedRuntimeError("frozen evaluator has an empty public-case inventory")
+    case_manifest = {
+        "protocol": _PROTOCOL,
+        "canonicalization": "canonical-json-v1",
+        "cases": ordered_cases,
+    }
+    case_manifest_sha = sha256_bytes(canonical_json_bytes(case_manifest))
+    if case_manifest_sha != evaluator.case_manifest_sha256:
+        raise SharedRuntimeError("frozen evaluator case manifest is stale")
+    return tuple(inventory), case_manifest_sha
+
+
+def _seal_diagnostic_case_inventory(
+    evaluator: FrozenEvaluator,
+    inventory: tuple[tuple[str, str], ...],
+    manifest_sha256: str,
+) -> tuple[FrozenEvaluator, _DiagnosticCaseInventory]:
+    from identitybench.v5.conformance_shared import sha256_bytes
+
+    case_ids = tuple(case_id for case_id, _ in inventory)
+    if (
+        not case_ids
+        or tuple(evaluator.case_bytes) != case_ids
+        or tuple(evaluator.case_sha256) != case_ids
+        or evaluator.case_manifest_sha256 != manifest_sha256
+    ):
+        raise SharedRuntimeError("frozen evaluator case maps differ from the prepared inventory")
+    case_bytes = dict(evaluator.case_bytes)
+    case_hashes = dict(evaluator.case_sha256)
+    for case_id, digest in inventory:
+        raw = case_bytes.get(case_id)
+        if (
+            not isinstance(raw, bytes)
+            or case_hashes.get(case_id) != digest
+            or sha256_bytes(raw) != digest
+        ):
+            raise SharedRuntimeError(
+                "frozen evaluator case bytes differ from the prepared inventory"
+            )
+    snapshot = object.__new__(_DiagnosticCaseInventory)
+    object.__setattr__(snapshot, "inventory", inventory)
+    object.__setattr__(snapshot, "manifest_sha256", manifest_sha256)
+    object.__setattr__(snapshot, "case_bytes", MappingProxyType(case_bytes))
+    object.__setattr__(snapshot, "case_sha256", MappingProxyType(case_hashes))
+    object.__setattr__(snapshot, "_issuer", _DIAGNOSTIC_CASE_INVENTORY_ISSUER)
+    _ISSUED_DIAGNOSTIC_CASE_INVENTORIES.add(snapshot)
+    sealed_evaluator = replace(
+        evaluator,
+        case_bytes=snapshot.case_bytes,
+        case_sha256=snapshot.case_sha256,
+    )
+    return sealed_evaluator, snapshot
+
+
+def _verify_evaluator_case_snapshot(
+    evaluator: FrozenEvaluator,
+    snapshot: _DiagnosticCaseInventory,
+) -> None:
+    if (
+        not isinstance(snapshot, _DiagnosticCaseInventory)
+        or getattr(snapshot, "_issuer", None) is not _DIAGNOSTIC_CASE_INVENTORY_ISSUER
+        or snapshot not in _ISSUED_DIAGNOSTIC_CASE_INVENTORIES
+    ):
+        raise SharedRuntimeError("diagnostic case inventory lacks factory-issued provenance")
+    if (
+        evaluator.case_bytes is not snapshot.case_bytes
+        or evaluator.case_sha256 is not snapshot.case_sha256
+        or evaluator.case_manifest_sha256 != snapshot.manifest_sha256
+    ):
+        raise SharedRuntimeError("frozen evaluator case maps differ from the sealed inventory")
+
+
+def _verify_snapshot_case(
+    snapshot: _DiagnosticCaseInventory,
+    case_id: str,
+    input_sha256: str,
+) -> None:
+    if snapshot.case_sha256.get(case_id) != input_sha256:
+        raise SharedRuntimeError("case is absent from or differs from the sealed inventory")
+
+
+def _verify_diagnostic_full_spec_evaluator(
+    frozen: DiagnosticFullSpecEvaluator,
+) -> None:
+    from identitybench.v5.conformance_shared import sha256_bytes
+
+    if not isinstance(frozen, DiagnosticFullSpecEvaluator) or frozen.diagnostic_only is not True:
+        raise SharedRuntimeError("full-spec diagnostic freeze has the wrong runtime type")
+    evaluator = frozen.evaluator
+    if (
+        evaluator.evaluator_id != "full_spec"
+        or evaluator.source_profile != V5_APPROVED_FULL_SPEC_PROFILE
+        or evaluator.blind_freeze is not None
+    ):
+        raise SharedRuntimeError(
+            "full-spec diagnostic freeze is not the current unqualified profile"
+        )
+    if evaluator.manifest.get("normative_contract") != _current_v5_normative_contract():
+        raise SharedRuntimeError("full-spec freeze does not bind the current normative contract")
+    _verify_evaluator_case_snapshot(evaluator, frozen.case_snapshot)
+    _verify_frozen_closure_manifest(evaluator)
+    _verify_frozen_profile(evaluator)
+    _verify_source_snapshot(evaluator, sha256_bytes)
+
+
+def _verify_frozen_closure_manifest(evaluator: FrozenEvaluator) -> None:
+    from identitybench.v5.conformance_shared import canonical_json_bytes, sha256_bytes
+
+    profile = _resolve_source_profile(evaluator.evaluator_id, evaluator.source_profile)
+    if evaluator.manifest.get("source_closure_sha256") != evaluator.source_closure_sha256:
+        raise SharedRuntimeError("frozen evaluator source closure identity is stale")
+    closure_extras = {
+        "source_closure_sha256",
+        "case_count",
+        "dependency_snapshot",
+        "namespace_packages",
+    }
+    closure_payload = {
+        key: value for key, value in evaluator.manifest.items() if key not in closure_extras
+    }
+    if sha256_bytes(canonical_json_bytes(closure_payload)) != evaluator.source_closure_sha256:
+        raise SharedRuntimeError("frozen evaluator source closure manifest hash differs")
+    source_records = evaluator.manifest.get("approved_source_files")
+    if not isinstance(source_records, list) or len(source_records) != len(profile.source_files):
+        raise SharedRuntimeError("frozen evaluator source file inventory is incomplete")
+    for relative, record in zip(profile.source_files, source_records, strict=True):
+        raw = evaluator.source_bytes.get(relative)
+        if (
+            not isinstance(record, Mapping)
+            or set(record) != {"path", "sha256", "size_bytes"}
+            or record.get("path") != relative
+            or not isinstance(raw, bytes)
+            or record.get("sha256") != sha256_bytes(raw)
+            or record.get("size_bytes") != len(raw)
+            or evaluator.staged_file_hashes.get(f"source/{relative}") != sha256_bytes(raw)
+        ):
+            raise SharedRuntimeError("frozen evaluator source file inventory is stale")
+    runtime_inventory = evaluator.manifest.get("runtime_inventory")
+    expected_runtime_paths = _runtime_inventory_for_profile(profile)
+    if not isinstance(runtime_inventory, list) or len(runtime_inventory) != len(
+        expected_runtime_paths
+    ):
+        raise SharedRuntimeError("frozen evaluator runtime inventory is incomplete")
+    for relative, record in zip(expected_runtime_paths, runtime_inventory, strict=True):
+        raw = evaluator.source_bytes.get(relative)
+        if (
+            not isinstance(record, Mapping)
+            or set(record) != {"path", "sha256", "size_bytes"}
+            or record.get("path") != relative
+            or not isinstance(raw, bytes)
+            or record.get("sha256") != sha256_bytes(raw)
+            or record.get("size_bytes") != len(raw)
+        ):
+            raise SharedRuntimeError("frozen evaluator runtime inventory is stale")
+
+
+def _diagnostic_frozen_case_inventory(
+    cases: Sequence[FrozenCase],
+) -> tuple[dict[str, bytes], dict[str, str], str, tuple[tuple[str, str], ...]]:
+    from identitybench.v5.conformance_shared import (
+        FrozenCase,
+        canonical_json_bytes,
+        freeze_case,
+        sha256_bytes,
+        validate_public_case,
+    )
+
+    if not cases:
+        raise SharedRuntimeError("production diagnostic requires at least one frozen public case")
+    public_cases: list[Mapping[str, object]] = []
+    supplied_inventory: list[tuple[str, str]] = []
+    for case in cases:
+        if not isinstance(case, FrozenCase):
+            raise SharedRuntimeError("production diagnostic inputs must be FrozenCase values")
+        verified_case = freeze_case(case.public_case)
+        if (
+            verified_case.canonical_bytes != case.canonical_bytes
+            or verified_case.input_sha256 != case.input_sha256
+        ):
+            raise SharedRuntimeError("supplied FrozenCase bytes or digest are stale")
+        public_cases.append(verified_case.public_case)
+        supplied_inventory.append((verified_case.case_id, verified_case.input_sha256))
+    cases_by_id, hashes, case_manifest_sha = _freeze_cases(
+        public_cases, canonical_json_bytes, sha256_bytes, validate_public_case
+    )
+    case_inventory = tuple((case_id, hashes[case_id]) for case_id in cases_by_id)
+    if case_inventory != tuple(supplied_inventory):
+        raise SharedRuntimeError("FrozenCase inventory order or hashes changed during freezing")
+    return cases_by_id, hashes, case_manifest_sha, case_inventory
+
+
+def _verify_diagnostic_production_evaluator(
+    frozen: DiagnosticProductionEvaluator,
+) -> None:
+    from identitybench.v5.conformance_shared import canonical_json_bytes, sha256_bytes
+
+    if not isinstance(frozen, DiagnosticProductionEvaluator) or frozen.diagnostic_only is not True:
+        raise SharedRuntimeError("diagnostic production freeze has the wrong runtime type")
+    evaluator = frozen.evaluator
+    if (
+        evaluator.evaluator_id != "production"
+        or evaluator.source_profile != "production_v4"
+        or evaluator.blind_freeze is not None
+        or frozen.source_profile != "production_v4"
+    ):
+        raise SharedRuntimeError("diagnostic production freeze is not an unqualified production_v4")
+    profile = _resolve_source_profile("production", "production_v4")
+    if "src/identitybench/v5/normative_contract.py" not in profile.source_files:
+        raise SharedRuntimeError("production_v4 source closure omits the current contract module")
+    contract = _current_v5_normative_contract()
+    if dict(frozen.normative_contract) != contract:
+        raise SharedRuntimeError(
+            "diagnostic production normative contract differs from current pins"
+        )
+
+    _verify_evaluator_case_snapshot(evaluator, frozen.case_snapshot)
+    inventory = frozen.case_inventory
+    case_manifest_sha = frozen.case_manifest_sha256
+    if evaluator.manifest.get("source_profile") != "production_v4":
+        raise SharedRuntimeError("diagnostic production source manifest has the wrong profile")
+    _verify_frozen_closure_manifest(evaluator)
+
+    manifest_payload = _diagnostic_production_manifest_payload(
+        evaluator,
+        inventory,
+        case_manifest_sha,
+        contract,
+        canonical_json_bytes,
+        sha256_bytes,
+    )
+    expected_sha = sha256_bytes(canonical_json_bytes(manifest_payload))
+    if (
+        dict(frozen.manifest) != {**manifest_payload, "manifest_sha256": expected_sha}
+        or frozen.manifest_sha256 != expected_sha
+    ):
+        raise SharedRuntimeError("diagnostic production freeze manifest is stale or malformed")
+    _verify_frozen_profile(evaluator)
+    _verify_source_snapshot(evaluator, sha256_bytes)
+
+
+def compare_full_spec_to_production_diagnostic(
+    case: FrozenCase,
+    full_spec: DiagnosticFullSpecEvaluator,
+    production: DiagnosticProductionEvaluator,
+    full_spec_receipt: Mapping[str, Any],
+    production_receipt: Mapping[str, Any],
+) -> DiagnosticComparison:
+    """Compare one current full-spec result to production without qualification."""
+    from identitybench.v5.conformance_shared import (
+        ConformanceProtocolError,
+        FrozenCase,
+        _json_diff_paths,
+        _materialization_hash,
+        canonical_json_bytes,
+        freeze_case,
+        sha256_bytes,
+        sha256_json,
+        validate_evaluator_result,
+    )
+
+    if not isinstance(case, FrozenCase):
+        raise SharedRuntimeError("diagnostic comparison requires a FrozenCase")
+    verified_case = freeze_case(case.public_case)
+    if (
+        verified_case.canonical_bytes != case.canonical_bytes
+        or verified_case.input_sha256 != case.input_sha256
+    ):
+        raise SharedRuntimeError("diagnostic comparison case bytes or digest are stale")
+    _verify_diagnostic_full_spec_evaluator(full_spec)
+    expected_contract = _current_v5_normative_contract()
+    _verify_diagnostic_production_evaluator(production)
+
+    full_manifest_sha = full_spec.case_manifest_sha256
+    if full_manifest_sha != production.case_manifest_sha256:
+        raise SharedRuntimeError("full-spec and production diagnostic case inventories differ")
+    _verify_snapshot_case(
+        full_spec.case_snapshot, verified_case.case_id, verified_case.input_sha256
+    )
+    _verify_snapshot_case(
+        production.case_snapshot, verified_case.case_id, verified_case.input_sha256
+    )
+
+    source_hashes = {
+        "full_spec": full_spec.source_closure_sha256,
+        "production": production.source_closure_sha256,
+    }
+    if any(not _is_sha256(value) for value in source_hashes.values()):
+        raise SharedRuntimeError("diagnostic source closure hash is malformed")
+
+    full_execution = _validate_diagnostic_outer_receipt(
+        full_spec_receipt,
+        expected_evaluator_id="full_spec",
+        expected_profile=V5_APPROVED_FULL_SPEC_PROFILE,
+        expected_origin=V5_APPROVED_FULL_SPEC_AUTHOR_ORIGIN,
+        expected_case=verified_case,
+        expected_closure_sha256=full_spec.source_closure_sha256,
+        expected_case_manifest_sha256=full_manifest_sha,
+        diagnostic_wrapper=False,
+    )
+    prod_execution = _validate_diagnostic_outer_receipt(
+        production_receipt,
+        expected_evaluator_id="production",
+        expected_profile="production_v4",
+        expected_origin="production_adapter",
+        expected_case=verified_case,
+        expected_closure_sha256=production.source_closure_sha256,
+        expected_case_manifest_sha256=production.case_manifest_sha256,
+        diagnostic_wrapper=True,
+        expected_normative_contract=expected_contract,
+        expected_diagnostic_manifest_sha256=production.manifest_sha256,
+    )
+    execution_statuses = {
+        "full_spec": str(full_execution["execution_status"]),
+        "production": str(prod_execution["execution_status"]),
+    }
+    if "failed" in execution_statuses.values():
+        gaps: tuple[Mapping[str, Any], ...] = tuple(
+            {
+                "evaluator_slot": slot,
+                "evaluator_id": ("full_spec_blind" if slot == "full_spec" else "production"),
+                "code": "EXECUTION_FAILED",
+                "detail": str(execution.get("failure", "execution did not complete")),
+            }
+            for slot, execution in (
+                ("full_spec", full_execution),
+                ("production", prod_execution),
+            )
+            if execution.get("execution_status") != "ok"
+        )
+        return DiagnosticComparison(
+            case_id=verified_case.case_id,
+            input_sha256=verified_case.input_sha256,
+            status="INCOMPLETE",
+            diagnostic_only=True,
+            g_spec_01="not_evaluated",
+            agent_view="outstanding",
+            author_independence="not_asserted",
+            normative_contract_id=V5_APPROVED_CONFORMANCE_CONTRACT_ID,
+            normative_contract_sha256=sha256_bytes(canonical_json_bytes(expected_contract)),
+            case_manifest_sha256=full_manifest_sha,
+            diagnostic_freeze_manifest_sha256=production.manifest_sha256,
+            source_closure_sha256_by_evaluator=source_hashes,
+            wire_evaluator_id_by_slot={
+                "full_spec": "full_spec_blind",
+                "production": "production",
+            },
+            execution_status_by_evaluator=execution_statuses,
+            payload_sha256_by_evaluator={"full_spec": None, "production": None},
+            materialization_sha256_by_evaluator={"full_spec": None, "production": None},
+            mismatch_paths=(),
+            gaps=gaps,
+        )
+
+    full_result = full_execution.get("result")
+    production_result = prod_execution.get("result")
+    if not isinstance(full_result, Mapping) or not isinstance(production_result, Mapping):
+        raise SharedRuntimeError("successful diagnostic execution omitted an evaluator result")
+    try:
+        left = validate_evaluator_result(full_result, verified_case, "full_spec")
+        right = validate_evaluator_result(production_result, verified_case, "production")
+    except ConformanceProtocolError as error:
+        raise SharedRuntimeError("diagnostic result failed the shared protocol contract") from error
+
+    mismatch_paths: list[str] = []
+    if left["status"] != right["status"]:
+        mismatch_paths.append("$.status")
+    if canonical_json_bytes(left["materialization"]) != canonical_json_bytes(
+        right["materialization"]
+    ):
+        mismatch_paths.append("$.materialization")
+    mismatch_paths.extend(_json_diff_paths(left["payload"], right["payload"], "$.payload"))
+    mismatch_paths.extend(_json_diff_paths(left["coverage"], right["coverage"], "$.coverage"))
+    if mismatch_paths:
+        comparison_status: Literal["MATCH", "MISMATCH", "INCOMPLETE"] = "MISMATCH"
+    elif left["status"] != "ok" or right["status"] != "ok":
+        comparison_status = "INCOMPLETE"
+    else:
+        comparison_status = "MATCH"
+    gap_rows: list[Mapping[str, Any]] = [
+        {"evaluator_slot": "full_spec", "evaluator_id": left["evaluator_id"], **gap}
+        for gap in left["gaps"]
+    ]
+    gap_rows.extend(
+        [
+            {"evaluator_slot": "production", "evaluator_id": right["evaluator_id"], **gap}
+            for gap in right["gaps"]
+        ]
+    )
+    gaps = tuple(gap_rows)
+    return DiagnosticComparison(
+        case_id=verified_case.case_id,
+        input_sha256=verified_case.input_sha256,
+        status=comparison_status,
+        diagnostic_only=True,
+        g_spec_01="not_evaluated",
+        agent_view="outstanding",
+        author_independence="not_asserted",
+        normative_contract_id=V5_APPROVED_CONFORMANCE_CONTRACT_ID,
+        normative_contract_sha256=sha256_bytes(canonical_json_bytes(expected_contract)),
+        case_manifest_sha256=full_manifest_sha,
+        diagnostic_freeze_manifest_sha256=production.manifest_sha256,
+        source_closure_sha256_by_evaluator=source_hashes,
+        wire_evaluator_id_by_slot={
+            "full_spec": left["evaluator_id"],
+            "production": right["evaluator_id"],
+        },
+        execution_status_by_evaluator=execution_statuses,
+        payload_sha256_by_evaluator={
+            "full_spec": sha256_json(left["payload"]),
+            "production": sha256_json(right["payload"]),
+        },
+        materialization_sha256_by_evaluator={
+            "full_spec": _materialization_hash(left["materialization"]),
+            "production": _materialization_hash(right["materialization"]),
+        },
+        mismatch_paths=tuple(sorted(set(mismatch_paths))),
+        gaps=gaps,
+    )
+
+
+def _validate_diagnostic_outer_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    expected_evaluator_id: str,
+    expected_profile: str,
+    expected_origin: str,
+    expected_case: FrozenCase,
+    expected_closure_sha256: str,
+    expected_case_manifest_sha256: str,
+    diagnostic_wrapper: bool,
+    expected_normative_contract: Mapping[str, Any] | None = None,
+    expected_diagnostic_manifest_sha256: str | None = None,
+) -> Mapping[str, Any]:
+    from identitybench.v5.conformance_shared import canonical_json_bytes, sha256_bytes
+
+    execution: Any = receipt
+    if diagnostic_wrapper:
+        required_wrapper_keys = {
+            "schema_version",
+            "diagnostic_only",
+            "g_spec_01",
+            "agent_view",
+            "author_independence",
+            "normative_contract",
+            "normative_contract_sha256",
+            "diagnostic_freeze_manifest_sha256",
+            "execution",
+        }
+        if (
+            set(receipt) != required_wrapper_keys
+            or receipt.get("schema_version") != "identitybench.v5.production-diagnostic-run.v1"
+            or receipt.get("diagnostic_only") is not True
+            or receipt.get("g_spec_01") != "not_evaluated"
+            or receipt.get("agent_view") != "outstanding"
+            or receipt.get("author_independence") != "not_asserted"
+            or not isinstance(expected_normative_contract, Mapping)
+            or receipt.get("normative_contract") != dict(expected_normative_contract)
+            or receipt.get("normative_contract_sha256")
+            != sha256_bytes(canonical_json_bytes(dict(expected_normative_contract)))
+            or receipt.get("diagnostic_freeze_manifest_sha256")
+            != expected_diagnostic_manifest_sha256
+        ):
+            raise SharedRuntimeError(
+                "production diagnostic receipt markers or contract are invalid"
+            )
+        execution = receipt.get("execution")
+    elif any(
+        key in receipt
+        for key in (
+            "schema_version",
+            "diagnostic_only",
+            "g_spec_01",
+            "agent_view",
+            "diagnostic_freeze_manifest_sha256",
+        )
+    ):
+        raise SharedRuntimeError("full-spec result is not an ordinary frozen evaluator receipt")
+    if not isinstance(execution, Mapping):
+        raise SharedRuntimeError("diagnostic execution receipt is malformed")
+    status = execution.get("execution_status")
+    if status not in {"ok", "failed"}:
+        raise SharedRuntimeError("diagnostic execution status is invalid")
+    required = {
+        "protocol",
+        "evaluator_id",
+        "source_profile",
+        "author_origin",
+        "case_id",
+        "input_sha256",
+        "source_closure_sha256",
+        "case_manifest_sha256",
+        "execution_status",
+        "audit",
+        "stdout_sha256",
+        "stderr_sha256",
+        "raw_stdout_b64",
+        "raw_stderr_b64",
+    }
+    if status == "ok":
+        expected_fields = required | {"result", "result_sha256", "exit_code"}
+    else:
+        expected_fields = required | {"failure"}
+    if set(execution) != expected_fields:
+        raise SharedRuntimeError("diagnostic execution receipt fields differ from its contract")
+    if (
+        execution.get("protocol") != _PROTOCOL
+        or execution.get("evaluator_id") != expected_evaluator_id
+        or execution.get("source_profile") != expected_profile
+        or execution.get("author_origin") != expected_origin
+        or execution.get("case_id") != expected_case.case_id
+        or execution.get("input_sha256") != expected_case.input_sha256
+        or execution.get("source_closure_sha256") != expected_closure_sha256
+        or execution.get("case_manifest_sha256") != expected_case_manifest_sha256
+        or "blind_freeze_receipt_sha256" in execution
+        or "blind_freeze_scope" in execution
+    ):
+        raise SharedRuntimeError("diagnostic execution identity does not match its frozen inputs")
+    try:
+        stdout = base64.b64decode(str(execution["raw_stdout_b64"]), validate=True)
+        stderr = base64.b64decode(str(execution["raw_stderr_b64"]), validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise SharedRuntimeError("diagnostic execution raw output encoding is invalid") from error
+    if sha256_bytes(stdout) != execution.get("stdout_sha256") or sha256_bytes(
+        stderr
+    ) != execution.get("stderr_sha256"):
+        raise SharedRuntimeError("diagnostic execution raw output hashes differ")
+    if status == "failed":
+        if not isinstance(execution.get("failure"), str) or not execution["failure"]:
+            raise SharedRuntimeError("failed diagnostic execution lacks a failure reason")
+        return execution
+    from identitybench.v5.conformance_shared import strict_json_loads
+
+    if (
+        execution.get("exit_code") != 0
+        or execution.get("result_sha256") != sha256_bytes(stdout)
+        or strict_json_loads(stdout) != execution.get("result")
+        or strict_json_loads(stderr) != execution.get("audit")
+    ):
+        raise SharedRuntimeError("successful diagnostic raw output does not match its receipt")
+    audit = execution.get("audit")
+    if not isinstance(audit, Mapping) or audit.get("evaluator_id") != expected_evaluator_id:
+        raise SharedRuntimeError("diagnostic audit evaluator identity is invalid")
+    _validate_audit_receipt(audit)
+    return execution
 
 
 def _freeze_evaluator(
@@ -3802,11 +4986,11 @@ audit = {
 exit_code = 0
 try:
     with contextlib.redirect_stdout(author_out), contextlib.redirect_stderr(author_err):
-        case = json.loads(sys.stdin.buffer.read())
+        payload = json.loads(sys.stdin.buffer.read())
         module_name = cfg["entrypoint_module"]
+        cleanup_bare = False
         if module_name:
             module = importlib.import_module(module_name)
-            result = module.evaluate_shared_input(case)
         else:
             spec = importlib.util.spec_from_file_location("_identitybench_shared_worker", entry)
             if spec is None or spec.loader is None:
@@ -3816,15 +5000,27 @@ try:
                 raise RuntimeError("bare worker module name is already registered")
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
-            try:
-                spec.loader.exec_module(module)
-                result = module.evaluate_shared_input(case)
-            finally:
+            cleanup_bare = True
+            spec.loader.exec_module(module)
+        try:
+            if isinstance(payload, list):
+                results = []
+                for item in payload:
+                    item_res = module.evaluate_shared_input(item)
+                    if not isinstance(item_res, dict):
+                        raise TypeError("evaluate_shared_input must return a JSON object")
+                    results.append(item_res)
+                encoded_payload = results
+            else:
+                result = module.evaluate_shared_input(payload)
+                if not isinstance(result, dict):
+                    raise TypeError("evaluate_shared_input must return a JSON object")
+                encoded_payload = result
+        finally:
+            if cleanup_bare:
                 sys.modules.pop(module_name, None)
-        if not isinstance(result, dict):
-            raise TypeError("evaluate_shared_input must return a JSON object")
         result_raw = json.dumps(
-            result, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            encoded_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
             allow_nan=False,
         ).encode("utf-8")
         if author_out.getvalue() or author_err.getvalue():

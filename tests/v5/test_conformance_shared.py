@@ -1532,3 +1532,89 @@ def test_result_hash_helper_inputs_are_canonical_not_python_identity() -> None:
     case = freeze_case(_public_case())
     raw = canonical_json_bytes(dict(case.public_case))
     assert hashlib.sha256(raw).hexdigest() == case.input_sha256
+
+
+def test_promoted_draft5_normative_contract_is_full_spec_only(tmp_path: Path) -> None:
+    from identitybench.v5.conformance_shared import HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256
+    from identitybench.v5.normative_contract import (
+        V5_APPROVED_ADDENDUM_PATH,
+        V5_APPROVED_DIRECTIVE_PATH,
+        V5_BASE_SPEC_PATH,
+        V5_DRAFT5_SPEC_PATH,
+        V5_PROMOTED_DRAFT5_CONTRACT_ID,
+        promoted_v5_normative_contract,
+    )
+
+    assert len(HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256) == 64
+    assert HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256 != PINNED_PUBLIC_SCHEMA_SHA256
+
+    repository_root = Path(__file__).resolve().parents[2]
+    contents = {
+        path: (repository_root / path).read_bytes()
+        for path in (
+            V5_BASE_SPEC_PATH,
+            V5_DRAFT5_SPEC_PATH,
+            V5_APPROVED_ADDENDUM_PATH,
+            V5_APPROVED_DIRECTIVE_PATH,
+        )
+    }
+    contents["agent_reference.py"] = b"synthetic card-only reference"
+    digests = {path: hashlib.sha256(raw).hexdigest() for path, raw in contents.items()}
+    for relative, raw in contents.items():
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+
+    promoted_full_spec = freeze_source_closure(
+        EvaluatorClosure(
+            evaluator_id="full_spec",
+            source_root=tmp_path,
+            entrypoint_module="reference",
+            import_roots=("src",),
+            files=(
+                SourceFile(V5_BASE_SPEC_PATH, digests[V5_BASE_SPEC_PATH], "normative_spec"),
+                SourceFile(
+                    V5_DRAFT5_SPEC_PATH,
+                    digests[V5_DRAFT5_SPEC_PATH],
+                    "normative_protocol_spec",
+                ),
+                SourceFile(
+                    V5_APPROVED_ADDENDUM_PATH,
+                    digests[V5_APPROVED_ADDENDUM_PATH],
+                    "normative_addendum",
+                ),
+                SourceFile(
+                    V5_APPROVED_DIRECTIVE_PATH,
+                    digests[V5_APPROVED_DIRECTIVE_PATH],
+                    "normative_directive",
+                ),
+            ),
+            normative_contract_id=V5_PROMOTED_DRAFT5_CONTRACT_ID,
+        )
+    )
+    agent_view = freeze_source_closure(
+        EvaluatorClosure(
+            evaluator_id="agent_view",
+            source_root=tmp_path,
+            entrypoint_module="agent_reference",
+            import_roots=("src",),
+            files=(SourceFile("agent_reference.py", digests["agent_reference.py"]),),
+        )
+    )
+    _bind_public_artifacts([], (promoted_full_spec, agent_view))
+    assert promoted_full_spec.manifest["normative_contract"] == promoted_v5_normative_contract()
+
+    agent_with_draft5 = freeze_source_closure(
+        EvaluatorClosure(
+            evaluator_id="agent_view",
+            source_root=tmp_path,
+            entrypoint_module="agent_reference",
+            import_roots=("src",),
+            files=(
+                SourceFile("agent_reference.py", digests["agent_reference.py"]),
+                SourceFile(V5_DRAFT5_SPEC_PATH, digests[V5_DRAFT5_SPEC_PATH]),
+            ),
+        )
+    )
+    with pytest.raises(ConformanceProtocolError, match="agent_view closure"):
+        _bind_public_artifacts([], (promoted_full_spec, agent_with_draft5))

@@ -362,7 +362,18 @@ _ID_PATTERNS_BY_FIELD: dict[str, tuple[re.Pattern[str], ...]] = {
     "committed_p1_digest": (SHA256_HEX_RE,),
     "committed_p2_digest": (SHA256_HEX_RE,),
     "v41_manifest_sha256": (SHA256_HEX_RE,),
+    "v41_run_manifest_sha256": (SHA256_HEX_RE,),
+    "source_spec_sha256": (SHA256_HEX_RE,),
     "pricing_manifest_sha256": (SHA256_HEX_RE,),
+    "run_config_sha256": (SHA256_HEX_RE,),
+    "sampling_config_sha256": (SHA256_HEX_RE,),
+    "toolset_sha256": (SHA256_HEX_RE,),
+    "prompt_sha256": (SHA256_HEX_RE,),
+    "primary_prompt_bundle_sha256": (SHA256_HEX_RE,),
+    "adapter_sha256": (SHA256_HEX_RE,),
+    "harness_sha256": (SHA256_HEX_RE,),
+    "dataset_seal_sha256": (SHA256_HEX_RE,),
+    "topology_profile_sha256": (SHA256_HEX_RE,),
 }
 
 _ID_PATTERNS_BY_MODEL_FIELD: dict[tuple[str, str], tuple[re.Pattern[str], ...]] = {
@@ -370,6 +381,7 @@ _ID_PATTERNS_BY_MODEL_FIELD: dict[tuple[str, str], tuple[re.Pattern[str], ...]] 
     ("JITRequestV5", "request_id"): (_id_pattern("req_"),),
     ("AgentDelegationRequestV5", "request_id"): (_id_pattern("dlreq_"),),
     ("AgentDelegationRequestV5", "target_entity_id"): (_id_pattern("dlreq_"),),
+    ("ProviderRequestUsageV5", "agent_id"): (re.compile(r"^[a-zA-Z0-9_.:-]+$"),),
     ("JITDecisionMutationV5", "target_entity_id"): (_id_pattern("req_"),),
     ("UARCampaignMutationV5", "target_entity_id"): (_id_pattern("camp_"),),
     ("CAEContainmentMutationV5", "target_entity_id"): (_id_pattern("inc_"),),
@@ -1869,40 +1881,435 @@ class SealedEpisodeOracleV5(StrictV5Model):
         return payload
 
 
-class ComparatorEntryV5(StrictV5Model):
+_CANONICAL_ATTEMPT_STATUSES_V5: frozenset[str] = frozenset(
+    {
+        "COMPLETED",
+        "WITHIN_PROTOCOL_REFUSAL",
+        "WITHIN_PROTOCOL_PARSE_FAILURE",
+        "WITHIN_PROTOCOL_STEP_LIMIT",
+        "WITHIN_PROTOCOL_OUTPUT_LIMIT",
+        "WITHIN_PROTOCOL_CONTEXT_LIMIT",
+        "INCOMPLETE_PROVIDER_QUOTA",
+        "INCOMPLETE_PROVIDER_FAILURE",
+        "INCOMPLETE_CONTEXT_INCOMPATIBLE",
+        "INCOMPLETE_HARNESS_FAILURE",
+    }
+)
+
+
+class RunConfigurationV5(StrictV5Model):
     model_id: StrictStr
-    reasoning_effort: Literal["low", "medium", "high", "xhigh"]
-    topology: Literal["T0_SINGLE_MONOLITH"] = "T0_SINGLE_MONOLITH"
-    v41_completed_scenarios: Literal[180] = 180
-    execution_valid_rate_bps: Literal[10000] = 10000
-    v41_run_dir: StrictStr
-    v41_manifest_sha256: StrictStr
-    input_tokens_uncached: StrictInt = Field(ge=0)
-    cached_input_tokens: StrictInt = Field(ge=0)
-    output_tokens: StrictInt = Field(ge=0)
-    reasoning_tokens: StrictInt = Field(ge=0)
-    repriced_cost_usd_micros: StrictInt = Field(ge=0)
-
-
-class ComparatorManifestV5(StrictV5Model):
-    spec_version: Literal["5.0"]
-    pricing_manifest_sha256: StrictStr
-    standalone_unmatched_ceiling_usd_micros: StrictInt = Field(default=12_000_000, ge=1)
-    entries: tuple[ComparatorEntryV5, ...]
+    provider_id: StrictStr
+    provider_model_version: StrictStr
+    topology: StrictStr
+    steering_mode: Literal["UNSTEERED", "CHECKPOINT_STEERED", "FULL_LIVE_STEERED"]
+    coupling_mode: Literal["COUPLED", "ORACLE_PHASE_RESET"]
+    effort_track: Literal["PRIMARY_HIGHEST", "PREREGISTERED_LOWER", "PREREGISTERED_ABLATION"]
+    native_effort_policy: Literal[
+        "FIXED_NATIVE_SETTING", "ADAPTIVE_NATIVE_MODE", "MAXIMUM_VALID_NATIVE_BUDGET"
+    ]
+    reasoning_effort_label: StrictStr
+    native_effort_config_json: StrictStr
+    native_numeric_budget_cap_tokens: StrictInt | None = Field(default=None, ge=1)
+    native_numeric_budget_min_tokens: StrictInt | None = Field(default=None, ge=0)
+    native_visible_output_reserve_tokens: StrictInt | None = Field(default=None, ge=1)
+    supported_reasoning_effort_labels_json: StrictStr
+    max_assistant_generations_per_episode: Literal[50, 100] = 50
+    effort_order_source: StrictStr
+    effort_minimum_output_tokens: StrictInt = Field(ge=1)
+    reasoning_retention_policy_json: StrictStr
+    usage_accounting_policy_json: StrictStr
+    transport_api_id: StrictStr
+    transport_api_version: StrictStr
+    transport_adapter_version: StrictStr
+    transport_streaming: StrictBool
+    transport_max_logical_output_tokens: StrictInt | None = Field(default=None, ge=1)
+    provider_segment_output_limit_tokens: StrictInt | None = Field(default=None, ge=1)
+    segment_continuation_capability: Literal[
+        "NOT_REQUIRED", "SUPPORTED", "UNSUPPORTED", "UNVERIFIED"
+    ]
+    decode_segmentation_policy_json: StrictStr
+    tokenizer_id: StrictStr
+    tokenizer_version: StrictStr
+    context_window_tokens: StrictInt = Field(ge=1)
+    provider_schema_overhead_tokens: StrictInt = Field(ge=0)
+    provider_max_output_tokens: StrictInt = Field(ge=1)
+    requested_output_ceiling_tokens: StrictInt = Field(ge=1)
+    base_effective_output_ceiling_tokens: StrictInt = Field(ge=1)
+    minimum_context_headroom_tokens: StrictInt = Field(ge=1)
+    headroom_algorithm_id: StrictStr
+    sampling_config_sha256: StrictStr
+    toolset_sha256: StrictStr
+    retry_policy_id: StrictStr
+    request_client_timeout_s: StrictInt = Field(ge=1)
+    recovery_policy_json: StrictStr
+    cap_disclosed: Literal[False] = False
+    prompt_sha256: StrictStr
+    primary_prompt_bundle_sha256: StrictStr
+    adapter_sha256: StrictStr
+    tool_decoding_policy_json: StrictStr
+    harness_sha256: StrictStr
+    dataset_seal_sha256: StrictStr
+    topology_profile_sha256: StrictStr
+    topology_role_priority_json: StrictStr
+    repeat_seed_schedule_json: StrictStr
+    repeat_execution_order_json: StrictStr
+    run_config_sha256: StrictStr
 
     @model_validator(mode="after")
-    def _check_unique_configs(self) -> ComparatorManifestV5:
-        keys = [(e.model_id, e.reasoning_effort, e.topology) for e in self.entries]
-        if len(keys) != len(set(keys)):
+    def _check_output_and_primary(self) -> RunConfigurationV5:
+        if self.requested_output_ceiling_tokens != self.base_effective_output_ceiling_tokens:
+            raise ValueError("requested and base effective output ceilings must match")
+        if not (
+            self.effort_minimum_output_tokens
+            <= self.base_effective_output_ceiling_tokens
+            <= self.provider_max_output_tokens
+        ):
+            raise ValueError("base output allowance must support the fixed effort and provider")
+        if (
+            self.transport_max_logical_output_tokens is not None
+            and self.base_effective_output_ceiling_tokens
+            > self.transport_max_logical_output_tokens
+        ):
             raise ValueError(
-                "ComparatorManifestV5 entries must be unique by "
-                "(model_id, reasoning_effort, topology)"
+                "base effective output ceiling must not exceed transport max logical output"
+            )
+        if self.native_effort_policy == "MAXIMUM_VALID_NATIVE_BUDGET":
+            cap = self.native_numeric_budget_cap_tokens
+            minimum = self.native_numeric_budget_min_tokens
+            reserve = self.native_visible_output_reserve_tokens
+            if cap is None or minimum is None or reserve is None or cap < minimum:
+                raise ValueError("numeric maximum policy needs documented cap, minimum, reserve")
+            if self.effort_minimum_output_tokens != minimum + reserve:
+                raise ValueError(
+                    "numeric effort minimum must equal documented minimum plus reserve"
+                )
+        if self.effort_track == "PRIMARY_HIGHEST" and (
+            self.topology,
+            self.steering_mode,
+            self.coupling_mode,
+        ) != ("T0_SINGLE_MONOLITH", "UNSTEERED", "COUPLED"):
+            raise ValueError("primary track requires the shared unsteered coupled single agent")
+        return self
+
+    def requires_supported_segment_continuation(self) -> bool:
+        """Return whether the configured logical ceiling exceeds a provider segment limit."""
+        return (
+            self.provider_segment_output_limit_tokens is not None
+            and self.base_effective_output_ceiling_tokens
+            > self.provider_segment_output_limit_tokens
+        )
+
+    def is_segment_continuation_eligible(self) -> bool:
+        """Return whether segment continuation capability satisfies the configured ceiling."""
+        return (
+            not self.requires_supported_segment_continuation()
+            or self.segment_continuation_capability == "SUPPORTED"
+        )
+
+
+class ProviderRequestUsageV5(StrictV5Model):
+    request_id: StrictStr
+    logical_request_id: StrictStr
+    request_kind: Literal[
+        "INITIAL",
+        "TRANSIENT_RETRY",
+        "QUOTA_CONTINUATION",
+        "RECOVERY_CONTINUATION",
+        "SEGMENT_CONTINUATION",
+    ]
+    retry_index: StrictInt | None = Field(default=None, ge=0, le=2)
+    quota_continuation_index: StrictInt | None = Field(default=None, ge=0)
+    recovery_continuation_index: StrictInt | None = Field(default=None, ge=0)
+    segment_continuation_index: StrictInt | None = Field(default=None, ge=0)
+    decode_segment_index: StrictInt = Field(ge=0)
+    attempt_id: StrictStr
+    agent_id: StrictStr
+    role: StrictStr
+    dispatch_round: StrictInt = Field(ge=0)
+    reservation_ordinal: tuple[StrictInt, StrictInt, StrictInt, StrictStr, StrictInt]
+    request_status: Literal[
+        "COMPLETED",
+        "TRANSIENT_FAILURE",
+        "QUOTA_INTERRUPTION",
+        "NONTRANSIENT_FAILURE",
+        "AMBIGUOUS_FAILURE",
+        "CANCELLED",
+    ]
+    post_terminal: StrictBool = False
+    provider_stop_reason: StrictStr | None = None
+    provider_http_status: StrictInt | None = Field(default=None, ge=100, le=599)
+    provider_error_code: StrictStr | None = None
+    provider_decode_status_raw: StrictStr | None = None
+    normalized_decode_status: Literal[
+        "SEGMENT_REQUIRES_CONTINUATION",
+        "TERMINAL_NORMAL",
+        "TERMINAL_REFUSAL",
+        "TERMINAL_OUTPUT_LIMIT",
+        "NO_RESPONSE",
+        "UNKNOWN",
+    ]
+    provider_refusal_signal: StrictBool | None = None
+    actual_native_numeric_budget_tokens: StrictInt | None = Field(default=None, ge=0)
+    native_generation_parameters_json: StrictStr | None = None
+    rendered_input_context_tokens: StrictInt | None = Field(default=None, ge=0)
+    effective_output_allowance_tokens: StrictInt | None = Field(default=None, ge=1)
+    input_tokens_total: StrictInt | None = Field(default=None, ge=0)
+    cached_input_tokens: StrictInt | None = Field(default=None, ge=0)
+    output_tokens_total: StrictInt | None = Field(default=None, ge=0)
+    reasoning_tokens_subset: StrictInt | None = Field(default=None, ge=0)
+    tool_serialization_tokens_subset: StrictInt | None = Field(default=None, ge=0)
+    provider_reported_cost_micros: StrictInt | None = Field(default=None, ge=0)
+    estimated_cost_micros: StrictInt | None = Field(default=None, ge=0)
+    cost_basis: Literal["PROVIDER_BILLED", "FROZEN_RATE_ESTIMATE", "UNAVAILABLE"]
+    pricing_manifest_sha256: StrictStr | None = None
+    raw_usage_fields_json: StrictStr | None = None
+    usage_scope: Literal["PHYSICAL_REQUEST", "LOGICAL_RESPONSE_CUMULATIVE", "UNAVAILABLE"]
+    currency_code: StrictStr | None = None
+
+    @model_validator(mode="after")
+    def _check_request_indices_and_subsets(self) -> ProviderRequestUsageV5:
+        if self.request_kind == "INITIAL":
+            if (
+                self.retry_index != 0
+                or self.quota_continuation_index is not None
+                or self.recovery_continuation_index is not None
+                or self.segment_continuation_index is not None
+                or self.decode_segment_index != 0
+            ):
+                raise ValueError(
+                    "INITIAL request must have retry_index=0, decode_segment_index=0, "
+                    "and null continuation indices"
+                )
+        elif self.request_kind == "TRANSIENT_RETRY":
+            if (
+                self.retry_index not in {1, 2}
+                or self.quota_continuation_index is not None
+                or self.recovery_continuation_index is not None
+                or self.segment_continuation_index is not None
+            ):
+                raise ValueError(
+                    "TRANSIENT_RETRY request must have retry_index in {1, 2} "
+                    "and null continuation indices"
+                )
+        elif self.request_kind == "QUOTA_CONTINUATION":
+            if (
+                self.quota_continuation_index is None
+                or self.retry_index is not None
+                or self.recovery_continuation_index is not None
+                or self.segment_continuation_index is not None
+            ):
+                raise ValueError(
+                    "QUOTA_CONTINUATION request requires quota_continuation_index "
+                    "and null retry/other continuation indices"
+                )
+        elif self.request_kind == "RECOVERY_CONTINUATION":
+            if (
+                self.recovery_continuation_index is None
+                or self.retry_index is not None
+                or self.quota_continuation_index is not None
+                or self.segment_continuation_index is not None
+            ):
+                raise ValueError(
+                    "RECOVERY_CONTINUATION request requires recovery_continuation_index "
+                    "and null retry/other continuation indices"
+                )
+        elif self.request_kind == "SEGMENT_CONTINUATION" and (
+            self.segment_continuation_index is None
+            or self.decode_segment_index < 1
+            or self.retry_index is not None
+            or self.quota_continuation_index is not None
+            or self.recovery_continuation_index is not None
+        ):
+            raise ValueError(
+                "SEGMENT_CONTINUATION request requires segment_continuation_index, "
+                "decode_segment_index >= 1, and null retry/other continuation indices"
+            )
+
+        if (
+            self.cached_input_tokens is not None
+            and self.input_tokens_total is not None
+            and self.cached_input_tokens > self.input_tokens_total
+        ):
+            raise ValueError("cached_input_tokens cannot exceed input_tokens_total")
+        if (
+            self.reasoning_tokens_subset is not None
+            and self.output_tokens_total is not None
+            and self.reasoning_tokens_subset > self.output_tokens_total
+        ):
+            raise ValueError("reasoning_tokens_subset cannot exceed output_tokens_total")
+        if (
+            self.tool_serialization_tokens_subset is not None
+            and self.output_tokens_total is not None
+            and self.tool_serialization_tokens_subset > self.output_tokens_total
+        ):
+            raise ValueError("tool_serialization_tokens_subset cannot exceed output_tokens_total")
+        return self
+
+
+class EpisodeAttemptV5(StrictV5Model):
+    attempt_id: StrictStr
+    episode_id: StrictStr
+    repeat_index: Literal[1, 2, 3]
+    run_config_sha256: StrictStr
+    attempt_status: Literal[
+        "COMPLETED",
+        "WITHIN_PROTOCOL_REFUSAL",
+        "WITHIN_PROTOCOL_PARSE_FAILURE",
+        "WITHIN_PROTOCOL_STEP_LIMIT",
+        "WITHIN_PROTOCOL_OUTPUT_LIMIT",
+        "WITHIN_PROTOCOL_CONTEXT_LIMIT",
+        "INCOMPLETE_PROVIDER_QUOTA",
+        "INCOMPLETE_PROVIDER_FAILURE",
+        "INCOMPLETE_CONTEXT_INCOMPATIBLE",
+        "INCOMPLETE_HARNESS_FAILURE",
+    ]
+    completed_assistant_generations: StrictInt = Field(ge=0, le=100)
+    terminal_reservation_ordinal: (
+        tuple[StrictInt, StrictInt, StrictInt, StrictStr, StrictInt] | None
+    ) = None
+    terminal_cause: StrictStr | None = None
+    context_limit_cause: (
+        Literal["ALLOWANCE_BELOW_EFFORT_MIN", "PROVIDER_REJECTION_CONFIRMED_LIMIT"] | None
+    ) = None
+    tool_call_count: StrictInt = Field(ge=0)
+    retry_request_count: StrictInt = Field(ge=0)
+    elapsed_wall_time_ms: StrictInt | None = Field(default=None, ge=0)
+    terminal_outcome_elapsed_ms: StrictInt | None = Field(default=None, ge=0)
+    active_elapsed_ms: StrictInt | None = Field(default=None, ge=0)
+    provider_requests: tuple[ProviderRequestUsageV5, ...]
+    g_srr: StrictBool | None = None
+    sem_srr_commit: StrictBool | None = None
+    overgrant_count: StrictInt | None = Field(default=None, ge=0)
+    avail_breach_count: StrictInt | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _check_incomplete_observability(self) -> EpisodeAttemptV5:
+        metrics = (
+            self.g_srr,
+            self.sem_srr_commit,
+            self.overgrant_count,
+            self.avail_breach_count,
+        )
+        if self.attempt_status.startswith("INCOMPLETE_"):
+            if any(value is not None for value in metrics):
+                raise ValueError("infrastructure-incomplete attempt metrics must be null")
+        else:
+            if any(value is None for value in metrics):
+                raise ValueError("observed attempt metrics must be non-null")
+            if self.attempt_status.startswith("WITHIN_PROTOCOL_") and (
+                self.g_srr is not False or self.sem_srr_commit is not False
+            ):
+                raise ValueError(
+                    "within-protocol terminated attempt must record g_srr=False "
+                    "and sem_srr_commit=False"
+                )
+        if (self.context_limit_cause is not None) != (
+            self.attempt_status == "WITHIN_PROTOCOL_CONTEXT_LIMIT"
+        ):
+            raise ValueError(
+                "context_limit_cause must be set iff attempt_status is "
+                "WITHIN_PROTOCOL_CONTEXT_LIMIT"
             )
         return self
 
-    @property
-    def entry_by_config(self) -> dict[tuple[str, str, str], ComparatorEntryV5]:
-        return {(e.model_id, e.reasoning_effort, e.topology): e for e in self.entries}
+
+class DescriptiveUsageSummaryV5(StrictV5Model):
+    run_config_sha256: StrictStr
+    planned_attempt_slots: StrictInt = Field(ge=0)
+    completed_attempts: StrictInt = Field(ge=0)
+    incomplete_provider_quota_attempts: StrictInt = Field(ge=0)
+    incomplete_provider_failure_attempts: StrictInt = Field(ge=0)
+    incomplete_context_attempts: StrictInt = Field(ge=0)
+    incomplete_harness_attempts: StrictInt = Field(ge=0)
+    attempt_status_counts_json: StrictStr
+    elapsed_wall_time_ms: StrictInt | None = Field(default=None, ge=0)
+    active_elapsed_ms: StrictInt | None = Field(default=None, ge=0)
+    total_input_tokens: StrictInt | None = Field(default=None, ge=0)
+    cached_input_tokens: StrictInt | None = Field(default=None, ge=0)
+    total_output_tokens: StrictInt | None = Field(default=None, ge=0)
+    reasoning_tokens_subset: StrictInt | None = Field(default=None, ge=0)
+    tool_serialization_tokens_subset: StrictInt | None = Field(default=None, ge=0)
+    provider_billed_cost_micros: StrictInt | None = Field(default=None, ge=0)
+    estimated_cost_micros: StrictInt | None = Field(default=None, ge=0)
+    currency_code: StrictStr | None = None
+    accounting_coverage_status: Literal["COMPLETE", "PARTIAL", "UNAVAILABLE"]
+
+    @model_validator(mode="after")
+    def _check_attempt_status_counts(self) -> DescriptiveUsageSummaryV5:
+        try:
+            parsed = json.loads(self.attempt_status_counts_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError("attempt_status_counts_json must be valid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("attempt_status_counts_json must decode to a JSON object")
+        for status, count in parsed.items():
+            if status not in _CANONICAL_ATTEMPT_STATUSES_V5:
+                raise ValueError(
+                    f"unknown attempt status in attempt_status_counts_json: {status!r}"
+                )
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise ValueError(
+                    "attempt_status_counts_json values must be non-negative integers"
+                )
+        if sum(parsed.values()) != self.planned_attempt_slots:
+            raise ValueError("attempt_status_counts_json sum must equal planned_attempt_slots")
+        if parsed.get("COMPLETED", 0) != self.completed_attempts:
+            raise ValueError("COMPLETED count must match completed_attempts")
+        if parsed.get("INCOMPLETE_PROVIDER_QUOTA", 0) != self.incomplete_provider_quota_attempts:
+            raise ValueError(
+                "INCOMPLETE_PROVIDER_QUOTA count must match incomplete_provider_quota_attempts"
+            )
+        if (
+            parsed.get("INCOMPLETE_PROVIDER_FAILURE", 0)
+            != self.incomplete_provider_failure_attempts
+        ):
+            raise ValueError(
+                "INCOMPLETE_PROVIDER_FAILURE count must match incomplete_provider_failure_attempts"
+            )
+        if parsed.get("INCOMPLETE_CONTEXT_INCOMPATIBLE", 0) != self.incomplete_context_attempts:
+            raise ValueError(
+                "INCOMPLETE_CONTEXT_INCOMPATIBLE count must match incomplete_context_attempts"
+            )
+        if parsed.get("INCOMPLETE_HARNESS_FAILURE", 0) != self.incomplete_harness_attempts:
+            raise ValueError(
+                "INCOMPLETE_HARNESS_FAILURE count must match incomplete_harness_attempts"
+            )
+        return self
+
+
+class HistoricalComparatorEntryV5(StrictV5Model):
+    """Optional v4.1 comparison record; never a v5 acceptance or spend gate."""
+
+    model_id: StrictStr
+    provider_id: StrictStr
+    reasoning_effort_label: StrictStr
+    topology: StrictStr
+    v41_completed_scenarios: StrictInt = Field(ge=0)
+    execution_valid_rate_bps: StrictInt = Field(ge=0, le=10000)
+    v41_run_manifest_sha256: StrictStr
+    input_tokens_total: StrictInt | None = Field(default=None, ge=0)
+    cached_input_tokens: StrictInt | None = Field(default=None, ge=0)
+    output_tokens_total: StrictInt | None = Field(default=None, ge=0)
+    reasoning_tokens_subset: StrictInt | None = Field(default=None, ge=0)
+    historical_cost_micros: StrictInt | None = Field(default=None, ge=0)
+    historical_cost_basis: Literal["PROVIDER_BILLED", "FROZEN_RATE_ESTIMATE", "UNAVAILABLE"]
+
+
+class HistoricalComparatorManifestV5(StrictV5Model):
+    source_spec_sha256: StrictStr
+    pricing_manifest_sha256: StrictStr | None = None
+    entries: tuple[HistoricalComparatorEntryV5, ...]
+
+    @model_validator(mode="after")
+    def _check_unique_configs(self) -> HistoricalComparatorManifestV5:
+        keys = [
+            (e.model_id, e.provider_id, e.reasoning_effort_label, e.topology)
+            for e in self.entries
+        ]
+        if len(keys) != len(set(keys)):
+            raise ValueError("historical comparator entries must be unique by exact configuration")
+        return self
 
 
 class BaseMutationV5(StrictV5Model):
@@ -2393,16 +2800,16 @@ __all__ = (
     "CoSignScopeKindV5",
     "CommitReceiptV5",
     "CompactTableV5",
-    "ComparatorEntryV5",
-    "ComparatorManifestV5",
     "CompensatingControlV5",
     "ConnectorPageV5",
     "ConnectorSchemaV5",
     "ConnectorSyncMutationV5",
     "DeliveredSliceV5",
+    "DescriptiveUsageSummaryV5",
     "EngagementStatusV5",
     "EngagementV5",
     "EnterpriseAgentV5",
+    "EpisodeAttemptV5",
     "EpisodeV5",
     "GrantV5",
     "GroupV5",
@@ -2410,6 +2817,8 @@ __all__ = (
     "HRSourceFeedSpecV5",
     "HRSourceMappingMutationV5",
     "HRSourceMappingTaskV5",
+    "HistoricalComparatorEntryV5",
+    "HistoricalComparatorManifestV5",
     "HistoricalSessionV5",
     "HumanSubkindV5",
     "ITSMTicketActionV5",
@@ -2442,10 +2851,12 @@ __all__ = (
     "PriorPhaseLedgerV5",
     "PriorWorkflowOutcomeV5",
     "PrivilegeTierV5",
+    "ProviderRequestUsageV5",
     "QuerySourcesResponseV5",
     "RawHRFeedAssertionV5",
     "RoleV5",
     "RuleIdV5",
+    "RunConfigurationV5",
     "ScopeCatalogV5",
     "ScopedSoDRuleV5",
     "SealedEpisodeOracleV5",

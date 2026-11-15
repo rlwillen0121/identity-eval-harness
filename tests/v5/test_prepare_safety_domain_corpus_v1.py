@@ -80,7 +80,14 @@ def _source_case(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
 
-def test_request_plan_preserves_multrow_literal_and_adds_independent_base_request() -> None:
+def test_request_plan_preserves_multrow_literal_and_adds_independent_base_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        coordinator.shared,
+        "PINNED_PUBLIC_SCHEMA_SHA256",
+        coordinator.shared.HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256,
+    )
     rows = [_account_row("acct_demo"), _account_row("acct_extra")]
     source_case = _source_case(rows)
     context = {
@@ -102,7 +109,14 @@ def test_request_plan_preserves_multrow_literal_and_adds_independent_base_reques
     assert derive_case["public_episode"] == safety_case["public_episode"]
 
 
-def test_atomic_literal_uses_root_replace_materialization_and_route_keeps_context() -> None:
+def test_atomic_literal_uses_root_replace_materialization_and_route_keeps_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        coordinator.shared,
+        "PINNED_PUBLIC_SCHEMA_SHA256",
+        coordinator.shared.HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256,
+    )
     candidate = _account_row("acct_demo")
     source_case = _public_case(
         {
@@ -768,7 +782,14 @@ def test_outer_receipt_raw_streams_and_audit_must_match(
     assert events == []
 
 
-def test_fixed_v3_public_inventory_is_complete_and_identity_only() -> None:
+def test_fixed_v3_public_inventory_is_complete_and_identity_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        coordinator.shared,
+        "PINNED_PUBLIC_SCHEMA_SHA256",
+        coordinator.shared.HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256,
+    )
     inventory = coordinator._approved_v3_source_inventory(ROOT)
 
     assert len(inventory["source_case_index"]) == 1702

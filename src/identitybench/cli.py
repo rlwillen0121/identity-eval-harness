@@ -254,6 +254,7 @@ class _Session:
     quiet: bool = False
     env_file: Path | None = None
     """The ``.env`` to load (``_load_env``); None with ``--no-env-file``."""
+    env_file_explicit: bool = False
 
 
 def _session(ctx: typer.Context) -> _Session:
@@ -544,6 +545,7 @@ def main(
         # `v5 run` leaf loads it itself only after validating its inputs.
         if not no_env_file:
             session.env_file = env_file if env_file is not None else session.root / ".env"
+            session.env_file_explicit = env_file is not None
         return
     # A dying harness must not leave CLI calls running or their directories behind; what a
     # SIGKILL left last time is swept now (both idempotent and cheap; the sweep leaves the
