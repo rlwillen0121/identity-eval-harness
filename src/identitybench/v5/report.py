@@ -229,6 +229,8 @@ def _clean_table_text(value: object) -> str:
 def _fmt(value: float | int | Decimal | None, precision: int = 3) -> str:
     if value is None:
         return "UNMEASURED"
+    if isinstance(value, int) and not isinstance(value, bool) and precision == 0:
+        return str(value)
     return f"{value:.{precision}f}"
 
 

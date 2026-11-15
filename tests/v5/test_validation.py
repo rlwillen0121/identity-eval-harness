@@ -4879,6 +4879,18 @@ def test_g_iga_review_01_development_vs_held_out_manifest_checks(tmp_path: Path)
     assert conflict_iga.status is GateStatusV5.FAIL
     assert any("author-conflict" in err for err in conflict_iga.errors)
 
+    # Blocking finding without resolved=True fails G-IGA-REVIEW-01.
+    blocking_manifest = _valid_iga_review_manifest(lite_artifacts, suite_id="v5_lite")
+    blocking_manifest["episode_reviews"][0]["findings"] = [{"blocking": True}]
+    blocking_path = tmp_path / "iga_blocking.json"
+    blocking_path.write_text(json.dumps(blocking_manifest), encoding="utf-8")
+    blocking_report = validate_v5_dataset(
+        lite_dir, iga_review_manifest_path=blocking_path, run_baselines=False
+    )
+    blocking_iga = {item.gate_id: item for item in blocking_report.gate_results}["G-IGA-REVIEW-01"]
+    assert blocking_iga.status is GateStatusV5.FAIL
+    assert any("unresolved blocking" in err for err in blocking_iga.errors)
+
     # Sensitive path is refused before reading.
     sensitive_path = tmp_path / ".env"
     sensitive_path.write_text("SECRET=1", encoding="utf-8")

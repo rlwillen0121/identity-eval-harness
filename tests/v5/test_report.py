@@ -1579,3 +1579,53 @@ def test_currency_label_is_escaped_in_rendered_report() -> None:
     assert "\\<img" in currency_line
     assert "https&#58;//evil.example" in currency_line
     assert "\n" not in currency_line
+
+
+def test_fmt_exact_integer_avoids_float_rounding_and_overflow() -> None:
+    from identitybench.v5.report import _fmt
+    from identitybench.v5.runner import _MAX_FINITE_FLOAT_COST_MICROS_V5
+
+    exact_large = 10**18 + 1
+    assert _fmt(exact_large, 0) == str(exact_large)
+    assert _fmt(_MAX_FINITE_FLOAT_COST_MICROS_V5, 0) == str(_MAX_FINITE_FLOAT_COST_MICROS_V5)
+    assert _fmt(10**310, 0) == str(10**310)
+
+    artifact = _model_report_artifact("model-huge-int", "v5_core", ("F01",))
+    usage = DescriptiveUsageSummaryV5(
+        run_config_sha256="d" * 64,
+        planned_attempt_slots=1,
+        completed_attempts=1,
+        incomplete_provider_quota_attempts=0,
+        incomplete_provider_failure_attempts=0,
+        incomplete_context_attempts=0,
+        incomplete_harness_attempts=0,
+        attempt_status_counts_json='{"COMPLETED":1}',
+        elapsed_wall_time_ms=exact_large,
+        active_elapsed_ms=exact_large + 1,
+        total_input_tokens=exact_large + 2,
+        cached_input_tokens=exact_large + 3,
+        total_output_tokens=exact_large + 4,
+        reasoning_tokens_subset=exact_large + 5,
+        tool_serialization_tokens_subset=exact_large + 6,
+        provider_billed_cost_micros=_MAX_FINITE_FLOAT_COST_MICROS_V5,
+        estimated_cost_micros=10**310,
+        currency_code="USD",
+        accounting_coverage_status="COMPLETE",
+    )
+    artifact = replace(
+        artifact,
+        summary=replace(
+            artifact.summary,
+            suite_input_tokens_actual=exact_large + 2,
+            suite_output_tokens_actual=exact_large + 4,
+            suite_cost_usd_micros=_MAX_FINITE_FLOAT_COST_MICROS_V5,
+            descriptive_usage=usage,
+        ),
+    )
+
+    rendered = render_v5_markdown_report(artifact)
+    assert f"- Input tokens actual: {exact_large + 2}" in rendered
+    assert f"- Output tokens actual: {exact_large + 4}" in rendered
+    assert f"- Estimated cost in USD micros: {_MAX_FINITE_FLOAT_COST_MICROS_V5}" in rendered
+    assert f"- Provider billed cost (micros): {_MAX_FINITE_FLOAT_COST_MICROS_V5}" in rendered
+    assert f"- Estimated cost (micros, USD): {10**310}" in rendered

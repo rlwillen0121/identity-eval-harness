@@ -3683,3 +3683,105 @@ def test_openai_compat_request_params_serializes_v5_tools_and_multiturn_tool_mes
             "tool_call_id": "call_q1",
             "content": '{"rows": []}',
         }
+
+
+async def test_codex_cli_empty_completed_turn_triggers_row5_zero_call_continue() -> None:
+    from identitybench.v5.runner import (
+        HARNESS_MSG_ZERO_CALL_CONTINUE_V5,
+        _extract_and_validate_tool_calls,
+    )
+
+    empty_completed = ModelResponse(
+        text="",
+        stop_reason="completed",
+        error=None,
+        usage=Usage(input_tokens=10, output_tokens=5),
+    )
+    declared = frozenset({"query_sources", "stage_phase_mutations", "commit_phase_mutations"})
+    assert (
+        _extract_and_validate_tool_calls(
+            empty_completed,
+            logical_request_id="req-empty-turn0",
+            declared_tools=declared,
+            max_calls=6,
+            positional_calls=True,
+        )
+        == []
+    )
+
+    class CodexCliNonNativeProvider(FakeProvider):
+        kind = "codex_cli"
+        usage_includes_retries = True
+
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                native_structured_output=True,
+                native_tools=False,
+                supports_temperature=True,
+                reports_usage=True,
+            )
+
+    p1_envelope = json.dumps(
+        {
+            "actions": [
+                {
+                    "action": "stage_phase_mutations",
+                    "arguments": {"phase_index": 1, "stage_id": "stg_p1_01", "mutations": []},
+                },
+                {
+                    "action": "commit_phase_mutations",
+                    "arguments": {"phase_index": 1, "stage_id": "stg_p1_01"},
+                },
+            ]
+        }
+    )
+    p2_envelope = json.dumps(
+        {
+            "actions": [
+                {
+                    "action": "stage_phase_mutations",
+                    "arguments": {"phase_index": 2, "stage_id": "stg_p2_01", "mutations": []},
+                },
+                {
+                    "action": "commit_phase_mutations",
+                    "arguments": {"phase_index": 2, "stage_id": "stg_p2_01"},
+                },
+            ]
+        }
+    )
+    provider = CodexCliNonNativeProvider(
+        [
+            empty_completed,
+            ModelResponse(
+                text=p1_envelope,
+                stop_reason="completed",
+                error=None,
+                usage=Usage(input_tokens=15, output_tokens=12),
+            ),
+            ModelResponse(
+                text=p2_envelope,
+                stop_reason="completed",
+                error=None,
+                usage=Usage(input_tokens=18, output_tokens=12),
+            ),
+        ]
+    )
+
+    result = await run_v5_agent_episode(
+        fake_episode(),
+        SimpleNamespace(),
+        provider,
+        run_config=RunConfigV5(max_turns=4, capture_transcript=True),
+        runtime_factory=FakeRuntime,
+    )
+    assert result.attempt_status == "COMPLETED"
+    assert result.attempt_status not in {
+        "WITHIN_PROTOCOL_PARSE_FAILURE",
+        "INCOMPLETE_PROVIDER_FAILURE",
+    }
+    assert result.completed_assistant_generations == 3
+    assert len(provider.requests) == 3
+    assert provider.requests[1].messages[-2] == Message(role=Role.assistant, content="")
+    assert provider.requests[1].messages[-1] == Message(
+        role=Role.user, content=HARNESS_MSG_ZERO_CALL_CONTINUE_V5
+    )

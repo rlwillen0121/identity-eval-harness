@@ -11450,7 +11450,7 @@ def _iga_review_gate(
                     if isinstance(finding, Mapping) and (
                         finding.get("blocking") is True
                         and (
-                            finding.get("resolved") is False
+                            finding.get("resolved") is not True
                             or finding.get("status") in {"OPEN", "UNRESOLVED"}
                         )
                     ):
