@@ -1,4 +1,4 @@
-import { endToEndPct, pct, int, usd, seconds, date, escapeHTML as esc } from './format.js';
+import { endToEndPct, pct, int, tokens, usd, seconds, date, escapeHTML as esc } from './format.js';
 import { vendorLogo } from './logos.js';
 
 export const costBasis = {
@@ -89,6 +89,7 @@ export function mount(rootEl, data, store) {
       ${figures([
         ['End to end', `${endToEndPct(model.g_srr)} (95% interval ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])})`],
         ['Unsafe committed actions', `${pct(model.unsafe_rate)} · ${int(model.unsafe_count)} actions`],
+        ['Total output tokens', `${tokens(model.output_tokens)} (${int(model.output_tokens)})`],
       ], 'mobile-figures')}
       <div class="detail-columns">
         <div>
@@ -118,6 +119,7 @@ export function mount(rootEl, data, store) {
             ['Tasks solved', tasksSolvedSummary(model, data.suite.tasks)],
             ['Average turns', `${fixed(model.avg_turns)} of ${int(data.suite.turn_budget)}`],
             ['Tool calls per scenario', fixed(model.avg_tool_calls)],
+            ['Total output tokens', `${tokens(model.output_tokens)} (${int(model.output_tokens)})`],
             ['Output tokens per task', fixed(model.tokens_per_task)],
             ['Median latency per scenario', seconds(model.latency_p50_s)],
             ['Run cost', cost],

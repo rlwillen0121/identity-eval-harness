@@ -16,13 +16,14 @@
 .leaderboard-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; table-layout: fixed; font-variant-numeric: tabular-nums; }
 .identity-cell { font-variant-numeric: normal; }
 .leaderboard-table th { position: sticky; top: 0; z-index: 2; background: var(--surface); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 11px 7px 10px; text-align: left; vertical-align: bottom; font-weight: 500; }
-.leaderboard-table th:first-child { width: 5%; padding-left: 20px; }
-.leaderboard-table th:nth-child(2) { width: 23%; }
-.leaderboard-table th:nth-child(3) { width: 24%; }
-.leaderboard-table th:nth-child(4) { width: 14%; }
-.leaderboard-table th:nth-child(5) { width: 11%; }
-.leaderboard-table th:nth-child(6) { width: 14%; }
-.leaderboard-table th:nth-child(7) { width: 9%; }
+.leaderboard-table th:first-child { width: 4.5%; padding-left: 20px; }
+.leaderboard-table th:nth-child(2) { width: 21.5%; }
+.leaderboard-table th:nth-child(3) { width: 22.5%; }
+.leaderboard-table th:nth-child(4) { width: 13.5%; }
+.leaderboard-table th:nth-child(5) { width: 9.5%; }
+.leaderboard-table th:nth-child(6) { width: 11%; }
+.leaderboard-table th:nth-child(7) { width: 9%; text-align: right; }
+.leaderboard-table th:nth-child(8) { width: 8.5%; }
 .sort-button { border: 0; padding: 0; color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .01em; text-align: left; white-space: nowrap; }
 .leaderboard-table th[aria-sort="ascending"] .sort-button, .leaderboard-table th[aria-sort="descending"] .sort-button { color: var(--ink); }
 .sort-arrow { width: 10px; height: 12px; margin-left: 3px; }
@@ -67,6 +68,7 @@
 .unsafe-number { flex: 0 0 5ch; text-align: right; }
 .unsafe-track { flex: 0 0 48px; width: 48px; display: block; }
 .unsafe-fill { min-width: 2px; height: 4px; display: block; background: var(--critical); border-radius: 2px; }
+.tokens-cell { white-space: nowrap; text-align: right; }
 .cost-cell { white-space: nowrap; text-align: right; }
 .leaderboard-table th:last-child { text-align: right; padding-right: 20px; }
 .leaderboard-table td:last-child { padding-right: 20px; }
@@ -137,8 +139,15 @@
   .leaderboard-table th, .leaderboard-table td { padding-inline: 4px; }
   .leaderboard-table th:first-child, .leaderboard-table td:first-child { padding-left: 16px; }
   .leaderboard-table th:last-child, .leaderboard-table td:last-child { padding-right: 16px; }
-  .leaderboard-table th:first-child { width: 6%; }
-  .leaderboard-table th:nth-child(2) { width: 22%; }
+  .leaderboard-table th:first-child { width: 5%; }
+  .leaderboard-table th:nth-child(2) { width: 19.5%; }
+  .leaderboard-table th:nth-child(3) { width: 21.5%; }
+  .leaderboard-table th:nth-child(4) { width: 12%; }
+  .leaderboard-table th:nth-child(5) { width: 11%; }
+  .leaderboard-table th:nth-child(6) { width: 10.5%; }
+  .leaderboard-table th:nth-child(7) { width: 11%; }
+  .leaderboard-table th:nth-child(8) { width: 9.5%; }
+  .unsafe-track { flex: 0 0 28px; width: 28px; }
   .vendor-label { display: block; margin-left: 0; }
   .model-attribution { display: flex; align-items: center; }
   .sort-button { font-size: 11px; }

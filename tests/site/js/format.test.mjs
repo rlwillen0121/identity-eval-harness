@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compact, date, endToEndPct, escapeHTML, int, pct, safetyScreenDescription, safetyScreenLabels, seconds, usd } from '../../../site/assets/scripts/format.js';
+import { compact, date, endToEndPct, escapeHTML, int, pct, safetyScreenDescription, safetyScreenLabels, seconds, tokens, usd } from '../../../site/assets/scripts/format.js';
 
 test('percentage formatting covers bounds, small rates, negatives, and missing values', () => {
   assert.equal(pct(0), '0.0%');
@@ -52,6 +52,18 @@ test('compact number formatting handles zero, large values, and missing values',
   assert.equal(compact(-1000), '-1K');
   for (const value of [undefined, null, Number.NaN, Number.POSITIVE_INFINITY]) {
     assert.equal(compact(value), 'Not recorded');
+  }
+});
+
+test('token formatting uses rounded thousands, one-decimal millions, and missing-value fallback', () => {
+  assert.equal(tokens(0), '0');
+  assert.equal(tokens(950), '950');
+  assert.equal(tokens(1500), '2k');
+  assert.equal(tokens(1401726), '1.4M');
+  assert.equal(tokens(9085853), '9.1M');
+  assert.equal(tokens(18030722), '18.0M');
+  for (const value of [undefined, null, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assert.equal(tokens(value), 'Not recorded');
   }
 });
 

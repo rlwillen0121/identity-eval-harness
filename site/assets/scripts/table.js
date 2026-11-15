@@ -1,4 +1,4 @@
-import { END_TO_END_INTERVAL_METHOD, endToEndPct, pct, int, usd, safetyScreenDescription, escapeHTML as esc } from './format.js';
+import { END_TO_END_INTERVAL_METHOD, endToEndPct, pct, int, tokens, usd, safetyScreenDescription, escapeHTML as esc } from './format.js';
 import { mount as mountDetail, costBasis, statusGlyph } from './detail.js';
 import { vendorLogo } from './logos.js';
 
@@ -76,6 +76,7 @@ export const columnDefinitions = (data) => [
   ['tasks_solved', 'Tasks solved', `Category tasks solved out of ${int(data.suite.tasks)} tasks in this suite.`],
   ['categories', 'By category', `Solved category tasks in each governance category, out of ${int(data.suite.scenarios)} scenarios.`],
   ['unsafe_rate', 'Unsafe', 'Committed unsafe action rate among decisions reached by the model.'],
+  ['output_tokens', 'Total tokens', `Total output and reasoning tokens generated across all ${int(data.suite.scenarios)} scenarios.`],
   ['cost_usd', 'Cost', 'Run cost is the billed amount when reported; otherwise retail token prices are applied to the run\'s recorded tokens. Local runs have no cost.'],
 ];
 
@@ -113,6 +114,7 @@ export function modelCellsMarkup(model, data, maxUnsafe, selected = false) {
     <td class="desktop-col tasks-cell"><span class="tasks-measure"><span class="tasks-number">${pct(model.tasks_rate)}</span><span class="task-count">${int(model.tasks_solved)}</span><span class="tasks-track" aria-hidden="true"><span class="tasks-fill" style="width:${clamp(model.tasks_rate) * 100}%"></span></span></span></td>
     <td class="desktop-col"><div class="category-bars">${data.categories.map((category) => `<span class="category-track" role="img" aria-label="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}" title="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}"><span class="category-fill" style="height:${clamp(model.categories[category.id] / data.suite.scenarios) * 100}%"></span></span>`).join('')}</div></td>
     <td class="desktop-col unsafe-cell"><span class="unsafe-measure"><span class="unsafe-number">${pct(model.unsafe_rate)}</span><span class="unsafe-track" aria-hidden="true">${unsafeFill}</span></span></td>
+    <td class="desktop-col tokens-cell" title="${esc(`${int(model.output_tokens)} output and reasoning tokens`)}">${tokens(model.output_tokens)}</td>
     <td class="desktop-col cost-cell" title="${esc(costBasis[model.cost_basis] || 'Basis not recorded')}">${model.cost_basis === 'local' ? '<span class="muted">local</span>' : usd(model.cost_usd)}</td>`;
 }
 
@@ -132,7 +134,7 @@ export function mount(rootEl, data, store) {
     <p class="table-key"><span class="screen-key">${statusGlyph(true)}Clears all ${int(data.screen.length)} safety checks</span><span class="category-key">Categories: ${data.categories.map((category) => esc(category.label)).join(' · ')}</span><span class="model-count" role="status" aria-live="polite"></span></p>
     <table class="leaderboard-table">
       <caption class="sr-only">IdentityBench model results. Activate a model name to show its full results. Activate column headings to sort.</caption>
-      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"${['tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'].includes(key) ? ' class="desktop-col"' : ''}><button type="button" class="sort-button" data-sort="${key}" title="${esc(title)}">${label}<span class="sort-indicator"></span></button></th>`).join('')}</tr></thead>
+      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"${['tasks_solved', 'categories', 'unsafe_rate', 'output_tokens', 'cost_usd'].includes(key) ? ' class="desktop-col"' : ''}><button type="button" class="sort-button" data-sort="${key}" title="${esc(title)}">${label}<span class="sort-indicator"></span></button></th>`).join('')}</tr></thead>
       <tbody></tbody>
     </table>
     <details class="baselines">
@@ -190,8 +192,8 @@ export function mount(rootEl, data, store) {
     });
     body.innerHTML = models.map((model) => {
       const selected = model.id === state.selected;
-      return `<tr class="model-row" id="model-${esc(model.id)}" data-model-id="${esc(model.id)}">${modelCellsMarkup(model, data, maxUnsafe, selected)}</tr>${selected ? `<tr class="detail-row"><td colspan="7"><div class="model-detail" id="detail-${esc(model.id)}" role="region" aria-label="${esc(model.name)} detail"></div></td></tr>` : ''}`;
-    }).join('') || '<tr class="empty-row"><td colspan="7">No models match these filters. Clear the search or choose All vendors.</td></tr>';
+      return `<tr class="model-row" id="model-${esc(model.id)}" data-model-id="${esc(model.id)}">${modelCellsMarkup(model, data, maxUnsafe, selected)}</tr>${selected ? `<tr class="detail-row"><td colspan="${columns.length}"><div class="model-detail" id="detail-${esc(model.id)}" role="region" aria-label="${esc(model.name)} detail"></div></td></tr>` : ''}`;
+    }).join('') || `<tr class="empty-row"><td colspan="${columns.length}">No models match these filters. Clear the search or choose All vendors.</td></tr>`;
     const detail = body.querySelector('.model-detail');
     if (detail) cleanupDetail = mountDetail(detail, data, store);
     highlight();

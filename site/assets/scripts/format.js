@@ -2,6 +2,7 @@ const number = (options) => new Intl.NumberFormat('en-US', options);
 const integer = number({ maximumFractionDigits: 0 });
 const currency = number({ style: 'currency', currency: 'USD' });
 const short = number({ notation: 'compact', maximumFractionDigits: 1 });
+const millions = number({ minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const duration = number({ maximumFractionDigits: 1 });
 const known = (n) => typeof n === 'number' && Number.isFinite(n);
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -25,6 +26,12 @@ export function safetyScreenDescription(screen) {
 export function int(n) { return known(n) ? integer.format(n) : 'Not recorded'; }
 export function usd(n) { return known(n) ? currency.format(n) : 'Not recorded'; }
 export function compact(n) { return known(n) ? short.format(n) : 'Not recorded'; }
+export function tokens(n) {
+  if (!known(n)) return 'Not recorded';
+  if (Math.abs(n) >= 1_000_000) return `${millions.format(n / 1_000_000)}M`;
+  if (Math.abs(n) >= 1_000) return `${integer.format(n / 1_000)}k`;
+  return integer.format(n);
+}
 export function seconds(n) { return known(n) ? `${duration.format(n)} s` : 'Not recorded'; }
 export function date(iso) {
   const match = typeof iso === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;

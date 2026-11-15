@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/scripts/table.js';
+import { columnDefinitions, compareModels, foldVendorChips, identityCellMarkup, matchesModelQuery, modelCellsMarkup, mount, sortComparator, toggleVendorSelection, whisker } from '../../../site/assets/scripts/table.js';
 import { fieldMedians, tasksSolvedSummary } from '../../../site/assets/scripts/detail.js';
 import { leaderboardLede } from '../../../site/assets/scripts/main.js';
 import { groupUpdates, VISIBLE_UPDATE_COUNT } from '../../../site/assets/scripts/updates.js';
-import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, pct } from '../../../site/assets/scripts/format.js';
+import { END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, int, pct, tokens } from '../../../site/assets/scripts/format.js';
+import { makeStore } from './dom-stub.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../../../site/data/leaderboard.json', import.meta.url), 'utf8'));
-const sortableColumns = ['rank', 'name', 'g_srr', 'tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'];
+const sortableColumns = ['rank', 'name', 'g_srr', 'tasks_solved', 'categories', 'unsafe_rate', 'output_tokens', 'cost_usd'];
 
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -20,7 +21,7 @@ test('table interval and cost titles match the published methods', () => {
   const columns = columnDefinitions(data);
   assert.deepEqual(columns.map(([key, label]) => [key, label]), [
     ['rank', '#'], ['name', 'Model'], ['g_srr', 'End to end'], ['tasks_solved', 'Tasks solved'],
-    ['categories', 'By category'], ['unsafe_rate', 'Unsafe'], ['cost_usd', 'Cost'],
+    ['categories', 'By category'], ['unsafe_rate', 'Unsafe'], ['output_tokens', 'Total tokens'], ['cost_usd', 'Cost'],
   ]);
   const titles = new Map(columns.map(([key, , title]) => [key, title]));
   assert.match(titles.get('rank'), /^Rank by .*model name\.$/);
@@ -30,6 +31,8 @@ test('table interval and cost titles match the published methods', () => {
   assert.match(titles.get('g_srr'), /every wave correct/);
   assert.match(titles.get('g_srr'), /nothing missed/);
   assert.match(titles.get('g_srr'), /count is scenarios fully resolved/);
+  assert.match(titles.get('output_tokens'), /output and reasoning tokens/);
+  assert.match(titles.get('output_tokens'), /180 scenarios/);
   assert.match(titles.get('cost_usd'), /billed amount when reported/);
   assert.match(titles.get('cost_usd'), /retail token prices/);
   assert.match(titles.get('cost_usd'), /Local runs have no cost/);
@@ -47,11 +50,12 @@ test('end-to-end cells include the muted perfect-scenario count and hide the whi
   const columnMarkers = [
     '<td class="rank-cell">', '<td class="identity-cell"><button', '<td class="resolution-cell">',
     '<td class="desktop-col tasks-cell">', '<td class="desktop-col"><div class="category-bars">',
-    '<td class="desktop-col unsafe-cell">', '<td class="desktop-col cost-cell"',
+    '<td class="desktop-col unsafe-cell">', '<td class="desktop-col tokens-cell"', '<td class="desktop-col cost-cell"',
   ].map((marker) => cells.indexOf(marker));
   assert.ok(columnMarkers.every((position) => position >= 0));
   assert.deepEqual(columnMarkers, [...columnMarkers].sort((a, b) => a - b), 'tbody uses the published column order');
   assert.match(cells, /class="task-count">\d[\d,]*<\/span>/);
+  assert.ok(cells.includes(`title="${int(sample.output_tokens)} output and reasoning tokens">${tokens(sample.output_tokens)}</td>`));
 
   const passingModel = data.models.find((model) => model.screen_clear);
   const identityCell = identityCellMarkup(passingModel, data.screen);
@@ -79,9 +83,9 @@ test('exact leaderboard lede and detailed task total use formatted suite counts'
 
 test('every sortable column has independent low-to-high orders in both directions', () => {
   const fixture = [
-    { id: 'low', rank: 3, name: 'Alpha', tasks_solved: 10, categories: { a: 0, b: 1 }, g_srr: 0.1, unsafe_rate: 0.01, cost_usd: 1 },
-    { id: 'middle', rank: 1, name: 'Bravo', tasks_solved: 20, categories: { a: 1, b: 1 }, g_srr: 0.2, unsafe_rate: 0.02, cost_usd: 2 },
-    { id: 'high', rank: 2, name: 'Charlie', tasks_solved: 30, categories: { a: 2, b: 1 }, g_srr: 0.3, unsafe_rate: 0.03, cost_usd: 3 },
+    { id: 'low', rank: 3, name: 'Alpha', tasks_solved: 10, categories: { a: 0, b: 1 }, g_srr: 0.1, unsafe_rate: 0.01, output_tokens: 1000, cost_usd: 1 },
+    { id: 'middle', rank: 1, name: 'Bravo', tasks_solved: 20, categories: { a: 1, b: 1 }, g_srr: 0.2, unsafe_rate: 0.02, output_tokens: 2000, cost_usd: 2 },
+    { id: 'high', rank: 2, name: 'Charlie', tasks_solved: 30, categories: { a: 2, b: 1 }, g_srr: 0.3, unsafe_rate: 0.03, output_tokens: 3000, cost_usd: 3 },
   ];
   const originalIds = data.models.map((model) => model.id);
   for (const key of sortableColumns) {
@@ -96,7 +100,7 @@ test('every sortable column has independent low-to-high orders in both direction
 });
 
 test('rank is the ascending tie-break in both directions and equal ties stay stable', () => {
-  const shared = { name: 'Equal', tasks_solved: 50, categories: { a: 20, b: 30 }, g_srr: 0.5, unsafe_rate: 0.1, cost_usd: 10 };
+  const shared = { name: 'Equal', tasks_solved: 50, categories: { a: 20, b: 30 }, g_srr: 0.5, unsafe_rate: 0.1, output_tokens: 5000, cost_usd: 10 };
   for (const key of sortableColumns) {
     for (const direction of ['asc', 'desc']) {
       const first = { ...shared, id: 'rank-two', rank: 2 };
@@ -242,4 +246,43 @@ test('self-hosted fonts exist, are preloaded from the page, and ship with their 
   assert.doesNotMatch(page, /<style[\s>]/);
   assert.doesNotMatch(page, /<script(?![^>]*\ssrc="assets\/)[^>]*>/);
   assert.doesNotMatch(page, /<link[^>]+href="https?:\/\/(?!identitybench\.ai\/)/);
+});
+
+test('mounted table spans all eight columns for detail and empty rows', () => {
+  const stubEl = () => ({ innerHTML: '', value: '', textContent: '', addEventListener() {}, replaceChildren() { this.innerHTML = ''; }, querySelectorAll: () => [], querySelector: () => stubEl() });
+  const detail = stubEl();
+  const body = {
+    innerHTML: '',
+    addEventListener() {},
+    querySelectorAll: () => [],
+    querySelector: (selector) => (selector === '.model-detail' && body.innerHTML.includes('class="model-detail"') ? detail : null),
+  };
+  const elements = {
+    '.leaderboard-table > tbody': body,
+    '.model-search': stubEl(),
+    '.model-count': stubEl(),
+    '.vendor-controls': stubEl(),
+    thead: stubEl(),
+  };
+  const root = {
+    innerHTML: '',
+    querySelector: (selector) => elements[selector] || null,
+    querySelectorAll: () => [],
+  };
+  const previousDocument = globalThis.document;
+  globalThis.document = { activeElement: null };
+  try {
+    const store = makeStore({ selected: data.models[0].id });
+    const unmount = mount(root, data, store);
+    assert.match(root.innerHTML, /<th scope="col" data-key="output_tokens" class="desktop-col">/);
+    assert.match(body.innerHTML, /<tr class="detail-row"><td colspan="8"><div class="model-detail"/);
+    assert.ok(detail.innerHTML.includes('Total output tokens'));
+    assert.ok(detail.innerHTML.includes(`${tokens(data.models[0].output_tokens)} (${int(data.models[0].output_tokens)})`));
+
+    store.set({ selected: null, query: '__no_such_model__' });
+    assert.equal(body.innerHTML, '<tr class="empty-row"><td colspan="8">No models match these filters. Clear the search or choose All vendors.</td></tr>');
+    unmount();
+  } finally {
+    globalThis.document = previousDocument;
+  }
 });
