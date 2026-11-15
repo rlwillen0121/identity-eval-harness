@@ -909,15 +909,69 @@ def _schema_refs(value: Any) -> set[str]:
     return refs
 
 
-_DISALLOWED_STRICT_SCHEMA_KEYS = frozenset({"title", "discriminator", "default"})
+_DISALLOWED_STRICT_SCHEMA_KEYS = frozenset(
+    {
+        "title",
+        "discriminator",
+        "default",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "format",
+    }
+)
+
+
+def _describe_strict_prefix_item(index: int, schema: Any) -> str:
+    if not isinstance(schema, Mapping):
+        return f"[{index}] value"
+    type_value = schema.get("type")
+    if isinstance(type_value, str):
+        label = type_value
+    elif isinstance(schema.get("$ref"), str):
+        label = schema["$ref"].rsplit("/", 1)[-1]
+    elif isinstance(schema.get("anyOf"), (list, tuple)):
+        parts = [
+            str(branch["type"])
+            for branch in schema["anyOf"]
+            if isinstance(branch, Mapping) and isinstance(branch.get("type"), str)
+        ]
+        label = " | ".join(parts) if parts else "value"
+    else:
+        label = "value"
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values:
+        joined = " | ".join(str(item) for item in enum_values)
+        return f"[{index}] {label} ({joined})"
+    return f"[{index}] {label}"
 
 
 def _strict_openai_schema(value: Any) -> Any:
     """Normalize a JSON schema for OpenAI/CPA strict tool-schema compatibility."""
     if isinstance(value, Mapping):
+        ref = value.get("$ref")
+        if isinstance(ref, str):
+            return {"$ref": ref}
         normalized: dict[str, Any] = {}
+        raw_prefix = value.get("prefixItems")
+        has_prefix_items = isinstance(raw_prefix, (list, tuple))
         for key, child in value.items():
-            if key in _DISALLOWED_STRICT_SCHEMA_KEYS:
+            if key in _DISALLOWED_STRICT_SCHEMA_KEYS or key == "prefixItems":
+                continue
+            if key == "const":
+                if "enum" not in normalized and "enum" not in value:
+                    normalized["enum"] = [child]
+                continue
+            if key == "enum":
+                normalized["enum"] = list(child) if isinstance(child, (list, tuple)) else child
                 continue
             if key in ("properties", "$defs") and isinstance(child, Mapping):
                 normalized[key] = {
@@ -927,6 +981,44 @@ def _strict_openai_schema(value: Any) -> Any:
                 continue
             mapped_key = "anyOf" if key == "oneOf" else key
             normalized[mapped_key] = _strict_openai_schema(child)
+        if has_prefix_items:
+            assert isinstance(raw_prefix, (list, tuple))
+            prefix_items = [_strict_openai_schema(item) for item in raw_prefix]
+            if not isinstance(normalized.get("items"), dict):
+                if prefix_items and all(
+                    isinstance(item, dict) and item.get("type") == "string"
+                    for item in prefix_items
+                ):
+                    normalized["items"] = {"type": "string"}
+                elif prefix_items:
+                    deduped: list[Any] = []
+                    seen: set[str] = set()
+                    for item in prefix_items:
+                        marker = json.dumps(
+                            item, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                        )
+                        if marker not in seen:
+                            seen.add(marker)
+                            deduped.append(item)
+                    normalized["items"] = {"anyOf": deduped}
+                else:
+                    normalized["items"] = {}
+            if prefix_items and not normalized.get("description"):
+                element_notes = "; ".join(
+                    _describe_strict_prefix_item(idx, item)
+                    for idx, item in enumerate(prefix_items)
+                )
+                normalized["description"] = f"{len(prefix_items)}-element array: {element_notes}"
+        elif normalized.get("type") == "array" and not normalized.get("description"):
+            min_items = value.get("minItems")
+            max_items = value.get("maxItems")
+            if (
+                isinstance(min_items, int)
+                and not isinstance(min_items, bool)
+                and min_items == max_items
+                and min_items >= 2
+            ):
+                normalized["description"] = f"{min_items}-element ordered array"
         if normalized.get("type") == "object" or "properties" in normalized:
             normalized["additionalProperties"] = False
             props = normalized.get("properties")

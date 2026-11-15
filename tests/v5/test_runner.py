@@ -12,13 +12,16 @@ import pytest
 import tiktoken
 
 from identitybench.providers.base import (
+    GenerationParams,
     Message,
+    ModelRequest,
     ModelResponse,
     ProviderCapabilities,
     Role,
     ToolCall,
     Usage,
 )
+from identitybench.providers.openai_compat import OpenAICompatProvider
 from identitybench.v5.baselines import run_v5_baseline_on_episode
 from identitybench.v5.generator import build_v5_episode, plan_v5_cells
 from identitybench.v5.policy_card import (
@@ -34,6 +37,7 @@ from identitybench.v5.provider_accounting import (
     provider_fingerprint_sha256_v5,
 )
 from identitybench.v5.runner import (
+    _DISALLOWED_STRICT_SCHEMA_KEYS,
     HARNESS_MSG_TOOL_SCHEMA_ERROR_V5,
     OUTPUT_BUDGET_STOP_V5,
     PRIMARY_PROMPT_BUNDLE_SHA256_V5,
@@ -43,6 +47,7 @@ from identitybench.v5.runner import (
     RoundRequestSpecV5,
     RoundSchedulerV5,
     RunConfigV5,
+    _strict_openai_schema,
     _tool_specs,
     compute_effective_output_allowance_v5,
     compute_primary_prompt_bundle_sha256_v5,
@@ -578,8 +583,14 @@ def test_opening_serializes_complete_policy_card_without_slice_payloads() -> Non
 
 
 def _assert_openai_strict_schema(schema: Any) -> None:
+    disallowed = set(_DISALLOWED_STRICT_SCHEMA_KEYS) | {"oneOf", "prefixItems", "const"}
     if isinstance(schema, dict):
-        assert not ({"oneOf", "discriminator", "default", "title"} & set(schema))
+        assert not (disallowed & set(schema))
+        if "$ref" in schema:
+            assert set(schema) == {"$ref"}
+            return
+        if schema.get("type") == "array":
+            assert isinstance(schema.get("items"), dict)
         if schema.get("type") == "object" or "properties" in schema:
             assert schema.get("additionalProperties") is False
             props = schema.get("properties", {})
@@ -613,7 +624,7 @@ def test_mutation_tool_schema_has_only_the_twelve_declared_union_variants() -> N
     assert {
         spec.input_schema["$defs"][branch["$ref"].rsplit("/", 1)[-1]]["properties"][
             "mutation_kind"
-        ]["const"]
+        ]["enum"][0]
         for branch in branches
     } == {
         "CONNECTOR_SYNC_MUTATION",
@@ -680,7 +691,7 @@ def test_phase_tool_schemas_keep_only_applicable_variants_and_reduce_raw_tokens(
         advertised_kinds = {
             stage.input_schema["$defs"][branch["$ref"].rsplit("/", 1)[-1]]["properties"][
                 "mutation_kind"
-            ]["const"]
+            ]["enum"][0]
             for branch in branches
         }
         assert advertised_kinds == expected[phase_index]
@@ -955,7 +966,7 @@ def test_specialized_pipeline_uses_planner_executor_auditor_and_sums_usage() -> 
         return {
             stage.input_schema["$defs"][branch["$ref"].rsplit("/", 1)[-1]]["properties"][
                 "mutation_kind"
-            ]["const"]
+            ]["enum"][0]
             for branch in branches
         }
 
@@ -3064,3 +3075,107 @@ def test_t5_prompts_and_handoff_preserve_primary_bundle() -> None:
         "Emit only the required tool call(s) with no prose walkthrough." in msg
         for msg in handoff_msgs
     )
+
+
+def test_tool_specs_strict_openai_schema_normalization_and_tuple_descriptions() -> None:
+    from identitybench.v5.validation import _CAP_DISCLOSURE_LEAK_RE_V5
+
+    for phase_index in (None, 1, 2):
+        specs = _tool_specs(phase_index)
+        for tool_spec in specs:
+            _assert_openai_strict_schema(tool_spec.input_schema)
+            serialized = json.dumps(tool_spec.input_schema, ensure_ascii=False)
+            assert _CAP_DISCLOSURE_LEAK_RE_V5.search(serialized) is None
+
+    all_stage = next(item for item in _tool_specs(None) if item.name == "stage_phase_mutations")
+    all_defs = all_stage.input_schema["$defs"]
+    resolved_items = all_defs["HRSourceMappingMutationV5"]["properties"][
+        "resolved_person_statuses"
+    ]["items"]
+    assert resolved_items["type"] == "array"
+    assert resolved_items["items"] == {"type": "string"}
+    assert resolved_items["description"] == (
+        "2-element array: [0] string; [1] string "
+        "(ACTIVE | TERMINATED | FUTURE_HIRE | CONTRACTOR_TO_FTE_PENDING)"
+    )
+
+    uar_decisions_items = all_defs["UARCampaignMutationV5"]["properties"]["uar_decisions"]["items"]
+    assert uar_decisions_items["items"] == {"type": "string"}
+    assert uar_decisions_items["description"] == (
+        "2-element array: [0] string; [1] string (CERTIFY | CONVERT_TO_JIT | REVOKE | ESCALATE)"
+    )
+
+    reviewer_items = all_defs["UARCampaignMutationV5"]["properties"]["reviewer_overrides"]["items"]
+    assert reviewer_items["items"] == {"type": "string"}
+    assert reviewer_items["description"] == "2-element array: [0] string; [1] string"
+
+    for step_field in ("joiner_steps", "mover_steps", "leaver_steps"):
+        step_schema = all_defs["JMLWorkflowSpecV5"]["properties"][step_field]
+        assert step_schema["type"] == "array"
+        assert isinstance(step_schema["items"], dict)
+        assert step_schema["description"] == "5-element ordered array"
+
+    # Non-string prefixItems fall back to deduplicated anyOf and $ref nodes never carry siblings.
+    mixed = _strict_openai_schema(
+        {
+            "type": "array",
+            "prefixItems": [
+                {"type": "string", "minLength": 1},
+                {"type": "integer", "minimum": 0},
+                {"type": "string", "minLength": 2},
+            ],
+            "minItems": 3,
+            "maxItems": 3,
+        }
+    )
+    assert mixed["items"] == {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+    assert mixed["description"] == "3-element array: [0] string; [1] integer; [2] string"
+    assert _strict_openai_schema({"$ref": "#/$defs/Example", "description": "drop me"}) == {
+        "$ref": "#/$defs/Example"
+    }
+
+
+def test_openai_compat_request_params_serializes_v5_tools_and_multiturn_tool_messages() -> None:
+    provider = OpenAICompatProvider("gpt-test", base_url_env="CPA_OPENAI_BASE_URL")
+    messages = (
+        Message(Role.user, "Inspect phase 1 sources."),
+        Message(
+            Role.assistant,
+            "",
+            tool_calls=(
+                ToolCall(
+                    id="call_q1",
+                    name="query_sources",
+                    arguments={"phase_index": 1, "slice_ids": ["hr_person_records"]},
+                ),
+            ),
+        ),
+        Message(Role.tool, '{"rows": []}', tool_call_id="call_q1"),
+    )
+    for phase_index in (1, 2):
+        tools = _tool_specs(phase_index)
+        request = ModelRequest(
+            messages=messages,
+            system="You are executing a deterministic enterprise identity governance episode.",
+            tools=tools,
+            params=GenerationParams(max_output_tokens=2048, effort="medium"),
+        )
+        params = provider.request_params(request)
+        encoded = json.dumps(params, ensure_ascii=False)
+        decoded = json.loads(encoded)
+        assert len(decoded["tools"]) == len(tools)
+        for tool_payload in decoded["tools"]:
+            assert tool_payload["type"] == "function"
+            assert tool_payload["function"]["strict"] is True
+            _assert_openai_strict_schema(tool_payload["function"]["parameters"])
+        assert decoded["messages"][0]["role"] == "system"
+        assert decoded["messages"][1]["role"] == "user"
+        assert decoded["messages"][2]["role"] == "assistant"
+        assert decoded["messages"][2]["content"] is None
+        assert decoded["messages"][2]["tool_calls"][0]["id"] == "call_q1"
+        assert decoded["messages"][2]["tool_calls"][0]["function"]["name"] == "query_sources"
+        assert decoded["messages"][3] == {
+            "role": "tool",
+            "tool_call_id": "call_q1",
+            "content": '{"rows": []}',
+        }
