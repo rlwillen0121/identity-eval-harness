@@ -566,6 +566,10 @@ def v5_validate(
     skip_baselines: Annotated[
         bool, typer.Option(help="Skip deterministic offline baseline proofs.")
     ] = False,
+    iga_review: Annotated[
+        Path | None,
+        typer.Option(help="Optional held-out two-practitioner IGA review manifest."),
+    ] = None,
 ) -> None:
     """Validate schema closure, seals, OBS strategy, deterministic proofs, and baselines.
 
@@ -580,6 +584,9 @@ def v5_validate(
         if blind_proof is not None
         else root / "reports" / "v5" / "conformance" / suite / "receipt.json"
     )
+    iga_review_path = (
+        _path(root, iga_review, sensitive_input=True) if iga_review is not None else None
+    )
     try:
         report = validate_v5_dataset(
             target,
@@ -587,6 +594,7 @@ def v5_validate(
             double_build=double_build,
             blind_proof_path=proof_path,
             run_baselines=not skip_baselines,
+            iga_review_manifest_path=iga_review_path,
         )
     except Exception as error:
         _fail(f"v5 validation failed to run: {error}")

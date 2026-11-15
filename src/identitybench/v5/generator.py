@@ -754,6 +754,8 @@ def _build_world(
     account = ids["account"]
     role = ids["role"]
     grant = ids["grant"]
+    if profile.agent_sponsor_sod and grant["pay"] < grant["wire"]:
+        grant = {**grant, "pay": grant["wire"], "wire": grant["pay"]}
     clock1 = 1_800_000_000 + (cell.seed % 10_000) * 60
     clock2 = clock1 + 86_400
 
