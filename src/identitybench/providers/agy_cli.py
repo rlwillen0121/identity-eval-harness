@@ -79,7 +79,6 @@ from identitybench.providers._cli import (
     render_transcript,
     structured_text,
 )
-from identitybench.providers._json import load_object
 from identitybench.providers._subprocess import ProcessResult
 from identitybench.providers.base import ModelRequest, ModelResponse, Usage
 
@@ -127,12 +126,11 @@ def _is_structured_request(request: ModelRequest) -> bool:
     return request.output_schema is not None and request.schema_name != ACTION_SCHEMA_NAME
 
 
-def _recover_completed_agent_text(
-    events: list[dict[str, Any]], *, require_json_object: bool
-) -> str | None:
-    """Return the last completed ``agent_response`` text from ``events`` when valid."""
+def _recover_completed_agent_text(events: list[dict[str, Any]]) -> str | None:
+    """Return the final ``agent_response`` text from ``events`` only if it reached ``DONE``."""
     chunks_by_step: dict[int, list[str]] = {}
-    done_steps: list[int] = []
+    done_steps: set[int] = set()
+    last_step_index: int | None = None
     for event in events:
         if event.get("event") != "step_update":
             continue
@@ -140,16 +138,16 @@ def _recover_completed_agent_text(
         step_index = su.get("step_index")
         if type(step_index) is not int or su.get("step_type") != "agent_response":
             continue
+        last_step_index = step_index
         delta = su.get("text_delta")
         if isinstance(delta, str):
             chunks_by_step.setdefault(step_index, []).append(delta)
         if su.get("state") == "DONE":
-            done_steps.append(step_index)
-    for step_index in reversed(done_steps):
-        candidate = "".join(chunks_by_step.get(step_index, ())).strip()
-        if candidate and ((not require_json_object) or (load_object(candidate) is not None)):
-            return candidate
-    return None
+            done_steps.add(step_index)
+    if last_step_index is None or last_step_index not in done_steps:
+        return None
+    candidate = "".join(chunks_by_step.get(last_step_index, ())).strip()
+    return candidate if candidate else None
 
 
 class AgyCliProvider(CliProvider):
@@ -289,11 +287,10 @@ class AgyCliProvider(CliProvider):
                 and "function call is empty - no input to parse"
                 in str(payload.get("error") or "").lower()
             ):
-                recovered_text = _recover_completed_agent_text(
-                    events, require_json_object=request.output_schema is not None
-                )
+                recovered_text = _recover_completed_agent_text(events)
                 if recovered_text is not None:
                     response.text = recovered_text
+                    response.parsed = None
                     meta = dict(response.raw or {})
                     meta["recovered_empty_function_call"] = True
                     response.raw = meta

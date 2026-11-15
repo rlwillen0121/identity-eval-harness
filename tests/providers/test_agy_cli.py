@@ -560,6 +560,7 @@ async def test_recovers_completed_action_response_on_empty_function_call() -> No
     response = await provider(runner, max_retries=0).complete(request)
 
     assert response.ok is True
+    assert response.parsed is None
     assert response.text == second_json
     assert (response.usage.input_tokens, response.usage.cache_read_tokens) == (1000, 200)
     assert (response.usage.output_tokens, response.usage.reasoning_tokens) == (80, 30)
@@ -589,14 +590,49 @@ async def test_does_not_recover_empty_function_call_for_structured_request() -> 
     assert response.raw["error_code"] == "CLI_MALFORMED_FUNCTION_CALL"
 
 
-async def test_does_not_recover_empty_function_call_when_action_json_is_truncated() -> None:
-    truncated = '{"actions":['
-    step_events = _agent_step_events(1, (truncated,))
+async def test_does_not_backtrack_when_latest_agent_step_never_reaches_done() -> None:
+    first_json = '{"actions":[{"tool":"get_identity","args":{"id":"u1"}}]}'
+    step_events = [
+        *_agent_step_events(1, (first_json,)),
+        {
+            "event": "step_update",
+            "step_update": {
+                "conversation_id": CONVERSATION,
+                "step_index": 3,
+                "state": "ACTIVE",
+                "step_type": "agent_response",
+                "text_delta": '{"actions":[',
+            },
+        },
+    ]
     result = {
         "conversation_id": CONVERSATION,
         "status": "ERROR",
         "error": _EMPTY_FUNCTION_CALL_ERROR,
-        "response": truncated,
+        "response": first_json,
+        "usage": {"input_tokens": 100, "output_tokens": 10, "thinking_tokens": 0},
+    }
+    request = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
+    response = await provider(
+        FakeRunner(_step_stream(step_events, result, returncode=0)), max_retries=0
+    ).complete(request)
+
+    assert not response.ok
+    assert response.raw is not None
+    assert response.raw["error_code"] == "CLI_MALFORMED_FUNCTION_CALL"
+
+
+async def test_does_not_backtrack_when_latest_agent_step_is_done_with_whitespace() -> None:
+    first_json = '{"actions":[{"tool":"get_identity","args":{"id":"u1"}}]}'
+    step_events = [
+        *_agent_step_events(1, (first_json,)),
+        *_agent_step_events(3, ("\n",)),
+    ]
+    result = {
+        "conversation_id": CONVERSATION,
+        "status": "ERROR",
+        "error": _EMPTY_FUNCTION_CALL_ERROR,
+        "response": first_json,
         "usage": {"input_tokens": 100, "output_tokens": 10, "thinking_tokens": 0},
     }
     request = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
