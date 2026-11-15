@@ -1181,10 +1181,17 @@ def _render_non_native_tool_instructions(
     *,
     role: str,
     tools: Sequence[ToolSpec],
+    direct_arguments: bool = False,
 ) -> str:
     """Render compact non-native JSON action protocol instructions and phase tool schemas."""
+    header = (
+        "CRITICAL: This session has NO native tools or functions you can call — NEVER emit a "
+        "native tool call or function call. Reply in plain text with ONLY one raw JSON object "
+        "(no markdown fences, no prose before or after)."
+    )
     if config.uses_specialized_roles and role == "auditor":
         protocol = (
+            f"{header} "
             "Non-native JSON action protocol: reply with ONLY one JSON object (no markdown "
             'fences). Either invoke a permitted tool via {"actions":[{"action":"<tool_name>",'
             '"arguments_json":"<JSON object string>"}],"decision":null,"target_role":null,'
@@ -1192,8 +1199,17 @@ def _render_non_native_tool_instructions(
             '"decision":"APPROVE"|"REVISE","target_role":null|"planner"|"executor",'
             '"feedback":"..."}.'
         )
+    elif direct_arguments:
+        protocol = (
+            f"{header} "
+            "Non-native JSON action protocol: reply with ONLY one JSON object (no markdown "
+            'fences): {"actions":[{"action":"<tool_name>",'
+            '"arguments":{...}}]}. Each arguments value must be a JSON object matching that '
+            "tool's input_schema."
+        )
     else:
         protocol = (
+            f"{header} "
             "Non-native JSON action protocol: reply with ONLY one JSON object (no markdown "
             'fences): {"actions":[{"action":"<tool_name>",'
             '"arguments_json":"<JSON object string>"}]}. Each arguments_json string must '
@@ -1243,8 +1259,19 @@ def _make_request(
     output_schema: dict[str, Any] | None = None
     schema_name = _ACTION_SCHEMA_NAME
     if not native and role != "planner" and tools:
-        system = system + _render_non_native_tool_instructions(config, role=role, tools=tools)
-        if config.uses_specialized_roles and role == "auditor":
+        is_auditor_turn = config.uses_specialized_roles and role == "auditor"
+        direct_arguments = (
+            not is_auditor_turn
+            and provider is not None
+            and getattr(provider, "kind", None) == "agy_cli"
+        )
+        system = system + _render_non_native_tool_instructions(
+            config,
+            role=role,
+            tools=tools,
+            direct_arguments=direct_arguments,
+        )
+        if is_auditor_turn:
             output_schema = _T5_AUDITOR_TURN_SCHEMA
             schema_name = _T5_AUDITOR_SCHEMA_NAME
         else:
@@ -1521,6 +1548,17 @@ def preflight_obs_strategy_witness_v5(
     )
 
 
+def _strip_markdown_fences(text: str) -> str:
+    """Strip an outer markdown code fence when the full response body is fenced."""
+    body = text.strip()
+    if body.startswith("```") and body.endswith("```"):
+        body = re.sub(r"^```[a-zA-Z0-9_-]*[ \t]*(?:\r?\n)?", "", body, count=1)
+        body = re.sub(r"(?:\r?\n)?```\s*$", "", body, count=1).strip()
+    elif body.startswith("```"):
+        body = re.sub(r"^```[a-zA-Z0-9_-]*\s*|\s*```$", "", body).strip()
+    return body
+
+
 def _decode_arguments(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -1562,9 +1600,7 @@ def _extract_and_validate_tool_calls(
     else:
         payload: Any = response.parsed
         if payload is None and response.text:
-            body = response.text.strip()
-            if body.startswith("```"):
-                body = re.sub(r"^```(?:json)?\s*|\s*```$", "", body, flags=re.IGNORECASE)
+            body = _strip_markdown_fences(response.text)
             if (
                 body.startswith("{")
                 or body.startswith("[")
@@ -1616,9 +1652,13 @@ def _extract_and_validate_tool_calls(
                             "action id must be a string",
                             len(actions),
                         )
-                    args = action.get("arguments", action.get("arguments_json", {}))
+                    raw_args = action.get("arguments")
+                    if raw_args is None:
+                        raw_args = action.get("arguments_json")
+                    if raw_args is None:
+                        raw_args = {}
                     try:
-                        decoded_args = _decode_arguments(args)
+                        decoded_args = _decode_arguments(raw_args)
                     except (ValueError, TypeError, json.JSONDecodeError) as exc:
                         raise _EnvelopeError(
                             "INVALID_TOOL_CALL_ENVELOPE",
@@ -2239,13 +2279,15 @@ def _has_decode_progress(response: ModelResponse, decode_segment_index: int) -> 
         return True
     if response.text or response.parsed or response.tool_calls:
         return True
+    raw = response.raw if isinstance(response.raw, Mapping) else {}
+    if response.error is not None and raw.get("cli_buffered_error") is True:
+        return False
     usage = getattr(response, "usage", None)
     if isinstance(usage, Usage) and (
         (type(usage.output_tokens) is int and usage.output_tokens > 0)
         or (type(usage.reasoning_tokens) is int and usage.reasoning_tokens > 0)
     ):
         return True
-    raw = response.raw if isinstance(response.raw, Mapping) else {}
     return bool(
         raw.get("decode_progress")
         or raw.get("thinking")
@@ -2335,7 +2377,11 @@ def _is_transient_failure(response: ModelResponse) -> bool:
     if response.error is None:
         return False
     raw = response.raw if isinstance(response.raw, Mapping) else {}
-    if raw.get("error_class") == "TRANSIENT_FAILURE" or raw.get("transient") is True:
+    if (
+        raw.get("error_class") == "TRANSIENT_FAILURE"
+        or raw.get("transient") is True
+        or raw.get("error_code") == "CLI_MALFORMED_FUNCTION_CALL"
+    ):
         return True
     http_status = raw.get("http_status")
     return isinstance(http_status, int) and http_status in _DEFAULT_TRANSIENT_HTTP_STATUSES_V5
@@ -2673,6 +2719,7 @@ async def _execute_logical_request(
     next_recovery_idx = 0
     next_segment_cont_idx = 0
     any_decode_progress = False
+    malformed_fn_retry_reminder = False
     opaque_checkpoint_extra: dict[str, Any] = {}
     last_provider_request_id: str | None = None
 
@@ -2705,6 +2752,19 @@ async def _execute_logical_request(
             actual_native_numeric_budget_tokens=numeric_budget,
             extra_params=extra_for_provider,
         )
+        if malformed_fn_retry_reminder:
+            req = ModelRequest(
+                system=(
+                    req.system
+                    + "\n\nCRITICAL REMINDER: Do NOT invoke native function/tool calls; "
+                    'emit ONLY the plain-text JSON object {"actions":[...]}.'
+                ),
+                messages=req.messages,
+                output_schema=req.output_schema,
+                schema_name=req.schema_name,
+                tools=req.tools,
+                params=req.params,
+            )
 
         req_id = _next_req_id()
         start_ns = time.monotonic_ns()
@@ -3222,6 +3282,10 @@ async def _execute_logical_request(
             proven_unanswered = raw_meta.get("proven_unanswered", True) is True
             if proven_unanswered and not any_decode_progress:
                 if next_transient_retry <= config.max_transient_retries:
+                    malformed_fn_retry_reminder = (
+                        malformed_fn_retry_reminder
+                        or raw_meta.get("error_code") == "CLI_MALFORMED_FUNCTION_CALL"
+                    )
                     request_kind = "TRANSIENT_RETRY"
                     retry_index = next_transient_retry
                     next_transient_retry += 1
@@ -3230,6 +3294,10 @@ async def _execute_logical_request(
                     segment_cont_index = None
                     continue
                 if next_recovery_idx < config.max_recovery_continuations:
+                    malformed_fn_retry_reminder = (
+                        malformed_fn_retry_reminder
+                        or raw_meta.get("error_code") == "CLI_MALFORMED_FUNCTION_CALL"
+                    )
                     request_kind = "RECOVERY_CONTINUATION"
                     retry_index = None
                     quota_index = None
@@ -3458,9 +3526,7 @@ def _parse_auditor_decision(
 ) -> tuple[Literal["APPROVE", "REVISE"] | None, str | None, str]:
     payload: Any = response.parsed
     if payload is None and response.text:
-        body = response.text.strip()
-        if body.startswith("```"):
-            body = re.sub(r"^```(?:json)?\s*|\s*```$", "", body, flags=re.IGNORECASE)
+        body = _strip_markdown_fences(response.text)
         if body.startswith("{"):
             try:
                 payload = json.loads(body)
@@ -4008,38 +4074,50 @@ async def _run_episode(
                 resp = outcome.merged_response
                 completed_generations += 1
                 usage_valid_logical = _usage_problem(resp) is None
-                completion_trace.append(
-                    CompletionTraceV5(
-                        turn_index=dispatch_round,
-                        role=outcome.role,
-                        requested_model_id=outcome.provider.model,
-                        served_model_id=resp.served_model,
-                        input_tokens_uncached=(
-                            resp.usage.input_tokens if usage_valid_logical else 0
-                        ),
-                        cache_read_tokens=(
-                            resp.usage.cache_read_tokens if usage_valid_logical else 0
-                        ),
-                        cache_write_tokens=(
-                            resp.usage.cache_write_tokens if usage_valid_logical else 0
-                        ),
-                        output_tokens=(resp.usage.output_tokens if usage_valid_logical else 0),
-                        reasoning_tokens=(
-                            resp.usage.reasoning_tokens if usage_valid_logical else 0
-                        ),
-                        latency_s=resp.latency_s,
-                        provider_reported_cost_usd=resp.reported_cost_usd,
-                        stop_reason=resp.stop_reason,
-                        response_error=resp.error is not None,
-                        refused=resp.refused,
-                        tool_calls_returned=len(resp.tool_calls),
-                        usage_valid=usage_valid_logical,
+
+                def _record_completion_trace(
+                    returned_calls: int,
+                    *,
+                    turn_index: int = dispatch_round,
+                    cur_outcome: _LogicalCallOutcome = outcome,
+                    cur_resp: ModelResponse = resp,
+                    cur_usage_valid: bool = usage_valid_logical,
+                ) -> None:
+                    completion_trace.append(
+                        CompletionTraceV5(
+                            turn_index=turn_index,
+                            role=cur_outcome.role,
+                            requested_model_id=cur_outcome.provider.model,
+                            served_model_id=cur_resp.served_model,
+                            input_tokens_uncached=(
+                                cur_resp.usage.input_tokens if cur_usage_valid else 0
+                            ),
+                            cache_read_tokens=(
+                                cur_resp.usage.cache_read_tokens if cur_usage_valid else 0
+                            ),
+                            cache_write_tokens=(
+                                cur_resp.usage.cache_write_tokens if cur_usage_valid else 0
+                            ),
+                            output_tokens=(
+                                cur_resp.usage.output_tokens if cur_usage_valid else 0
+                            ),
+                            reasoning_tokens=(
+                                cur_resp.usage.reasoning_tokens if cur_usage_valid else 0
+                            ),
+                            latency_s=cur_resp.latency_s,
+                            provider_reported_cost_usd=cur_resp.reported_cost_usd,
+                            stop_reason=cur_resp.stop_reason,
+                            response_error=cur_resp.error is not None,
+                            refused=cur_resp.refused,
+                            tool_calls_returned=returned_calls,
+                            usage_valid=cur_usage_valid,
+                        )
                     )
-                )
 
                 # Atomic first-matching response disposition (§4.2.3)
                 # Row 1: Structured refusal / safety stop
                 if outcome.normalized_decode_status == "TERMINAL_REFUSAL":
+                    _record_completion_trace(len(resp.tool_calls))
                     attempt_status = "WITHIN_PROTOCOL_REFUSAL"
                     terminal_cause = "STRUCTURED_ASSISTANT_REFUSAL"
                     terminal_ordinal = outcome.reservation_ordinal
@@ -4050,6 +4128,7 @@ async def _run_episode(
 
                 # Row 2: Confirmed configured total logical-output-allowance exhaustion
                 if outcome.normalized_decode_status == "TERMINAL_OUTPUT_LIMIT":
+                    _record_completion_trace(len(resp.tool_calls))
                     attempt_status = "WITHIN_PROTOCOL_OUTPUT_LIMIT"
                     terminal_cause = "TOTAL_OUTPUT_ALLOWANCE_EXHAUSTED"
                     terminal_ordinal = outcome.reservation_ordinal
@@ -4074,6 +4153,7 @@ async def _run_episode(
                         positional_calls=positional_calls,
                     )
                 except _EnvelopeError as exc:
+                    _record_completion_trace(0)
                     if exc.deterministic_call_count is not None:
                         calls_requested += exc.deterministic_call_count
                         max_calls_in_turn = max(max_calls_in_turn, exc.deterministic_call_count)
@@ -4088,6 +4168,8 @@ async def _run_episode(
                     terminal_outcome_ns = time.monotonic_ns()
                     terminal_latched = True
                     continue
+
+                _record_completion_trace(len(calls))
 
                 # T5 planner read-only handoff (0 tool calls)
                 if is_t5 and outcome.role == "planner" and not calls:

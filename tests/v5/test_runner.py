@@ -2573,3 +2573,179 @@ def test_non_native_cli_action_schema_name_and_prompt_action_docs(tmp_path: Path
         auditor_req, "medium", tmp_path / "io", tmp_path / "work"
     )
     assert "--json-schema" in claude_auditor_inv.argv
+
+
+def test_agy_cli_non_native_prompt_uses_direct_arguments_and_preserves_primary_bundle() -> None:
+    from identitybench.v5.runner import _make_request
+
+    class AgyNonNativeProvider(FakeProvider):
+        kind = "agy_cli"
+
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                native_structured_output=True,
+                native_tools=False,
+                supports_temperature=True,
+                reports_usage=True,
+            )
+
+    t0_cfg = RunConfigV5(topology_id="T0_SINGLE_MONOLITH")
+    t5_cfg = RunConfigV5(topology_id="T5_HIERARCHICAL_PIPELINE")
+    msgs = (Message(role=Role.user, content="start"),)
+
+    agy_req = _make_request(AgyNonNativeProvider([]), t0_cfg, msgs, role="monolith", phase_index=1)
+    assert "CRITICAL: This session has NO native tools or functions you can call" in agy_req.system
+    assert '"arguments":{...}' in agy_req.system
+    assert '"arguments_json"' not in agy_req.system
+
+    agy_auditor_req = _make_request(
+        AgyNonNativeProvider([]), t5_cfg, msgs, role="auditor", phase_index=1
+    )
+    assert "CRITICAL: This session has NO native tools or functions you can call" in (
+        agy_auditor_req.system
+    )
+    assert '"arguments_json"' in agy_auditor_req.system
+    assert compute_primary_prompt_bundle_sha256_v5() == PRIMARY_PROMPT_BUNDLE_SHA256_V5
+
+
+def test_agy_cli_malformed_function_call_retries_with_reminder_and_records_completion_trace() -> (
+    None
+):
+    ep = fake_episode()
+
+    class AgyBufferedRetryProvider(FakeProvider):
+        kind = "agy_cli"
+        usage_includes_retries = True
+
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                native_structured_output=True,
+                native_tools=False,
+                supports_temperature=True,
+                reports_usage=True,
+            )
+
+    malformed_resp = ModelResponse(
+        text="",
+        error="model returned MALFORMED FUNCTION CALL",
+        usage=Usage(input_tokens=120, output_tokens=30, reasoning_tokens=30),
+        raw={
+            "cli_buffered_error": True,
+            "error_code": "CLI_MALFORMED_FUNCTION_CALL",
+            "proven_unanswered": True,
+        },
+    )
+    fenced_direct_args_resp = ModelResponse(
+        text=(
+            "```json\n"
+            + json.dumps(
+                {
+                    "actions": [
+                        {
+                            "action": "query_sources",
+                            "arguments": {"phase_index": 1, "slice_ids": ["sl_1_a"]},
+                        }
+                    ]
+                }
+            )
+            + "\n```"
+        ),
+        usage=Usage(input_tokens=120, output_tokens=20),
+    )
+    args_json_commit_resp = ModelResponse(
+        text=json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "stage_phase_mutations",
+                        "arguments_json": json.dumps(
+                            {"phase_index": 1, "stage_id": "stg_p1_01", "mutations": []}
+                        ),
+                    },
+                    {
+                        "action": "commit_phase_mutations",
+                        "arguments": {"phase_index": 1, "stage_id": "stg_p1_01"},
+                    },
+                ]
+            }
+        ),
+        usage=Usage(input_tokens=130, output_tokens=15),
+    )
+    phase2_done_resp = ModelResponse(
+        text=json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "stage_phase_mutations",
+                        "arguments": {"phase_index": 2, "stage_id": "stg_p2_01", "mutations": []},
+                    },
+                    {
+                        "action": "commit_phase_mutations",
+                        "arguments_json": json.dumps({"phase_index": 2, "stage_id": "stg_p2_01"}),
+                    },
+                ]
+            }
+        ),
+        usage=Usage(input_tokens=140, output_tokens=15),
+    )
+
+    provider = AgyBufferedRetryProvider(
+        [malformed_resp, fenced_direct_args_resp, args_json_commit_resp, phase2_done_resp]
+    )
+    result = asyncio.run(
+        run_v5_agent_episode(
+            ep,
+            SimpleNamespace(),
+            provider,
+            run_config=RunConfigV5(max_turns=6),
+            runtime_factory=FakeRuntime,
+        )
+    )
+
+    assert result.attempt_status == "COMPLETED"
+    assert result.terminal_cause == "EPISODE_COMPLETED"
+    assert result.retry_request_count == 1
+    assert [req.request_kind for req in result.provider_requests[:2]] == [
+        "INITIAL",
+        "TRANSIENT_RETRY",
+    ]
+    assert result.provider_requests[0].request_status == "TRANSIENT_FAILURE"
+    assert result.provider_requests[0].provider_error_code == "CLI_MALFORMED_FUNCTION_CALL"
+    assert result.provider_requests[1].request_status == "COMPLETED"
+    assert (
+        "CRITICAL REMINDER: Do NOT invoke native function/tool calls; "
+        'emit ONLY the plain-text JSON object {"actions":[...]}.'
+        in provider.requests[1].system
+    )
+    assert [c.tool_calls_returned for c in result.completion_trace] == [1, 2, 2]
+
+
+def test_non_native_parse_failure_records_zero_tool_calls_returned() -> None:
+    ep = fake_episode()
+
+    class NonNativeBadJsonProvider(FakeProvider):
+        kind = "agy_cli"
+
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                native_structured_output=True,
+                native_tools=False,
+                supports_temperature=True,
+                reports_usage=True,
+            )
+
+    provider = NonNativeBadJsonProvider(
+        [ModelResponse(text='{"actions": [', usage=Usage(input_tokens=100, output_tokens=10))]
+    )
+    result = asyncio.run(
+        run_v5_agent_episode(
+            ep,
+            SimpleNamespace(),
+            provider,
+            run_config=RunConfigV5(max_turns=2),
+            runtime_factory=FakeRuntime,
+        )
+    )
+    assert result.attempt_status == "WITHIN_PROTOCOL_PARSE_FAILURE"
+    assert len(result.completion_trace) == 1
+    assert result.completion_trace[0].tool_calls_returned == 0

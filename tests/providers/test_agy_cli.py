@@ -431,3 +431,46 @@ async def test_garbage_output_is_an_error() -> None:
         make_request()
     )
     assert response.error is not None
+
+
+async def test_error_status_classifies_structured_metadata() -> None:
+    malformed = {
+        **RESULT,
+        "status": "ERROR",
+        "error": "Model returned MALFORMED FUNCTION CALL",
+        "response": "",
+        "usage": {"input_tokens": 100, "output_tokens": 25, "thinking_tokens": 25},
+    }
+    del malformed["structured_output"]
+    resp_malformed = await provider(FakeRunner(stream(malformed)), max_retries=0).complete(
+        make_request()
+    )
+    assert resp_malformed.error is not None
+    assert resp_malformed.raw is not None
+    assert resp_malformed.raw["cli_buffered_error"] is True
+    assert resp_malformed.raw["error_code"] == "CLI_MALFORMED_FUNCTION_CALL"
+    assert resp_malformed.raw["proven_unanswered"] is True
+
+    capacity = {**malformed, "error": "503 Service Unavailable"}
+    resp_capacity = await provider(FakeRunner(stream(capacity)), max_retries=0).complete(
+        make_request()
+    )
+    assert resp_capacity.raw is not None
+    assert resp_capacity.raw["error_code"] == "CLI_TRANSIENT_CAPACITY"
+    assert resp_capacity.raw["error_class"] == "TRANSIENT_FAILURE"
+    assert resp_capacity.raw["cli_buffered_error"] is True
+    assert resp_capacity.raw["proven_unanswered"] is True
+
+    quota = {**malformed, "error": "billing quota exceeded"}
+    resp_quota = await provider(FakeRunner(stream(quota)), max_retries=0).complete(make_request())
+    assert resp_quota.raw is not None
+    assert resp_quota.raw["error_code"] == "CLI_QUOTA"
+    assert resp_quota.raw["error_class"] == "QUOTA_INTERRUPTION"
+    assert resp_quota.raw["cli_buffered_error"] is True
+    assert resp_quota.raw["proven_unanswered"] is True
+
+    other = {**malformed, "status": "FAILED", "error": "unrecognized backend state"}
+    resp_other = await provider(FakeRunner(stream(other)), max_retries=0).complete(make_request())
+    assert resp_other.raw is not None
+    assert resp_other.raw["error_code"] == "CLI_STATUS_FAILED"
+    assert resp_other.raw["cli_buffered_error"] is True

@@ -596,12 +596,36 @@ class OpenAICompatProvider:
             else:
                 completion = cast(ChatCompletion, await client.chat.completions.create(**params))
         except openai.APIStatusError as exc:
+            error_raw: dict[str, Any] = {
+                "http_status": exc.status_code,
+                "error_code": str(
+                    getattr(exc, "code", None)
+                    or getattr(exc, "type", None)
+                    or type(exc).__name__
+                ),
+            }
+            if exc.request_id:
+                error_raw["request_id"] = exc.request_id
+            if exc.status_code in (408, 409, 429) or exc.status_code >= 500:
+                error_raw["proven_unanswered"] = True
             return self._fail(
                 f"{type(exc).__name__} {exc.status_code}: {exc.message}",
-                raw={"request_id": exc.request_id} if exc.request_id else None,
+                raw=error_raw,
+            )
+        except openai.APITimeoutError as exc:
+            return self._fail(
+                f"{type(exc).__name__}: {exc.message}",
+                raw={"error_code": "APITimeoutError", "ambiguous_timeout": True},
             )
         except openai.APIConnectionError as exc:
-            return self._fail(f"{type(exc).__name__}: {exc.message}")
+            return self._fail(
+                f"{type(exc).__name__}: {exc.message}",
+                raw={
+                    "error_code": "APIConnectionError",
+                    "error_class": "TRANSIENT_FAILURE",
+                    "proven_unanswered": True,
+                },
+            )
         except openai.OpenAIError as exc:
             return self._fail(f"{type(exc).__name__}: {exc}")
         except (ValueError, RecursionError) as exc:

@@ -245,6 +245,42 @@ class AgyCliProvider(CliProvider):
         if status != "SUCCESS":
             message = payload.get("error") or f"status {status!r}"
             response.error = self._error_text(str(message), result)
+            haystack = f"{message}\n{log_text}".lower()
+            meta: dict[str, Any] = dict(response.raw or {})
+            meta["cli_buffered_error"] = True
+            if any(
+                needle in haystack
+                for needle in (
+                    "malformed function call",
+                    "improperly formatted function call",
+                    "function call",
+                    "unknown tool",
+                )
+            ):
+                meta["error_code"] = "CLI_MALFORMED_FUNCTION_CALL"
+                meta["proven_unanswered"] = True
+            elif any(
+                needle in haystack
+                for needle in (
+                    "429",
+                    "rate limit",
+                    "resource_exhausted",
+                    "at capacity",
+                    "overloaded",
+                    "503",
+                    "unavailable",
+                )
+            ):
+                meta["error_code"] = "CLI_TRANSIENT_CAPACITY"
+                meta["error_class"] = "TRANSIENT_FAILURE"
+                meta["proven_unanswered"] = True
+            elif "quota" in haystack or "billing" in haystack:
+                meta["error_code"] = "CLI_QUOTA"
+                meta["error_class"] = "QUOTA_INTERRUPTION"
+                meta["proven_unanswered"] = True
+            else:
+                meta["error_code"] = f"CLI_STATUS_{status}"
+            response.raw = meta
         elif result.returncode != 0:
             response.error = self._error_text("nonzero exit after a success result", result)
         return response

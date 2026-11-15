@@ -351,3 +351,21 @@ def test_every_kind_builds_a_provider(kind: str, replay_file: str, monkeypatch) 
     p = make_provider(ModelSpec.model_validate(data))
     assert isinstance(p, Provider)
     assert p.kind == kind
+
+
+def test_cli_providers_accept_max_retries_extra_and_preserve_default_when_omitted() -> None:
+    from identitybench.providers._cli import CliProvider
+
+    for kind in ("claude_cli", "codex_cli", "grok_cli", "agy_cli", "cursor_cli", "muse_cli"):
+        zero_provider = make_provider(
+            ModelSpec(provider=kind, model="m", extra={"max_retries": 0})
+        )
+        assert isinstance(zero_provider, CliProvider)
+        assert zero_provider._max_retries == 0
+
+    agy_default = make_provider(ModelSpec(provider="agy_cli", model="m"))
+    muse_default = make_provider(ModelSpec(provider="muse_cli", model="m"))
+    assert isinstance(agy_default, AgyCliProvider)
+    assert agy_default._max_retries == 3
+    assert isinstance(muse_default, CliProvider)
+    assert muse_default._max_retries == 0

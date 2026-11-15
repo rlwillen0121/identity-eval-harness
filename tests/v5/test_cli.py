@@ -1402,3 +1402,117 @@ def test_v5_run_incremental_checkpoint_resume_and_redacted_errors(
     assert all(r["execution_valid"] is True for r in final_rows)
     assert not (run_out / "checkpoint.json").exists()
     assert (run_out / "manifest.json").is_file()
+
+
+def test_load_run_config_defaults_retries_transcript_and_max_output_tokens(
+    tmp_path: Path,
+) -> None:
+    from identitybench.v5.cli import _config_identity, _load_run_config
+
+    defaulted_path = tmp_path / "pilot.yaml"
+    defaulted_path.write_text(
+        "model_tier: fast\n"
+        "model:\n"
+        "  provider: agy_cli\n"
+        "  model: gemini-4-hydrogen\n"
+        "  effort: medium\n"
+        "  max_output_tokens: 16384\n"
+        "run_config:\n"
+        "  topology_id: T0_SINGLE_MONOLITH\n"
+        "  effort: medium\n",
+        encoding="utf-8",
+    )
+    model_spec, run_config, model_tier = _load_run_config(defaulted_path)
+    assert model_tier == "fast"
+    assert model_spec.extra["max_retries"] == 0
+    assert run_config.capture_transcript is True
+    assert run_config.provider_max_output_tokens == 16384
+    assert run_config.base_effective_output_ceiling_tokens == 16384
+    assert run_config.requested_output_ceiling_tokens == 16384
+
+    identity = _config_identity(
+        model_spec,
+        run_config,
+        model_tier=model_tier,
+        pricing_manifest_sha256="b" * 64,
+    )
+    assert identity["provider_settings"]["max_retries"] == 0
+    assert "providers/agy_cli.py" in identity["harness_source_sha256"]
+
+    explicit_path = tmp_path / "explicit.yaml"
+    explicit_path.write_text(
+        "model:\n"
+        "  provider: claude_cli\n"
+        "  model: claude-haiku-5-5\n"
+        "  max_output_tokens: 16384\n"
+        "  extra:\n"
+        "    max_retries: 2\n"
+        "run_config:\n"
+        "  capture_transcript: false\n"
+        "  max_output_tokens: 16384\n"
+        "  provider_max_output_tokens: 32768\n",
+        encoding="utf-8",
+    )
+    exp_spec, exp_cfg, _ = _load_run_config(explicit_path)
+    assert exp_spec.extra["max_retries"] == 2
+    assert exp_cfg.capture_transcript is False
+    assert exp_cfg.provider_max_output_tokens == 32768
+    exp_identity = _config_identity(
+        exp_spec,
+        exp_cfg,
+        model_tier=None,
+        pricing_manifest_sha256="b" * 64,
+    )
+    assert "providers/claude_cli.py" in exp_identity["harness_source_sha256"]
+
+
+def test_v5_run_uses_execution_tool_calls_executed_not_transcript(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    dataset_dir, cfg_path, pricing_path = _write_cli_run_fixtures(tmp_path)
+
+    async def fake_agent_run(episode, world, provider, *, run_config, **_kwargs):
+        stub = _make_execution_stub(episode, run_config.repeat_index)
+        return SimpleNamespace(
+            **{
+                **vars(stub),
+                "tool_calls_executed": 7,
+                "tool_trace": (),
+            }
+        )
+
+    _mock_scoring_and_execution(monkeypatch, fake_agent_run=fake_agent_run)
+    run_out = tmp_path / "runs" / "tool_count_run"
+    res = CliRunner().invoke(
+        root_cli.app,
+        [
+            "--root",
+            str(tmp_path),
+            "--no-env-file",
+            "v5",
+            "run",
+            "--config",
+            str(cfg_path),
+            "--pricing",
+            str(pricing_path),
+            "--suite",
+            "v5_dev",
+            "--dataset",
+            str(dataset_dir),
+            "--repeats",
+            "1",
+            "--out",
+            str(run_out),
+        ],
+    )
+    assert res.exit_code == 0, res.output
+    rows = [
+        json.loads(line)
+        for line in (run_out / "episodes.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows
+    assert all(row["attempt"]["tool_call_count"] == 7 for row in rows)
