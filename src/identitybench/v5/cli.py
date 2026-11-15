@@ -169,7 +169,10 @@ def _score_rows(
         for baseline_id in baseline_ids:
             base_run_config = default_run_config_for_baseline_v5(baseline_id)
             for repeat_index in range(1, repeats + 1):
-                run_config = base_run_config.model_copy(update={"repeat_index": repeat_index})
+                update: dict[str, Any] = {"repeat_index": repeat_index}
+                if run_config_sha256 is not None:
+                    update["run_config_sha256"] = run_config_sha256
+                run_config = base_run_config.model_copy(update=update)
                 execution = asyncio.run(
                     run_v5_baseline_on_episode(
                         baseline_id,
@@ -272,7 +275,7 @@ def _config_identity(
     from identitybench.v5.topologies import resolve_topology_profile_v5
 
     run_config_mapping = run_config.model_dump(
-        mode="json", exclude={"pricing", "usage_accounting_evidence"}
+        mode="json", exclude={"pricing", "usage_accounting_evidence", "run_config_sha256"}
     )
     extra = model_spec.extra
     provider_settings: dict[str, Any] = {
@@ -709,6 +712,8 @@ def _load_run_config(path: Path) -> tuple[Any, Any, str | None]:
             model_payload["extra"] = extra_payload
         model_spec = ModelSpec.model_validate(model_payload)
         run_payload = dict(run_raw)
+        if "run_config_sha256" in run_payload:
+            raise ValueError("run_config_sha256 cannot be specified in run_config YAML")
         run_payload.setdefault("capture_transcript", True)
         if (
             "provider_max_output_tokens" not in run_payload
@@ -971,6 +976,7 @@ def v5_run(
             repeats=repeats,
         )
         config_sha = hashlib.sha256(jcs_dumps(config_identity)).hexdigest()
+        run_config = run_config.model_copy(update={"run_config_sha256": config_sha})
         dataset_seal_sha256 = hashlib.sha256(artifacts.seal_bytes).hexdigest()
         episode_order = {episode.episode_id: idx for idx, episode in enumerate(artifacts.episodes)}
         valid_slots = {

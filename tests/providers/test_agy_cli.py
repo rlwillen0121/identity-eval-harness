@@ -420,10 +420,15 @@ async def test_nonzero_exit_with_a_success_result_is_still_an_error() -> None:
 
 async def test_no_result_event_is_an_error() -> None:
     runner = FakeRunner(ok(json.dumps(INIT) + "\n", stderr="AGY_ERROR: {}", returncode=3))
-    response = await provider(runner).complete(make_request())
+    response = await provider(runner, max_retries=0).complete(make_request())
     assert response.error is not None
     assert "no result event" in response.error
     assert "AGY_ERROR" in response.error
+    assert response.raw is not None
+    assert response.raw["cli_buffered_error"] is True
+    assert response.raw["error_code"] == "CLI_NO_RESULT_EVENT"
+    assert response.raw["error_class"] == "TRANSIENT_FAILURE"
+    assert response.raw["proven_unanswered"] is True
 
 
 async def test_garbage_output_is_an_error() -> None:

@@ -214,7 +214,14 @@ class AgyCliProvider(CliProvider):
             if event.get("event") == "result"
         ]
         if not results:
-            return self._fail("no result event on stdout", result)
+            failed = self._fail("no result event on stdout", result)
+            failed.raw = {
+                "cli_buffered_error": True,
+                "error_code": "CLI_NO_RESULT_EVENT",
+                "error_class": "TRANSIENT_FAILURE",
+                "proven_unanswered": True,
+            }
+            return failed
         payload = results[-1]
 
         usage_in = as_dict(payload.get("usage"))

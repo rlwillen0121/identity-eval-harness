@@ -1111,6 +1111,12 @@ class CliProvider(ABC):
                     response = self._fail(result.launch_error)
                 elif result.timed_out:
                     response = self._fail(f"no result within the {self.timeout_s:g}s timeout")
+                    response.raw = {
+                        "cli_buffered_error": True,
+                        "error_code": "CLI_SUBPROCESS_TIMEOUT",
+                        "error_class": "TRANSIENT_FAILURE",
+                        "proven_unanswered": True,
+                    }
                 else:
                     response = self._parse(result, request, io_dir)
                 response.latency_s = time.perf_counter() - started

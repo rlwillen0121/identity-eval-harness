@@ -1516,3 +1516,130 @@ def test_v5_run_uses_execution_tool_calls_executed_not_transcript(
     ]
     assert rows
     assert all(row["attempt"]["tool_call_count"] == 7 for row in rows)
+
+
+def test_load_run_config_rejects_run_config_sha256_in_yaml(tmp_path: Path) -> None:
+    import typer
+
+    from identitybench.v5.cli import _load_run_config
+
+    bad_cfg = tmp_path / "bad_run_config_sha.yaml"
+    bad_cfg.write_text(
+        "model:\n"
+        "  provider: openai_compatible\n"
+        "  model: synthetic-model\n"
+        "run_config:\n"
+        f"  run_config_sha256: {'a' * 64}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(typer.Exit) as exc_info:
+        _load_run_config(bad_cfg)
+    assert exc_info.value.exit_code == 3
+
+
+def test_v5_run_aligns_attempt_id_and_run_config_sha256_for_g_econ_01(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+    from typing import Any
+
+    import identitybench.providers.factory as provider_factory
+    from identitybench.providers.base import (
+        ModelResponse,
+        ProviderCapabilities,
+        ToolCall,
+        Usage,
+    )
+    from identitybench.v5.report import report_from_raw_artifacts
+
+    dataset_dir, cfg_path, pricing_path = _write_cli_run_fixtures(tmp_path)
+
+    class ScriptedProvider:
+        kind = "openai_compatible"
+        model = "synthetic-model"
+
+        def capabilities(self) -> ProviderCapabilities:
+            return ProviderCapabilities(
+                native_structured_output=True,
+                native_tools=True,
+                supports_temperature=True,
+                reports_usage=True,
+            )
+
+        def endpoint_identity(self) -> str:
+            return "sha256:test-endpoint"
+
+        async def complete(self, request: Any) -> ModelResponse:
+            if any("Phase 2 manifest" in m.content for m in request.messages):
+                calls = (
+                    ToolCall(
+                        "s2",
+                        "stage_phase_mutations",
+                        {"phase_index": 2, "stage_id": "stg_p2_01", "mutations": []},
+                    ),
+                    ToolCall(
+                        "c2",
+                        "commit_phase_mutations",
+                        {"phase_index": 2, "stage_id": "stg_p2_01"},
+                    ),
+                )
+            else:
+                calls = (
+                    ToolCall(
+                        "s1",
+                        "stage_phase_mutations",
+                        {"phase_index": 1, "stage_id": "stg_p1_01", "mutations": []},
+                    ),
+                    ToolCall(
+                        "c1",
+                        "commit_phase_mutations",
+                        {"phase_index": 1, "stage_id": "stg_p1_01"},
+                    ),
+                )
+            return ModelResponse(
+                tool_calls=calls,
+                stop_reason="tool_use",
+                usage=Usage(input_tokens=50, output_tokens=15),
+                served_model="synthetic-model",
+            )
+
+    monkeypatch.setattr(provider_factory, "make_provider", lambda _spec: ScriptedProvider())
+
+    run_out = tmp_path / "runs" / "g_econ_aligned"
+    res = CliRunner().invoke(
+        root_cli.app,
+        [
+            "--root",
+            str(tmp_path),
+            "--no-env-file",
+            "v5",
+            "run",
+            "--config",
+            str(cfg_path),
+            "--pricing",
+            str(pricing_path),
+            "--suite",
+            "v5_dev",
+            "--dataset",
+            str(dataset_dir),
+            "--repeats",
+            "1",
+            "--out",
+            str(run_out),
+        ],
+    )
+    assert res.exit_code == 0, res.output
+    manifest = json.loads((run_out / "manifest.json").read_text(encoding="utf-8"))
+    rows = [
+        json.loads(line)
+        for line in (run_out / "episodes.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows
+    for row in rows:
+        attempt = row["attempt"]
+        assert attempt["run_config_sha256"] == manifest["run_config_sha256"]
+        assert row["provider_requests"]
+        assert all(req["attempt_id"] == attempt["attempt_id"] for req in row["provider_requests"])
+    report_artifact = report_from_raw_artifacts(run_out)
+    assert report_artifact.summary.gate_status["G-ECON-01"] == "PASS"

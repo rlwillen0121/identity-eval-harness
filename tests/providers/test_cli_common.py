@@ -498,6 +498,11 @@ async def test_timeout_is_an_error_and_is_not_retried() -> None:
     runner = FakeRunner(ProcessResult(returncode=-9, stdout="", stderr="", timed_out=True))
     response = await claude(runner, timeout_s=5).complete(make_request())
     assert response.error == "claude_cli: no result within the 5s timeout"
+    assert response.raw is not None
+    assert response.raw["cli_buffered_error"] is True
+    assert response.raw["error_code"] == "CLI_SUBPROCESS_TIMEOUT"
+    assert response.raw["error_class"] == "TRANSIENT_FAILURE"
+    assert response.raw["proven_unanswered"] is True
     assert len(runner.commands) == 1
 
 

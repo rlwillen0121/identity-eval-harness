@@ -22,8 +22,23 @@ from types import MappingProxyType
 from typing import Any, Literal, cast
 
 import tiktoken
-from pydantic import Field, StrictBool, StrictInt, StrictStr, TypeAdapter, model_validator
+from pydantic import (
+    Field,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
+from identitybench.providers._json import (
+    _blank_code_fences,
+    _TooDeep,
+    _top_level_objects,
+    extract_json_object,
+    strip_reasoning,
+)
 from identitybench.providers.base import (
     GenerationParams,
     Message,
@@ -267,6 +282,7 @@ class RunConfigV5(StrictV5Model):
     capture_transcript: bool = False
     usage_accounting_evidence: tuple[UsageAccountingEvidenceV5, ...] = ()
     run_configuration: RunConfigurationV5 | None = None
+    run_config_sha256: StrictStr | None = None
     native_effort_policy: Literal[
         "FIXED_NATIVE_SETTING", "ADAPTIVE_NATIVE_MODE", "MAXIMUM_VALID_NATIVE_BUDGET"
     ] = "FIXED_NATIVE_SETTING"
@@ -294,6 +310,15 @@ class RunConfigV5(StrictV5Model):
     max_quota_continuations: StrictInt = Field(default=5, ge=0)
     max_segment_continuations: StrictInt = Field(default=16, ge=0)
     allow_request_policy_rejection_map: StrictBool = True
+
+    @field_validator("run_config_sha256")
+    @classmethod
+    def _validate_run_config_sha256(cls, value: str | None) -> str | None:
+        if value is not None and re.fullmatch(r"[a-f0-9]{64}", value) is None:
+            raise ValueError(
+                "run_config_sha256 must be a 64-character lowercase SHA-256 hex digest"
+            )
+        return value
 
     @model_validator(mode="before")
     @classmethod
@@ -1156,14 +1181,16 @@ def _role_system_prompt(config: RunConfigV5, *, role: str) -> str:
     system = render_v5_system_prompt(config)
     if role == "planner":
         return (
-            system + "\n\nRole: planner. Produce a concise plan for the executor from the complete "
-            "delivered context. Do not call tools."
+            system + "\n\nRole: planner. Produce a concise plan (<250 words) for the executor from "
+            "the complete delivered context, naming the relevant slice IDs and key policy rules "
+            "without drafting JSON mutations. Do not call tools."
         )
     if role == "executor":
         return (
             system + "\n\nRole: executor. Inspect evidence and execute query_sources, "
-            "stage_phase_mutations, request_cosign, and commit_phase_mutations. Wait for "
-            "auditor approval of the active STAGED buffer before co-signing or committing."
+            "stage_phase_mutations, request_cosign, and commit_phase_mutations. Emit tool calls "
+            "directly with no prose commentary. Wait for auditor approval of the active STAGED "
+            "buffer before co-signing or committing."
         )
     if role == "auditor":
         return (
@@ -1578,6 +1605,55 @@ class _EnvelopeError(Exception):
         self.deterministic_call_count = deterministic_call_count
 
 
+def _extract_positional_json_payload(text: str) -> dict[str, Any] | None:
+    """Extract a JSON tool/verdict object from prose or fenced text without repairing truncation."""
+    reasoning_stripped = strip_reasoning(text)
+    if not reasoning_stripped.strip():
+        return None
+    cleaned = _blank_code_fences(reasoning_stripped)
+    try:
+        located = list(_top_level_objects(cleaned))
+    except _TooDeep:
+        return None
+    if not located:
+        return None
+    # Prefer the last object carrying any tool/verdict schema key, else extract_json_object.
+    schema_keys = frozenset(("actions", "tool_calls", "decision", "target_role", "feedback"))
+    selected: tuple[int, int, dict[str, Any]] | None = None
+    for item in reversed(located):
+        if schema_keys & item[2].keys():
+            selected = item
+            break
+    if selected is None:
+        selected_obj = extract_json_object(
+            reasoning_stripped,
+            required_keys=("actions",),
+            schema_keys=("actions", "tool_calls", "decision", "target_role", "feedback"),
+        )
+        if selected_obj is None:
+            return None
+        selected = located[-1]
+    else:
+        selected_obj = selected[2]
+    selected_end = selected[1]
+    trailing = cleaned[selected_end:]
+    if trailing:
+        chars = list(trailing)
+        for start, end, _ in located:
+            if start >= selected_end:
+                rel_start = start - selected_end
+                rel_end = end - selected_end
+                chars[rel_start:rel_end] = [" "] * (rel_end - rel_start)
+        undecoded_trailing = "".join(chars)
+        if (
+            "{" in undecoded_trailing
+            or '"actions"' in undecoded_trailing
+            or "```json" in undecoded_trailing.lower()
+        ):
+            return None
+    return selected_obj
+
+
 def _extract_and_validate_tool_calls(
     response: ModelResponse,
     *,
@@ -1601,17 +1677,29 @@ def _extract_and_validate_tool_calls(
         payload: Any = response.parsed
         if payload is None and response.text:
             body = _strip_markdown_fences(response.text)
-            if (
-                body.startswith("{")
-                or body.startswith("[")
-                or (response.raw and response.raw.get("structured_output_expected") is True)
-            ):
+            if body.startswith("{") or body.startswith("["):
                 try:
                     payload = json.loads(body)
-                except json.JSONDecodeError as exc:
+                except json.JSONDecodeError:
+                    payload = None
+            if payload is None and positional_calls:
+                payload = _extract_positional_json_payload(response.text)
+            if payload is None:
+                structured_expected = bool(
+                    response.raw and response.raw.get("structured_output_expected") is True
+                )
+                malformed_positional = positional_calls and (
+                    '"actions"' in response.text or "```json" in response.text.lower()
+                )
+                if (
+                    body.startswith("{")
+                    or body.startswith("[")
+                    or structured_expected
+                    or malformed_positional
+                ):
                     raise _EnvelopeError(
                         "INVALID_TOOL_CALL_ENVELOPE", "malformed JSON tool envelope"
-                    ) from exc
+                    )
         if payload is not None:
             if not isinstance(payload, dict):
                 raise _EnvelopeError(
@@ -1829,7 +1917,7 @@ async def _dispatch_tool(
         if inspect.isawaitable(result):
             result = await result
         return _receipt_payload(result)
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError):
         return _schema_failure_receipt(name, call.id)
 
 
@@ -2020,9 +2108,16 @@ def make_v5_diagnostic_runtime_factory(
 
             diagnostic_service = SemanticDiagnosticService(trace_provider)
 
+        if not getattr(initial_world, "connector_schemas", None) and not getattr(
+            initial_world, "idp_accounts", None
+        ):
+            host_world = diagnostic_oracle.omniscient_s1.model_copy(deep=True)
+        else:
+            host_world = initial_world
+
         runtime = RuntimeV5(
             episode,
-            initial_world,
+            host_world,
             topology=topology,
             steering_mode=steering_mode,
             wave_execution_mode=wave_execution_mode,
@@ -2277,11 +2372,11 @@ def _sanitize_public_dict(payload: Mapping[str, Any] | None) -> str | None:
 def _has_decode_progress(response: ModelResponse, decode_segment_index: int) -> bool:
     if decode_segment_index >= 1:
         return True
-    if response.text or response.parsed or response.tool_calls:
-        return True
     raw = response.raw if isinstance(response.raw, Mapping) else {}
     if response.error is not None and raw.get("cli_buffered_error") is True:
         return False
+    if response.text or response.parsed or response.tool_calls:
+        return True
     usage = getattr(response, "usage", None)
     if isinstance(usage, Usage) and (
         (type(usage.output_tokens) is int and usage.output_tokens > 0)
@@ -3532,6 +3627,12 @@ def _parse_auditor_decision(
                 payload = json.loads(body)
             except json.JSONDecodeError:
                 payload = None
+        if payload is None:
+            payload = extract_json_object(
+                response.text,
+                required_keys=("decision",),
+                schema_keys=("decision", "approved", "target_role", "feedback"),
+            )
     if isinstance(payload, Mapping):
         decision = payload.get("decision")
         if decision == "APPROVE" or payload.get("approved") is True:
@@ -3568,6 +3669,8 @@ def _legacy_termination_reason(
 
 
 def _build_run_config_sha256(config: RunConfigV5, profile: TopologyProfileV5) -> str:
+    if config.run_config_sha256 is not None:
+        return config.run_config_sha256
     if config.run_configuration is not None:
         return str(config.run_configuration.run_config_sha256)
     payload = {
@@ -4189,7 +4292,8 @@ async def _run_episode(
                             Message(
                                 role=Role.user,
                                 content=(
-                                    "[Handoff from planner to executor] Proceed with execution."
+                                    "[Handoff from planner to executor] Proceed with execution. "
+                                    "Emit only the required tool call(s) with no prose walkthrough."
                                 ),
                             )
                         )
