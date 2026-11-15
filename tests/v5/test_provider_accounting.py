@@ -709,6 +709,40 @@ def test_summarize_descriptive_usage_sc03_and_coverage_levels() -> None:
     assert evaluate_g_econ_01_v5((a_unavail,), unavail_summary)["passed"] is True
 
 
+def test_unavailable_retry_and_segment_usage_preserve_known_billed_costs() -> None:
+    retry = _build_req(
+        request_id="req_retry_billed",
+        logical_request_id="lreq_retry_billed",
+        request_kind="TRANSIENT_RETRY",
+        retry_index=1,
+        raw_usage={"input_tokens": 1.5, "output_tokens": False},
+        usage_scope_override="UNAVAILABLE",
+        provider_reported_cost_micros=1_200,
+        currency_code="USD",
+    )
+    segment = _build_req(
+        request_id="req_segment_billed",
+        logical_request_id="lreq_segment_billed",
+        request_kind="SEGMENT_CONTINUATION",
+        retry_index=None,
+        segment_continuation_index=1,
+        decode_segment_index=1,
+        raw_usage={"input_tokens": "unknown", "output_tokens": -1},
+        usage_scope_override="UNAVAILABLE",
+        provider_reported_cost_micros=2_300,
+        currency_code="USD",
+    )
+    attempt = _attempt(provider_requests=(retry, segment), retry_request_count=1)
+
+    summary = summarize_descriptive_usage_v5(RUN_SHA, 1, (attempt,))
+
+    assert summary.accounting_coverage_status == "PARTIAL"
+    assert summary.total_input_tokens is None
+    assert summary.total_output_tokens is None
+    assert summary.provider_billed_cost_micros == 3_500
+    assert summary.estimated_cost_micros is None
+
+
 def test_evaluate_g_econ_01_has_no_spend_ceiling_and_catches_incompleteness() -> None:
     # Huge spend and token counts must pass G-ECON-01 (no budget/spend ceiling)
     huge_req = _build_req(

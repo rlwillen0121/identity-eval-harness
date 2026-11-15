@@ -3333,6 +3333,25 @@ def test_provenance_input_refuses_symlink_to_sensitive_path(tmp_path: Path) -> N
         _read_provenance_input(tmp_path, input_link.name)
 
 
+def test_provenance_input_rejects_absolute_paths_outside_repository(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    outside = tmp_path / "ordinary-data.bin"
+    outside.write_bytes(b"private marker")
+
+    with pytest.raises(V5ArtifactError, match="outside the repository root"):
+        _read_provenance_input(repository, str(outside))
+
+
+def test_provenance_input_rejects_parent_traversal(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (tmp_path / "ordinary-data.bin").write_bytes(b"private marker")
+
+    with pytest.raises(V5ArtifactError, match="traversal syntax"):
+        _read_provenance_input(repository, "../ordinary-data.bin")
+
+
 def test_dataset_loader_rejects_sensitive_symlink_before_read(tmp_path: Path) -> None:
     dataset_dir = tmp_path / "dataset"
     dataset_dir.mkdir()
@@ -3416,6 +3435,22 @@ def test_blind_gate_recomputes_references_but_stays_unknown_without_provenance(
         "policy_card_anchor_map"
     ] == len(_expected_policy_card_anchor_map())
     assert any("review provenance is unavailable" in error for error in result.errors)
+
+
+def test_blind_gate_resolves_relative_receipt_from_repository_root(
+    artifacts: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt = _proof_bundle(artifacts, tmp_path)
+    expected = _blind_gate(receipt, artifacts, repository_root=tmp_path)
+    other_cwd = tmp_path / "elsewhere"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+
+    result = _blind_gate(receipt.relative_to(tmp_path), artifacts, repository_root=tmp_path)
+
+    assert result.status is expected.status
+    assert result.evidence["verified_references"] == expected.evidence["verified_references"]
+    assert result.evidence["reference_evidence"] == expected.evidence["reference_evidence"]
 
 
 def test_shared_expected_coverage_separates_rule_ids_from_anchor_labels() -> None:
@@ -3576,6 +3611,8 @@ def _review_provenance_fixture(
                     "usage": "reference",
                     "artifact_kind": "sanitized_episode_packet",
                     "path": str(packet_path),
+                    "archive_path": packet_path.relative_to(directory).as_posix(),
+                    "archive_root": str(directory),
                     "sha256": hashlib.sha256(packet_path.read_bytes()).hexdigest(),
                     "origin": "derived_sanitized_packet",
                     "producer": "test packet builder",
@@ -3590,6 +3627,8 @@ def _review_provenance_fixture(
                     "usage": "reference",
                     "artifact_kind": "rendered_policy_card",
                     "path": str(packet_paths["card"]),
+                    "archive_path": packet_paths["card"].relative_to(directory).as_posix(),
+                    "archive_root": str(directory),
                     "sha256": hashlib.sha256(packet_paths["card"].read_bytes()).hexdigest(),
                     "origin": "derived_sanitized_packet",
                     "producer": "test packet builder",
@@ -3668,6 +3707,8 @@ def _review_provenance_fixture(
                     "usage": "reference",
                     "artifact_kind": "other_public",
                     "path": str(input_path),
+                    "archive_path": input_path.relative_to(directory).as_posix(),
+                    "archive_root": str(directory),
                     "sha256": input_sha,
                     "origin": "preexisting_allowed",
                 }
@@ -3946,6 +3987,7 @@ def test_review_provenance_requires_actual_audit_and_rejects_forbidden_reads(
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
     assert errors == []
     assert evidence["agent_view_only"]["sanitized_packet"]["selected_slice_payloads_verified"]
@@ -3965,6 +4007,7 @@ def test_review_provenance_requires_actual_audit_and_rejects_forbidden_reads(
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
     assert any("read forbidden source" in error for error in errors)
 
@@ -3978,6 +4021,7 @@ def test_review_provenance_rejects_scope_self_review(artifacts: Any, tmp_path: P
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
 
     assert any("reviewer task matches the author task" in error for error in errors)
@@ -4041,6 +4085,7 @@ def test_review_provenance_rejects_contributor_self_review(artifacts: Any, tmp_p
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
 
     assert any(
@@ -4060,6 +4105,7 @@ def test_historical_projection_receipt_revalidates_source_projection_and_selecti
         receipt_refs,
         allowed_by_id=allowed_by_id,
         root=Path(__file__).resolve().parents[2],
+        allowed_roots=(tmp_path,),
     )
 
     assert errors == []
@@ -4087,6 +4133,7 @@ def test_historical_projection_receipt_accepts_only_complete_empty_slice_invento
             receipt_refs,
             allowed_by_id=allowed_by_id,
             root=Path(__file__).resolve().parents[2],
+            allowed_roots=(tmp_path,),
         )
         return errors, gaps
 
@@ -4160,6 +4207,7 @@ def test_review_provenance_retains_historical_packet_card_reads(
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
 
     assert errors == []
@@ -4183,6 +4231,7 @@ def test_historical_projection_receipt_keeps_missing_review_unmeasured(
         receipt_refs,
         allowed_by_id=allowed_by_id,
         root=Path(__file__).resolve().parents[2],
+        allowed_roots=(tmp_path,),
     )
 
     assert errors == []
@@ -4202,6 +4251,7 @@ def test_historical_projection_receipt_rejects_stale_archived_packet(
         receipt_refs,
         allowed_by_id=allowed_by_id,
         root=Path(__file__).resolve().parents[2],
+        allowed_roots=(tmp_path,),
     )
 
     assert any("bytes mismatch" in error or "digest mismatch" in error for error in errors)
@@ -4277,6 +4327,7 @@ def test_agent_view_scope_rejects_spec_and_other_reference_reads(
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
 
     agent_errors = [error for error in errors if "agent_view_only" in error]
@@ -4302,6 +4353,7 @@ def test_agent_view_read_audit_requires_input_identity_hash_and_original_path(
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
 
     assert any("input hash disagrees" in error for error in errors)
@@ -4358,6 +4410,7 @@ def test_review_provenance_missing_read_audit_is_incomplete(artifacts: Any, tmp_
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
 
     assert errors == []
@@ -4375,6 +4428,7 @@ def test_review_provenance_rejects_an_invalidated_current_author(
         provenance,
         artifacts=artifacts,
         receipt_refs=refs,
+        allowed_roots=(tmp_path,),
     )
 
     assert any("uses an invalidated author task" in error for error in errors)

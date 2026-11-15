@@ -39,6 +39,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
+from identitybench.providers._json import bounded_token_count, safe_nonnegative_float_add
 from identitybench.providers.base import Usage
 from identitybench.providers.openai_compat import (
     DEFAULT_BASE_URL_ENV as OPENAI_DEFAULT_BASE_URL_ENV,
@@ -170,10 +171,10 @@ class Rates(_Strict):
     def cost(self, usage: Usage, ttl: CacheTtl = "5m") -> float:
         """USD for one call. Reasoning tokens are already inside ``output_tokens``."""
         total = (
-            usage.input_tokens * self.input
-            + usage.output_tokens * self.output
-            + usage.cache_read_tokens * self.cache_read_rate
-            + usage.cache_write_tokens * self.cache_write_rate(ttl)
+            bounded_token_count(usage.input_tokens) * self.input
+            + bounded_token_count(usage.output_tokens) * self.output
+            + bounded_token_count(usage.cache_read_tokens) * self.cache_read_rate
+            + bounded_token_count(usage.cache_write_tokens) * self.cache_write_rate(ttl)
         )
         return total / _PER_TOKEN
 
@@ -324,6 +325,9 @@ class CostTracker:
         self.metered_usd = 0.0
         self.reported_usd: float | None = None
         self.spend_usd = 0.0
+        self.saturated = False
+        """True when any reported, metered, or budget spend aggregate hit float max."""
+        self.spend_saturated = False
 
     @property
     def price(self) -> ModelPrice | None:
@@ -361,17 +365,24 @@ class CostTracker:
         self.calls += 1
         self.usage.add(usage)
         if reported_cost_usd is not None:
-            self.reported_usd = (self.reported_usd or 0.0) + reported_cost_usd
+            self.reported_usd, saturated = safe_nonnegative_float_add(
+                0.0 if self.reported_usd is None else self.reported_usd,
+                reported_cost_usd,
+            )
+            self.saturated = self.saturated or saturated
         if self._price is not None:
             spent = self._price.call_cost(usage, self._cache_ttl)
-            self.metered_usd += spent
+            self.metered_usd, saturated = safe_nonnegative_float_add(self.metered_usd, spent)
+            self.saturated = self.saturated or saturated
         elif self.mode == "unmetered":
             spent = 0.0
         else:
             spent = reported_cost_usd or 0.0
             if reported_cost_usd is None:
                 self.unreported_calls += 1
-        self.spend_usd += spent
+        self.spend_usd, saturated = safe_nonnegative_float_add(self.spend_usd, spent)
+        self.saturated = self.saturated or saturated
+        self.spend_saturated = self.spend_saturated or saturated
         return spent
 
     def would_exceed(self, budget_usd: float | None, pending_usd: float = 0.0) -> bool:
@@ -381,7 +392,8 @@ class CostTracker:
         """
         if budget_usd is None:
             return False
-        return self.spend_usd + pending_usd > budget_usd
+        total, saturated = safe_nonnegative_float_add(self.spend_usd, pending_usd)
+        return saturated or self.spend_saturated or total > budget_usd
 
     @property
     def metered_api_usd(self) -> float | None:
@@ -415,6 +427,7 @@ class BudgetGuard:
         self._cache_ttl: CacheTtl = cache_ttl
         self.trackers: dict[str, CostTracker] = {}
         self.reserved_usd = 0.0
+        self.saturated = False
 
     def track(
         self, config_id: str, model: str, mode: CostMode, *, reports_cost: bool = True
@@ -437,7 +450,11 @@ class BudgetGuard:
 
     @property
     def spend_usd(self) -> float:
-        return sum(t.spend_usd for t in self.trackers.values())
+        total = 0.0
+        for tracker in self.trackers.values():
+            total, saturated = safe_nonnegative_float_add(total, tracker.spend_usd)
+            self.saturated = self.saturated or tracker.spend_saturated or saturated
+        return total
 
     def unenforceable(self) -> list[str]:
         """Config IDs whose spend can't be known; empty when there is no budget to enforce."""
@@ -450,7 +467,10 @@ class BudgetGuard:
         estimate for the next call) is over the budget. No budget never stops the run."""
         if self.budget_usd is None:
             return False
-        return self.spend_usd + self.reserved_usd + pending_usd > self.budget_usd
+        total, saturated = safe_nonnegative_float_add(self.spend_usd, self.reserved_usd)
+        total, pending_saturated = safe_nonnegative_float_add(total, pending_usd)
+        self.saturated = self.saturated or saturated or pending_saturated
+        return self.saturated or total > self.budget_usd
 
     def reserve(self, estimate_usd: float) -> bool:
         """Hold ``estimate_usd`` for a call about to start; False (nothing held) when that
@@ -459,7 +479,10 @@ class BudgetGuard:
             raise ValueError("estimate_usd must be >= 0")
         if self.would_exceed(estimate_usd):
             return False
-        self.reserved_usd += estimate_usd
+        self.reserved_usd, saturated = safe_nonnegative_float_add(
+            self.reserved_usd, estimate_usd
+        )
+        self.saturated = self.saturated or saturated
         return True
 
     def release(self, estimate_usd: float) -> None:

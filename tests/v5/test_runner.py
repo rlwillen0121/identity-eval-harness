@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,6 +13,7 @@ from typing import Any
 import pytest
 import tiktoken
 
+from identitybench.providers._json import sanitize_response
 from identitybench.providers.base import (
     GenerationParams,
     Message,
@@ -43,12 +46,15 @@ from identitybench.v5.runner import (
     PRIMARY_PROMPT_BUNDLE_SHA256_V5,
     ContextReconciliationResultV5,
     DevCapSensitivitySlotV5,
+    PricingRatesV5,
     ProviderBundleV5,
     RoundRequestSpecV5,
     RoundSchedulerV5,
     RunConfigV5,
+    _build_provider_request_usage,
     _strict_openai_schema,
     _tool_specs,
+    _usage_problem,
     compute_effective_output_allowance_v5,
     compute_primary_prompt_bundle_sha256_v5,
     derive_50_cap_prefix_outcome,
@@ -130,6 +136,281 @@ def fake_episode() -> SimpleNamespace:
         phase1_manifest=FakeManifest(1, "P1"),
         phase2_base_manifest=FakeManifest(2, "P2"),
     )
+
+
+def _provider_usage_row(response: ModelResponse) -> ProviderRequestUsageV5:
+    return _build_provider_request_usage(
+        request_id="request-security-regression",
+        logical_request_id="logical-security-regression",
+        request_kind="INITIAL",
+        retry_index=0,
+        quota_continuation_index=None,
+        recovery_continuation_index=None,
+        segment_continuation_index=None,
+        decode_segment_index=0,
+        attempt_id="attempt-security-regression",
+        agent_id="agent-1",
+        role="primary",
+        dispatch_round=0,
+        reservation_ordinal=(0, 0, 0, "agent-1", 0),
+        request_status="COMPLETED",
+        post_terminal=False,
+        response=response,
+        normalized_decode_status="TERMINAL_NORMAL",
+        rendered_input_context_tokens=10,
+        effective_output_allowance_tokens=10,
+        actual_native_numeric_budget_tokens=10,
+        native_params={},
+        pricing=None,
+        reports_usage=True,
+    )
+
+
+@pytest.mark.parametrize("bad_count", [1.9, 10**400])
+def test_anomalous_usage_is_unavailable_in_v5_provider_rows(bad_count: object) -> None:
+    direct = ModelResponse(usage=Usage(input_tokens=10, output_tokens=bad_count))
+    assert _usage_problem(direct) == "usage_invalid_counts"
+    response = sanitize_response(
+        direct, "test"
+    )
+    assert _usage_problem(response) == "usage_invalid_counts"
+    assert response.raw is not None
+    json.dumps(response.raw, allow_nan=False)
+
+    pricing = PricingRatesV5(
+        pricing_manifest_sha256="0" * 64,
+        uncached_input_micros_per_million=1_000_000,
+        cached_input_micros_per_million=1_000_000,
+        output_micros_per_million=1_000_000,
+        reasoning_micros_per_million=1_000_000,
+    )
+    request = _build_provider_request_usage(
+        request_id="request-1",
+        logical_request_id="logical-1",
+        request_kind="INITIAL",
+        retry_index=0,
+        quota_continuation_index=None,
+        recovery_continuation_index=None,
+        segment_continuation_index=None,
+        decode_segment_index=0,
+        attempt_id="attempt-1",
+        agent_id="agent-1",
+        role="primary",
+        dispatch_round=0,
+        reservation_ordinal=(0, 0, 0, "agent-1", 0),
+        request_status="COMPLETED",
+        post_terminal=False,
+        response=response,
+        normalized_decode_status="TERMINAL_NORMAL",
+        rendered_input_context_tokens=10,
+        effective_output_allowance_tokens=10,
+        actual_native_numeric_budget_tokens=10,
+        native_params={},
+        pricing=pricing,
+        reports_usage=True,
+    )
+    assert request.usage_scope == "UNAVAILABLE"
+    assert request.input_tokens_total is None
+    assert request.output_tokens_total is None
+    assert request.estimated_cost_micros is None
+    assert request.raw_usage_fields_json is not None
+    raw_usage = json.loads(request.raw_usage_fields_json)
+    assert raw_usage["usage_anomaly"]
+    original = raw_usage["usage_original"]["output_tokens"]
+    if bad_count == 1.9:
+        assert original == 1.9
+    else:
+        assert original == {"type": "integer", "value": str(bad_count)}
+
+
+def test_normal_integer_usage_remains_valid_in_v5_provider_rows() -> None:
+    response = sanitize_response(
+        ModelResponse(usage=Usage(input_tokens=10, output_tokens=2)), "test"
+    )
+    assert _usage_problem(response) is None
+    row = _build_provider_request_usage(
+        request_id="request-1",
+        logical_request_id="logical-1",
+        request_kind="INITIAL",
+        retry_index=0,
+        quota_continuation_index=None,
+        recovery_continuation_index=None,
+        segment_continuation_index=None,
+        decode_segment_index=0,
+        attempt_id="attempt-1",
+        agent_id="agent-1",
+        role="primary",
+        dispatch_round=0,
+        reservation_ordinal=(0, 0, 0, "agent-1", 0),
+        request_status="COMPLETED",
+        post_terminal=False,
+        response=response,
+        normalized_decode_status="TERMINAL_NORMAL",
+        rendered_input_context_tokens=10,
+        effective_output_allowance_tokens=10,
+        actual_native_numeric_budget_tokens=10,
+        native_params={},
+        pricing=PricingRatesV5(
+            pricing_manifest_sha256="0" * 64,
+            uncached_input_micros_per_million=1_000_000,
+            cached_input_micros_per_million=1_000_000,
+            output_micros_per_million=1_000_000,
+            reasoning_micros_per_million=1_000_000,
+        ),
+        reports_usage=True,
+    )
+    assert row.usage_scope == "PHYSICAL_REQUEST"
+    assert row.input_tokens_total == 10
+    assert row.output_tokens_total == 2
+    assert row.estimated_cost_micros is not None
+
+
+def test_v5_provider_rows_keep_list_usage_and_drop_opaque_keys_recursively() -> None:
+    response = sanitize_response(
+        ModelResponse(
+            usage=Usage(input_tokens=10, output_tokens=2),
+            raw={
+                "raw_usage": [
+                    {
+                        "input_tokens": 10,
+                        "output_tokens": 2,
+                        "session_token": "opaque-session",
+                        "nested": {"continuation_token": "opaque-continuation", "kept": 1},
+                    }
+                ]
+            },
+        ),
+        "test",
+    )
+    row = _build_provider_request_usage(
+        request_id="request-list-usage",
+        logical_request_id="logical-list-usage",
+        request_kind="INITIAL",
+        retry_index=0,
+        quota_continuation_index=None,
+        recovery_continuation_index=None,
+        segment_continuation_index=None,
+        decode_segment_index=0,
+        attempt_id="attempt-list-usage",
+        agent_id="agent-1",
+        role="primary",
+        dispatch_round=0,
+        reservation_ordinal=(0, 0, 0, "agent-1", 0),
+        request_status="COMPLETED",
+        post_terminal=False,
+        response=response,
+        normalized_decode_status="TERMINAL_NORMAL",
+        rendered_input_context_tokens=10,
+        effective_output_allowance_tokens=10,
+        actual_native_numeric_budget_tokens=10,
+        native_params={},
+        pricing=PricingRatesV5(
+            pricing_manifest_sha256="0" * 64,
+            uncached_input_micros_per_million=1_000_000,
+            cached_input_micros_per_million=1_000_000,
+            output_micros_per_million=1_000_000,
+            reasoning_micros_per_million=1_000_000,
+        ),
+        reports_usage=True,
+    )
+
+    assert response.raw is not None
+    assert response.raw["raw_usage"][0]["output_tokens"] == 2
+    assert row.raw_usage_fields_json is not None
+    serialized = json.loads(row.raw_usage_fields_json)
+    assert serialized["provider_raw_usage"] == [
+        {"input_tokens": 10, "output_tokens": 2, "nested": {"kept": 1}}
+    ]
+
+
+@pytest.mark.parametrize(
+    "token_key", ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens")
+)
+def test_cursor_camel_case_usage_anomaly_makes_v5_row_unavailable(token_key: str) -> None:
+    raw_usage = {
+        "inputTokens": 1200,
+        "outputTokens": 40,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+    }
+    raw_usage[token_key] = 1.5
+    response = sanitize_response(
+        ModelResponse(
+            usage=Usage(input_tokens=1200, output_tokens=40),
+            raw={"raw_usage": raw_usage},
+        ),
+        "cursor_cli",
+    )
+
+    assert _usage_problem(response) == "usage_invalid_counts"
+    row = _provider_usage_row(response)
+    assert row.usage_scope == "UNAVAILABLE"
+    assert row.input_tokens_total is None
+    assert row.output_tokens_total is None
+    assert row.estimated_cost_micros is None
+    assert row.raw_usage_fields_json is not None
+    raw_evidence = json.loads(row.raw_usage_fields_json)
+    assert raw_evidence["provider_raw_usage"][token_key] == 1.5
+    assert raw_evidence["usage_anomaly"]
+
+
+@pytest.mark.parametrize(("reported_cost", "expected_micros"), [(1e30, 10**36), (1e308, 10**314)])
+def test_provider_billed_cost_conversion_handles_large_magnitudes(
+    reported_cost: float, expected_micros: int
+) -> None:
+    row = _provider_usage_row(
+        ModelResponse(
+            usage=Usage(input_tokens=10, output_tokens=2),
+            reported_cost_usd=reported_cost,
+        )
+    )
+
+    assert row.provider_reported_cost_micros == expected_micros
+    assert row.cost_basis == "PROVIDER_BILLED"
+
+
+def test_provider_billed_cost_conversion_failure_keeps_raw_evidence() -> None:
+    row = _provider_usage_row(
+        ModelResponse(
+            usage=Usage(input_tokens=10, output_tokens=2),
+            reported_cost_usd=float("nan"),
+        )
+    )
+
+    assert row.provider_reported_cost_micros is None
+    assert row.estimated_cost_micros is None
+    assert row.cost_basis == "UNAVAILABLE"
+    assert row.raw_usage_fields_json is not None
+    raw_evidence = json.loads(row.raw_usage_fields_json)
+    assert raw_evidence["provider_reported_cost_usd_original"] == {
+        "type": "float",
+        "value": "nan",
+    }
+
+
+def test_v5_runner_sanitizes_huge_latency_before_strict_json_serialization() -> None:
+    response_with_huge_latency = ModelResponse(
+        text="{}",
+        usage=Usage(input_tokens=11, output_tokens=4),
+        latency_s=1e308,
+    )
+    execution = asyncio.run(
+        run_v5_agent_episode(
+            fake_episode(),
+            SimpleNamespace(),
+            FakeProvider([response_with_huge_latency]),
+            run_config=RunConfigV5(max_turns=1),
+            runtime_factory=FakeRuntime,
+            token_counter=lambda _request: 1,
+        )
+    )
+
+    assert execution.latency_s == 0.0
+    assert execution.completion_trace[0].latency_s == 0.0
+    assert response_with_huge_latency.raw is not None
+    assert response_with_huge_latency.raw["latency_anomaly"] == "invalid_or_out_of_range"
+    assert response_with_huge_latency.raw["latency_original_s"] == 1e308
+    json.dumps(execution.to_json_dict(), allow_nan=False)
 
 
 @dataclass(frozen=True)
@@ -823,6 +1104,222 @@ def test_malformed_query_arguments_return_bounded_rejection_and_execution_contin
         "tool_call_id": "bad-query",
     }
     assert result.tool_trace[1].result["status"] == "OK"
+
+
+def test_v5_episode_cost_aggregate_saturates_with_raw_marker_and_strict_json() -> None:
+    def factory(episode: Any, world: Any, **kwargs: Any) -> FakeRuntime:
+        runtime = FakeRuntime(episode, world, **kwargs)
+        runtime.complete_on_query = True
+        return runtime
+
+    provider = FakeProvider(
+        [
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        "bad-query",
+                        "query_sources",
+                        {"phase_index": 1, "slice_ids": None},
+                    )
+                ],
+                usage=Usage(input_tokens=11, output_tokens=4),
+                reported_cost_usd=1e308,
+            ),
+            ModelResponse(
+                tool_calls=[qcall(1, "valid")],
+                usage=Usage(input_tokens=11, output_tokens=4),
+                reported_cost_usd=1e308,
+            ),
+        ]
+    )
+    execution = asyncio.run(
+        run_v5_agent_episode(
+            fake_episode(),
+            SimpleNamespace(),
+            provider,
+            run_config=RunConfigV5(max_turns=2),
+            runtime_factory=factory,
+            token_counter=lambda _request: 1,
+        )
+    )
+
+    assert [item.provider_reported_cost_usd for item in execution.completion_trace] == [
+        1e308,
+        1e308,
+    ]
+    assert execution.provider_reported_cost_usd == sys.float_info.max
+    assert execution.provider_reported_cost_usd < float("inf")
+    assert [item.provider_reported_cost_micros for item in execution.provider_requests] == [
+        10**314,
+        10**314,
+    ]
+    saturation_metadata = json.loads(
+        execution.provider_requests[-1].raw_usage_fields_json or "{}"
+    )
+    assert saturation_metadata["reported_cost_saturated"] is True
+    json.dumps(execution.to_json_dict(), allow_nan=False)
+
+
+def test_v5_logical_retry_cost_aggregate_saturates_with_raw_marker() -> None:
+    def factory(episode: Any, world: Any, **kwargs: Any) -> FakeRuntime:
+        runtime = FakeRuntime(episode, world, **kwargs)
+        runtime.complete_on_query = True
+        return runtime
+
+    transient = ModelResponse(
+        error="temporary provider failure",
+        usage=Usage(),
+        reported_cost_usd=1e308,
+        raw={"error_class": "TRANSIENT_FAILURE", "proven_unanswered": True},
+    )
+    success = ModelResponse(
+        tool_calls=[qcall(1, "valid")],
+        usage=Usage(input_tokens=11, output_tokens=4),
+        reported_cost_usd=1e308,
+    )
+    execution = asyncio.run(
+        run_v5_agent_episode(
+            fake_episode(),
+            SimpleNamespace(),
+            FakeProvider([transient, success]),
+            run_config=RunConfigV5(max_turns=2),
+            runtime_factory=factory,
+            token_counter=lambda _request: 1,
+        )
+    )
+
+    assert execution.completion_trace[-1].provider_reported_cost_usd == sys.float_info.max
+    assert len(execution.provider_requests) == 2
+    assert execution.provider_requests[0].request_kind == "INITIAL"
+    assert execution.provider_requests[1].request_kind == "TRANSIENT_RETRY"
+    saturation_metadata = json.loads(
+        execution.provider_requests[-1].raw_usage_fields_json or "{}"
+    )
+    assert saturation_metadata["reported_cost_saturated"] is True
+    json.dumps(execution.to_json_dict(), allow_nan=False)
+
+
+def test_v5_exact_episode_cost_ceiling_does_not_mark_request_saturation() -> None:
+    def factory(episode: Any, world: Any, **kwargs: Any) -> FakeRuntime:
+        runtime = FakeRuntime(episode, world, **kwargs)
+        runtime.complete_on_query = True
+        return runtime
+
+    provider = FakeProvider(
+        [
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        "bad-query",
+                        "query_sources",
+                        {"phase_index": 1, "slice_ids": None},
+                    )
+                ],
+                usage=Usage(input_tokens=11, output_tokens=4),
+                reported_cost_usd=1.6318653171588758e308,
+            ),
+            ModelResponse(
+                tool_calls=[qcall(1, "valid")],
+                usage=Usage(input_tokens=11, output_tokens=4),
+                reported_cost_usd=1.658278177034399e307,
+            ),
+        ]
+    )
+    execution = asyncio.run(
+        run_v5_agent_episode(
+            fake_episode(),
+            SimpleNamespace(),
+            provider,
+            run_config=RunConfigV5(max_turns=2),
+            runtime_factory=factory,
+            token_counter=lambda _request: 1,
+        )
+    )
+
+    assert execution.provider_reported_cost_usd == sys.float_info.max
+    assert execution.provider_reported_cost_usd < float("inf")
+    assert len(execution.provider_requests) == 2
+    assert sum(
+        request.provider_reported_cost_micros or 0
+        for request in execution.provider_requests
+    ) == int(Decimal(str(sys.float_info.max)) * Decimal(1_000_000))
+    assert all(
+        "reported_cost_saturated"
+        not in json.loads(request.raw_usage_fields_json or "{}")
+        for request in execution.provider_requests
+    )
+    json.dumps(execution.to_json_dict(), allow_nan=False)
+
+
+def test_v5_episode_cost_saturation_marks_billed_retry_before_unbilled_terminal() -> None:
+    def factory(episode: Any, world: Any, **kwargs: Any) -> FakeRuntime:
+        runtime = FakeRuntime(episode, world, **kwargs)
+        runtime.complete_on_query = True
+        return runtime
+
+    provider = FakeProvider(
+        [
+            ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        "bad-query",
+                        "query_sources",
+                        {"phase_index": 1, "slice_ids": None},
+                    )
+                ],
+                usage=Usage(input_tokens=11, output_tokens=4),
+                reported_cost_usd=1e308,
+            ),
+            ModelResponse(
+                error="temporary provider failure",
+                usage=Usage(),
+                raw={"error_class": "TRANSIENT_FAILURE", "proven_unanswered": True},
+            ),
+            ModelResponse(
+                error="temporary provider failure",
+                usage=Usage(),
+                reported_cost_usd=1e308,
+                raw={"error_class": "TRANSIENT_FAILURE", "proven_unanswered": True},
+            ),
+            ModelResponse(
+                tool_calls=[qcall(1, "valid")],
+                usage=Usage(input_tokens=11, output_tokens=4),
+            ),
+        ]
+    )
+    execution = asyncio.run(
+        run_v5_agent_episode(
+            fake_episode(),
+            SimpleNamespace(),
+            provider,
+            run_config=RunConfigV5(max_turns=2),
+            runtime_factory=factory,
+            token_counter=lambda _request: 1,
+        )
+    )
+
+    assert execution.provider_reported_cost_usd == sys.float_info.max
+    assert [item.request_kind for item in execution.provider_requests] == [
+        "INITIAL",
+        "INITIAL",
+        "TRANSIENT_RETRY",
+        "TRANSIENT_RETRY",
+    ]
+    assert [item.provider_reported_cost_micros for item in execution.provider_requests] == [
+        10**314,
+        None,
+        10**314,
+        None,
+    ]
+    retry_metadata = json.loads(
+        execution.provider_requests[2].raw_usage_fields_json or "{}"
+    )
+    terminal_metadata = json.loads(
+        execution.provider_requests[3].raw_usage_fields_json or "{}"
+    )
+    assert retry_metadata["reported_cost_saturated"] is True
+    assert terminal_metadata.get("reported_cost_saturated") is not True
+    json.dumps(execution.to_json_dict(), allow_nan=False)
 
 
 def test_non_object_tool_arguments_fail_envelope_atomically() -> None:
@@ -2589,8 +3086,10 @@ def test_non_native_cli_action_schema_name_and_prompt_action_docs(tmp_path: Path
 def test_agy_cli_non_native_prompt_uses_direct_arguments_and_preserves_primary_bundle() -> None:
     from identitybench.v5.runner import _make_request
 
-    class AgyNonNativeProvider(FakeProvider):
-        kind = "agy_cli"
+    class CliNonNativeProvider(FakeProvider):
+        def __init__(self, kind_name: str) -> None:
+            super().__init__([])
+            self.kind = kind_name
 
         def capabilities(self) -> ProviderCapabilities:
             return ProviderCapabilities(
@@ -2604,18 +3103,23 @@ def test_agy_cli_non_native_prompt_uses_direct_arguments_and_preserves_primary_b
     t5_cfg = RunConfigV5(topology_id="T5_HIERARCHICAL_PIPELINE")
     msgs = (Message(role=Role.user, content="start"),)
 
-    agy_req = _make_request(AgyNonNativeProvider([]), t0_cfg, msgs, role="monolith", phase_index=1)
-    assert "CRITICAL: This session has NO native tools or functions you can call" in agy_req.system
-    assert '"arguments":{...}' in agy_req.system
-    assert '"arguments_json"' not in agy_req.system
+    for cli_kind in ("agy_cli", "claude_cli", "codex_cli"):
+        cli_req = _make_request(
+            CliNonNativeProvider(cli_kind), t0_cfg, msgs, role="monolith", phase_index=1
+        )
+        assert (
+            "CRITICAL: This session has NO native tools or functions you can call" in cli_req.system
+        )
+        assert '"arguments":{...}' in cli_req.system
+        assert '"arguments_json"' not in cli_req.system
 
-    agy_auditor_req = _make_request(
-        AgyNonNativeProvider([]), t5_cfg, msgs, role="auditor", phase_index=1
-    )
-    assert "CRITICAL: This session has NO native tools or functions you can call" in (
-        agy_auditor_req.system
-    )
-    assert '"arguments_json"' in agy_auditor_req.system
+        cli_auditor_req = _make_request(
+            CliNonNativeProvider(cli_kind), t5_cfg, msgs, role="auditor", phase_index=1
+        )
+        assert "CRITICAL: This session has NO native tools or functions you can call" in (
+            cli_auditor_req.system
+        )
+        assert '"arguments_json"' in cli_auditor_req.system
     assert compute_primary_prompt_bundle_sha256_v5() == PRIMARY_PROMPT_BUNDLE_SHA256_V5
 
 

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from identitybench.providers._cli import SYSTEM_BEGIN, SYSTEM_END
+from identitybench.providers._cli import ACTION_SCHEMA_NAME, SYSTEM_BEGIN, SYSTEM_END
 from identitybench.providers._subprocess import Command, ProcessResult
 from identitybench.providers.codex_cli import (
     CONFIG_OVERRIDES,
@@ -161,6 +162,23 @@ async def test_no_schema_flag_without_schema_and_effort_override() -> None:
     assert flag_value(argv, "-c") == 'model_reasoning_effort="xhigh"'
 
 
+async def test_an_action_protocol_turn_is_sent_without_the_schema() -> None:
+    runner = FakeRunner(codex_run('{"actions": []}', *STANDARD_EVENTS))
+    action = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
+    response = await provider(runner).complete(action)
+    assert "--output-schema" not in runner.command.argv
+    assert response.raw is not None
+    assert response.raw["output_schema"] == "withheld (JSON action protocol turn)"
+    decision = FakeRunner(codex_run('{"decision": "DENY", "rules": []}', *STANDARD_EVENTS))
+    await provider(decision).complete(replace(action, schema_name="access_request_decision"))
+    assert (
+        json.loads(
+            decision.snapshots[0].files[flag_value(decision.command.argv, "--output-schema")]
+        )
+        == DECISION_SCHEMA
+    )
+
+
 async def test_effort_none_omits_the_config_override() -> None:
     runner = FakeRunner(codex_run("hi", *STANDARD_EVENTS))
     await provider(runner, effort=None).complete(make_request())
@@ -194,6 +212,7 @@ async def test_parses_output_file_and_verified_usage() -> None:
         "thread_id": "th_123",
         "effort": "medium",
         "ignored_params": ["max_output_tokens"],
+        "raw_usage": [VERIFIED_USAGE],
     }
     assert response.stop_reason == "completed"
     assert response.served_model is None

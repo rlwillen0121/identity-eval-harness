@@ -27,6 +27,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 logger = logging.getLogger("identitybench.providers")
@@ -212,7 +213,7 @@ async def run_command(command: Command) -> ProcessResult:
             stdout="",
             stderr="",
             duration_s=time.perf_counter() - start,
-            launch_error=f"could not start {command.argv[0]!r}: {exc.strerror or exc}",
+            launch_error=redact(f"could not start {command.argv[0]!r}: {exc.strerror or exc}"),
         )
 
     register_group(proc.pid)  # start_new_session: the child's pid is its process group id
@@ -316,7 +317,8 @@ async def retry_transient[T](
 
 _SECRET_NAME_RE = re.compile(
     r"(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|_URL|_ENDPOINT|_HOST|_AUTH|_BASE"
-    r"|_PAT|_PASSWD|_COOKIE|_SESSION|_JWT)$",
+    r"|_PAT|_PASSWD|_COOKIE|_SESSION|_JWT|_PROXY|_ADDR|_URI|_DSN)$"
+    r"|(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?)(?:_|$)",
     re.IGNORECASE,
 )
 _SENSITIVE_NAME = _SECRET_NAME_RE
@@ -337,6 +339,12 @@ _REDACTED = "<redacted>"
 _LOCAL_HOSTS = frozenset({"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"})
 _MIN_SECRET_CHARS = 8
 _MIN_HOST_CHARS = 4
+_URL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*:)(//|(?:\\/){2})"
+    r"([^\s/\\?\"'<>]+)"
+    r"([^\s\"'<>]*)"
+)
+_QUERY_VALUE_RE = re.compile(r"([?&][^=&\s?#]+=)[^&\s#\"']*")
 
 
 def url_hostname(value: str) -> str | None:
@@ -379,7 +387,7 @@ def redact(
       whole word, so the host alone (or inside another URL, escaped or not) can't surface
       either. Only those variables: masking the host of any URL-valued variable turned a
       ``WORD_URL=http://test:8080`` into a mask over every ``test`` in a message;
-    - common key and bearer-token shapes.
+    - common key and bearer-token shapes, URL userinfo/query strings, and home-directory paths.
 
     Longer values go first, so a value that contains another is masked whole.
     """
@@ -398,11 +406,27 @@ def redact(
         host = url_hostname(value)
         if host is not None:
             hosts.add(host)
+    for match in _URL_RE.finditer(text):
+        host = url_hostname(match.group(0).replace(r"\/", "/"))
+        if host is not None and "." in host:
+            hosts.add(host)
+    text = _URL_RE.sub(_redact_url, text)
     for value in sorted(values, key=len, reverse=True):
         text = text.replace(value, _REDACTED)
+    text = _QUERY_VALUE_RE.sub(rf"\1{_REDACTED}", text)
     for host in sorted(hosts, key=len, reverse=True):
-        text = re.sub(rf"\b{re.escape(host)}\b", _REDACTED, text)
+        text = re.sub(rf"\b{re.escape(host)}\b", _REDACTED, text, flags=re.IGNORECASE)
+    home = str(Path.home().resolve())
+    if home != "/":
+        text = re.sub(re.escape(home) + r"(?=/|$|[\s\"'])", "~", text)
+    text = re.sub(r"(/(?:Users|home)/)[^/\s\"'<>:,)]+", rf"\1{_REDACTED}", text)
     return _SECRET_VALUE_RE.sub(_REDACTED, text)
+
+
+def _redact_url(match: re.Match[str]) -> str:
+    """Retain the URL scheme while removing arbitrary host, path, and query content."""
+    scheme, slashes, _authority, _tail = match.groups()
+    return f"{scheme}{slashes}{_REDACTED}"
 
 
 _FUNCTIONAL_RAW_KEYS = frozenset({"assistant_content"})

@@ -83,7 +83,23 @@ async def test_parses_result_and_usage_without_attributing_a_model() -> None:
         "duration_ms": 2100,
         "session_id": "sess-1",
         "ignored_params": ["max_output_tokens"],
+        "raw_usage": {"inputTokens": 1200, "outputTokens": 40},
     }
+
+
+@pytest.mark.parametrize(
+    "token_key", ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens")
+)
+async def test_malformed_camel_case_usage_counts_are_preserved_as_anomalies(
+    token_key: str,
+) -> None:
+    payload = {**PAYLOAD, "usage": {**PAYLOAD["usage"], token_key: 1.5}}
+
+    response = await provider(FakeRunner(ok(payload))).complete(make_request())
+
+    assert response.raw is not None
+    assert response.raw["raw_usage"][token_key] == 1.5
+    assert response.raw["usage_anomaly"]
 
 
 async def test_schema_and_effort_are_not_sent_and_effort_is_reported_ignored() -> None:

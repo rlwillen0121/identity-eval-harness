@@ -1234,8 +1234,6 @@ def _aggregate_attempts_usage(
         return token_ok and cost_ok
 
     def _has_any_known_metric(req: ProviderRequestUsageV5) -> bool:
-        if req.usage_scope == "UNAVAILABLE":
-            return False
         return any(
             v is not None
             for v in (

@@ -229,7 +229,7 @@ class AgyCliProvider(CliProvider):
         structured = payload.get("structured_output")
         parsed = structured if isinstance(structured, dict) else None
         text, cli_text = structured_text(payload.get("response"), parsed)
-        raw = {key: payload[key] for key in _RAW_KEYS if key in payload}
+        raw = {"raw_usage": usage_in, **{key: payload[key] for key in _RAW_KEYS if key in payload}}
         if cli_text is not None:
             raw["cli_text"] = cli_text
         log_path = io_dir / LOG_FILE

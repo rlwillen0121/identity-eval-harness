@@ -293,7 +293,18 @@ async def test_text_parsed_usage_and_served_model() -> None:
     usage = response.usage
     assert (usage.input_tokens, usage.cache_read_tokens) == (400, 600)
     assert (usage.output_tokens, usage.reasoning_tokens) == (300, 200)
-    assert response.raw == {"id": "chatcmpl-1", "system_fingerprint": "fp_1"}
+    assert response.raw is not None
+    assert response.raw["raw_usage"] == {
+        "prompt_tokens": 1000,
+        "completion_tokens": 300,
+        "total_tokens": 1300,
+        "prompt_tokens_details": {"cached_tokens": 600},
+        "completion_tokens_details": {"reasoning_tokens": 200},
+    }
+    assert {key: value for key, value in response.raw.items() if key != "raw_usage"} == {
+        "id": "chatcmpl-1",
+        "system_fingerprint": "fp_1",
+    }
 
 
 async def test_usage_without_details_or_at_all() -> None:
@@ -721,7 +732,11 @@ async def test_an_error_after_usage_came_back_keeps_the_cost() -> None:
     assert response.error is not None and "malformed response" in response.error
     assert response.reported_cost_usd == 0.0001172292
     assert response.usage.output_tokens == 40
-    assert response.raw == {"upstream_provider": "Mistral"}
+    assert response.raw is not None
+    assert response.raw["raw_usage"] == OPENROUTER_USAGE
+    assert {key: value for key, value in response.raw.items() if key != "raw_usage"} == {
+        "upstream_provider": "Mistral"
+    }
 
 
 # --------------------------------------------------------------------------- routing preferences
@@ -1066,7 +1081,17 @@ async def test_responses_text_parsed_usage_and_served_model() -> None:
     usage = response.usage
     assert (usage.input_tokens, usage.cache_read_tokens) == (400, 600)
     assert (usage.output_tokens, usage.reasoning_tokens) == (300, 200)
-    assert response.raw == {"id": "resp_1"}
+    assert response.raw is not None
+    assert response.raw["raw_usage"] == {
+        "input_tokens": 1000,
+        "output_tokens": 300,
+        "total_tokens": 1300,
+        "input_tokens_details": {"cached_tokens": 600, "cache_write_tokens": 0},
+        "output_tokens_details": {"reasoning_tokens": 200},
+    }
+    assert {key: value for key, value in response.raw.items() if key != "raw_usage"} == {
+        "id": "resp_1"
+    }
 
 
 async def test_responses_usage_without_details_or_at_all() -> None:

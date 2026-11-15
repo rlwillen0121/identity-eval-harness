@@ -1296,7 +1296,9 @@ def _blind_gate(
         )
         return GateResultV5("G-SPEC-01", status, evidence, tuple((*errors, *gaps)))
     try:
-        errors, gaps, evidence = _validate_bound_reference_receipt(path, raw, receipt, artifacts)
+        errors, gaps, evidence = _validate_bound_reference_receipt(
+            resolved_path, raw, receipt, artifacts
+        )
     except Exception as error:
         return GateResultV5(
             "G-SPEC-01",
@@ -8237,6 +8239,7 @@ def _validate_scope_reviewer(
     *,
     label: str,
     root: Path,
+    allowed_roots: Sequence[Path] = (),
     author_task: str | None,
     expected_artifact_sha: str | None,
     authored_outputs: tuple[Mapping[str, str], ...],
@@ -8275,7 +8278,7 @@ def _validate_scope_reviewer(
             continue
         canonical = _canonical_provenance_path(root, path_text)
         reviewed_by_path[canonical] = digest
-        actual = _hash_provenance_path(root, path_text)
+        actual = _hash_provenance_path(root, path_text, allowed_roots=allowed_roots)
         if actual is None:
             gaps.append(f"{item_label} bytes are unavailable")
         elif actual != digest:
@@ -8405,7 +8408,14 @@ def _validate_scoped_read_audit(
     return tuple(audited_paths)
 
 
-def _historical_archive_bytes(archive_root: Path, relative_path: object, *, label: str) -> bytes:
+def _historical_archive_bytes(
+    archive_root: Path,
+    relative_path: object,
+    *,
+    repository_root: Path,
+    label: str,
+    allowed_roots: Sequence[Path] = (),
+) -> bytes:
     if not isinstance(relative_path, str) or not relative_path:
         raise OSError(f"{label} archive path is unavailable")
     if _sensitive_provenance_path(relative_path):
@@ -8413,8 +8423,13 @@ def _historical_archive_bytes(archive_root: Path, relative_path: object, *, labe
     rel = PurePosixPath(relative_path)
     if rel.is_absolute() or ".." in rel.parts or "\\" in relative_path:
         raise V5ArtifactError(f"{label} archive path is unsafe")
-    target = (archive_root / Path(*rel.parts)).resolve(strict=True)
-    if not target.is_relative_to(archive_root.resolve()):
+    archive = _resolve_provenance_path(
+        repository_root, str(archive_root), allowed_roots=allowed_roots
+    )
+    target = _resolve_provenance_path(
+        repository_root, str(archive / Path(*rel.parts)), allowed_roots=allowed_roots
+    )
+    if not target.is_relative_to(archive):
         raise V5ArtifactError(f"{label} archive path escapes its archive root")
     if _sensitive_provenance_path(str(target)):
         raise V5ArtifactError(f"{label} archive path resolves to a sensitive file")
@@ -8452,6 +8467,7 @@ def _validate_historical_projection_receipts(
     *,
     allowed_by_id: Mapping[str, Mapping[str, Any]],
     root: Path,
+    allowed_roots: Sequence[Path] = (),
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     errors: list[str] = []
     gaps: list[str] = []
@@ -8507,12 +8523,22 @@ def _validate_historical_projection_receipts(
             errors.append(f"{label} path is sensitive")
             continue
         try:
-            receipt_path = Path(artifact_path)
-            if not receipt_path.is_absolute():
-                receipt_path = root / receipt_path
-            receipt_bytes = _read_provenance_input(root, str(receipt_path))
+            receipt_path = _resolve_provenance_path(
+                root, artifact_path, allowed_roots=allowed_roots
+            )
+            archive_root = _resolve_provenance_path(
+                root, archive_root_text, allowed_roots=allowed_roots
+            )
+            if not receipt_path.is_relative_to(archive_root):
+                raise V5ArtifactError("receipt path is outside its declared archive root")
+            receipt_bytes = _read_provenance_input(
+                root, str(receipt_path), allowed_roots=allowed_roots
+            )
         except OSError:
             gaps.append(f"{label} bytes are unavailable")
+            continue
+        except V5ArtifactError as error:
+            errors.append(f"{label} path is unsafe: {error}")
             continue
         if hashlib.sha256(receipt_bytes).hexdigest() != digest:
             errors.append(f"{label} digest mismatch")
@@ -8526,12 +8552,12 @@ def _validate_historical_projection_receipts(
             errors.append(f"{label} must be a canonical JCS JSON object")
             continue
         receipt_by_id[receipt_id] = parsed
-        archive_root = Path(archive_root_text).resolve()
         receipt_errors, receipt_gaps = _validate_one_historical_projection(
             parsed,
             allowed_by_id=allowed_by_id,
             archive_root=archive_root,
             root=root,
+            allowed_roots=allowed_roots,
             label=receipt_id,
         )
         errors.extend(receipt_errors)
@@ -8568,6 +8594,7 @@ def _validate_one_historical_projection(
     allowed_by_id: Mapping[str, Mapping[str, Any]],
     archive_root: Path,
     root: Path,
+    allowed_roots: Sequence[Path] = (),
     label: str,
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
@@ -8634,8 +8661,8 @@ def _validate_one_historical_projection(
     ) != receipt.get("card_sha256"):
         errors.append(f"historical projection {label} packet/card hashes disagree with inputs")
     try:
-        packet_bytes = _read_input_record(root, packet_record)
-        card_bytes = _read_input_record(root, card_record)
+        packet_bytes = _read_input_record(root, packet_record, allowed_roots=allowed_roots)
+        card_bytes = _read_input_record(root, card_record, allowed_roots=allowed_roots)
     except OSError:
         gaps.append(f"historical projection {label} packet/card archived bytes are unavailable")
         return errors, gaps
@@ -8657,6 +8684,8 @@ def _validate_one_historical_projection(
         source_bytes = _historical_archive_bytes(
             archive_root,
             source_archive,
+            repository_root=root,
+            allowed_roots=allowed_roots,
             label=f"historical projection {label} source episodes",
         )
     except OSError:
@@ -8853,6 +8882,7 @@ def _validate_review_provenance(
     *,
     artifacts: DatasetArtifactsV5,
     receipt_refs: Mapping[str, Mapping[str, str]],
+    allowed_roots: Sequence[Path] = (),
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     errors: list[str] = []
     gaps: list[str] = []
@@ -9036,7 +9066,9 @@ def _validate_review_provenance(
                         if _sensitive_provenance_path(source_name):
                             errors.append(f"{label} producer source path is sensitive")
                             continue
-                        actual_source = _hash_provenance_path(root, source_name)
+                        actual_source = _hash_provenance_path(
+                            root, source_name, allowed_roots=allowed_roots
+                        )
                         if actual_source is None:
                             gaps.append(f"{label} producer source bytes are unavailable")
                         elif actual_source != source_digest:
@@ -9057,7 +9089,7 @@ def _validate_review_provenance(
                     f"{label} {path_text!r} is outside the agent-view-only input contract"
                 )
             try:
-                _read_input_record(root, item)
+                _read_input_record(root, item, allowed_roots=allowed_roots)
             except OSError:
                 gaps.append(f"{label} bytes are unavailable for hash verification")
             except V5ArtifactError as error:
@@ -9075,6 +9107,7 @@ def _validate_review_provenance(
                 allowed_inputs,
                 artifacts=artifacts,
                 root=root,
+                allowed_roots=allowed_roots,
             )
             errors.extend(packet_errors)
             gaps.extend(packet_gaps)
@@ -9082,6 +9115,7 @@ def _validate_review_provenance(
             record.get("historical_projection_receipts"),
             allowed_by_id=allowed_by_id,
             root=root,
+            allowed_roots=allowed_roots,
         )
         errors.extend(history_errors)
         gaps.extend(history_gaps)
@@ -9129,6 +9163,7 @@ def _validate_review_provenance(
                 contributor.get("reviewer"),
                 label=f"{scope_name} contributor {contributor_task}",
                 root=root,
+                allowed_roots=allowed_roots,
                 author_task=contributor_task,
                 expected_artifact_sha=None,
                 authored_outputs=tuple(contributor_output_inventory.values()),
@@ -9151,6 +9186,7 @@ def _validate_review_provenance(
             reviewer,
             label=scope_name,
             root=root,
+            allowed_roots=allowed_roots,
             author_task=task if isinstance(task, str) else None,
             expected_artifact_sha=receipt_refs.get(scope_name, {}).get("artifact_sha256"),
             authored_outputs=tuple(own_outputs.values()),
@@ -9190,6 +9226,7 @@ def _validate_agent_view_packet_inputs(
     *,
     artifacts: DatasetArtifactsV5,
     root: Path,
+    allowed_roots: Sequence[Path] = (),
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     errors: list[str] = []
     gaps: list[str] = []
@@ -9218,8 +9255,8 @@ def _validate_agent_view_packet_inputs(
     packet_record = episode_files[0]
     card_record = rendered_files[0]
     try:
-        packet_bytes = _read_input_record(root, packet_record)
-        card_bytes = _read_input_record(root, card_record)
+        packet_bytes = _read_input_record(root, packet_record, allowed_roots=allowed_roots)
+        card_bytes = _read_input_record(root, card_record, allowed_roots=allowed_roots)
     except (OSError, V5ArtifactError) as error:
         gaps.append(f"agent-view sanitized inputs are unavailable: {error}")
         return errors, gaps, {}
@@ -9339,7 +9376,9 @@ def _validate_agent_view_packet_inputs(
     )
 
 
-def _read_input_record(root: Path, record: Mapping[str, Any]) -> bytes:
+def _read_input_record(
+    root: Path, record: Mapping[str, Any], *, allowed_roots: Sequence[Path] = ()
+) -> bytes:
     """Read exact provenance bytes, preferring a verified archive copy when present."""
     path_text = record.get("path")
     digest = record.get("sha256")
@@ -9354,16 +9393,28 @@ def _read_input_record(root: Path, record: Mapping[str, Any]) -> bytes:
         or (archive_root is not None and (not isinstance(archive_root, str) or not archive_root))
     ):
         raise V5ArtifactError("provenance input record is malformed")
-    candidates = [path_text]
+    candidates: list[tuple[str, Sequence[Path]]] = []
     if isinstance(archive_path, str):
-        archive_candidate = Path(archive_path)
-        if not archive_candidate.is_absolute() and isinstance(archive_root, str):
-            archive_candidate = Path(archive_root) / archive_candidate
-        candidates.insert(0, str(archive_candidate))
+        rel = PurePosixPath(archive_path)
+        if rel.is_absolute() or ".." in rel.parts or "\\" in archive_path:
+            raise V5ArtifactError("provenance archive path is unsafe")
+        archive_base = (
+            _resolve_provenance_path(root, archive_root, allowed_roots=allowed_roots)
+            if isinstance(archive_root, str)
+            else root.resolve(strict=True)
+        )
+        archive_candidate = archive_base / Path(*rel.parts)
+        resolved_candidate = _resolve_provenance_path(
+            root, str(archive_candidate), allowed_roots=allowed_roots
+        )
+        if not resolved_candidate.is_relative_to(archive_base):
+            raise V5ArtifactError("provenance archive path escapes its archive root")
+        candidates.append((str(resolved_candidate), allowed_roots))
+    candidates.append((path_text, ()))
     saw_bytes = False
-    for candidate in candidates:
+    for candidate, candidate_roots in candidates:
         try:
-            payload = _read_provenance_input(root, candidate)
+            payload = _read_provenance_input(root, candidate, allowed_roots=candidate_roots)
         except OSError:
             continue
         saw_bytes = True
@@ -9374,28 +9425,62 @@ def _read_input_record(root: Path, record: Mapping[str, Any]) -> bytes:
     raise OSError("provenance input bytes and archive copy are unavailable")
 
 
-def _read_provenance_input(root: Path, path_text: str) -> bytes:
+def _read_provenance_input(
+    root: Path, path_text: str, *, allowed_roots: Sequence[Path] = ()
+) -> bytes:
     if _sensitive_provenance_path(path_text):
         raise V5ArtifactError("sensitive provenance input is never read")
-    path = Path(path_text)
-    target = path if path.is_absolute() else root / path
-    resolved = target.resolve(strict=True)
+    resolved = _resolve_provenance_path(root, path_text, allowed_roots=allowed_roots)
     if _sensitive_provenance_path(str(resolved)):
         raise V5ArtifactError("provenance input resolves to a sensitive path and is never read")
     return resolved.read_bytes()
 
 
-def _hash_provenance_path(root: Path, path_text: str) -> str | None:
+def _resolve_provenance_path(
+    root: Path, path_text: str, *, allowed_roots: Sequence[Path] = ()
+) -> Path:
+    """Resolve a provenance path without permitting traversal, symlinks, or root escape."""
+    if "\x00" in path_text:
+        raise V5ArtifactError("provenance path contains a NUL byte")
     path = Path(path_text)
-    target = path if path.is_absolute() else root / path
+    if "\\" in path_text or ".." in path.parts:
+        raise V5ArtifactError("provenance path contains traversal syntax")
+    resolved_root = root.resolve(strict=True)
+    target = path if path.is_absolute() else resolved_root / path
+    boundaries = (resolved_root, *(base.resolve(strict=True) for base in allowed_roots))
+    boundary = next((base for base in boundaries if target.is_relative_to(base)), None)
+    if boundary is None:
+        raise V5ArtifactError(
+            "provenance path is outside the repository root or an explicitly allowed base root"
+        )
+    relative = target.relative_to(boundary)
+    if ".." in relative.parts:
+        raise V5ArtifactError("provenance path contains traversal syntax")
+    current = boundary
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            resolved_link = current.resolve(strict=True)
+            if _sensitive_provenance_path(str(resolved_link)):
+                raise V5ArtifactError("provenance path resolves to a sensitive path")
+            raise V5ArtifactError("provenance path contains a symlink")
+    resolved = target.resolve(strict=True)
+    if not resolved.is_relative_to(boundary):
+        raise V5ArtifactError("provenance path resolves outside its allowed root")
+    return resolved
+
+
+def _hash_provenance_path(
+    root: Path, path_text: str, *, allowed_roots: Sequence[Path] = ()
+) -> str | None:
     if _sensitive_provenance_path(path_text):
         return None
     try:
-        resolved = target.resolve(strict=True)
+        resolved = _resolve_provenance_path(root, path_text, allowed_roots=allowed_roots)
         if _sensitive_provenance_path(str(resolved)):
             return None
         return hashlib.sha256(resolved.read_bytes()).hexdigest()
-    except OSError:
+    except (OSError, V5ArtifactError):
         return None
 
 
@@ -9582,7 +9667,10 @@ def _validate_bound_reference_receipt(
         review_evidence = {}
         if loaded_review is not None:
             review_errors, review_gaps, review_scopes = _validate_review_provenance(
-                loaded_review[1], artifacts=artifacts, receipt_refs=reference_hashes
+                loaded_review[1],
+                artifacts=artifacts,
+                receipt_refs=reference_hashes,
+                allowed_roots=(path.parent,),
             )
             errors.extend(review_errors)
             gaps.extend(review_gaps)

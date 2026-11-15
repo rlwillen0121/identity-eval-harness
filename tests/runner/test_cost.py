@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -272,6 +274,23 @@ def test_tracker_reported_cli_never_uses_api_rates() -> None:
     assert cli.metered_api_usd is None
     assert cli.reported_usd == pytest.approx(0.5)
     assert cli.spend_usd == pytest.approx(0.5)
+
+
+def test_tracker_cost_aggregates_saturate_and_remain_budget_safe() -> None:
+    guard = BudgetGuard(1.0)
+    tracker = guard.track("large-reported", "m", "reported")
+    tracker.add(Usage(), reported_cost_usd=1e308)
+    tracker.add(Usage(), reported_cost_usd=1e308)
+
+    assert tracker.reported_usd == sys.float_info.max
+    assert tracker.spend_usd == sys.float_info.max
+    assert tracker.saturated is True
+    assert tracker.spend_saturated is True
+    assert math.isfinite(tracker.reported_usd)
+    assert math.isfinite(tracker.spend_usd)
+    assert guard.spend_usd == sys.float_info.max
+    assert math.isfinite(guard.spend_usd)
+    assert guard.would_exceed()
 
 
 def test_budget_guard_sums_across_configs() -> None:

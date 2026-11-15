@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, NoReturn, cast
 
+from identitybench.report.markdown_text import code_cell, escape_cell, escape_inline
 from identitybench.v4.jcs import jcs_dumps
 from identitybench.v5.schemas import (
     DescriptiveUsageSummaryV5,
@@ -222,7 +223,7 @@ class V5FullTieBreakArtifact:
 
 
 def _clean_table_text(value: object) -> str:
-    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+    return escape_cell(str(value))
 
 
 def _fmt(value: float | int | Decimal | None, precision: int = 3) -> str:
@@ -303,13 +304,13 @@ def render_v5_markdown_report(artifact: V5ReportArtifact) -> str:
         ("max_turns_exceeded_count", "MAX_TURNS termination count"),
     )
     lines = [
-        f"# IdentityBench v5 report: {_clean_table_text(context.model_id)}",
+        f"# IdentityBench v5 report: {escape_inline(context.model_id)}",
         "",
-        f"- Suite: `{_clean_table_text(context.suite_id)}`",
-        f"- Comparison track: `{_clean_table_text(context.comparison_track)}`",
-        f"- Reasoning effort: `{_clean_table_text(context.reasoning_effort)}`",
-        f"- Topology: `{_clean_table_text(context.topology)}`",
-        f"- Steering mode: `{_clean_table_text(context.steering_mode)}`",
+        f"- Suite: {code_cell(context.suite_id)}",
+        f"- Comparison track: {code_cell(context.comparison_track)}",
+        f"- Reasoning effort: {code_cell(context.reasoning_effort)}",
+        f"- Topology: {code_cell(context.topology)}",
+        f"- Steering mode: {code_cell(context.steering_mode)}",
         f"- Planned repeats per episode: {context.planned_repeats_per_episode}",
         f"- Planned episodes: {summary.n_episodes}",
         (
@@ -478,7 +479,7 @@ def render_v5_markdown_report(artifact: V5ReportArtifact) -> str:
         ]
     )
     if usage is not None:
-        currency_label = usage.currency_code or "USD"
+        currency_label = escape_inline(usage.currency_code or "USD")
         lines.extend(
             [
                 f"- Wall time (ms): {_fmt(usage.elapsed_wall_time_ms, 0)}",
@@ -1874,8 +1875,8 @@ def _render_track_tables_markdown(
                 f"{run_artifact.summary.observed_slots}/{run_artifact.summary.planned_slots}"
             )
             lines.append(
-                f"| {_clean_table_text(run_key)} | `{_clean_table_text(ctx.reasoning_effort)}` "
-                f"| `{_clean_table_text(ctx.topology)}` "
+                f"| {_clean_table_text(run_key)} | {code_cell(ctx.reasoning_effort)} "
+                f"| {code_cell(ctx.topology)} "
                 f"| COMPLETE ({slot_ratio}) "
                 f"| {gsrr} | {bounds} | rank #{rank_idx} |"
             )
@@ -1886,8 +1887,8 @@ def _render_track_tables_markdown(
                 f"{run_artifact.summary.observed_slots}/{run_artifact.summary.planned_slots}"
             )
             lines.append(
-                f"| {_clean_table_text(run_key)} | `{_clean_table_text(ctx.reasoning_effort)}` "
-                f"| `{_clean_table_text(ctx.topology)}` "
+                f"| {_clean_table_text(run_key)} | {code_cell(ctx.reasoning_effort)} "
+                f"| {code_cell(ctx.topology)} "
                 f"| INCOMPLETE ({slot_ratio}) "
                 f"| UNMEASURED | {bounds} | RANKING_BLOCKED |"
             )
@@ -1960,7 +1961,7 @@ def render_v5_core_inference_markdown(artifact: V5CoreInferenceArtifact) -> str:
         lines.extend(["", "## Additional preregistered confirmatory families", ""])
         for family_name, family_result in sorted(artifact.additional_families.items()):
             lines.append(
-                f"- `{_clean_table_text(family_name)}` (`{family_result.family_kind}`): "
+                f"- {code_cell(family_name)} (`{family_result.family_kind}`): "
                 f"`{family_result.status}` ({family_result.complete_pair_count}/"
                 f"{family_result.planned_pair_count} planned pairs)"
             )

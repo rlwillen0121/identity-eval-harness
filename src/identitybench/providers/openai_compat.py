@@ -70,7 +70,12 @@ from openai.types.chat import ChatCompletion
 from openai.types.responses import Response
 
 from identitybench.providers._env import paired_api_key_env
-from identitybench.providers._json import load_object
+from identitybench.providers._json import (
+    bounded_token_count,
+    load_object,
+    raw_usage_payload,
+    sanitize_response,
+)
 from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     Message,
@@ -126,13 +131,13 @@ def _usage(reply: Reply) -> Usage:
         return Usage()
     prompt_details = usage.prompt_tokens_details
     completion_details = usage.completion_tokens_details
-    cached = (prompt_details.cached_tokens or 0) if prompt_details is not None else 0
-    cache_write = getattr(prompt_details, "cache_write_tokens", None) or 0
-    reasoning = (completion_details.reasoning_tokens or 0) if completion_details is not None else 0
-    prompt = usage.prompt_tokens or 0
+    cached = bounded_token_count(getattr(prompt_details, "cached_tokens", None))
+    cache_write = bounded_token_count(getattr(prompt_details, "cache_write_tokens", None))
+    reasoning = bounded_token_count(getattr(completion_details, "reasoning_tokens", None))
+    prompt = bounded_token_count(usage.prompt_tokens)
     return Usage(
         input_tokens=max(prompt - cached - cache_write, 0),
-        output_tokens=usage.completion_tokens or 0,
+        output_tokens=bounded_token_count(usage.completion_tokens),
         cache_read_tokens=cached,
         cache_write_tokens=cache_write,
         reasoning_tokens=reasoning,
@@ -148,12 +153,14 @@ def _responses_usage(response: Response) -> Usage:
         return Usage()
     input_details = getattr(usage, "input_tokens_details", None)
     output_details = getattr(usage, "output_tokens_details", None)
-    cached = getattr(input_details, "cached_tokens", None) or 0
-    cache_write = getattr(input_details, "cache_write_tokens", None) or 0
-    reasoning = getattr(output_details, "reasoning_tokens", None) or 0
+    cached = bounded_token_count(getattr(input_details, "cached_tokens", None))
+    cache_write = bounded_token_count(getattr(input_details, "cache_write_tokens", None))
+    reasoning = bounded_token_count(getattr(output_details, "reasoning_tokens", None))
     return Usage(
-        input_tokens=max((getattr(usage, "input_tokens", None) or 0) - cached - cache_write, 0),
-        output_tokens=getattr(usage, "output_tokens", None) or 0,
+        input_tokens=max(
+            bounded_token_count(getattr(usage, "input_tokens", None)) - cached - cache_write, 0
+        ),
+        output_tokens=bounded_token_count(getattr(usage, "output_tokens", None)),
         cache_read_tokens=cached,
         cache_write_tokens=cache_write,
         reasoning_tokens=reasoning,
@@ -180,6 +187,11 @@ def _usage_extra(completion: Reply) -> dict[str, Any]:
     """The non-OpenAI fields of ``usage`` (where OpenRouter puts cost and BYOK details)."""
     usage = completion.usage
     return (usage.model_extra if usage is not None else None) or {}
+
+
+def _raw_usage_metadata(completion: Reply) -> dict[str, Any]:
+    usage = raw_usage_payload(completion.usage)
+    return {"raw_usage": usage} if usage is not None else {}
 
 
 def _is_byok(completion: Reply) -> bool:
@@ -560,7 +572,7 @@ class OpenAICompatProvider:
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
         start = time.perf_counter()
-        response = await self._complete(request)
+        response = sanitize_response(await self._complete(request), self.kind)
         response.latency_s = time.perf_counter() - start
         ignored = self._ignored_params(request)
         if ignored:
@@ -637,7 +649,7 @@ class OpenAICompatProvider:
             if isinstance(completion, Response):
                 return self._from_responses(completion, request)
             return self._to_response(completion, request)
-        except (AttributeError, TypeError, ValueError, RecursionError) as exc:
+        except (AttributeError, TypeError, ValueError, RecursionError, OverflowError) as exc:
             # A compatible server can return a shape the SDK accepted leniently but that lacks
             # fields a real completion always has; that is a failed call, not a crash. The call
             # may still have been billed, so its usage and reported cost are kept when readable.
@@ -674,15 +686,18 @@ class OpenAICompatProvider:
         with contextlib.suppress(AttributeError, TypeError, ValueError):
             response.reported_cost_usd = _reported_cost(completion)
             gateway = _gateway_raw(completion)
-            if gateway:
-                response.raw = {**(response.raw or {}), **gateway}
+            response.raw = {
+                **(response.raw or {}),
+                **gateway,
+                **_raw_usage_metadata(completion),
+            }
 
     def _to_response(self, completion: ChatCompletion, request: ModelRequest) -> ModelResponse:
         response = ModelResponse(
             usage=_usage(completion),
             served_model=completion.model or None,
             reported_cost_usd=_reported_cost(completion),
-            raw={"id": completion.id},
+            raw={"id": completion.id, **_raw_usage_metadata(completion)},
         )
         fingerprint = getattr(completion, "system_fingerprint", None)
         if fingerprint and response.raw is not None:
@@ -699,6 +714,8 @@ class OpenAICompatProvider:
         choice = completion.choices[0]
         message = choice.message
         response.stop_reason = choice.finish_reason
+        if message.content is not None and not isinstance(message.content, str):
+            raise ValueError("message.content must be text or null")
         response.text = message.content or None
         if message.refusal or choice.finish_reason == "content_filter":
             response.refused = True
@@ -721,7 +738,7 @@ class OpenAICompatProvider:
             usage=_usage(reply),
             served_model=reply.model or None,
             reported_cost_usd=_reported_cost(reply),
-            raw={"id": reply.id, **_gateway_raw(reply)},
+            raw={"id": reply.id, **_gateway_raw(reply), **_raw_usage_metadata(reply)},
         )
         if reply.status == "failed" or reply.error is not None:
             error = reply.error

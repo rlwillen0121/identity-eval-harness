@@ -184,7 +184,10 @@ class CursorCliProvider(CliProvider):
                 cache_read_tokens=as_int(usage_in.get("cacheReadTokens")),
                 cache_write_tokens=as_int(usage_in.get("cacheWriteTokens")),
             ),
-            raw={key: payload[key] for key in _RAW_KEYS if key in payload} or None,
+            raw={
+                "raw_usage": usage_in,
+                **{key: payload[key] for key in _RAW_KEYS if key in payload},
+            },
         )
         if payload.get("is_error") or result.returncode != 0:
             message = text if isinstance(text, str) and text else "the CLI reported an error"

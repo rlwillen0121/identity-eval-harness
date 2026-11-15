@@ -30,6 +30,7 @@ from identitybench.v5.report import (
     validate_comparator_manifest,
     write_v5_report,
 )
+from identitybench.v5.schemas import DescriptiveUsageSummaryV5
 from identitybench.v5.scoring import (
     CORE_FAMILIES_V5,
     CORE_REGIMES_V5,
@@ -1540,3 +1541,41 @@ def test_core_inference_renders_strict_bh_lt_and_validates_additional_family_art
             (("model-a", "model-b"),),
             additional_family_artifacts={"model-a-badseal": wrong_seal},
         )
+
+
+def test_untrusted_report_label_uses_safe_markdown_cell_text() -> None:
+    from identitybench.v5.report import _clean_table_text
+
+    rendered = _clean_table_text("` <img src=x onerror=alert(1)> | https://bad.example\nnext")
+    assert "\n" not in rendered
+    assert "\\|" in rendered
+    assert "https://" not in rendered
+    assert "<img" not in rendered.replace("\\<", "")
+
+
+def test_currency_label_is_escaped_in_rendered_report() -> None:
+    artifact = _model_report_artifact("model-test", "v5_core", ("F01",))
+    hostile_currency = "USD\n<img src=x onerror=alert(1)>\nhttps://evil.example"
+    usage = DescriptiveUsageSummaryV5(
+        run_config_sha256="d" * 64,
+        planned_attempt_slots=1,
+        completed_attempts=1,
+        incomplete_provider_quota_attempts=0,
+        incomplete_provider_failure_attempts=0,
+        incomplete_context_attempts=0,
+        incomplete_harness_attempts=0,
+        attempt_status_counts_json='{"COMPLETED":1}',
+        currency_code=hostile_currency,
+        accounting_coverage_status="COMPLETE",
+    )
+    artifact = replace(artifact, summary=replace(artifact.summary, descriptive_usage=usage))
+
+    rendered = render_v5_markdown_report(artifact)
+    currency_line = next(
+        line for line in rendered.splitlines() if line.startswith("- Estimated cost (micros")
+    )
+
+    assert "https://" not in currency_line
+    assert "\\<img" in currency_line
+    assert "https&#58;//evil.example" in currency_line
+    assert "\n" not in currency_line

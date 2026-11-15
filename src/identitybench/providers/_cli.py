@@ -64,7 +64,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar, TypedDict
 
-from identitybench.providers._json import load_object
+from identitybench.providers._json import (
+    bounded_token_count,
+    load_object,
+    safe_nonnegative_float_add,
+    sanitize_response,
+)
 from identitybench.providers._subprocess import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BASE_DELAY_S,
@@ -222,20 +227,17 @@ def as_int(value: object) -> int:
 
     ``json.loads`` accepts ``NaN`` and ``Infinity``, so non-finite floats count as malformed.
     """
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(value, 0)
-    if isinstance(value, float) and math.isfinite(value):
-        return max(int(value), 0)
-    return 0
+    return bounded_token_count(value)
 
 
 def as_float(value: object) -> float | None:
     """A reported cost from CLI JSON; missing, malformed or non-finite values are None."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
     return number if math.isfinite(number) else None
 
 
@@ -1022,7 +1024,7 @@ class CliProvider(ABC):
         return name in COMMON_ENV_KEEP or name.startswith(COMMON_ENV_KEEP_PREFIXES)
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
-        response = await self._complete(request)
+        response = sanitize_response(await self._complete(request), self.kind)
         ignored = self._ignored_params(request)
         if ignored:
             response.raw = {**(response.raw or {}), "ignored_params": ignored}
@@ -1200,10 +1202,24 @@ def _merge_attempts(final: ModelResponse, attempts: Sequence[ModelResponse], wal
     """
     for earlier in attempts[:-1]:
         final.usage.add(earlier.usage)
-    costs = [item.reported_cost_usd for item in attempts if item.reported_cost_usd is not None]
-    final.reported_cost_usd = sum(costs) if costs else None
-    final.raw = {
+    costs = [
+        item.reported_cost_usd
+        for item in attempts
+        if item.reported_cost_usd is not None
+        and math.isfinite(item.reported_cost_usd)
+        and item.reported_cost_usd >= 0
+    ]
+    reported_cost_total = 0.0
+    reported_cost_saturated = False
+    for cost in costs:
+        reported_cost_total, saturated = safe_nonnegative_float_add(reported_cost_total, cost)
+        reported_cost_saturated = reported_cost_saturated or saturated
+    final.reported_cost_usd = reported_cost_total if costs else None
+    raw = {
         **(final.raw or {}),
         "attempts": len(attempts),
         "wall_s": round(wall_s, 3),
     }
+    if reported_cost_saturated:
+        raw["reported_cost_saturated"] = True
+    final.raw = raw
