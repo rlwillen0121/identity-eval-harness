@@ -479,3 +479,151 @@ async def test_error_status_classifies_structured_metadata() -> None:
     assert resp_other.raw is not None
     assert resp_other.raw["error_code"] == "CLI_STATUS_FAILED"
     assert resp_other.raw["cli_buffered_error"] is True
+
+
+_EMPTY_FUNCTION_CALL_ERROR = (
+    "Malformed function call: Failed to parse function call: "
+    "Function call is empty - no input to parse."
+)
+
+
+def _step_stream(
+    step_events: list[dict[str, object]],
+    result: dict[str, object],
+    *,
+    returncode: int = 0,
+    log: str | None = LOG,
+) -> object:
+    events = [INIT, *step_events, {"event": "result", "result": result}]
+    stdout = "\n".join(json.dumps(event) for event in events) + "\n"
+
+    def respond(command: Command) -> ProcessResult:
+        if log is not None:
+            Path(flag_value(command.argv, "--log-file")).write_text(log, encoding="utf-8")
+        return ok(stdout, returncode=returncode)
+
+    return respond
+
+
+def _agent_step_events(step_index: int, chunks: tuple[str, ...]) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = [
+        {
+            "event": "step_update",
+            "step_update": {
+                "conversation_id": CONVERSATION,
+                "step_index": step_index,
+                "state": "RUNNING",
+                "step_type": "agent_response",
+                "text_delta": chunk,
+            },
+        }
+        for chunk in chunks
+    ]
+    events.append(
+        {
+            "event": "step_update",
+            "step_update": {
+                "conversation_id": CONVERSATION,
+                "step_index": step_index,
+                "state": "DONE",
+                "step_type": "agent_response",
+            },
+        }
+    )
+    return events
+
+
+async def test_recovers_completed_action_response_on_empty_function_call() -> None:
+    first_json = '{"actions":[{"tool":"get_identity","args":{"id":"u1"}}]}'
+    second_json = '{"decision":"DENY","rules":["sec-001"]}'
+    step_events = [
+        *_agent_step_events(1, (first_json[:20], first_json[20:])),
+        *_agent_step_events(3, (second_json[:18], second_json[18:])),
+    ]
+    result = {
+        "conversation_id": CONVERSATION,
+        "status": "ERROR",
+        "error": _EMPTY_FUNCTION_CALL_ERROR,
+        "response": f"{first_json}\n{second_json}",
+        "duration_seconds": 4.2,
+        "num_turns": 2,
+        "usage": {
+            "input_tokens": 1200,
+            "output_tokens": 80,
+            "thinking_tokens": 30,
+            "cache_read_tokens": 200,
+            "total_tokens": 1280,
+        },
+    }
+    request = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
+    runner = FakeRunner(_step_stream(step_events, result, returncode=0))
+    response = await provider(runner, max_retries=0).complete(request)
+
+    assert response.ok is True
+    assert response.text == second_json
+    assert (response.usage.input_tokens, response.usage.cache_read_tokens) == (1000, 200)
+    assert (response.usage.output_tokens, response.usage.reasoning_tokens) == (80, 30)
+    assert response.raw is not None
+    assert response.raw["recovered_empty_function_call"] is True
+    assert "error_code" not in response.raw
+    assert "cli_buffered_error" not in response.raw
+
+
+async def test_does_not_recover_empty_function_call_for_structured_request() -> None:
+    valid_json = '{"decision":"DENY","rules":["sec-001"]}'
+    step_events = _agent_step_events(1, (valid_json,))
+    result = {
+        "conversation_id": CONVERSATION,
+        "status": "ERROR",
+        "error": _EMPTY_FUNCTION_CALL_ERROR,
+        "response": valid_json,
+        "usage": {"input_tokens": 100, "output_tokens": 25, "thinking_tokens": 5},
+    }
+    request = make_request(schema=DECISION_SCHEMA)
+    response = await provider(
+        FakeRunner(_step_stream(step_events, result, returncode=0)), max_retries=0
+    ).complete(request)
+
+    assert not response.ok
+    assert response.raw is not None
+    assert response.raw["error_code"] == "CLI_MALFORMED_FUNCTION_CALL"
+
+
+async def test_does_not_recover_empty_function_call_when_action_json_is_truncated() -> None:
+    truncated = '{"actions":['
+    step_events = _agent_step_events(1, (truncated,))
+    result = {
+        "conversation_id": CONVERSATION,
+        "status": "ERROR",
+        "error": _EMPTY_FUNCTION_CALL_ERROR,
+        "response": truncated,
+        "usage": {"input_tokens": 100, "output_tokens": 10, "thinking_tokens": 0},
+    }
+    request = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
+    response = await provider(
+        FakeRunner(_step_stream(step_events, result, returncode=0)), max_retries=0
+    ).complete(request)
+
+    assert not response.ok
+    assert response.raw is not None
+    assert response.raw["error_code"] == "CLI_MALFORMED_FUNCTION_CALL"
+
+
+async def test_does_not_recover_for_non_empty_tool_call_error() -> None:
+    valid_json = '{"decision":"DENY","rules":["sec-001"]}'
+    step_events = _agent_step_events(1, (valid_json,))
+    result = {
+        "conversation_id": CONVERSATION,
+        "status": "ERROR",
+        "error": "unknown tool: query_sources",
+        "response": valid_json,
+        "usage": {"input_tokens": 100, "output_tokens": 25, "thinking_tokens": 0},
+    }
+    request = replace(make_request(schema=DECISION_SCHEMA), schema_name=ACTION_SCHEMA_NAME)
+    response = await provider(
+        FakeRunner(_step_stream(step_events, result, returncode=0)), max_retries=0
+    ).complete(request)
+
+    assert not response.ok
+    assert response.raw is not None
+    assert response.raw["error_code"] == "CLI_MALFORMED_FUNCTION_CALL"

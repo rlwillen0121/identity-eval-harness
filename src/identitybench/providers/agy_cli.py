@@ -79,6 +79,7 @@ from identitybench.providers._cli import (
     render_transcript,
     structured_text,
 )
+from identitybench.providers._json import load_object
 from identitybench.providers._subprocess import ProcessResult
 from identitybench.providers.base import ModelRequest, ModelResponse, Usage
 
@@ -119,6 +120,36 @@ def served_model(log_text: str) -> str | None:
     for match in _RESOLVED_RE.finditer(log_text):
         found = match.group(1) or match.group(2)
     return found
+
+
+def _is_structured_request(request: ModelRequest) -> bool:
+    """Whether ``request`` uses ``--json-schema`` / the ``finish`` tool."""
+    return request.output_schema is not None and request.schema_name != ACTION_SCHEMA_NAME
+
+
+def _recover_completed_agent_text(
+    events: list[dict[str, Any]], *, require_json_object: bool
+) -> str | None:
+    """Return the last completed ``agent_response`` text from ``events`` when valid."""
+    chunks_by_step: dict[int, list[str]] = {}
+    done_steps: list[int] = []
+    for event in events:
+        if event.get("event") != "step_update":
+            continue
+        su = as_dict(event.get("step_update"))
+        step_index = su.get("step_index")
+        if type(step_index) is not int or su.get("step_type") != "agent_response":
+            continue
+        delta = su.get("text_delta")
+        if isinstance(delta, str):
+            chunks_by_step.setdefault(step_index, []).append(delta)
+        if su.get("state") == "DONE":
+            done_steps.append(step_index)
+    for step_index in reversed(done_steps):
+        candidate = "".join(chunks_by_step.get(step_index, ())).strip()
+        if candidate and ((not require_json_object) or (load_object(candidate) is not None)):
+            return candidate
+    return None
 
 
 class AgyCliProvider(CliProvider):
@@ -168,7 +199,7 @@ class AgyCliProvider(CliProvider):
         if not system.strip():
             system = NEUTRAL_SYSTEM
             notes["substituted_system"] = NEUTRAL_SYSTEM
-        structured = request.output_schema is not None and request.schema_name != ACTION_SCHEMA_NAME
+        structured = _is_structured_request(request)
         if request.output_schema is not None and not structured:
             notes["json_schema"] = "withheld (JSON action protocol turn)"
         message = {
@@ -208,9 +239,10 @@ class AgyCliProvider(CliProvider):
         return (io_dir / LOG_FILE,)
 
     def _parse(self, result: ProcessResult, request: ModelRequest, io_dir: Path) -> ModelResponse:
+        events = list(parse_jsonl(result.stdout))
         results = [
             as_dict(event.get("result"))
-            for event in parse_jsonl(result.stdout)
+            for event in events
             if event.get("event") == "result"
         ]
         if not results:
@@ -226,8 +258,8 @@ class AgyCliProvider(CliProvider):
 
         usage_in = as_dict(payload.get("usage"))
         cache_read = as_int(usage_in.get("cache_read_tokens"))
-        structured = payload.get("structured_output")
-        parsed = structured if isinstance(structured, dict) else None
+        structured_output = payload.get("structured_output")
+        parsed = structured_output if isinstance(structured_output, dict) else None
         text, cli_text = structured_text(payload.get("response"), parsed)
         raw = {"raw_usage": usage_in, **{key: payload[key] for key in _RAW_KEYS if key in payload}}
         if cli_text is not None:
@@ -248,8 +280,24 @@ class AgyCliProvider(CliProvider):
             served_model=served_model(log_text),
             raw=raw or None,
         )
+        structured = _is_structured_request(request)
         status = payload.get("status")
         if status != "SUCCESS":
+            if (
+                not structured
+                and result.returncode == 0
+                and "function call is empty - no input to parse"
+                in str(payload.get("error") or "").lower()
+            ):
+                recovered_text = _recover_completed_agent_text(
+                    events, require_json_object=request.output_schema is not None
+                )
+                if recovered_text is not None:
+                    response.text = recovered_text
+                    meta = dict(response.raw or {})
+                    meta["recovered_empty_function_call"] = True
+                    response.raw = meta
+                    return response
             message = payload.get("error") or f"status {status!r}"
             response.error = self._error_text(str(message), result)
             haystack = f"{message}\n{log_text}".lower()
