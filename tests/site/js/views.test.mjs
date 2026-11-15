@@ -246,6 +246,10 @@ test('self-hosted fonts exist, are preloaded from the page, and ship with their 
   assert.doesNotMatch(page, /<style[\s>]/);
   assert.doesNotMatch(page, /<script(?![^>]*\ssrc="assets\/)[^>]*>/);
   assert.doesNotMatch(page, /<link[^>]+href="https?:\/\/(?!identitybench\.ai\/)/);
+
+  // Study disclaimer appears in the hero study note and site footer.
+  assert.match(page, /<p class="study-note">[^<]*Independent exploratory research study[^<]*synthetic environments[^<]*not an official or vendor-endorsed benchmark\.?<\/p>/i);
+  assert.match(page, /<footer class="site-footer">[\s\S]*independent, exploratory research study[\s\S]*synthetic enterprise environments[\s\S]*not an official standards-body or vendor-endorsed benchmark[\s\S]*<\/footer>/i);
 });
 
 test('mounted table spans all eight columns for detail and empty rows', () => {
