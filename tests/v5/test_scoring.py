@@ -2146,3 +2146,57 @@ def test_complete_provider_billed_usage_preserves_suite_cost_when_estimated_is_n
     assert summary.descriptive_usage is not None
     assert summary.descriptive_usage.provider_billed_cost_micros == 42_000
     assert summary.g_econ_01_details["suite_cost_usd_micros"] == 42_000
+
+
+def test_raw_execution_regrades_out_of_phase_rejected_stage_attempts() -> None:
+    cell = next(
+        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
+    )
+    episode, sealed_oracle = build_v5_episode(cell)
+    execution = asyncio.run(
+        run_v5_baseline_on_episode(
+            "oracle_team_replay",
+            episode,
+            sealed_oracle.omniscient_s1,
+        )
+    )
+    assert execution.phase1.commit is not None
+    assert execution.phase2.commit is not None
+    p1_slice_ids = execution.phase1.stage_attempts[0].delivered_slice_ids
+    p2_slice_ids = execution.phase2.stage_attempts[0].delivered_slice_ids
+    p1_mutations = execution.phase1.commit.mutations
+    p2_mutations = execution.phase2.commit.mutations
+
+    runtime = RuntimeV5(episode, sealed_oracle.omniscient_s1)
+    assert runtime.query_sources(1, p1_slice_ids).status == "OK"
+    premature_p2 = runtime.stage_phase_mutations(2, "stg_premature_p2", ())
+    assert premature_p2.status == "REJECTED_STRUCTURAL"
+    assert runtime.stage_phase_mutations(1, "stg_p1", p1_mutations).status == "STAGED"
+    assert runtime.commit_phase_mutations(1, "stg_p1").status == "COMMITTED_AND_ADVANCED"
+    late_p1 = runtime.stage_phase_mutations(1, "stg_late_p1", ())
+    assert late_p1.status == "REJECTED_STRUCTURAL"
+    assert runtime.query_sources(2, p2_slice_ids).status == "OK"
+    assert runtime.stage_phase_mutations(2, "stg_p2", p2_mutations).status == "STAGED"
+
+    replayed = replace(
+        execution,
+        attempt_status="WITHIN_PROTOCOL_STEP_LIMIT",
+        termination_reason="MAX_TURNS_EXCEEDED",
+        phase2_committed=False,
+        phase1=_phase_trajectory(runtime, 1),
+        phase2=_phase_trajectory(runtime, 2),
+    )
+    expected_input, expected_score = score_execution_v5(replayed, episode, sealed_oracle)
+    raw = replayed.to_json_dict()
+    raw_input, raw_score = score_execution_v5(raw, episode, sealed_oracle)
+    assert raw_input == expected_input
+    assert raw_score == expected_score
+
+    # Forging receipt_status="STAGED" on an out-of-phase view must still fail closed.
+    tampered = json.loads(json.dumps(raw))
+    tampered["phase2"]["stage_attempts"][0]["receipt_status"] = "STAGED"
+    tampered["phase2"]["attempts"][0]["receipt_status"] = "STAGED"
+    with pytest.raises(
+        ValueError, match="raw trajectory view disagrees with the sealed episode context"
+    ):
+        score_execution_v5(tampered, episode, sealed_oracle)

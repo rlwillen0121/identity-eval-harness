@@ -1071,6 +1071,7 @@ def _view_from_raw_snapshot(
     phase_index: int,
     base_view: Any | None,
     expected_manifest: Any,
+    expected_view_phase: int | None = None,
 ) -> Any:
     from pydantic import TypeAdapter
 
@@ -1095,7 +1096,8 @@ def _view_from_raw_snapshot(
         raise ValueError("raw trajectory view has an invalid manifest or policy card") from error
     if manifest != expected_manifest or policy_card != episode.policy_card:
         raise ValueError("raw trajectory view disagrees with the sealed episode context")
-    if manifest.phase_index != phase_index:
+    required_view_phase = phase_index if expected_view_phase is None else expected_view_phase
+    if manifest.phase_index != required_view_phase:
         raise ValueError("raw trajectory view has the wrong phase index")
     raw_slices = raw_snapshot.get("delivered_slices")
     if not isinstance(raw_slices, list):
@@ -1141,6 +1143,7 @@ def _snapshot_from_raw_mapping(
     phase_index: int,
     expected_manifest: Any,
     base_view: Any | None,
+    expected_view_phase: int | None = None,
 ) -> object:
     if not isinstance(raw_snapshot, Mapping):
         raise ValueError(f"phase {phase_index} snapshot must be a JSON object")
@@ -1173,6 +1176,7 @@ def _snapshot_from_raw_mapping(
         phase_index=phase_index,
         base_view=base_view,
         expected_manifest=expected_manifest,
+        expected_view_phase=expected_view_phase,
     )
     if raw_snapshot.get("phase_index") != phase_index:
         raise ValueError("raw snapshot has the wrong phase index")
@@ -1191,6 +1195,52 @@ def _snapshot_from_raw_mapping(
         world_rev=raw_snapshot.get("world_rev"),
         receipt_status=raw_snapshot.get("receipt_status"),
     )
+
+
+def _stage_attempt_view_context(
+    attempt: object,
+    *,
+    phase_index: int,
+    phase1_manifest: Any,
+    phase2_manifest: Any,
+    p1_base_view: Any | None,
+    p1_committed: bool,
+) -> tuple[Any, Any | None, int]:
+    """Resolve expected (manifest, base_view, view_phase) for a retained stage attempt.
+
+    When an agent submits an out-of-phase ``stage_phase_mutations`` call (e.g. ``phase_index=2``
+    before P1 commits, or ``phase_index=1`` after P1 commits), ``RuntimeV5`` records a
+    ``REJECTED_STRUCTURAL`` ``STAGE_ATTEMPT`` under the requested ``phase_index`` while keeping
+    its active ``self._view`` from the open runtime phase.
+    """
+    default_manifest = phase1_manifest if phase_index == 1 else phase2_manifest
+    default_base_view = None if phase_index == 1 else p1_base_view
+    if not isinstance(attempt, Mapping):
+        return default_manifest, default_base_view, phase_index
+    if (
+        attempt.get("event") != "STAGE_ATTEMPT"
+        or attempt.get("receipt_status") != "REJECTED_STRUCTURAL"
+    ):
+        return default_manifest, default_base_view, phase_index
+    raw_view = attempt.get("view")
+    if not isinstance(raw_view, Mapping):
+        return default_manifest, default_base_view, phase_index
+    raw_manifest = raw_view.get("manifest")
+    if not isinstance(raw_manifest, Mapping):
+        return default_manifest, default_base_view, phase_index
+    view_phase = raw_manifest.get("phase_index")
+    raw_world_rev = raw_view.get("world_rev")
+    if phase_index == 2 and view_phase == 1 and raw_world_rev == 0:
+        return phase1_manifest, None, 1
+    if (
+        phase_index == 1
+        and view_phase == 2
+        and p1_committed
+        and type(raw_world_rev) is int
+        and raw_world_rev >= 1
+    ):
+        return phase2_manifest, p1_base_view, 2
+    return default_manifest, default_base_view, phase_index
 
 
 def _execution_from_raw_mapping(raw: Mapping[str, Any], episode: EpisodeV5) -> object:
@@ -1272,12 +1322,21 @@ def _execution_from_raw_mapping(raw: Mapping[str, Any], episode: EpisodeV5) -> o
                     attempt,
                     episode=episode,
                     phase_index=phase_index,
-                    expected_manifest=(
-                        phase1_manifest if phase_index == 1 else phase2_manifest
-                    ),
-                    base_view=(None if phase_index == 1 else p1_base_view),
+                    expected_manifest=att_manifest,
+                    base_view=att_base_view,
+                    expected_view_phase=att_view_phase,
                 )
                 for attempt in attempts
+                for att_manifest, att_base_view, att_view_phase in (
+                    _stage_attempt_view_context(
+                        attempt,
+                        phase_index=phase_index,
+                        phase1_manifest=phase1_manifest,
+                        phase2_manifest=phase2_manifest,
+                        p1_base_view=p1_base_view,
+                        p1_committed=p1_commit_snapshot is not None,
+                    ),
+                )
             )
         )
         phase_objects[f"phase{phase_index}"] = SimpleNamespace(
