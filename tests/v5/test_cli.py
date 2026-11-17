@@ -9,7 +9,19 @@ from typer.testing import CliRunner
 
 import identitybench.cli as root_cli
 from identitybench.v4.jcs import jcs_dumps
+from identitybench.v5.cli import v5_app as python_v5_reference_app
 from identitybench.v5.validation import V5ValidationReport
+
+# Provider-run reference tests use the original Python runner through a private test app.
+# The public root CLI intentionally routes `v5 run` to native Rust instead.
+reference_app = typer.Typer(
+    name="identitybench-v5-reference-tests",
+    cls=root_cli._Group,
+    callback=root_cli.main,
+    no_args_is_help=True,
+    add_completion=False,
+)
+reference_app.add_typer(python_v5_reference_app, name="v5")
 
 
 def test_v5_offline_command_skips_env_file_stat_and_load(tmp_path: Path, monkeypatch) -> None:
@@ -73,6 +85,7 @@ def test_v5_command_group_is_registered() -> None:
     assert result.exit_code == 0, result.output
     for command in ("build", "validate", "score", "run", "report"):
         assert command in result.output
+    assert "offline" in result.output
 
     validate_help = CliRunner().invoke(
         root_cli.app,
@@ -80,6 +93,88 @@ def test_v5_command_group_is_registered() -> None:
     )
     assert validate_help.exit_code == 0, validate_help.output
     assert "reports/v5/conformance/<suite>/receipt.json" in validate_help.output
+
+    v41_help = CliRunner().invoke(root_cli.app, ["v41", "--help"])
+    assert v41_help.exit_code == 0, v41_help.output
+    assert "generate" in v41_help.output
+    assert "validate" in v41_help.output
+
+
+def test_public_v5_run_refuses_before_env_config_or_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import identitybench.providers.factory as provider_factory
+
+    env_loads: list[Path] = []
+    providers: list[object] = []
+
+    def forbidden_env_load(path: Path, **_kwargs):
+        env_loads.append(path)
+        raise AssertionError("public v5 run loaded an environment file")
+
+    def forbidden_provider(*_args, **_kwargs):
+        providers.append(object())
+        raise AssertionError("public v5 run constructed a provider")
+
+    monkeypatch.setattr(root_cli, "load_env_file", forbidden_env_load)
+    monkeypatch.setattr(provider_factory, "make_provider", forbidden_provider)
+    monkeypatch.setenv("OPENAI_API_KEY", "poisoned-test-value")
+
+    missing_env = tmp_path / "missing.env"
+    unreadable_config = tmp_path / "config-directory"
+    unreadable_config.mkdir()
+    pricing = tmp_path / "missing-pricing.json"
+    dataset = tmp_path / "missing-dataset"
+    live_options = (
+        "--config",
+        str(unreadable_config),
+        "--pricing",
+        str(pricing),
+        "--dataset",
+        str(dataset),
+        "--out",
+        str(tmp_path / "must-not-be-created"),
+        "--repeats",
+        "1",
+    )
+
+    for mode_options in ((), live_options, (*live_options, "--resume")):
+        result = CliRunner().invoke(
+            root_cli.app,
+            [
+                "--root",
+                str(tmp_path),
+                "--env-file",
+                str(missing_env),
+                "v5",
+                "run",
+                *mode_options,
+            ],
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "Python v5 provider runs are disabled" in result.output
+        assert "cargo build --release --locked -p ib-cli" in result.output
+        assert "./target/release/identitybench v5 run" in result.output
+        assert "docs/RUST.md" in result.output
+        assert "poisoned-test-value" not in result.output
+        assert "inputs are invalid" not in result.output
+        assert "does not exist" not in result.output
+
+    assert env_loads == []
+    assert providers == []
+    assert not (tmp_path / "must-not-be-created").exists()
+
+
+def test_public_cli_adaptation_does_not_mutate_reference_registrations() -> None:
+    from identitybench.v5.cli import v5_run
+
+    reference_run = next(
+        command for command in python_v5_reference_app.registered_commands if command.name == "run"
+    )
+    assert reference_run.callback is v5_run
+    assert reference_run.help is None
 
 
 def test_validate_uses_suite_specific_default_blind_receipt(tmp_path: Path, monkeypatch) -> None:
@@ -547,7 +642,7 @@ def test_run_cli_rejects_sensitive_usage_manifest_alias(tmp_path: Path) -> None:
     (tmp_path / ".env.manifest").symlink_to(public_manifest)
 
     result = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -669,7 +764,7 @@ def test_v5_run_rejects_invalid_repeats_and_accepts_mocked_offline_repeats(
     from identitybench.v5.generator import write_v5_dataset
 
     bad = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -808,7 +903,7 @@ def test_v5_run_rejects_invalid_repeats_and_accepts_mocked_offline_repeats(
 
     run_out = tmp_path / "runs" / "mock_model_run"
     res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -876,7 +971,7 @@ def test_v5_run_fails_fast_on_missing_explicit_env_file_while_default_stays_opti
 
     monkeypatch.setattr(provider_factory, "make_provider", fail_if_provider_is_created)
     bad_env = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -1000,7 +1095,7 @@ def test_v5_run_fails_fast_on_missing_explicit_env_file_while_default_stays_opti
 
     run_out = tmp_path / "runs" / "default_env_optional"
     ok_res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -1219,7 +1314,7 @@ def test_v5_run_concurrency_deterministic_ordering(
 
     run_out = tmp_path / "runs" / "concurrent_run"
     res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -1293,7 +1388,7 @@ def test_v5_run_incremental_checkpoint_resume_and_redacted_errors(
 
     run_out = tmp_path / "runs" / "resumable_run"
     fail_res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -1333,7 +1428,7 @@ def test_v5_run_incremental_checkpoint_resume_and_redacted_errors(
         encoding="utf-8",
     )
     mismatch_res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -1368,7 +1463,7 @@ def test_v5_run_incremental_checkpoint_resume_and_redacted_errors(
     _mock_scoring_and_execution(monkeypatch, fake_agent_run=phase2_agent_run)
 
     resume_res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -1488,7 +1583,7 @@ def test_v5_run_uses_execution_tool_calls_executed_not_transcript(
     _mock_scoring_and_execution(monkeypatch, fake_agent_run=fake_agent_run)
     run_out = tmp_path / "runs" / "tool_count_run"
     res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),
@@ -1608,7 +1703,7 @@ def test_v5_run_aligns_attempt_id_and_run_config_sha256_for_g_econ_01(
 
     run_out = tmp_path / "runs" / "g_econ_aligned"
     res = CliRunner().invoke(
-        root_cli.app,
+        reference_app,
         [
             "--root",
             str(tmp_path),

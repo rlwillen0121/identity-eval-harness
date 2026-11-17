@@ -7,6 +7,7 @@ import tomllib
 import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
+from copy import copy
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -51,6 +52,55 @@ _EPILOG = (
 )
 
 
+_V5_PUBLIC_RUN_HELP = (
+    "Python provider runs are disabled. Use the native Rust executable. Build with "
+    "`cargo build --release --locked -p ib-cli`, "
+    "then run `./target/release/identitybench v5 run`. See docs/RUST.md."
+)
+
+
+def _public_v5_run(ctx: typer.Context) -> NoReturn:
+    """Direct provider execution to the native Rust CLI."""
+    _exit(
+        "Python v5 provider runs are disabled. Use the native Rust executable. Build with "
+        "`cargo build --release --locked -p ib-cli`, "
+        "then run `./target/release/identitybench v5 run`. See docs/RUST.md.",
+        ExitCode.USAGE,
+    )
+
+
+def _public_v5_app() -> typer.Typer:
+    """Copy the reference command registrations before adapting the public run command."""
+    public_app = typer.Typer(
+        name="v5",
+        help=(
+            "Python v5 compatibility reference only for offline build, validation, scoring, and "
+            "reporting. Provider runs use the native Rust executable in target/release."
+        ),
+        epilog=(
+            "The Python v5 reference remains available for offline tooling. Run providers with "
+            "`./target/release/identitybench v5 run` after `cargo build --release --locked "
+            "-p ib-cli`. See docs/RUST.md."
+        ),
+        no_args_is_help=True,
+        add_completion=False,
+    )
+    public_app.registered_commands = [copy(command) for command in v5_app.registered_commands]
+    for command in public_app.registered_commands:
+        if command.name == "run":
+            command.callback = _public_v5_run
+            command.help = _V5_PUBLIC_RUN_HELP
+            command.context_settings = {
+                **(command.context_settings or {}),
+                "allow_extra_args": True,
+                "ignore_unknown_options": True,
+            }
+            continue
+        original_help = getattr(command.callback, "__doc__", None) or ""
+        command.help = "Python reference only; offline tooling. " + original_help.strip()
+    return public_app
+
+
 class _Group(TyperGroup):
     """The root command group. An exception no command handles is a bug: it gets its traceback
     and ``ExitCode.INTERNAL``, rather than Python's exit 1, which means a failed check here."""
@@ -74,7 +124,7 @@ app = typer.Typer(
     name="identitybench",
     cls=_Group,
     help=(
-        "IdentityBench v4.1 CLI with retained v5 Python reference tooling. "
+        "IdentityBench v4.1 CLI with retained offline v5 Python reference tooling. "
         "The native Rust executable is the live v5 runner."
     ),
     epilog=_EPILOG,
@@ -89,27 +139,8 @@ v41_app = typer.Typer(
     epilog=_EPILOG,
     no_args_is_help=True,
 )
-v5_app.info.help = (
-    "Python v5 compatibility reference only. Use the native Rust executable for live v5 runs."
-)
-v5_app.info.epilog = (
-    "Python v5 commands are retained as reference tooling. Use the native Rust executable for "
-    "live provider runs."
-)
-_V5_REFERENCE_COMMAND_HELP = {
-    "build": "Python reference only; offline tooling. ",
-    "validate": "Python reference only; offline tooling. ",
-    "score": "Python reference only; offline tooling. ",
-    "run": "Compatibility runner; use the native Rust executable for live provider runs. ",
-    "report": "Python reference only; offline tooling. ",
-}
-for _command in v5_app.registered_commands:
-    if _command.name in _V5_REFERENCE_COMMAND_HELP:
-        original_help = getattr(_command.callback, "__doc__", None) or ""
-        _command.help = _V5_REFERENCE_COMMAND_HELP[_command.name] + original_help.strip()
-
 app.add_typer(v41_app, name="v41")
-app.add_typer(v5_app, name="v5")
+app.add_typer(_public_v5_app(), name="v5")
 
 
 @dataclass
