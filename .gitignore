@@ -48,3 +48,6 @@ tests/v41/test_orgai_*
 reports/v41-skill-orch-v2-dev/
 
 
+
+# Rust build output
+/target/
