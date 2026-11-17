@@ -13,6 +13,7 @@ publish = false
 [workspace.dependencies]
 # Internal crates
 ib-core = { path = "crates/ib-core" }
+ib-v5-schemas = { path = "crates/ib-v5-schemas" }
 
 # Serialization. `arbitrary_precision` keeps Python big ints and float text intact through
 # `serde_json::Value`; `preserve_order` mirrors Python dict insertion order for non-sorted dumps.
