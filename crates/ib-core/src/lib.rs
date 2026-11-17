@@ -5,9 +5,11 @@
 //! behaviours those bytes depend on.
 
 pub mod hashing;
+pub mod npcompat;
 pub mod pyfloat;
 pub mod pyjson;
 pub mod pyrandom;
 
+pub use npcompat::{Generator, NpError, Pcg64, SeedSequence};
 pub use pyjson::{DumpOptions, JsonError, dumps, jcs_dumps, jcs_string};
 pub use pyrandom::PyRandom;
