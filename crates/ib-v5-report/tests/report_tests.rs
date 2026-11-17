@@ -1585,7 +1585,7 @@ fn core_inference_separates_tracks_blocks_incomplete_and_descriptive_contrasts()
         "PREREGISTERED_ABLATION",
         "T0_SINGLE_MONOLITH",
         "CHECKPOINT_STEERED",
-        "COUPLED",
+        "ORACLE_PHASE_RESET",
         "high",
         &[1, 2, 3],
         &[1],
@@ -1595,6 +1595,12 @@ fn core_inference_separates_tracks_blocks_incomplete_and_descriptive_contrasts()
         "effort_contrast_model_a",
         ConfirmatoryFamilyKindV5::EffortContrast,
         vec![("model-a".to_owned(), "model-a-low".to_owned())],
+    )
+    .unwrap();
+    let reset_family = ConfirmatoryFamilySpecV5::new(
+        "reset_contrast_model_a",
+        ConfirmatoryFamilyKindV5::AblationContrast,
+        vec![("model-a".to_owned(), "model-a-steered".to_owned())],
     )
     .unwrap();
 
@@ -1612,7 +1618,7 @@ fn core_inference_separates_tracks_blocks_incomplete_and_descriptive_contrasts()
         &core,
         &[("model-a".to_owned(), "model-b".to_owned())],
         CoreInferenceOptionsV5 {
-            additional_families: &[effort_family],
+            additional_families: &[effort_family, reset_family],
             additional_family_artifacts: Some(&add_fam_arts),
             unregistered_pairs: &[("model-a".to_owned(), "model-a-steered".to_owned())],
             additional_tracks: Some(&add_tracks),
@@ -1624,6 +1630,15 @@ fn core_inference_separates_tracks_blocks_incomplete_and_descriptive_contrasts()
         core_inference
             .additional_families
             .contains_key("effort_contrast_model_a")
+    );
+    assert_eq!(
+        core_inference.additional_families["reset_contrast_model_a"].status,
+        "COMPLETE"
+    );
+    assert!(
+        core_inference.additional_families["reset_contrast_model_a"].results[0]
+            .p_exact
+            .is_some()
     );
     assert_eq!(core_inference.unregistered_contrasts.len(), 1);
     assert_eq!(core_inference.unregistered_contrasts[0].p_exact, None);
@@ -1659,6 +1674,67 @@ fn core_inference_separates_tracks_blocks_incomplete_and_descriptive_contrasts()
         .to_string();
     assert!(
         err.contains("rankings and confirmatory tests are blocked"),
+        "{err}"
+    );
+}
+
+#[test]
+fn additional_tracks_reject_cross_suite_repeat_and_seal_mismatches() {
+    let mut core = BTreeMap::new();
+    for model_id in ["model-a", "model-b"] {
+        core.insert(
+            model_id.to_owned(),
+            default_model_artifact(model_id, "v5_core", &CORE_FAMILIES_V5),
+        );
+    }
+
+    let mut lower = model_report_artifact(
+        "model-low",
+        "v5_dev",
+        &CORE_FAMILIES_V5,
+        &"d".repeat(64),
+        "PREREGISTERED_LOWER",
+        "T0_SINGLE_MONOLITH",
+        "UNSTEERED",
+        "COUPLED",
+        "low",
+        &[1],
+        &[1],
+        None,
+    );
+    lower.summary.context.planned_repeats_per_episode = 1;
+    lower.summary = aggregate_run_scores(
+        &lower.summary.episode_scores,
+        &lower.summary.context,
+        AggregateRunOptionsV5::default(),
+    )
+    .unwrap();
+    lower.provenance.dataset_seal_sha256 = Some("9".repeat(64));
+
+    let tracks = BTreeMap::from([(
+        "PREREGISTERED_LOWER".to_owned(),
+        BTreeMap::from([("model-low".to_owned(), lower)]),
+    )]);
+    let family = ConfirmatoryFamilySpecV5::new(
+        "bad-cross-suite-track",
+        ConfirmatoryFamilyKindV5::EffortContrast,
+        vec![("model-a".to_owned(), "model-low".to_owned())],
+    )
+    .unwrap();
+
+    let err = build_v5_core_inference_with_options(
+        &core,
+        &[("model-a".to_owned(), "model-b".to_owned())],
+        CoreInferenceOptionsV5 {
+            additional_families: &[family],
+            additional_tracks: Some(&tracks),
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("v5_core run with 48 planned episodes"),
         "{err}"
     );
 }
@@ -1885,7 +1961,10 @@ fn core_inference_renders_strict_bh_lt_and_validates_additional_family_artifacts
     )
     .unwrap_err()
     .to_string();
-    assert!(err.contains("suite_id='v5_core'"), "{err}");
+    assert!(
+        err.contains("must be a v5_core run with 48 planned episodes"),
+        "{err}"
+    );
 
     let mut wrong_seal = default_model_artifact("model-a-badseal", "v5_core", &CORE_FAMILIES_V5);
     wrong_seal.summary.context.comparison_track = "PREREGISTERED_LOWER".to_owned();
@@ -1905,6 +1984,165 @@ fn core_inference_renders_strict_bh_lt_and_validates_additional_family_artifacts
     assert!(
         err.contains("does not match the core sealed dataset"),
         "{err}"
+    );
+
+    let mut wrong_repeats = model_report_artifact(
+        "model-a-low",
+        "v5_core",
+        &CORE_FAMILIES_V5,
+        &"d".repeat(64),
+        "PREREGISTERED_LOWER",
+        "T0_SINGLE_MONOLITH",
+        "UNSTEERED",
+        "COUPLED",
+        "low",
+        &[1],
+        &[1],
+        None,
+    );
+    wrong_repeats.summary.context.planned_repeats_per_episode = 1;
+    wrong_repeats.summary = aggregate_run_scores(
+        &wrong_repeats.summary.episode_scores,
+        &wrong_repeats.summary.context,
+        AggregateRunOptionsV5::default(),
+    )
+    .unwrap();
+    let err = build_v5_core_inference_with_options(
+        &core,
+        &[("model-a".to_owned(), "model-b".to_owned())],
+        CoreInferenceOptionsV5 {
+            additional_family_artifacts: Some(&BTreeMap::from([(
+                "model-a-low".to_owned(),
+                wrong_repeats,
+            )])),
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("must plan 3 repeats per episode"), "{err}");
+
+    let mut wrong_grid = default_model_artifact("model-a-low", "v5_core", &CORE_FAMILIES_V5);
+    wrong_grid.summary.context.comparison_track = "PREREGISTERED_LOWER".to_owned();
+    wrong_grid.summary.episode_scores[0].family_id = "F02".to_owned();
+    let err = build_v5_core_inference_with_options(
+        &core,
+        &[("model-a".to_owned(), "model-b".to_owned())],
+        CoreInferenceOptionsV5 {
+            additional_family_artifacts: Some(&BTreeMap::from([(
+                "model-a-low".to_owned(),
+                wrong_grid,
+            )])),
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("each repeat 1..=3 exactly once"), "{err}");
+
+    let conflicting_primary = model_report_artifact(
+        "model-a",
+        "v5_core",
+        &CORE_FAMILIES_V5,
+        &"f".repeat(64),
+        "PRIMARY_HIGHEST",
+        "T0_SINGLE_MONOLITH",
+        "UNSTEERED",
+        "COUPLED",
+        "medium",
+        &[1, 2, 3],
+        &[1],
+        None,
+    );
+    let err = build_v5_core_inference_with_options(
+        &core,
+        &[("model-a".to_owned(), "model-b".to_owned())],
+        CoreInferenceOptionsV5 {
+            additional_family_artifacts: Some(&BTreeMap::from([(
+                "model-a".to_owned(),
+                conflicting_primary,
+            )])),
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("conflicting family artifacts"), "{err}");
+}
+
+#[cfg(unix)]
+#[test]
+fn report_writers_atomically_replace_symlink_and_hardlink_leaves() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempdir().unwrap();
+    let roots = tmp.path();
+    let artifact = default_model_artifact("model-test", "v5_core", &CORE_FAMILIES_V5);
+
+    let standard_out = roots.join("standard");
+    let standard_victims = roots.join("standard-victims");
+    std::fs::create_dir_all(&standard_out).unwrap();
+    std::fs::create_dir_all(&standard_victims).unwrap();
+    let markdown_victim = standard_victims.join("markdown-victim");
+    let summary_victim = standard_victims.join("summary-victim");
+    std::fs::write(&markdown_victim, b"markdown sentinel").unwrap();
+    std::fs::write(&summary_victim, b"summary sentinel").unwrap();
+    symlink(&markdown_victim, standard_out.join("report.md")).unwrap();
+    std::fs::hard_link(&summary_victim, standard_out.join("summary.json")).unwrap();
+
+    write_v5_report(&artifact, &standard_out).unwrap();
+    assert_eq!(
+        std::fs::read(&markdown_victim).unwrap(),
+        b"markdown sentinel"
+    );
+    assert_eq!(std::fs::read(&summary_victim).unwrap(), b"summary sentinel");
+    assert!(
+        !std::fs::symlink_metadata(standard_out.join("report.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        std::fs::read_to_string(standard_out.join("summary.json"))
+            .unwrap()
+            .contains("\"suite_id\": \"v5_core\"")
+    );
+
+    let mut core = BTreeMap::new();
+    for model_id in ["model-a", "model-b"] {
+        core.insert(
+            model_id.to_owned(),
+            default_model_artifact(model_id, "v5_core", &CORE_FAMILIES_V5),
+        );
+    }
+    let core_inference =
+        build_v5_core_inference(&core, &[("model-a".to_owned(), "model-b".to_owned())]).unwrap();
+    let core_out = roots.join("core-inference");
+    std::fs::create_dir_all(&core_out).unwrap();
+    let core_victim = standard_victims.join("core-victim");
+    std::fs::write(&core_victim, b"core sentinel").unwrap();
+    symlink(&core_victim, core_out.join("v5_core_inference.md")).unwrap();
+    write_v5_core_inference_report(&core_inference, &core_out).unwrap();
+    assert_eq!(std::fs::read(&core_victim).unwrap(), b"core sentinel");
+    assert!(
+        !std::fs::symlink_metadata(core_out.join("v5_core_inference.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+
+    let full_out = roots.join("full-inference");
+    std::fs::create_dir_all(&full_out).unwrap();
+    let full_victim = standard_victims.join("full-victim");
+    std::fs::write(&full_victim, b"full sentinel").unwrap();
+    std::fs::hard_link(&full_victim, full_out.join("v5_full_tiebreak.md")).unwrap();
+    let full_inference = V5FullTieBreakArtifact::new(BTreeMap::new(), Vec::new(), Vec::new(), None);
+    write_v5_full_tiebreak_report(&full_inference, &full_out).unwrap();
+    assert_eq!(std::fs::read(&full_victim).unwrap(), b"full sentinel");
+    assert!(
+        std::fs::read_to_string(full_out.join("v5_full_tiebreak.md"))
+            .unwrap()
+            .contains("v5_full")
     );
 }
 

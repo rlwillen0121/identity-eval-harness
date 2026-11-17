@@ -1,4 +1,5 @@
-"""Model specs (one ``models:`` entry of an experiment config, SPEC §16) and the provider factory.
+"""Model specs (one ``models:`` entry of an experiment config, ``archive/specs/SPEC-v1.md`` §16)
+and the provider factory.
 
 Endpoint and constructor fields that can't apply to a provider kind are rejected rather than
 ignored: a ``base_url_env`` on a CLI provider, an ``effort`` for Cursor or a misspelled ``extra``
@@ -68,11 +69,12 @@ _API_KINDS = frozenset({"anthropic", "anthropic_compatible", "openai_compatible"
 rejects them."""
 
 _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
-    "anthropic": frozenset({"max_retries"}),
-    "anthropic_compatible": frozenset({"max_retries"}),
+    "anthropic": frozenset({"max_retries", "allow_custom_endpoint"}),
+    "anthropic_compatible": frozenset({"max_retries", "allow_custom_endpoint"}),
     "openai_compatible": frozenset(
         {
             "max_retries",
+            "allow_custom_endpoint",
             "reasoning_effort_param",
             "max_tokens_param",
             "provider_routing",
@@ -98,7 +100,7 @@ def _extra_problem(name: str, value: object) -> str | None:
     if name == "max_retries":
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return "must be a non-negative integer"
-    elif name == "reasoning_effort_param":
+    elif name in ("reasoning_effort_param", "allow_custom_endpoint"):
         if not isinstance(value, bool):
             return "must be true or false"
     elif name == "max_tokens_param":
@@ -137,7 +139,8 @@ class ModelSpec(BaseModel):
     """Environment variable holding the base URL (API kinds only; never a literal URL)."""
     api_key_env: str | None = None
     cache_namespace: str | None = None
-    """Bump when a self-hosted deployment changes behind the same URL and name (SPEC §11.4)."""
+    """Bump when a self-hosted deployment changes behind the same URL and name
+    (``archive/specs/SPEC-v1.md`` §11.4)."""
     effort: str | None = None
     """Reasoning effort; None means the provider kind's default (``DEFAULT_EFFORT``)."""
     temperature: float | None = None
@@ -209,6 +212,11 @@ def make_provider(spec: ModelSpec) -> Provider:
     retries: dict[str, Any] = (
         {"max_retries": extra["max_retries"]} if "max_retries" in extra else {}
     )
+    endpoint: dict[str, Any] = (
+        {"allow_custom_endpoint": extra["allow_custom_endpoint"]}
+        if "allow_custom_endpoint" in extra
+        else {}
+    )
 
     if kind in ("anthropic", "anthropic_compatible"):
         # api_key_env stays None when unset: each provider then decides whether the vendor key
@@ -220,6 +228,7 @@ def make_provider(spec: ModelSpec) -> Provider:
             cache_namespace=spec.cache_namespace,
             **timeout,
             **retries,
+            **endpoint,
         )
     if kind == "openai_compatible":
         options: dict[str, Any] = {
@@ -240,6 +249,7 @@ def make_provider(spec: ModelSpec) -> Provider:
             cache_namespace=spec.cache_namespace,
             **timeout,
             **retries,
+            **endpoint,
             **options,
         )
     if kind == "claude_cli":

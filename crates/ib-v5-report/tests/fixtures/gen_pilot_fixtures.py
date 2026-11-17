@@ -3,11 +3,17 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from identitybench.v5.report import report_from_raw_artifacts, write_v5_report
 
-PILOT_ROOT = Path("/Users/ryanwillen/orca/projects/identity-eval-harness/runs")
+PILOT_ROOT = Path(
+    os.environ.get(
+        "IDENTITYBENCH_REAL_PILOT_ROOT",
+        str(Path(__file__).resolve().parents[4] / "runs"),
+    )
+)
 FIXTURES_DIR = Path(__file__).resolve().parent
 
 

@@ -29,23 +29,13 @@ fn workspace_root() -> &'static Path {
 #[test]
 fn run_cli_executes_only_the_local_replay_provider_and_persists_artifacts() {
     let temp = tempdir().expect("temporary workspace");
-    let dataset = temp.path().join("dataset");
-    let built = run_cli(
-        workspace_root(),
-        &[
-            "v5",
-            "build",
-            "--suite",
-            "v5_dev",
-            "--out",
-            dataset.to_str().unwrap(),
-        ],
-    );
-    assert!(
-        built.status.success(),
-        "{}",
-        String::from_utf8_lossy(&built.stderr)
-    );
+    let dataset = temp.path().join("datasets/v5_draft5/v5_dev");
+    std::fs::create_dir_all(&dataset).expect("active Draft 5 dataset directory");
+    let active_dataset = workspace_root().join("datasets/v5_draft5/v5_dev");
+    for name in ["SEAL.json", "episodes.jsonl", "oracles.jsonl"] {
+        std::fs::copy(active_dataset.join(name), dataset.join(name))
+            .expect("copy the active Draft 5 dataset");
+    }
 
     let replay = temp.path().join("responses.jsonl");
     std::fs::write(&replay, b"").expect("empty local replay log");
@@ -78,8 +68,6 @@ fn run_cli_executes_only_the_local_replay_provider_and_persists_artifacts() {
             pricing.to_str().unwrap(),
             "--suite",
             "v5_dev",
-            "--dataset",
-            dataset.to_str().unwrap(),
             "--out",
             output_dir.to_str().unwrap(),
             "--repeats",
@@ -103,6 +91,10 @@ fn run_cli_executes_only_the_local_replay_provider_and_persists_artifacts() {
     )
     .expect("manifest JSON");
     assert_eq!(manifest["run_episode_record_count"], 12);
+    assert_eq!(
+        manifest["dataset_seal_sha256"],
+        ib_core::hashing::sha256_hex(&std::fs::read(active_dataset.join("SEAL.json")).unwrap())
+    );
     let source_hashes = manifest["config"]["rust_source_sha256"]
         .as_object()
         .expect("embedded Rust source identity map");
@@ -129,8 +121,6 @@ fn run_cli_executes_only_the_local_replay_provider_and_persists_artifacts() {
             pricing.to_str().unwrap(),
             "--suite",
             "v5_dev",
-            "--dataset",
-            dataset.to_str().unwrap(),
             "--out",
             output_dir.to_str().unwrap(),
             "--repeats",

@@ -9,8 +9,6 @@ Generates:
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,42 +16,30 @@ from typing import Any
 
 from grantt_v41_full import ICONS, _lab_of, write_png
 
+from identitybench.report.chart_style import (
+    BLUE,
+    BLUE_PILL,
+    GRID,
+    HEAT_FILLS,
+    HEAT_INKS,
+    INK,
+    INK2,
+    MISS_CELL_BG,
+    MISS_CELL_BORDER,
+    MISS_CELL_INK,
+    MUTED,
+    PASS_CELL_BG,
+    PASS_CELL_INK,
+    RULE,
+    SLATE_PILL,
+    WIDTH,
+    Svg,
+    _icon_kind,
+    _initials,
+    esc,
+    fmt_pct,
+)
 from identitybench.report.figure_kit import THEMES
-
-ROOT = Path(__file__).resolve().parent
-V3_BSTYLE_PATH = ROOT.parent / "v3" / "b_style_charts.py"
-
-_spec = importlib.util.spec_from_file_location("v3_b_style_charts", V3_BSTYLE_PATH)
-assert _spec is not None and _spec.loader is not None
-_v3b = importlib.util.module_from_spec(_spec)
-sys.modules["v3_b_style_charts"] = _v3b
-_spec.loader.exec_module(_v3b)
-
-WIDTH: int = _v3b.WIDTH
-INK: str = _v3b.INK
-INK2: str = _v3b.INK2
-MUTED: str = _v3b.MUTED
-RULE: str = _v3b.RULE
-GRID: str = _v3b.GRID
-BLUE: str = _v3b.BLUE
-BLUE_PILL: str = _v3b.BLUE_PILL
-SLATE_PILL: str = _v3b.SLATE_PILL
-PASS_CELL_BG: str = _v3b.PASS_CELL_BG
-PASS_CELL_INK: str = _v3b.PASS_CELL_INK
-MISS_CELL_BG: str = _v3b.MISS_CELL_BG
-MISS_CELL_BORDER: str = _v3b.MISS_CELL_BORDER
-MISS_CELL_INK: str = _v3b.MISS_CELL_INK
-HEAT_FILLS: tuple[str, ...] = _v3b.HEAT_FILLS
-HEAT_INKS: tuple[str, ...] = _v3b.HEAT_INKS
-BIN_LABELS: tuple[str, ...] = _v3b.BIN_LABELS
-
-Svg = _v3b.Svg
-draw_icon = _v3b.draw_icon
-add_footer = _v3b.add_footer
-fmt_pct = _v3b.fmt_pct
-esc = _v3b.esc
-_icon_kind = _v3b._icon_kind
-_initials = _v3b._initials
 
 
 @dataclass(frozen=True)
@@ -182,6 +168,7 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "claude-opus-5-5-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "claude-sonnet-5-5-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "gemini-4-argon-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
+    "gemini-4-carbon-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "muse-spark-1.3-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "muse-wonder-1.0-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
     "grok-4.7-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
@@ -196,9 +183,11 @@ MODEL_TIER_META_V41: dict[str, dict[str, str]] = {
     "minimax-m3-t0-medium": {"tier": "open_weight", "class_label": "Open-Weight (MoE)"},
     "qwen3.8-flash-next-local": {"tier": "open_weight", "class_label": "Local GPU (MoE Flash)"},
     "qwen3.8-27b-exl3-4bit-local": {"tier": "open_weight", "class_label": "Local GPU (27B 4-bit)"},
+    "gemini-4-hydrogen-t0-medium": {"tier": "fast_small", "class_label": "Fast / Flash"},
     "gemini-3.8-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Flash"},
     "claude-haiku-5-5-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "claude-fable-5-1-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
+    "claude-fable-5-2-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "glm-5.3-flash-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small (MoE)"},
     "gpt-6-luna-t0-medium": {"tier": "fast_small", "class_label": "Fast / Small"},
     "mistral-large-4-t0-medium": {"tier": "flagship", "class_label": "Flagship (Proprietary)"},
@@ -242,7 +231,7 @@ def add_header_v41_full(
     title: str,
     subtitle: str,
     pal: V41BPalette = B_PALETTES["light"],
-    date_label: str = "26 OCT 2026",
+    date_label: str = "13 NOV 2026",
 ) -> None:
     svg.text(100, 68, "IDENTITYBENCH V4.1 FULL", 20, pal.muted, bold=True)
     svg.text(
@@ -447,6 +436,9 @@ def render_v41_safety_screen(rows: Sequence[V41BStyleRow], theme_name: str = "li
 def render_v41_model_tiers(rows: Sequence[V41BStyleRow], theme_name: str = "light") -> str:
     """Clean model class comparison chart (`b-model-tiers`)."""
     pal = B_PALETTES[theme_name]
+    missing = [r.model_id for r in rows if r.model_id not in MODEL_TIER_META_V41]
+    if missing:
+        raise ValueError(f"MODEL_TIER_META_V41 missing model IDs: {missing}")
     row_step, cur_y = 64, 290
     tier_blocks: list[tuple[str, str, str, list[V41BStyleRow], int, int]] = []
     for tier_key, tier_title, bar_color, pill_bg in pal.tier_defs:

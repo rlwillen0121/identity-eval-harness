@@ -162,9 +162,7 @@ def test_atomic_literal_uses_root_replace_materialization_and_route_keeps_contex
     assert routed_case["case_id"] == "v4sd/source/case/validate_submission"
     assert routed_case["operation"] == "validate_submission"
     assert routed_case["stimulus"]["submitted_plan"] == [candidate]
-    assert routed_case["stimulus"]["target_selector"] == source_case["stimulus"][
-        "target_selector"
-    ]
+    assert routed_case["stimulus"]["target_selector"] == source_case["stimulus"]["target_selector"]
     assert routed["projection_context"]["source_case_b64"] == base64.b64encode(
         canonical(source_case)
     ).decode("ascii")
@@ -190,9 +188,10 @@ def test_atomic_literal_uses_root_replace_materialization_and_route_keeps_contex
     )
     atomic_routed_case = json.loads(base64.b64decode(atomic_route["case_b64"]))
     assert atomic_routed_case["stimulus"]["submitted_plan"] == expanded_plan
-    assert atomic_routed_case["stimulus"]["target_selector"] == atomic_source_case["stimulus"][
-        "target_selector"
-    ]
+    assert (
+        atomic_routed_case["stimulus"]["target_selector"]
+        == atomic_source_case["stimulus"]["target_selector"]
+    )
     for key in atomic_source_case.keys() - {"case_id", "operation", "stimulus"}:
         assert atomic_routed_case[key] == atomic_source_case[key]
     assert atomic_route["projection_context"]["projection_kind"] == (
@@ -539,11 +538,16 @@ def _build_synthetic_inputs(
         "receipts": receipt_rows,
     }
     receipt_set_raw = canonical(coordinator._seal_object(receipt_set, "receipt_set_sha256"))
-    return plan_raw, receipt_set_raw, events, {
-        "source_entry": source_entry,
-        "source_bundle_raw": source_bundle_raw,
-        "source_inventory": synthetic_inventory,
-    }
+    return (
+        plan_raw,
+        receipt_set_raw,
+        events,
+        {
+            "source_entry": source_entry,
+            "source_bundle_raw": source_bundle_raw,
+            "source_inventory": synthetic_inventory,
+        },
+    )
 
 
 def test_equal_materialization_precedes_checker_and_partial_coverage_never_freezes(
@@ -612,9 +616,7 @@ def test_atomic_literal_reroute_lineage_binds_full_plan_and_preserves_original_h
     assert len(review["reroute_requests"]) == 1, review
     route_request = review["reroute_requests"][0]
     route_case = json.loads(base64.b64decode(route_request["case_b64"]))
-    original_safety_case = json.loads(
-        base64.b64decode(review["cases"][0]["new_safety_case_b64"])
-    )
+    original_safety_case = json.loads(base64.b64decode(review["cases"][0]["new_safety_case_b64"]))
     lineage = review["lineage"][0]
     original_stimulus_sha = sha256(canonical(original_safety_case["stimulus"]))
     route_stimulus_sha = sha256(canonical(route_case["stimulus"]))
@@ -626,9 +628,7 @@ def test_atomic_literal_reroute_lineage_binds_full_plan_and_preserves_original_h
         _account_row("acct_demo"),
         _account_row("acct_extra"),
     ]
-    assert lineage["validation_projection_kind"] == (
-        "atomic_literal_to_literal_full_plan_array"
-    )
+    assert lineage["validation_projection_kind"] == ("atomic_literal_to_literal_full_plan_array")
     assert lineage["destination_case_sha256"] == route_request["case_sha256"]
     assert lineage["destination_stimulus_sha256"] == route_stimulus_sha
     assert lineage["validation_route_stimulus_sha256"] == route_stimulus_sha
@@ -796,16 +796,21 @@ def test_fixed_v3_public_inventory_is_complete_and_identity_only(
     assert len(inventory["safety_case_index"]) == 497
     assert inventory["coverage_declarations"]["trace_case_count"] == 60
     assert len(inventory["phase_target_tuple_inventory"]) == 3435
-    assert len({
-        (
-            row["suite_id"],
-            row["episode_id"],
-            row["phase_index"],
-            row["mutation_kind"],
-            row["target_entity_id"],
+    assert (
+        len(
+            {
+                (
+                    row["suite_id"],
+                    row["episode_id"],
+                    row["phase_index"],
+                    row["mutation_kind"],
+                    row["target_entity_id"],
+                )
+                for row in inventory["phase_target_tuple_inventory"]
+            }
         )
-        for row in inventory["phase_target_tuple_inventory"]
-    }) == 3435
+        == 3435
+    )
     assert len(inventory["coverage_declarations"]["diagnostic_categories"]) == 43
     assert len(inventory["coverage_declarations"]["rule_ids"]) == 26
     assert len(inventory["coverage_declarations"]["policy_card_anchor_labels"]) == 39

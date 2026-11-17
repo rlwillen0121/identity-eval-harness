@@ -1976,16 +1976,12 @@ def _rebind_source_origin_chain_fixture(fixture: dict[str, Any]) -> None:
     }
 
 
-def _set_predecessor_log_prefix_timestamp(
-    fixture: dict[str, Any], timestamp: str
-) -> None:
+def _set_predecessor_log_prefix_timestamp(fixture: dict[str, Any], timestamp: str) -> None:
     predecessor = fixture["chain"]["predecessor_continuation"]
     old_ref = predecessor["audit"]
     path = fixture["root"] / old_ref["path"]
     report = json.loads(path.read_bytes())
-    report["child_log_extension"]["qualified_prefix"][
-        "last_included_outer_timestamp"
-    ] = timestamp
+    report["child_log_extension"]["qualified_prefix"]["last_included_outer_timestamp"] = timestamp
     new_ref = _source_origin_chain_write_json(fixture["root"], old_ref["path"], report)
     fixture["nested_refs"].discard((old_ref["path"], old_ref["sha256"]))
     fixture["nested_refs"].add((new_ref["path"], new_ref["sha256"]))
@@ -2175,9 +2171,7 @@ def test_same_utc_instant_accepts_both_audit_prefix_report_shapes(
             }
         },
     }
-    prefix_report = report.get(
-        "prior_qualified_prefix", report.get("qualified_prefix_binding")
-    )
+    prefix_report = report.get("prior_qualified_prefix", report.get("qualified_prefix_binding"))
     observed_prefix = report["child_log_extension"]["qualified_prefix"]
 
     assert isinstance(prefix_report, dict)
@@ -2243,9 +2237,7 @@ def test_shared_source_origin_chain_binds_historical_prefix_to_author_and_audit(
         fixture["root"], baseline_ref["path"], baseline
     )
     fixture["nested_refs"].discard((baseline_ref["path"], baseline_ref["sha256"]))
-    fixture["nested_refs"].add(
-        (rebound_baseline_ref["path"], rebound_baseline_ref["sha256"])
-    )
+    fixture["nested_refs"].add((rebound_baseline_ref["path"], rebound_baseline_ref["sha256"]))
     historical["baseline_adjudication"] = rebound_baseline_ref
     _rebind_source_origin_chain_fixture(fixture)
 
@@ -2915,9 +2907,7 @@ def _copy_card_v2_qualification_evidence(
 ) -> None:
     paths = {"SPEC-v5.md", adjudication["scope"]["capture_manifest_path"]}
     paths.update(row["path"] for row in adjudication["evidence"])
-    paths.update(
-        qualification[key]["path"] for key in ("adjudication", "origin_audit")
-    )
+    paths.update(qualification[key]["path"] for key in ("adjudication", "origin_audit"))
     source_root = source_repo.resolve()
     for relative_text in paths:
         relative = Path(relative_text)
@@ -3003,9 +2993,7 @@ def test_shared_origin_qualification_binds_reviewed_card_v2_artifact(
     else:
         assert not qualified
         assert errors == ["agent_view_only card-only session cwd differs from repository"]
-        assert gaps == [
-            "agent_view_only card-only native audit lacks a matched root spawn binding"
-        ]
+        assert gaps == ["agent_view_only card-only native audit lacks a matched root spawn binding"]
 
     qualification = {
         "kind": "author_origin",
@@ -3025,9 +3013,7 @@ def test_shared_origin_qualification_binds_reviewed_card_v2_artifact(
     )
 
     assert not relocated_qualified
-    assert relocated_errors == [
-        "agent_view_only card-only session cwd differs from repository"
-    ]
+    assert relocated_errors == ["agent_view_only card-only session cwd differs from repository"]
     assert relocated_gaps == [
         "agent_view_only card-only native audit lacks a matched root spawn binding"
     ]
@@ -4873,9 +4859,7 @@ def test_g_iga_review_01_development_vs_held_out_manifest_checks(tmp_path: Path)
     conflict_report = validate_v5_dataset(
         lite_dir, iga_review_manifest_path=conflict_path, run_baselines=False
     )
-    conflict_iga = {item.gate_id: item for item in conflict_report.gate_results}[
-        "G-IGA-REVIEW-01"
-    ]
+    conflict_iga = {item.gate_id: item for item in conflict_report.gate_results}["G-IGA-REVIEW-01"]
     assert conflict_iga.status is GateStatusV5.FAIL
     assert any("author-conflict" in err for err in conflict_iga.errors)
 
@@ -5006,10 +4990,7 @@ def test_blind_source_identity_and_shared_proof_artifact_paths_for_draft5() -> N
         "tests/conformance/v5/approved_full_spec_v1/AMBIGUITIES.md",
     ):
         assert required_doc in identity
-    assert all(
-        "__pycache__" not in path and ".pytest_cache" not in path
-        for path in identity
-    )
+    assert all("__pycache__" not in path and ".pytest_cache" not in path for path in identity)
 
     for suite in ("v5_dev", "v5_lite", "v5_core", "v5_full"):
         assert _shared_proof_artifact_path_allowed(

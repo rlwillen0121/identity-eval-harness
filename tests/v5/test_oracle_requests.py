@@ -577,8 +577,7 @@ def test_obo_hitl_cannot_cosign_for_the_delegating_actor() -> None:
     ledger = work.ledger.model_copy(
         update={
             "agent_outcomes": tuple(
-                outcome if row.agent_id == agent_id else row
-                for row in work.ledger.agent_outcomes
+                outcome if row.agent_id == agent_id else row for row in work.ledger.agent_outcomes
             )
         }
     )
@@ -594,9 +593,7 @@ def test_obo_hitl_cannot_cosign_for_the_delegating_actor() -> None:
 
     assert mutation.delegation_decision == "DENY_DELEGATION"
     assert (
-        work.ctx.trace[("AGENT_DELEGATION_MUTATION", request_id)].context[
-            "failing_predicate"
-        ]
+        work.ctx.trace[("AGENT_DELEGATION_MUTATION", request_id)].context["failing_predicate"]
         == "D4"
     )
     assert f"AGENT-DEL-V5-01.D4:{work.state.hr_persons[actor].evidence_id}" in mutation.cite
@@ -650,9 +647,7 @@ def test_temporal_sod_cooldown_blocks_recent_session() -> None:
 
     assert mutation.jit_decision == "DENY"
     assert (
-        work.ctx.trace[("JIT_DECISION_MUTATION", "req_test_temporal")].context[
-            "failing_predicate"
-        ]
+        work.ctx.trace[("JIT_DECISION_MUTATION", "req_test_temporal")].context["failing_predicate"]
         == "P3"
     )
     assert "JIT-V5-01.P3:ev_test_temporal_session" in mutation.cite
@@ -667,11 +662,7 @@ def test_emergency_jit_respects_shared_break_glass_cooldown() -> None:
         channel="EMERGENCY_BREAK_GLASS",
     )
     work.ctx.state = work.state.model_copy(
-        update={
-            "overlay": work.state.overlay.model_copy(
-                update={"break_glass_cooldown_s": 600}
-            )
-        }
+        update={"overlay": work.state.overlay.model_copy(update={"break_glass_cooldown_s": 600})}
     )
     work.provisional_sessions = [
         s.HistoricalSessionV5(

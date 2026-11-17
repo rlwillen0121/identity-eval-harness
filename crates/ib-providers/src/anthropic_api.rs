@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde_json::{Map, Value};
+use url::Url;
 
 use crate::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall, Usage,
@@ -19,6 +20,7 @@ use crate::subprocess::{redact, redact_diagnostics_map};
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 pub const STREAMING_THRESHOLD_TOKENS: u64 = 16_000;
+const VENDOR_HOST: &str = "api.anthropic.com";
 const PLACEHOLDER_API_KEY: &str = "not-set";
 const TOOL_TURN_CACHE_SIZE: usize = 4096;
 pub const ASSISTANT_CONTENT_KEY: &str = "assistant_content";
@@ -40,6 +42,20 @@ pub fn accepts_temperature(model: &str) -> bool {
     !NO_TEMPERATURE_MODELS
         .iter()
         .any(|family| model.contains(family))
+}
+
+fn is_vendor_endpoint(base_url: Option<&str>) -> bool {
+    let Some(base_url) = base_url else {
+        return false;
+    };
+    Url::parse(base_url)
+        .ok()
+        .and_then(|parsed| {
+            parsed
+                .host_str()
+                .map(|host| host.eq_ignore_ascii_case(VENDOR_HOST))
+        })
+        .unwrap_or(false)
 }
 
 fn parse_usage(usage_val: Option<&Value>) -> Usage {
@@ -93,6 +109,7 @@ pub struct AnthropicConfig {
     pub api_key_env: Option<String>,
     pub base_url_env: Option<String>,
     pub cache_namespace: Option<String>,
+    pub allow_custom_endpoint: bool,
     pub max_retries: u32,
     pub timeout_s: f64,
     pub retry_base_delay_s: f64,
@@ -107,6 +124,7 @@ impl AnthropicConfig {
             api_key_env: None,
             base_url_env: None,
             cache_namespace: None,
+            allow_custom_endpoint: false,
             max_retries: 4,
             timeout_s: 600.0,
             retry_base_delay_s: 0.5,
@@ -125,8 +143,7 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
-    #[must_use]
-    pub fn new(config: AnthropicConfig) -> Self {
+    pub fn new(config: AnthropicConfig) -> Result<Self, String> {
         let kind = if config.base_url_env.is_some() {
             "anthropic_compatible"
         } else {
@@ -143,14 +160,22 @@ impl AnthropicProvider {
         };
         let base_url =
             resolve_base_url(config.base_url_env.as_deref(), config.env_override.as_ref());
-        Self {
+        if kind == "anthropic"
+            && !is_vendor_endpoint(base_url.as_deref())
+            && !config.allow_custom_endpoint
+        {
+            return Err(
+                "anthropic: custom endpoint requires extra.allow_custom_endpoint: true; vendor credentials and prompts would be sent to another host".to_string(),
+            );
+        }
+        Ok(Self {
             config,
             kind,
             resolved_api_key_env,
             base_url,
             tool_turns: Mutex::new(ToolTurnCache::default()),
             client: OnceLock::new(),
-        }
+        })
     }
 
     #[must_use]
@@ -680,11 +705,16 @@ impl Provider for AnthropicProvider {
                 &fallback_unset
             }
         };
-        hash_endpoint(&[
+        let identity = hash_endpoint(&[
             Some(base),
             Some(self.config.model.as_str()),
             self.config.cache_namespace.as_deref(),
-        ])
+        ]);
+        if self.config.allow_custom_endpoint {
+            format!("custom-endpoint-opt-in:{identity}")
+        } else {
+            identity
+        }
     }
 
     fn capabilities(&self) -> ProviderCapabilities {

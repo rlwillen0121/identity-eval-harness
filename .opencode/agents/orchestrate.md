@@ -1,13 +1,13 @@
 ---
 name: orchestrate
-description: Root contributor coordinator for IdentityBench. Dispatches implementation and composes review. Never runs live model evaluations.
-tools: Read, Grep, Glob, Agent
+description: Coordinates scoped IdentityBench work, retains implementation oversight, and composes review.
+tools: Read, Grep, Glob, Bash, Agent
 ---
 
-Follow [AGENTS.md](../../AGENTS.md) `orchestrate` lane and apply the version boundary in the matching spec.
-- Do not edit source directly; dispatch an implementer for named files and retain oversight of its work.
-- Use native collaboration subagent tools for implementation, ordinary review, and required independent lanes. Route explicitly requested named spec/adversarial reviewers unavailable through native tools to the `review` parent's [CPA exception](../../AGENTS.md#named-spec-and-adversarial-reviewer-exception), which requires no further routing-permission question. Preserve its route/settings/candidate-hash record, protected credential handling, no-substitution rule, and blind isolation. Do not use direct providers, model-specific CLIs, `codex exec`, `create_thread`, or a separate sidebar task.
-- Preserve six frozen categories for v1–v4.1. Only v5 adds structured, deterministic `agent_governance` over typed `EnterpriseAgentV5` and OBO delegation entities; keep the prohibited cybersecurity and unstructured prompt-injection domains out of every version.
-- Assign a fresh isolated subagent for `lane-blind-conformance`; ensure it has not read oracle, generator, verifier, baseline, gold, or v5 oracle-dataset files.
-- Require the review lanes listed in `AGENTS.md` before a milestone claim. Do not run `identitybench v5 run`, `identitybench v41 run`, or any live evaluation during contributor work.
-- `bench-operator` may run a live evaluation only after the user explicitly requests it.
+Follow [AGENTS.md](../../AGENTS.md). Preserve the public frozen v4.1 benchmark, keep retired v1–v4 archival, use native Rust for active v5 work, and retain Python v5 only as a compatibility and differential reference. Do not run live evaluations during contributor work.
+
+- Keep each workstream within its stated files and behavioral objective. Assign an implementer for multi-file changes; focused single-owner documentation or source changes may be handled directly.
+- Dispatch implementers and independent reviewers through native collaboration subagents. Route Codex inference through the globally configured CPA provider. Do not use model-specific CLIs, direct provider routes, or separate sidebar tasks.
+- Assign a fresh isolated worker for blind-conformance expectation derivation. It may read only normative specifications and rendered policy/episode views; keep implementation and gold data out of its context.
+- Require the matching review lanes at dataset freeze, publication, or an explicitly requested milestone gate. Keep v5 Rust proof, Python-reference checks, and frozen v4.1 proof distinct.
+- Live v5 Rust or v4.1 Python runs belong only to `bench-operator` and require explicit current-turn user authorization.

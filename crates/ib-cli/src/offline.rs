@@ -41,13 +41,13 @@ pub fn validate(root: &Path, args: ValidateArgs) -> Result<(Value, u8)> {
         .dataset
         .as_deref()
         .map(|p| paths::resolve(root, p))
-        .unwrap_or_else(|| root.join("datasets").join(&args.suite));
+        .unwrap_or_else(|| paths::default_dataset(root, &args.suite));
     let proof = match args.blind_proof.as_deref() {
-        Some(path) => paths::provenance_input(root, path)?,
-        None => root
-            .join("reports/v5/conformance")
-            .join(&args.suite)
-            .join("receipt.json"),
+        Some(path) => Some(paths::provenance_input(root, path)?),
+        None if paths::same_path(&dataset, &paths::default_dataset(root, &args.suite))? => {
+            Some(paths::default_draft5_receipt(root, &args.suite))
+        }
+        None => None,
     };
     let iga = args
         .iga_review
@@ -58,7 +58,7 @@ pub fn validate(root: &Path, args: ValidateArgs) -> Result<(Value, u8)> {
         repository_root: Some(root.to_path_buf()),
         suite: Some(args.suite),
         double_build: args.double_build,
-        blind_proof_path: Some(proof),
+        blind_proof_path: proof,
         iga_review_manifest_path: iga,
         run_baselines: !args.skip_baselines,
         ..Default::default()
@@ -87,7 +87,7 @@ pub async fn score(root: &Path, args: ScoreArgs) -> Result<Value> {
         .dataset
         .as_deref()
         .map(|p| paths::resolve(root, p))
-        .unwrap_or_else(|| root.join("datasets").join(&args.suite));
+        .unwrap_or_else(|| paths::default_dataset(root, &args.suite));
     let dataset = load_v5_dataset(&dataset_dir)?;
     ensure!(
         dataset.seal["suite"].as_str() == Some(args.suite.as_str()),

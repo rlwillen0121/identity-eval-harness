@@ -87,9 +87,12 @@ impl ProviderKind {
     #[must_use]
     pub fn allowed_extra(self) -> &'static [&'static str] {
         match self {
-            Self::Anthropic | Self::AnthropicCompatible => &["max_retries"],
+            Self::Anthropic | Self::AnthropicCompatible => {
+                &["max_retries", "allow_custom_endpoint"]
+            }
             Self::OpenaiCompatible => &[
                 "max_retries",
+                "allow_custom_endpoint",
                 "reasoning_effort_param",
                 "max_tokens_param",
                 "provider_routing",
@@ -333,6 +336,13 @@ fn extra_problem(name: &str, value: &Value) -> Option<String> {
                 Some("must be true or false".to_string())
             }
         }
+        "allow_custom_endpoint" => {
+            if value.is_boolean() {
+                None
+            } else {
+                Some("must be true or false".to_string())
+            }
+        }
         "max_tokens_param" => {
             if matches!(value.as_str(), Some("max_completion_tokens" | "max_tokens")) {
                 None
@@ -381,6 +391,10 @@ pub fn make_provider_with_env(
             cfg.api_key_env = spec.api_key_env.clone();
             cfg.base_url_env = spec.base_url_env.clone();
             cfg.cache_namespace = spec.cache_namespace.clone();
+            cfg.allow_custom_endpoint = extra
+                .get("allow_custom_endpoint")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             cfg.env_override = env_override;
             if let Some(t) = spec.timeout_s {
                 cfg.timeout_s = t;
@@ -388,7 +402,8 @@ pub fn make_provider_with_env(
             if let Some(r) = retries_opt {
                 cfg.max_retries = r;
             }
-            Ok(Arc::new(AnthropicProvider::new(cfg)))
+            let provider = AnthropicProvider::new(cfg).map_err(FactoryError::Provider)?;
+            Ok(Arc::new(provider))
         }
         ProviderKind::OpenaiCompatible => {
             let mut cfg = OpenAICompatConfig::new(&spec.model);
@@ -399,6 +414,10 @@ pub fn make_provider_with_env(
                     .unwrap_or_else(|| "OPENAI_BASE_URL".to_string()),
             );
             cfg.cache_namespace = spec.cache_namespace.clone();
+            cfg.allow_custom_endpoint = extra
+                .get("allow_custom_endpoint")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             cfg.env_override = env_override;
             if let Some(t) = spec.timeout_s {
                 cfg.timeout_s = t;

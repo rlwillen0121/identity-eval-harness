@@ -15,6 +15,7 @@ use serde_json::{Map, Number, Value};
 
 use crate::error::ReportError;
 use crate::markdown_text::{code_cell, escape_cell, escape_inline};
+use crate::report::atomic::atomic_write;
 use crate::report::provenance::V5ReportArtifact;
 
 static INCOMPLETE_GATED_METRICS_V5: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
@@ -856,13 +857,13 @@ pub fn write_v5_report(
     let report_path = out_dir.join("report.md");
     let summary_path = out_dir.join("summary.json");
     let md = render_v5_markdown_report(artifact);
-    std::fs::write(&report_path, md.as_bytes())?;
+    atomic_write(&report_path, md.as_bytes())?;
 
     let summary_val = summary_to_json(artifact)?;
     let summary_json = dumps(
         &summary_val,
         &DumpOptions::pretty_sorted().with_ensure_ascii(true),
     )? + "\n";
-    std::fs::write(&summary_path, summary_json.as_bytes())?;
+    atomic_write(&summary_path, summary_json.as_bytes())?;
     Ok((report_path, summary_path))
 }

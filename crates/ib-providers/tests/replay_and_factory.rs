@@ -13,7 +13,7 @@ use ib_providers::cli::cursor::{CursorAdapter, CursorCliProvider};
 use ib_providers::cli::grok::{GrokAdapter, GrokCliProvider};
 use ib_providers::cli::muse::{MuseAdapter, MuseCliProvider};
 use ib_providers::factory::{ModelSpec, PROVIDER_KINDS, ProviderKind, make_provider_with_env};
-use ib_providers::openai_compat::{OpenAICompatConfig, OpenAICompatProvider};
+use ib_providers::openai_compat::{DEFAULT_BASE_URL, OpenAICompatConfig, OpenAICompatProvider};
 use ib_providers::replay::{
     CACHE_KEY_PARAM, CostSource, RecordedCost, ReplayProvider, load_responses_jsonl,
     recorded_cost_from, response_from_dict, response_to_dict,
@@ -250,8 +250,18 @@ fn factory_validation_yaml_and_make_provider() {
 
 #[test]
 fn python_type_identities_and_retry_limits_match_v5_provider_accounting() {
-    let oai = OpenAICompatProvider::new(OpenAICompatConfig::new("m")).unwrap();
-    let ant = AnthropicProvider::new(AnthropicConfig::new("m"));
+    let mut oai_config = OpenAICompatConfig::new("m");
+    oai_config.env_override = Some(BTreeMap::from([(
+        "OPENAI_BASE_URL".to_string(),
+        DEFAULT_BASE_URL.to_string(),
+    )]));
+    let oai = OpenAICompatProvider::new(oai_config).unwrap();
+    let mut ant_config = AnthropicConfig::new("m");
+    ant_config.env_override = Some(BTreeMap::from([(
+        "ANTHROPIC_BASE_URL".to_string(),
+        "https://api.anthropic.com".to_string(),
+    )]));
+    let ant = AnthropicProvider::new(ant_config).unwrap();
     let claude = ClaudeCliProvider::new(ClaudeAdapter, CliConfig::new("m", "claude", 600.0));
     let codex = CodexCliProvider::new(CodexAdapter, CliConfig::new("m", "codex", 900.0));
     let grok = GrokCliProvider::new(GrokAdapter, CliConfig::new("m", "grok", 600.0));

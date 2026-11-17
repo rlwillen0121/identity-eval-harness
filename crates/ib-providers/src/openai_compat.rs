@@ -279,6 +279,7 @@ pub struct OpenAICompatConfig {
     pub api_key_env: Option<String>,
     pub base_url_env: Option<String>,
     pub cache_namespace: Option<String>,
+    pub allow_custom_endpoint: bool,
     pub reasoning_effort_param: bool,
     pub max_tokens_param: MaxTokensParam,
     pub provider_routing: Option<Map<String, Value>>,
@@ -298,6 +299,7 @@ impl OpenAICompatConfig {
             api_key_env: None,
             base_url_env: Some(DEFAULT_BASE_URL_ENV.to_string()),
             cache_namespace: None,
+            allow_custom_endpoint: false,
             reasoning_effort_param: true,
             max_tokens_param: MaxTokensParam::ChatCompletionsDefault,
             provider_routing: None,
@@ -368,6 +370,16 @@ impl OpenAICompatProvider {
 
         let base_url =
             resolve_base_url(config.base_url_env.as_deref(), config.env_override.as_ref());
+        if matches!(
+            config.base_url_env.as_deref(),
+            None | Some(DEFAULT_BASE_URL_ENV)
+        ) && !is_vendor_endpoint(base_url.as_deref())
+            && !config.allow_custom_endpoint
+        {
+            return Err(
+                "openai_compatible: custom vendor endpoint requires extra.allow_custom_endpoint: true; vendor credentials and prompts would be sent to another host".to_string(),
+            );
+        }
         let drops_temperature =
             is_vendor_endpoint(base_url.as_deref()) && !accepts_temperature(&config.model);
 
@@ -1340,7 +1352,12 @@ impl Provider for OpenAICompatProvider {
             api_part = format!("api={}", self.config.api.as_str());
             parts.push(Some(&api_part));
         }
-        hash_endpoint(&parts)
+        let identity = hash_endpoint(&parts);
+        if self.config.allow_custom_endpoint {
+            format!("custom-endpoint-opt-in:{identity}")
+        } else {
+            identity
+        }
     }
 
     fn capabilities(&self) -> ProviderCapabilities {

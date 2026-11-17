@@ -1151,8 +1151,7 @@ def test_historical_comparator_models_v5() -> None:
         entries=(entry,),
     )
     assert (
-        HistoricalComparatorManifestV5.model_validate_json(manifest.model_dump_json())
-        == manifest
+        HistoricalComparatorManifestV5.model_validate_json(manifest.model_dump_json()) == manifest
     )
 
     with pytest.raises(ValidationError, match="unique by exact configuration"):
@@ -1203,8 +1202,7 @@ def test_normative_contract_bindings_and_lazy_package_exports() -> None:
     }
     assert V5_DRAFT5_SPEC_PATH == "SPEC-v5.0-draft.5.md"
     assert (
-        V5_DRAFT5_SPEC_SHA256
-        == "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104"
+        V5_DRAFT5_SPEC_SHA256 == "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104"
     )
     assert set(v5_pkg.__all__).issuperset(
         {

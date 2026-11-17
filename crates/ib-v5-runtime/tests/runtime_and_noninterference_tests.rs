@@ -948,6 +948,62 @@ fn stage_handle_fullmatch_and_rejection_preserve_prior_staged_buffer() {
 }
 
 #[test]
+fn stage_rejects_schema_invalid_typed_mutation_and_preserves_prior_buffer() {
+    let (mut runtime, opt1, _req) = runtime_fixture();
+    runtime.query_sources(1, &["sl_p1".to_owned()]).unwrap();
+
+    let valid = phase1_opt_mutation(&opt1);
+    let accepted = runtime
+        .stage_phase_mutations(1, "stg_good", std::slice::from_ref(&valid))
+        .unwrap();
+    assert_eq!(accepted.status, StageReceiptStatusV5::Staged);
+    let staged_digest = accepted.stage_digest.clone();
+
+    let mut invalid = valid.clone();
+    if let AtomicMutationV5::Optimization(mutation) = &mut invalid {
+        mutation.if_match.clear();
+        mutation.cite.clear();
+    } else {
+        unreachable!("phase1_opt_mutation returns an Optimization mutation");
+    }
+    assert!(invalid.validate().is_err());
+
+    let rejected = runtime
+        .stage_phase_mutations(1, "stg_bad", &[invalid])
+        .unwrap();
+    assert_eq!(rejected.status, StageReceiptStatusV5::RejectedStructural);
+    assert_eq!(
+        rejected.error_detail.as_deref(),
+        Some("opt_1:schema_invalid")
+    );
+    assert!(rejected.stage_digest.is_empty());
+    assert!(rejected.dependency_digest.is_empty());
+    assert_eq!(runtime.active_stage_digest(), staged_digest);
+
+    let snapshots = runtime.phase_snapshots(1).unwrap();
+    assert_eq!(snapshots.stage_attempts.len(), 2);
+    assert_eq!(snapshots.stage_attempts[0].receipt_status, "STAGED");
+    assert_eq!(
+        snapshots.stage_attempts[1].receipt_status,
+        "REJECTED_STRUCTURAL"
+    );
+    assert_eq!(
+        snapshots.first_stage.as_ref().unwrap(),
+        &snapshots.stage_attempts[0]
+    );
+    assert_eq!(
+        snapshots.last_stage.as_ref().unwrap(),
+        &snapshots.stage_attempts[0]
+    );
+
+    let committed = runtime.commit_phase_mutations(1, "stg_good").unwrap();
+    assert_eq!(
+        committed.status,
+        CommitReceiptStatusV5::CommittedAndAdvanced
+    );
+}
+
+#[test]
 fn induce_phase2_world_matches_runtime_coupled_transition() {
     let (mut runtime, opt1, _req) = runtime_fixture();
     let initial_world = runtime.world().clone();

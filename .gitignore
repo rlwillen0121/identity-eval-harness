@@ -51,3 +51,5 @@ reports/v41-skill-orch-v2-dev/
 
 # Rust build output
 /target/
+# Wrangler local state (leaderboard site)
+.wrangler/

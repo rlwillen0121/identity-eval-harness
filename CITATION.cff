@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using this metadata."
+type: software
+title: IdentityBench
+version: 4.1.0
+license: MIT
+authors:
+  - name: "Ryan Willen and IdentityBench Contributors"
+repository-code: "https://github.com/rlwillen0121/identity-eval-harness"

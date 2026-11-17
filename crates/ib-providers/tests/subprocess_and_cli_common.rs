@@ -239,8 +239,12 @@ fn transient_errors_and_redaction_and_tail() {
     assert!(r.contains("/usr/bin:/bin"));
 
     // Mixed-case inline URL redaction
+    let mixed_host = ["MixedCase-GW", "Internal", "Lan"].join(".");
     let mixed = redact(
-        "Failed at https://MixedCase-GW.Internal.Lan:8443/v1 on MIXEDCASE-GW.INTERNAL.LAN",
+        &format!(
+            "Failed at https://{mixed_host}:8443/v1 on {}",
+            mixed_host.to_uppercase()
+        ),
         Some(&BTreeMap::new()),
         &[],
     );

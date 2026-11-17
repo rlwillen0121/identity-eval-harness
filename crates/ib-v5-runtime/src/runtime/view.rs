@@ -8,8 +8,9 @@ use ib_v5_schemas::{
     ConnectorSchemaV5, ConnectorSyncModeV5, ConnectorTransportKindV5, DeliveredSliceV5,
     EnterpriseAgentV5, GrantV5, GroupV5, HRPersonV5, HRSourceMappingTaskV5, HistoricalSessionV5,
     IdPAccountV5, JITRequestV5, JMLWorkflowTaskV5, OptimizationTaskV5, PhaseManifestV5,
-    PhaseWorkQueueV5, PolicyCardV5, PriorPhaseLedgerV5, RoleV5, SchemaValidationError, TableRowV5,
-    TargetNHIV5, TransferBridgeV5, UARCampaignV5, WorldStateV5, decode_compact_table_v5,
+    PhaseWorkQueueV5, PolicyCardV5, PriorPhaseLedgerV5, RoleV5, SchemaValidationError,
+    StrictV5Model, TableRowV5, TargetNHIV5, TransferBridgeV5, UARCampaignV5, WorldStateV5,
+    decode_compact_table_v5,
 };
 use indexmap::IndexMap;
 use serde_json::{Value, json};
@@ -863,6 +864,10 @@ pub fn structural_errors(
     let mut errors = BTreeSet::new();
     for mutation in mutations {
         let entity_id = mutation.target_entity_id();
+        if mutation.validate().is_err() {
+            errors.insert(format!("{entity_id}:schema_invalid"));
+            continue;
+        }
         match mutation {
             AtomicMutationV5::ConnectorSync(m) => {
                 let Some(conn) = view.resolve_connector_schema(entity_id) else {

@@ -1609,3 +1609,158 @@ fn test_incomplete_run_gates_provider_billed_and_p95() {
     let p95 = ib_v5_scoring::p95_i64(&[10, 20, 30, 40, 50]).unwrap();
     assert!((p95 - 48.0).abs() < 1e-12);
 }
+
+#[test]
+fn test_attempt_status_outcome_flags_cover_observed_and_incomplete_classes() {
+    let cases = [
+        (
+            "COMPLETED",
+            false,
+            false,
+            true,
+            "EPISODE_COMPLETED",
+            Some(false),
+            false,
+        ),
+        (
+            "WITHIN_PROTOCOL_REFUSAL",
+            false,
+            false,
+            true,
+            "REFUSAL",
+            Some(false),
+            false,
+        ),
+        (
+            "WITHIN_PROTOCOL_PARSE_FAILURE",
+            false,
+            true,
+            false,
+            "PARSE_FAILURE",
+            Some(false),
+            false,
+        ),
+        (
+            "WITHIN_PROTOCOL_STEP_LIMIT",
+            false,
+            false,
+            true,
+            "MAX_TURNS_EXCEEDED",
+            Some(false),
+            false,
+        ),
+        (
+            "WITHIN_PROTOCOL_STEP_LIMIT",
+            false,
+            false,
+            true,
+            "NO_TOOL_CALL",
+            Some(false),
+            false,
+        ),
+        (
+            "WITHIN_PROTOCOL_OUTPUT_LIMIT",
+            false,
+            false,
+            true,
+            "OUTPUT_BUDGET_STOP",
+            Some(true),
+            false,
+        ),
+        (
+            "WITHIN_PROTOCOL_CONTEXT_LIMIT",
+            false,
+            false,
+            true,
+            "CONTEXT_LIMIT_EXCEEDED",
+            Some(false),
+            false,
+        ),
+        (
+            "INCOMPLETE_PROVIDER_QUOTA",
+            true,
+            false,
+            false,
+            "PROVIDER_ERROR",
+            None,
+            true,
+        ),
+        (
+            "INCOMPLETE_PROVIDER_FAILURE",
+            true,
+            false,
+            false,
+            "PROVIDER_ERROR",
+            None,
+            true,
+        ),
+        (
+            "INCOMPLETE_CONTEXT_INCOMPATIBLE",
+            true,
+            false,
+            false,
+            "PROVIDER_ERROR",
+            None,
+            true,
+        ),
+        (
+            "INCOMPLETE_HARNESS_FAILURE",
+            true,
+            false,
+            false,
+            "PROVIDER_ERROR",
+            None,
+            true,
+        ),
+    ];
+
+    for (status, provider_error, parse_failure, execution_valid, termination, budget, incomplete) in
+        cases
+    {
+        let mut item = make_episode_input();
+        item.attempt_status = status.to_owned();
+        item.provider_error = Some(provider_error);
+        item.parse_failure = Some(parse_failure);
+        item.execution_valid = Some(execution_valid);
+        item.termination_reason = Some(termination.to_owned());
+        item.budget_exceeded = budget;
+
+        let score = score_episode(&item).unwrap_or_else(|error| panic!("{status}: {error}"));
+        assert_eq!(score.g_srr_commit.is_none(), incomplete, "{status}");
+    }
+}
+
+#[test]
+fn test_completed_status_rejects_provider_error_even_without_raw_trace() {
+    let (episode, oracle) = load_v5_dev_f06_episode();
+    let execution = replay_gold_execution(&episode, &oracle);
+    let mut raw = execution.to_json_value().unwrap();
+    raw["provider_error"] = json!(true);
+    raw["execution_valid"] = json!(false);
+    raw["termination_reason"] = json!("PROVIDER_ERROR");
+    raw["attempt_status"] = json!("COMPLETED");
+    raw["completion_trace"] = json!([]);
+
+    let error = score_execution_raw_v5(&raw, &episode, &oracle, ScoreExecutionOptionsV5::default())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("attempt_status COMPLETED disagrees with raw provider_error flag"),
+        "{error}"
+    );
+}
+
+#[test]
+fn test_episode_scoring_rejects_completed_provider_failure_classification() {
+    let mut item = make_episode_input();
+    item.provider_error = Some(true);
+    item.parse_failure = Some(false);
+    item.execution_valid = Some(false);
+    item.termination_reason = Some("PROVIDER_ERROR".to_owned());
+
+    let error = score_episode(&item).unwrap_err().to_string();
+    assert!(
+        error.contains("attempt_status COMPLETED disagrees with raw provider_error flag"),
+        "{error}"
+    );
+}

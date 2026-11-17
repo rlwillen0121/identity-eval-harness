@@ -4983,8 +4983,10 @@ mod tests {
     fn committed_draft5_receipts_match_python_bound_reference_gate_diagnostics() {
         let root = repository_root();
         // These committed receipts are paired with the Draft5 sealed datasets. They currently
-        // retain six Python G-SPEC-01 stale-source/provenance diagnostics; preserve those offline
-        // diagnostics as parity evidence instead of rewriting frozen evidence.
+        // retain twelve Python G-SPEC-01 stale-source/provenance diagnostics after integrating
+        // the root CLI and agent rules from main. The current Python reference independently
+        // reproduced this exact ordered digest for all four suites; preserve the failures
+        // as parity evidence instead of rewriting frozen receipts.
         let expected = [("dev", 24), ("lite", 48), ("core", 96), ("full", 192)];
 
         for (suite, expected_phase_rows) in expected {
@@ -4997,12 +4999,12 @@ mod tests {
 
             assert_eq!(result.gate_id, "G-SPEC-01", "suite={suite}");
             assert_eq!(result.status.as_str(), "FAIL", "suite={suite}");
-            assert_eq!(result.errors.len(), 6, "suite={suite}");
+            assert_eq!(result.errors.len(), 12, "suite={suite}");
             let diagnostics = ib_core::jcs_dumps(&json!(result.errors))
                 .expect("serialize ordered gate diagnostics");
             assert_eq!(
                 sha256_bytes(&diagnostics),
-                "7996fa8ecabb932a272ff7db03216cb9a6ef7d7268c1332e78a596359f30f658",
+                "ff6ecef54fed859c8d435a466759a698083613de59446e957ee53f7514686e1b",
                 "Python diagnostic parity for suite={suite}"
             );
 

@@ -500,8 +500,8 @@ def test_kind_and_endpoint_identity(monkeypatch) -> None:
 
 def test_identity_follows_anthropic_base_url_like_the_sdk(monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gateway.example")
-    p = AnthropicProvider("claude-opus-5-5")
-    assert p.endpoint_identity() == hash_endpoint(
+    p = AnthropicProvider("claude-opus-5-5", allow_custom_endpoint=True)
+    assert p.endpoint_identity() == "custom-endpoint-opt-in:" + hash_endpoint(
         "https://gateway.example", "claude-opus-5-5", None
     )
 

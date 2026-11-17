@@ -1,0 +1,1202 @@
+[
+  {
+    "blob": "4403bce90de034e6c889ed7418ae7e7a58db6d0e",
+    "path": "crates/ib-providers/tests/http_adapters.rs",
+    "line": 245,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "4403bce90de034e6c889ed7418ae7e7a58db6d0e",
+    "path": "crates/ib-providers/tests/http_adapters.rs",
+    "line": 296,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "4403bce90de034e6c889ed7418ae7e7a58db6d0e",
+    "path": "crates/ib-providers/tests/http_adapters.rs",
+    "line": 414,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "0fb80c16f45eb3d9341f5f64aa3c8565f210a766",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 243,
+    "kind": "private-host"
+  },
+  {
+    "blob": "0fb80c16f45eb3d9341f5f64aa3c8565f210a766",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 243,
+    "kind": "private-host"
+  },
+  {
+    "blob": "0fb80c16f45eb3d9341f5f64aa3c8565f210a766",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 229,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "0fb80c16f45eb3d9341f5f64aa3c8565f210a766",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 229,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "0fb80c16f45eb3d9341f5f64aa3c8565f210a766",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 232,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 113,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 114,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 115,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 116,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 135,
+    "kind": "private-host"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 136,
+    "kind": "private-host"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 137,
+    "kind": "private-host"
+  },
+  {
+    "blob": "01de5df486c1a6e67119d405cf60143bf8a10fa7",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 319,
+    "kind": "private-host"
+  },
+  {
+    "blob": "f41f2deea1e09366e9887dfc527bb3c4eace89e7",
+    "path": "src/identitybench/cli.py",
+    "line": 179,
+    "kind": "private-host"
+  },
+  {
+    "blob": "f41f2deea1e09366e9887dfc527bb3c4eace89e7",
+    "path": "src/identitybench/cli.py",
+    "line": 193,
+    "kind": "private-host"
+  },
+  {
+    "blob": "2593a491c510d21740b8be4a0a851c608641cc3e",
+    "path": "tests/providers/test_factory.py",
+    "line": 254,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "2593a491c510d21740b8be4a0a851c608641cc3e",
+    "path": "tests/providers/test_factory.py",
+    "line": 260,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "2593a491c510d21740b8be4a0a851c608641cc3e",
+    "path": "tests/providers/test_factory.py",
+    "line": 270,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "53020097aa9a93dc06c26aaffd7319ee870eae5d",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 461,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "53020097aa9a93dc06c26aaffd7319ee870eae5d",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 553,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "53020097aa9a93dc06c26aaffd7319ee870eae5d",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 561,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "53020097aa9a93dc06c26aaffd7319ee870eae5d",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 571,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "53020097aa9a93dc06c26aaffd7319ee870eae5d",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 599,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "53020097aa9a93dc06c26aaffd7319ee870eae5d",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 601,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "53020097aa9a93dc06c26aaffd7319ee870eae5d",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 869,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "cac18a71b057bb977b7608a73cc25e8f948f0c21",
+    "path": "tests/providers/test_response_boundary_security.py",
+    "line": 251,
+    "kind": "private-host"
+  },
+  {
+    "blob": "cac18a71b057bb977b7608a73cc25e8f948f0c21",
+    "path": "tests/providers/test_response_boundary_security.py",
+    "line": 251,
+    "kind": "private-host"
+  },
+  {
+    "blob": "cac18a71b057bb977b7608a73cc25e8f948f0c21",
+    "path": "tests/providers/test_response_boundary_security.py",
+    "line": 253,
+    "kind": "private-host"
+  },
+  {
+    "blob": "71fc3e80a82be8f747b7547f8c2d8cef053d03c6",
+    "path": "tests/providers/test_subprocess.py",
+    "line": 494,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "71fc3e80a82be8f747b7547f8c2d8cef053d03c6",
+    "path": "tests/providers/test_subprocess.py",
+    "line": 494,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "71fc3e80a82be8f747b7547f8c2d8cef053d03c6",
+    "path": "tests/providers/test_subprocess.py",
+    "line": 454,
+    "kind": "private-host"
+  },
+  {
+    "blob": "71fc3e80a82be8f747b7547f8c2d8cef053d03c6",
+    "path": "tests/providers/test_subprocess.py",
+    "line": 230,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "71fc3e80a82be8f747b7547f8c2d8cef053d03c6",
+    "path": "tests/providers/test_subprocess.py",
+    "line": 230,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "71fc3e80a82be8f747b7547f8c2d8cef053d03c6",
+    "path": "tests/providers/test_subprocess.py",
+    "line": 234,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 603,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 604,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 605,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 606,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 720,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 725,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 725,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 744,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 772,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 796,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 823,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1774,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1808,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 607,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 608,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 609,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 610,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 631,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 632,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 726,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 726,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 727,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 728,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 745,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 746,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 747,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1997,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2003,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2092,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2104,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2691,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2722,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2826,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2841,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2844,
+    "kind": "private-host"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 722,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 739,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 740,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 760,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 762,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1774,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1997,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "125b080409f2022c3e6a1e8e2f59d24b991f1efb",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2004,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a40a90de9cef862689779d5d383333a8eaaa579d",
+    "path": "tests/v5/test_cli.py",
+    "line": 1267,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a40a90de9cef862689779d5d383333a8eaaa579d",
+    "path": "tests/v5/test_cli.py",
+    "line": 1288,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a40a90de9cef862689779d5d383333a8eaaa579d",
+    "path": "tests/v5/test_cli.py",
+    "line": 1321,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "7390e6e0c2bac591cca4fd487c5f52531381065d",
+    "path": "crates/ib-providers/tests/http_adapters.rs",
+    "line": 237,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "7390e6e0c2bac591cca4fd487c5f52531381065d",
+    "path": "crates/ib-providers/tests/http_adapters.rs",
+    "line": 285,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "7390e6e0c2bac591cca4fd487c5f52531381065d",
+    "path": "crates/ib-providers/tests/http_adapters.rs",
+    "line": 398,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "ad3856ab5d242f0f073782c578e62525067c7047",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 224,
+    "kind": "private-host"
+  },
+  {
+    "blob": "ad3856ab5d242f0f073782c578e62525067c7047",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 224,
+    "kind": "private-host"
+  },
+  {
+    "blob": "ad3856ab5d242f0f073782c578e62525067c7047",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 210,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "ad3856ab5d242f0f073782c578e62525067c7047",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 210,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "ad3856ab5d242f0f073782c578e62525067c7047",
+    "path": "crates/ib-providers/tests/subprocess_and_cli_common.rs",
+    "line": 213,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "1fbd62bc1b87742aa5adbf9880c136cc96903dc5",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 450,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "1fbd62bc1b87742aa5adbf9880c136cc96903dc5",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 542,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "1fbd62bc1b87742aa5adbf9880c136cc96903dc5",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 550,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "1fbd62bc1b87742aa5adbf9880c136cc96903dc5",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 560,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "1fbd62bc1b87742aa5adbf9880c136cc96903dc5",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 588,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "1fbd62bc1b87742aa5adbf9880c136cc96903dc5",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 590,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "1fbd62bc1b87742aa5adbf9880c136cc96903dc5",
+    "path": "tests/providers/test_openai_compat.py",
+    "line": 854,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "58307eaa7c01938af46c20e5eba61b69da15c5b2",
+    "path": "tests/v5/test_cli.py",
+    "line": 1267,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "58307eaa7c01938af46c20e5eba61b69da15c5b2",
+    "path": "tests/v5/test_cli.py",
+    "line": 1288,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "58307eaa7c01938af46c20e5eba61b69da15c5b2",
+    "path": "tests/v5/test_cli.py",
+    "line": 1321,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "333ea89629d998e09139c38cf71ce2c8dc990e66",
+    "path": "tests/v5/test_cli.py",
+    "line": 1267,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "333ea89629d998e09139c38cf71ce2c8dc990e66",
+    "path": "tests/v5/test_cli.py",
+    "line": 1288,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "333ea89629d998e09139c38cf71ce2c8dc990e66",
+    "path": "tests/v5/test_cli.py",
+    "line": 1321,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "5215ca616e52e7cf1a9cbeeaab90750bdcec83d8",
+    "path": "src/identitybench/cli.py",
+    "line": 179,
+    "kind": "private-host"
+  },
+  {
+    "blob": "5215ca616e52e7cf1a9cbeeaab90750bdcec83d8",
+    "path": "src/identitybench/cli.py",
+    "line": 193,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 605,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 606,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 607,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 608,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 722,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 727,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 727,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 746,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 774,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 798,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 825,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1762,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1796,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 609,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 610,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 611,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 612,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 633,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 634,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 728,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 728,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 729,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 730,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 747,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 748,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 749,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1973,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1978,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2067,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2079,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2657,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2684,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2788,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2803,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2806,
+    "kind": "private-host"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 724,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 741,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 742,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 762,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 764,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1762,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1973,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "e145caf3870f0990178b678dcdf2b2b27435e2e8",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1979,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 112,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 113,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 114,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 115,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 134,
+    "kind": "private-host"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 135,
+    "kind": "private-host"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 136,
+    "kind": "private-host"
+  },
+  {
+    "blob": "6a7236f89fcfaadad557c971ab39e73199c0293d",
+    "path": "reports/v41-skill-orch-v2/allowlist.py",
+    "line": 318,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 605,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 606,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 607,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 608,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 722,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 727,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 727,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 746,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 774,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 798,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 825,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1762,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1796,
+    "kind": "private-ip"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 609,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 610,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 611,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 612,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 633,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 634,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 728,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 728,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 729,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 730,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 747,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 748,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 749,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1973,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1978,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2067,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2079,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2657,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2684,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2788,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2803,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 2806,
+    "kind": "private-host"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 724,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 741,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 742,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 762,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 764,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1762,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1973,
+    "kind": "secret-shape"
+  },
+  {
+    "blob": "a5b3f0df23a0a9ade58e0a91b4ae647872e66a94",
+    "path": "tests/v41/test_skill_orch_v2.py",
+    "line": 1979,
+    "kind": "secret-shape"
+  }
+]

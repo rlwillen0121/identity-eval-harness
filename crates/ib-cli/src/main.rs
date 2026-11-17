@@ -100,6 +100,7 @@ pub struct BuildArgs {
 pub struct ValidateArgs {
     #[arg(long, default_value = "v5_dev", value_parser = suite_arg)]
     suite: String,
+    /// Dataset directory (defaults to datasets/v5_draft5/<suite>).
     #[arg(long, short)]
     dataset: Option<PathBuf>,
     #[arg(long)]
@@ -116,6 +117,7 @@ pub struct ValidateArgs {
 pub struct ScoreArgs {
     #[arg(long, default_value = "v5_dev", value_parser = suite_arg)]
     suite: String,
+    /// Dataset directory (defaults to datasets/v5_draft5/<suite>).
     #[arg(long, short)]
     dataset: Option<PathBuf>,
     #[arg(long, short)]

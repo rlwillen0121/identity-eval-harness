@@ -44,7 +44,7 @@ import re
 import sys
 from collections.abc import Collection, Iterator, Mapping
 from dataclasses import fields
-from typing import Any
+from typing import Any, cast
 
 from identitybench.providers.base import ModelResponse, ToolCall, Usage
 
@@ -218,9 +218,7 @@ def _finite_json(value: Any, *, budget: list[int] | None = None) -> Any:
     return _safe_tree(value, budget=budget)
 
 
-def json_safe_usage_value(
-    value: Any, *, excluded_keys: frozenset[str] = frozenset()
-) -> Any:
+def json_safe_usage_value(value: Any, *, excluded_keys: frozenset[str] = frozenset()) -> Any:
     """Preserve bounded usage evidence in strict-JSON-safe form."""
     return _safe_tree(value, usage=True, excluded_keys=excluded_keys)
 
@@ -359,9 +357,7 @@ def sanitize_response(response: ModelResponse, kind: str) -> ModelResponse:
     malformed = False
     for name in ("text", "served_model", "stop_reason", "error"):
         value = getattr(response, name)
-        if value is not None and (
-            not isinstance(value, str) or len(value) > MAX_JSON_TEXT
-        ):
+        if value is not None and (not isinstance(value, str) or len(value) > MAX_JSON_TEXT):
             setattr(response, name, None)
             malformed = True
     budget = [MAX_RESPONSE_NODES, MAX_JSON_TEXT]
@@ -397,9 +393,7 @@ def sanitize_response(response: ModelResponse, kind: str) -> ModelResponse:
                 if budget[1] < 0:
                     raise _UnsafeResponseData("response data exceeds string limits")
                 arguments = _finite_json(call.arguments, budget=budget)
-                normalized_calls.append(
-                    ToolCall(id=call.id, name=call.name, arguments=arguments)
-                )
+                normalized_calls.append(ToolCall(id=call.id, name=call.name, arguments=arguments))
             except (AttributeError, _UnsafeResponseData):
                 malformed = True
     response.tool_calls = normalized_calls
@@ -619,10 +613,10 @@ def extract_json_object(
         answer_like = frozenset(schema_keys) | frozenset(required_keys or ())
         for value in reversed(objects):
             if answer_like & value.keys():
-                return value
+                return cast(dict[str, Any], value)
     elif required_keys:
         required = frozenset(required_keys)
         for value in reversed(objects):
             if required <= value.keys():
-                return value
+                return cast(dict[str, Any], value)
     return objects[-1]

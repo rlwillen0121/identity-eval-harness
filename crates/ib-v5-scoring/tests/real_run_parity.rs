@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ib_v5_schemas::{EpisodeV5, SealedEpisodeOracleV5, StrictV5Model};
 use ib_v5_scoring::{
@@ -11,10 +11,27 @@ use ib_v5_scoring::{
 };
 use serde_json::Value;
 
-const PILOT_RUN_DIRS: [&str; 2] = [
-    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_draft5_pilot_v3_gemini_hydrogen_t0",
-    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_draft5_pilot_v3_gemini_hydrogen_t5",
+const PILOT_RUN_NAMES: [&str; 2] = [
+    "v5_draft5_pilot_v3_gemini_hydrogen_t0",
+    "v5_draft5_pilot_v3_gemini_hydrogen_t5",
 ];
+
+fn real_pilot_run_dir(run_name: &str) -> Option<PathBuf> {
+    // Default local runs are optional; an explicit root makes the requested run required.
+    let explicit_root = std::env::var_os("IDENTITYBENCH_REAL_PILOT_ROOT");
+    let root = explicit_root
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runs"));
+    let run_dir = root.join(run_name);
+    if run_dir.exists() {
+        Some(run_dir)
+    } else if explicit_root.is_some() {
+        panic!("explicit real-pilot root is missing requested run: {run_name}")
+    } else {
+        None
+    }
+}
 
 fn load_dataset_maps(
     dataset_dir: &Path,
@@ -53,11 +70,11 @@ fn real_pilot_run_artifacts_parity() {
     let mut checked_runs = 0usize;
     let mut checked_episodes = 0usize;
 
-    for run_dir_str in PILOT_RUN_DIRS {
-        let run_dir = Path::new(run_dir_str);
-        if !run_dir.exists() {
+    for run_name in PILOT_RUN_NAMES {
+        let Some(run_dir) = real_pilot_run_dir(run_name) else {
             continue;
-        }
+        };
+        let run_dir_str = run_dir.display().to_string();
         checked_runs += 1;
         let manifest: Value = serde_json::from_str(
             &std::fs::read_to_string(run_dir.join("manifest.json")).expect("read manifest.json"),

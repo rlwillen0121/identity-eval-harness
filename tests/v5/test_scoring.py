@@ -88,9 +88,7 @@ def _completion(
 
 
 def _synthetic_raw_completion_execution() -> tuple[object, object, dict[str, object]]:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -273,9 +271,7 @@ def _core_baseline_scores(
             both_phases_staged=int(index < both_phases_staged_count),
         )
         for index, (family, regime) in enumerate(
-            (family, regime)
-            for family in CORE_FAMILIES_V5
-            for regime in CORE_REGIMES_V5
+            (family, regime) for family in CORE_FAMILIES_V5 for regime in CORE_REGIMES_V5
         )
     )
 
@@ -298,9 +294,7 @@ def _baseline_context(baseline_id: str) -> RunScoringContextV5:
     ("metadata_newest_selector_greedy", "noop_team"),
 )
 def test_baseline_numeric_pass_does_not_pass_full_gate(baseline_id: str) -> None:
-    summary = aggregate_run_scores(
-        _core_baseline_scores(), context=_baseline_context(baseline_id)
-    )
+    summary = aggregate_run_scores(_core_baseline_scores(), context=_baseline_context(baseline_id))
 
     assert summary.gate_status["G-BASE-01-NUMERIC"] == "PASS"
     assert summary.gate_status["G-BASE-01"] == "UNMEASURED"
@@ -336,15 +330,11 @@ def test_heuristic_numeric_gate_preserves_spec_threshold_boundaries(
 ) -> None:
     baseline_id = "metadata_newest_selector_greedy"
     passing = aggregate_run_scores(
-        _core_baseline_scores(
-            **passing_counts, both_phases_staged_count=staged_count
-        ),
+        _core_baseline_scores(**passing_counts, both_phases_staged_count=staged_count),
         context=_baseline_context(baseline_id),
     )
     failing = aggregate_run_scores(
-        _core_baseline_scores(
-            **failing_counts, both_phases_staged_count=staged_count
-        ),
+        _core_baseline_scores(**failing_counts, both_phases_staged_count=staged_count),
         context=_baseline_context(baseline_id),
     )
 
@@ -490,9 +480,7 @@ def test_safety_flags_for_stage2_invalid_targets_are_rejected() -> None:
 
 def test_safety_counts_unsafe_stage_attempt_even_when_commit_is_repaired() -> None:
     safe_commit = _assessment()
-    unsafe_attempt = _assessment(
-        overgrant={target: target == min(_TARGETS) for target in _TARGETS}
-    )
+    unsafe_attempt = _assessment(overgrant={target: target == min(_TARGETS) for target in _TARGETS})
     item = replace(
         _episode(),
         safety_attempt_assessments=(unsafe_attempt, safe_commit),
@@ -746,6 +734,7 @@ def test_g_econ_01_and_historical_comparator_context_are_descriptive_non_gating(
         for regime in CORE_REGIMES_V5
         for rep in (1, 2, 3)
     )
+
     def _make_req(ep_id: str, rep: int) -> ProviderRequestUsageV5:
         attempt_id = f"att_{ep_id}_r{rep}_{run_sha[:12]}"
         return ProviderRequestUsageV5(
@@ -843,9 +832,7 @@ def test_g_econ_01_and_historical_comparator_context_are_descriptive_non_gating(
 
 
 def test_execution_adapter_grades_raw_boundaries_and_uses_induced_p2_for_propagation() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -894,17 +881,13 @@ def test_execution_adapter_grades_raw_boundaries_and_uses_induced_p2_for_propaga
     wrong_phase1 = replace(
         execution.phase1,
         attempts=tuple(wrong_p1(snapshot) for snapshot in execution.phase1.attempts),
-        stage_attempts=tuple(
-            wrong_p1(snapshot) for snapshot in execution.phase1.stage_attempts
-        ),
+        stage_attempts=tuple(wrong_p1(snapshot) for snapshot in execution.phase1.stage_attempts),
         first_stage=wrong_p1(execution.phase1.first_stage),
         last_stage=wrong_p1(execution.phase1.last_stage),
         commit=wrong_p1(execution.phase1.commit),
     )
     wrong_execution = replace(execution, phase1=wrong_phase1)
-    wrong_input, wrong_score = score_execution_v5(
-        wrong_execution, episode, sealed_oracle
-    )
+    wrong_input, wrong_score = score_execution_v5(wrong_execution, episode, sealed_oracle)
     assert wrong_score.g_srr_commit == 0
     assert wrong_score.g_prop == 0
     assert wrong_input.phase1.commit is not None
@@ -913,9 +896,7 @@ def test_execution_adapter_grades_raw_boundaries_and_uses_induced_p2_for_propaga
     p1_last = execution.phase1.last_stage
     p1_commit = execution.phase1.commit
     assert p1_last is not None and p1_commit is not None
-    cited_token = next(
-        cite for mutation in p1_last.mutations for cite in mutation.cite
-    )
+    cited_token = next(cite for mutation in p1_last.mutations for cite in mutation.cite)
     cited_evidence = cited_token.split(":", 1)[1]
     assert cited_evidence in p1_last.read_ledger
 
@@ -942,9 +923,7 @@ def test_execution_adapter_grades_raw_boundaries_and_uses_induced_p2_for_propaga
         commit=remove_cited_read(p1_commit),
     )
     changed_execution = replace(execution, phase1=changed_phase1)
-    ledger_input, ledger_score = score_execution_v5(
-        changed_execution, episode, sealed_oracle
-    )
+    ledger_input, ledger_score = score_execution_v5(changed_execution, episode, sealed_oracle)
     assert ledger_score.g_srr_commit == 0
     assert ledger_score.sem_srr_commit == 1
     assert ledger_score.action_srr_last_stage == 1
@@ -1234,9 +1213,7 @@ def test_actual_runner_error_takes_precedence_over_same_response_refusal() -> No
 
 
 def test_safety_counts_each_individually_valid_mutation_in_duplicate_target_attempt() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -1248,9 +1225,7 @@ def test_safety_counts_each_individually_valid_mutation_in_duplicate_target_atte
     first_stage = execution.phase1.stage_attempts[0]
     gold_mutations = execution.phase1.commit.mutations
     optimization = next(
-        mutation
-        for mutation in gold_mutations
-        if mutation.mutation_kind == "OPTIMIZATION_MUTATION"
+        mutation for mutation in gold_mutations if mutation.mutation_kind == "OPTIMIZATION_MUTATION"
     )
     assert optimization.selected_ids
     unsafe_duplicate = optimization.model_copy(update={"selected_ids": ()})
@@ -1276,9 +1251,7 @@ def test_safety_counts_each_individually_valid_mutation_in_duplicate_target_atte
 
     duplicate_execution = replace(execution, phase1=_phase_trajectory(runtime, 1))
     _, baseline_score = score_execution_v5(execution, episode, sealed_oracle)
-    scoring_input, score = score_execution_v5(
-        duplicate_execution, episode, sealed_oracle
-    )
+    scoring_input, score = score_execution_v5(duplicate_execution, episode, sealed_oracle)
     duplicate_assessment = scoring_input.safety_attempt_assessments[1]
     target = (optimization.mutation_kind, optimization.target_entity_id)
     duplicate_observations = tuple(
@@ -1310,9 +1283,7 @@ def test_safety_counts_each_individually_valid_mutation_in_duplicate_target_atte
 
 
 def test_execution_economics_recompute_retries_cache_reasoning_and_cost() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -1392,9 +1363,7 @@ def test_execution_economics_recompute_retries_cache_reasoning_and_cost() -> Non
 
 
 def test_terminal_completion_over_legacy_token_cut_does_not_stop_unless_output_limit() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -1468,9 +1437,7 @@ def test_terminal_completion_over_legacy_token_cut_does_not_stop_unless_output_l
 
 
 def test_incomplete_completion_usage_is_unmeasured() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -1516,9 +1483,7 @@ def test_incomplete_completion_usage_is_unmeasured() -> None:
 
 
 def test_provider_usage_claim_without_accounting_evidence_is_unmeasured() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -1566,9 +1531,7 @@ def test_provider_usage_claim_without_accounting_evidence_is_unmeasured() -> Non
 
 
 def test_invalid_placeholder_usage_does_not_prove_output_budget_exceeded() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(
@@ -1738,10 +1701,13 @@ def test_category_pass_at_1_all_seven_categories_and_observed_conditional() -> N
     # Duplicate target cardinality inside a mapped category fails even if semantic_equal=True.
     dup_p1 = replace(
         p1_assess,
-        category_pass={**dict.fromkeys(
-            ("connectors", "classification", "zsp_policy", "jml_cae_drift", "agent_governance"),
-            True,
-        ), "connectors": False},
+        category_pass={
+            **dict.fromkeys(
+                ("connectors", "classification", "zsp_policy", "jml_cae_drift", "agent_governance"),
+                True,
+            ),
+            "connectors": False,
+        },
     )
     dup_item = _episode(phase1=_phase(dup_p1), phase2=_phase(p2_assess))
     assert score_categories_for_episode_v5(dup_item)["connectors"] == 0
@@ -2149,9 +2115,7 @@ def test_complete_provider_billed_usage_preserves_suite_cost_when_estimated_is_n
 
 
 def test_raw_execution_regrades_out_of_phase_rejected_stage_attempts() -> None:
-    cell = next(
-        cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06"
-    )
+    cell = next(cell for cell in plan_v5_cells("v5_dev", seed=391) if cell.family_id == "F06")
     episode, sealed_oracle = build_v5_episode(cell)
     execution = asyncio.run(
         run_v5_baseline_on_episode(

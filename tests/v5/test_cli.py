@@ -185,9 +185,7 @@ def test_usage_accounting_manifest_is_verified_bound_and_copied(tmp_path: Path) 
         def endpoint_identity(self) -> str:
             return endpoint_identity
 
-    bound_config = _bind_usage_accounting_to_provider(
-        ProviderStub(), RunConfigV5(), typed_manifest
-    )
+    bound_config = _bind_usage_accounting_to_provider(ProviderStub(), RunConfigV5(), typed_manifest)
     assert bound_config.usage_accounting_evidence[0].provider_fingerprint_sha256 == fingerprint
     copied_descriptors = _copy_usage_accounting_artifacts(
         tmp_path / "run", loaded_manifest_raw, typed_manifest, evidence_by_role
@@ -207,8 +205,7 @@ def test_model_tier_is_explicit_and_included_in_canonical_config_hash(
 
     config_path = tmp_path / "model.yaml"
     config_path.write_text(
-        "model:\n  provider: openai_compatible\n  model: example-model\n"
-        "model_tier: frontier\n",
+        "model:\n  provider: openai_compatible\n  model: example-model\nmodel_tier: frontier\n",
         encoding="utf-8",
     )
     model_spec, run_config, model_tier = _load_run_config(config_path)
@@ -694,8 +691,7 @@ def test_v5_run_rejects_invalid_repeats_and_accepts_mocked_offline_repeats(
     write_v5_dataset("v5_dev", dataset_dir, seed=391)
     cfg_path = tmp_path / "model.yaml"
     cfg_path.write_text(
-        "model:\n  provider: openai_compatible\n  model: synthetic-model\n"
-        "model_tier: frontier\n",
+        "model:\n  provider: openai_compatible\n  model: synthetic-model\nmodel_tier: frontier\n",
         encoding="utf-8",
     )
     pricing_path = tmp_path / "pricing.json"
@@ -857,8 +853,7 @@ def test_v5_run_fails_fast_on_missing_explicit_env_file_while_default_stays_opti
 
     cfg_path = tmp_path / "model.yaml"
     cfg_path.write_text(
-        "model:\n  provider: openai_compatible\n  model: synthetic-model\n"
-        "model_tier: frontier\n",
+        "model:\n  provider: openai_compatible\n  model: synthetic-model\nmodel_tier: frontier\n",
         encoding="utf-8",
     )
     pricing_path = tmp_path / "pricing.json"

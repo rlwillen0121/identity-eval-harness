@@ -2,7 +2,7 @@
 the file's keys and endpoints into the process environment; every other command gets the
 harness's own ``IDENTITYBENCH_*`` settings and nothing else, so what the harness starts for it
 (and what a later ``.env`` edit adds) can't inherit a secret. The decision is by the full
-command path, so ``v3 score`` is not live just because ``v3 run`` is."""
+command path, so ``v41 score`` is not live just because ``v41 run`` is."""
 
 from __future__ import annotations
 
@@ -25,61 +25,21 @@ FILE = (
     "IDENTITYBENCH_PRICING=pricing.yaml\n"
 )
 
-LIVE = [
-    "run",
-    "judge",
-    "audit",
-    ("run",),
-    ("audit", "panel"),
-    ("audit", "adjudicate"),
-    ("v3", "run"),
-    ("v4", "run"),
-    ("v41", "run"),
-]
+LIVE = [("v41", "run")]
 NOT_LIVE = [
-    "generate",
-    "validate",
-    "score",
-    "report",
-    "compare",
     None,
     (),
     (None,),
-    "v3",
-    "v4",
     "v41",
-    ("v3",),
-    ("v3", None),
-    ("v3", "generate"),
-    ("v3", "validate"),
-    ("v3", "score"),
-    ("v3", "report"),
-    ("v4", "generate"),
-    ("v4", "validate"),
-    ("v4", "score"),
-    ("v4", "report"),
-    ("v41", "generate"),
-    ("v41", "validate"),
-    ("v41", "score"),
-    ("v41", "report"),
+    ("v41",),
+    ("v41", None),
+    *(("v41", command) for command in ("generate", "validate", "score", "report", "verify")),
 ]
 
 
 def test_the_live_commands_are_exactly_the_ones_that_create_providers() -> None:
-    assert (
-        frozenset(
-            {
-                ("run",),
-                ("judge",),
-                ("audit",),
-                ("v3", "run"),
-                ("v4", "run"),
-                ("v41", "run"),
-            }
-        )
-        == LIVE_COMMANDS
-    )
-    assert frozenset({"v3", "v4", "v41"}) == LEAF_GROUPS
+    assert frozenset({("v41", "run")}) == LIVE_COMMANDS
+    assert frozenset({"v41"}) == LEAF_GROUPS
     assert HARNESS_PREFIX == "IDENTITYBENCH_"
 
 
@@ -116,7 +76,7 @@ def test_any_other_command_gets_only_harness_settings(command: object, tmp_path:
 
 
 def test_a_group_is_decided_by_its_leaf_not_by_the_group() -> None:
-    """``v3 run`` is live and ``v3 score`` is not, even though both are under ``v3``; the group
+    """``v41 run`` is live and ``v41 score`` is not, even though both are under ``v41``; the group
     on its own (what the root callback sees) is not live, so it loads nothing for it."""
     for group in sorted(LEAF_GROUPS):
         assert is_live_command((group, "run"))
@@ -127,9 +87,7 @@ def test_a_group_is_decided_by_its_leaf_not_by_the_group() -> None:
 
 
 def test_a_path_below_a_live_group_is_live() -> None:
-    assert is_live_command(("audit", "export"))
-    assert is_live_command(("audit", "panel", "anything"))
-    assert is_live_command(("v3", "run", "extra"))  # still live below ``v3 run``
+    assert is_live_command(("v41", "run", "extra"))
 
 
 def test_without_a_filter_every_name_is_loaded_as_before(tmp_path: Path) -> None:
@@ -144,6 +102,6 @@ def test_a_withheld_name_is_not_reported_as_loaded_and_never_overrides(tmp_path:
     env = tmp_path / ".env"
     env.write_text(FILE, encoding="utf-8")
     target = {"IDENTITYBENCH_PRICING": "from-shell"}
-    loaded, _ = load_env_file(env, environ=target, wanted=env_names_for(("v3", "score")))
+    loaded, _ = load_env_file(env, environ=target, wanted=env_names_for(("v41", "score")))
     assert loaded == []
     assert target == {"IDENTITYBENCH_PRICING": "from-shell"}

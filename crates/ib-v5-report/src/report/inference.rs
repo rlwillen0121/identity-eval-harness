@@ -22,6 +22,7 @@ use ib_v5_scoring::{
 
 use crate::error::ReportError;
 use crate::markdown_text::code_cell;
+use crate::report::atomic::atomic_write;
 use crate::report::provenance::V5ReportArtifact;
 use crate::report::render::{clean_table_text, fmt_f64, fmt_interval};
 
@@ -190,19 +191,101 @@ fn validated_core_grid(artifact: &V5ReportArtifact) -> Result<BTreeMap<String, f
         ));
     }
     let repeats = summary.context.planned_repeats_per_episode;
+    let expected_repeats: BTreeSet<i64> = (1..=repeats)
+        .map(|repeat| i64::try_from(repeat).expect("repeat count fits i64"))
+        .collect();
     for (family, regime) in expected_cells {
-        let count = summary
+        let cell_repeats: Vec<i64> = summary
             .episode_scores
             .iter()
             .filter(|r| r.family_id == family && r.regime_id == regime && !r.is_incomplete())
-            .count();
-        if count != repeats {
+            .map(|r| r.repeat_index)
+            .collect();
+        let observed_repeats: BTreeSet<i64> = cell_repeats.iter().copied().collect();
+        if cell_repeats.len() != repeats || observed_repeats != expected_repeats {
             return Err(ReportError::value(format!(
-                "cell ({family}, {regime}) has {count} observed repeats, expected {repeats}"
+                "cell ({family}, {regime}) must contain each repeat 1..={repeats} exactly once"
             )));
         }
     }
     family_means_from_artifact(artifact, "g_srr_commit")
+}
+
+fn validate_additional_core_artifact(
+    config_id: &str,
+    artifact: &V5ReportArtifact,
+    expected_seal: &str,
+    expected_pricing_sha: &str,
+    expected_wave_mode: &str,
+    expected_track: Option<&str>,
+) -> Result<(), ReportError> {
+    let summary = &artifact.summary;
+    let context = &summary.context;
+    if context.model_id != config_id {
+        return Err(ReportError::value(format!(
+            "additional artifact key {config_id:?} must match its manifest model_id"
+        )));
+    }
+    if context.suite_id != "v5_core" || summary.n_episodes != 48 {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} must be a v5_core run with 48 planned episodes"
+        )));
+    }
+    if context.planned_repeats_per_episode != PLANNED_REPEATS_MODEL_V5 {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} must plan 3 repeats per episode"
+        )));
+    }
+    if summary.planned_slots != 48 * PLANNED_REPEATS_MODEL_V5 {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} must plan all 144 v5_core attempt slots"
+        )));
+    }
+    if context.run_config_sha256.is_none() {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} requires exact run-config provenance"
+        )));
+    }
+    if context.pricing_manifest_sha256.as_deref() != Some(expected_pricing_sha) {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} does not match the core pricing manifest"
+        )));
+    }
+    let wave_mode = context.wave_execution_mode.as_deref();
+    if context.comparison_track == "PREREGISTERED_ABLATION" {
+        if !matches!(wave_mode, Some("COUPLED" | "ORACLE_PHASE_RESET")) {
+            return Err(ReportError::value(format!(
+                "ablation artifact {config_id:?} must use a supported phase propagation mode"
+            )));
+        }
+    } else if wave_mode != Some(expected_wave_mode) {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} does not match the core phase propagation mode"
+        )));
+    }
+    if artifact.provenance.dataset_seal_sha256.as_deref() != Some(expected_seal) {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} does not match the core sealed dataset"
+        )));
+    }
+    if !COMPARISON_TRACKS_V5.contains(&context.comparison_track.as_str()) {
+        return Err(ReportError::value(format!(
+            "additional artifact {config_id:?} has unsupported comparison track {:?}",
+            context.comparison_track
+        )));
+    }
+    if let Some(track) = expected_track
+        && context.comparison_track != track
+    {
+        return Err(ReportError::value(format!(
+            "track artifact {config_id:?} has comparison_track={:?}, expected {track:?}",
+            context.comparison_track
+        )));
+    }
+    if summary.is_complete {
+        validated_core_grid(artifact)?;
+    }
+    Ok(())
 }
 
 fn validated_full_grid(artifact: &V5ReportArtifact) -> Result<BTreeMap<String, f64>, ReportError> {
@@ -332,6 +415,16 @@ pub fn build_v5_core_inference_with_options(
         .next()
         .flatten()
         .expect("checked Some");
+    let expected_pricing_sha = model_artifacts
+        .values()
+        .next()
+        .and_then(|artifact| artifact.summary.context.pricing_manifest_sha256.as_deref())
+        .expect("core pricing hashes were checked");
+    let expected_wave_mode = model_artifacts
+        .values()
+        .next()
+        .and_then(|artifact| artifact.summary.context.wave_execution_mode.as_deref())
+        .expect("core wave modes were checked");
 
     let metric_fields = [
         ("G-SRR", "g_srr_commit"),
@@ -404,6 +497,14 @@ pub fn build_v5_core_inference_with_options(
                         "track artifact {run_key:?} has comparison_track={actual_track:?}, expected {track_name:?}"
                     )));
                 }
+                validate_additional_core_artifact(
+                    run_key,
+                    track_artifact,
+                    expected_seal,
+                    expected_pricing_sha,
+                    expected_wave_mode,
+                    Some(track_name),
+                )?;
             }
             validated_tracks.insert(track_name.clone(), track_runs.clone());
         }
@@ -411,37 +512,51 @@ pub fn build_v5_core_inference_with_options(
 
     let mut all_family_values: BTreeMap<String, BTreeMap<String, f64>> =
         metric_grids["G-SRR"].clone();
+    let mut family_artifacts = model_artifacts.clone();
     for (track_name, track_runs) in &validated_tracks {
         if track_name == "PRIMARY_HIGHEST" {
             continue;
         }
         for (config_id, track_artifact) in track_runs {
-            if track_artifact.summary.is_complete && !all_family_values.contains_key(config_id) {
-                all_family_values.insert(
-                    config_id.clone(),
-                    family_means_from_artifact(track_artifact, "g_srr_commit")?,
-                );
+            if let Some(existing) = family_artifacts.get(config_id) {
+                if existing != track_artifact {
+                    return Err(ReportError::value(format!(
+                        "configuration {config_id:?} has conflicting core and track artifacts"
+                    )));
+                }
+            } else {
+                family_artifacts.insert(config_id.clone(), track_artifact.clone());
+            }
+            if track_artifact.summary.is_complete {
+                all_family_values
+                    .entry(config_id.clone())
+                    .or_insert(family_means_from_artifact(track_artifact, "g_srr_commit")?);
             }
         }
     }
     if let Some(add_family_artifacts) = options.additional_family_artifacts {
         for (config_id, artifact) in add_family_artifacts {
-            if artifact.summary.context.suite_id != "v5_core" {
-                return Err(ReportError::value(format!(
-                    "additional family artifact {config_id:?} must have suite_id='v5_core', got {:?}",
-                    artifact.summary.context.suite_id
-                )));
-            }
-            if artifact.provenance.dataset_seal_sha256.as_deref() != Some(expected_seal) {
-                return Err(ReportError::value(format!(
-                    "additional family artifact {config_id:?} does not match the core sealed dataset"
-                )));
+            validate_additional_core_artifact(
+                config_id,
+                artifact,
+                expected_seal,
+                expected_pricing_sha,
+                expected_wave_mode,
+                None,
+            )?;
+            if let Some(existing) = family_artifacts.get(config_id) {
+                if existing != artifact {
+                    return Err(ReportError::value(format!(
+                        "configuration {config_id:?} has conflicting family artifacts"
+                    )));
+                }
+            } else {
+                family_artifacts.insert(config_id.clone(), artifact.clone());
             }
             if artifact.summary.is_complete {
-                all_family_values.insert(
-                    config_id.clone(),
-                    family_means_from_artifact(artifact, "g_srr_commit")?,
-                );
+                all_family_values
+                    .entry(config_id.clone())
+                    .or_insert(family_means_from_artifact(artifact, "g_srr_commit")?);
             }
         }
     }
@@ -966,7 +1081,7 @@ pub fn write_v5_core_inference_report(
 ) -> Result<PathBuf, ReportError> {
     std::fs::create_dir_all(out_dir)?;
     let path = out_dir.join("v5_core_inference.md");
-    std::fs::write(
+    atomic_write(
         &path,
         render_v5_core_inference_markdown(artifact).as_bytes(),
     )?;
@@ -980,6 +1095,6 @@ pub fn write_v5_full_tiebreak_report(
 ) -> Result<PathBuf, ReportError> {
     std::fs::create_dir_all(out_dir)?;
     let path = out_dir.join("v5_full_tiebreak.md");
-    std::fs::write(&path, render_v5_full_tiebreak_markdown(artifact).as_bytes())?;
+    atomic_write(&path, render_v5_full_tiebreak_markdown(artifact).as_bytes())?;
     Ok(path)
 }

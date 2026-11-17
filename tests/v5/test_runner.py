@@ -170,9 +170,7 @@ def _provider_usage_row(response: ModelResponse) -> ProviderRequestUsageV5:
 def test_anomalous_usage_is_unavailable_in_v5_provider_rows(bad_count: object) -> None:
     direct = ModelResponse(usage=Usage(input_tokens=10, output_tokens=bad_count))
     assert _usage_problem(direct) == "usage_invalid_counts"
-    response = sanitize_response(
-        direct, "test"
-    )
+    response = sanitize_response(direct, "test")
     assert _usage_problem(response) == "usage_invalid_counts"
     assert response.raw is not None
     json.dumps(response.raw, allow_nan=False)
@@ -1153,9 +1151,7 @@ def test_v5_episode_cost_aggregate_saturates_with_raw_marker_and_strict_json() -
         10**314,
         10**314,
     ]
-    saturation_metadata = json.loads(
-        execution.provider_requests[-1].raw_usage_fields_json or "{}"
-    )
+    saturation_metadata = json.loads(execution.provider_requests[-1].raw_usage_fields_json or "{}")
     assert saturation_metadata["reported_cost_saturated"] is True
     json.dumps(execution.to_json_dict(), allow_nan=False)
 
@@ -1192,9 +1188,7 @@ def test_v5_logical_retry_cost_aggregate_saturates_with_raw_marker() -> None:
     assert len(execution.provider_requests) == 2
     assert execution.provider_requests[0].request_kind == "INITIAL"
     assert execution.provider_requests[1].request_kind == "TRANSIENT_RETRY"
-    saturation_metadata = json.loads(
-        execution.provider_requests[-1].raw_usage_fields_json or "{}"
-    )
+    saturation_metadata = json.loads(execution.provider_requests[-1].raw_usage_fields_json or "{}")
     assert saturation_metadata["reported_cost_saturated"] is True
     json.dumps(execution.to_json_dict(), allow_nan=False)
 
@@ -1240,12 +1234,10 @@ def test_v5_exact_episode_cost_ceiling_does_not_mark_request_saturation() -> Non
     assert execution.provider_reported_cost_usd < float("inf")
     assert len(execution.provider_requests) == 2
     assert sum(
-        request.provider_reported_cost_micros or 0
-        for request in execution.provider_requests
+        request.provider_reported_cost_micros or 0 for request in execution.provider_requests
     ) == int(Decimal(str(sys.float_info.max)) * Decimal(1_000_000))
     assert all(
-        "reported_cost_saturated"
-        not in json.loads(request.raw_usage_fields_json or "{}")
+        "reported_cost_saturated" not in json.loads(request.raw_usage_fields_json or "{}")
         for request in execution.provider_requests
     )
     json.dumps(execution.to_json_dict(), allow_nan=False)
@@ -1311,12 +1303,8 @@ def test_v5_episode_cost_saturation_marks_billed_retry_before_unbilled_terminal(
         10**314,
         None,
     ]
-    retry_metadata = json.loads(
-        execution.provider_requests[2].raw_usage_fields_json or "{}"
-    )
-    terminal_metadata = json.loads(
-        execution.provider_requests[3].raw_usage_fields_json or "{}"
-    )
+    retry_metadata = json.loads(execution.provider_requests[2].raw_usage_fields_json or "{}")
+    terminal_metadata = json.loads(execution.provider_requests[3].raw_usage_fields_json or "{}")
     assert retry_metadata["reported_cost_saturated"] is True
     assert terminal_metadata.get("reported_cost_saturated") is not True
     json.dumps(execution.to_json_dict(), allow_nan=False)
@@ -3229,8 +3217,7 @@ def test_agy_cli_malformed_function_call_retries_with_reminder_and_records_compl
     assert result.provider_requests[1].request_status == "COMPLETED"
     assert (
         "CRITICAL REMINDER: Do NOT invoke native function/tool calls; "
-        'emit ONLY the plain-text JSON object {"actions":[...]}.'
-        in provider.requests[1].system
+        'emit ONLY the plain-text JSON object {"actions":[...]}.' in provider.requests[1].system
     )
     assert [c.tool_calls_returned for c in result.completion_trace] == [1, 2, 2]
 

@@ -69,35 +69,39 @@ def sort_key(value: Any) -> Any:
 
 def repr_literal(value: Any, *, sort_frozensets: bool = False) -> str:
     if isinstance(value, dict):
-        return "{" + ", ".join(
-            f"{repr_literal(key)}: {repr_literal(item, sort_frozensets=sort_frozensets)}"
-            for key, item in value.items()
-        ) + "}"
+        return (
+            "{"
+            + ", ".join(
+                f"{repr_literal(key)}: {repr_literal(item, sort_frozensets=sort_frozensets)}"
+                for key, item in value.items()
+            )
+            + "}"
+        )
     if isinstance(value, tuple):
         items = ", ".join(repr_literal(item, sort_frozensets=sort_frozensets) for item in value)
         if len(value) == 1:
             items += ","
         return f"({items})"
     if isinstance(value, list):
-        return "[" + ", ".join(
-            repr_literal(item, sort_frozensets=sort_frozensets) for item in value
-        ) + "]"
+        return (
+            "["
+            + ", ".join(repr_literal(item, sort_frozensets=sort_frozensets) for item in value)
+            + "]"
+        )
     if isinstance(value, SetLiteral):
         if not value.items:
             return "set()"
         items = value.items
-        return "{" + ", ".join(
-            repr_literal(item, sort_frozensets=sort_frozensets) for item in items
-        ) + "}"
+        return (
+            "{"
+            + ", ".join(repr_literal(item, sort_frozensets=sort_frozensets) for item in items)
+            + "}"
+        )
     if isinstance(value, FrozenSetLiteral):
         if not value.items:
             return "frozenset()"
-        items = (
-            sorted(value.items, key=sort_key) if sort_frozensets else value.items
-        )
-        rendered = ", ".join(
-            repr_literal(item, sort_frozensets=sort_frozensets) for item in items
-        )
+        items = sorted(value.items, key=sort_key) if sort_frozensets else value.items
+        rendered = ", ".join(repr_literal(item, sort_frozensets=sort_frozensets) for item in items)
         return f"frozenset({{{rendered}}})"
     return repr(value)
 
@@ -122,10 +126,15 @@ def canonicalize_opt01_setup(evidence: str) -> str:
         if key in required:
             if not isinstance(value, dict):
                 raise ValueError(f"{key} must be a mapping")
-            value_text = "{" + ", ".join(
-                f"{repr_literal(item_key)}: {repr_literal(value[item_key], sort_frozensets=True)}"
-                for item_key in sorted(value)
-            ) + "}"
+            value_text = (
+                "{"
+                + ", ".join(
+                    f"{repr_literal(item_key)}: "
+                    f"{repr_literal(value[item_key], sort_frozensets=True)}"
+                    for item_key in sorted(value)
+                )
+                + "}"
+            )
         else:
             value_text = repr_literal(value)
         rendered_items.append(f"{repr_literal(key)}: {value_text}")
@@ -168,9 +177,7 @@ def main() -> None:
     args = parser.parse_args()
     report = json.loads(args.python_report.read_text())
     gate = next(
-        item
-        for item in report["gate_results"]
-        if item.get("gate_id") == "NEGATIVE-MUTATION-V5"
+        item for item in report["gate_results"] if item.get("gate_id") == "NEGATIVE-MUTATION-V5"
     )
     projection = gate["evidence"]["directed_boundary_proof"]
     changed_values = canonicalize_projection(projection)

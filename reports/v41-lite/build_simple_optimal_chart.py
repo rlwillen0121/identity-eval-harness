@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -13,7 +12,9 @@ REPO_ROOT = ROOT.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from b_style_v41 import (  # noqa: E402
+from grantt_v41 import write_png  # noqa: E402
+
+from identitybench.report.chart_style import (  # noqa: E402
     BLUE,
     BLUE_PILL,
     INK,
@@ -26,14 +27,10 @@ from b_style_v41 import (  # noqa: E402
     RULE,
     Svg,
     draw_icon,
-    write_png,
 )
 
 SUMMARY_JSON = REPO_ROOT / "runs" / "v41-skill-orchestration" / "report_summary.json"
 CHARTS_DIR = ROOT / "charts"
-ARTIFACT_DIR = Path(
-    "/Users/ryanwillen/.gemini/antigravity-cli/brain/a375266b-37e6-4fe1-9eca-0c726983784f"
-)
 
 
 def build_simple_optimal_chart() -> str:
@@ -183,9 +180,6 @@ def main() -> None:
     svg_path.write_text(build_simple_optimal_chart(), encoding="utf-8")
     write_png(svg_path)
     png_path = CHARTS_DIR / "b-optimal-cost-speed.png"
-    if ARTIFACT_DIR.exists():
-        shutil.copy2(svg_path, ARTIFACT_DIR / svg_path.name)
-        shutil.copy2(png_path, ARTIFACT_DIR / png_path.name)
     print(f"Wrote {svg_path} and {png_path}")
 
 

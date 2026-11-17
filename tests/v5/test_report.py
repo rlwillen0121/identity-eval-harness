@@ -312,9 +312,7 @@ def _write_historical_comparator_fixture(
                 "cached_input_tokens": 180_000,
                 "output_tokens": 90_000,
                 "reasoning_tokens": 18_000,
-                "repriced_cost_usd_micros": (
-                    70_200_001 if invalid == "repricing" else 70_200_000
-                ),
+                "repriced_cost_usd_micros": (70_200_001 if invalid == "repricing" else 70_200_000),
             }
         ],
     }
@@ -369,9 +367,7 @@ def _add_attested_accounting(run_dir: Path, row: dict[str, object]) -> None:
     provider_kind = "synthetic-provider"
     model_id = "model-test"
     endpoint_identity = "synthetic-endpoint"
-    fingerprint = provider_fingerprint_sha256_v5(
-        role, provider_kind, model_id, endpoint_identity
-    )
+    fingerprint = provider_fingerprint_sha256_v5(role, provider_kind, model_id, endpoint_identity)
     evidence = {
         "schema_version": V5_USAGE_ACCOUNTING_ATTESTATION_SCHEMA,
         "role": role,
@@ -500,9 +496,7 @@ def _write_core_raw_run(run_dir: Path, *, pricing_sha: str = _PRICE_SHA) -> None
                     "score": episode_score_to_mapping(score_episode(item)),
                 }
             )
-    episodes_raw = b"".join(
-        json.dumps(row, sort_keys=True).encode() + b"\n" for row in rows
-    )
+    episodes_raw = b"".join(json.dumps(row, sort_keys=True).encode() + b"\n" for row in rows)
     manifest = {
         "suite_id": "v5_core",
         "run_config": {
@@ -652,6 +646,7 @@ def test_comparator_manifest_rejects_duplicate_keys_and_extra_fields() -> None:
             expected_pricing_manifest_sha256=_PRICE_SHA,
         )
 
+
 def test_offline_report_recomputes_scores_and_records_raw_artifact_hashes(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     item, _row = _write_raw_run(run_dir)
@@ -672,12 +667,14 @@ def test_offline_report_recomputes_scores_and_records_raw_artifact_hashes(tmp_pa
     assert artifact.summary.gate_status["G-ECON-01"] == "NOT_APPLICABLE"
     assert artifact.provenance.scores_recomputed_from_scoring_inputs
     assert artifact.provenance.scoring_evidence_status == "VERIFIED"
-    assert artifact.provenance.run_manifest_sha256 == hashlib.sha256(
-        (run_dir / "manifest.json").read_bytes()
-    ).hexdigest()
-    assert artifact.provenance.episodes_sha256 == hashlib.sha256(
-        (run_dir / "episodes.jsonl").read_bytes()
-    ).hexdigest()
+    assert (
+        artifact.provenance.run_manifest_sha256
+        == hashlib.sha256((run_dir / "manifest.json").read_bytes()).hexdigest()
+    )
+    assert (
+        artifact.provenance.episodes_sha256
+        == hashlib.sha256((run_dir / "episodes.jsonl").read_bytes()).hexdigest()
+    )
     rendered = render_v5_markdown_report(artifact)
     assert "Scoring evidence: `VERIFIED`" in rendered
 
@@ -685,9 +682,7 @@ def test_offline_report_recomputes_scores_and_records_raw_artifact_hashes(tmp_pa
     assert report_path.exists()
     summary_metrics = json.loads(summary_path.read_text())["metrics"]
     assert summary_metrics["G-SRR"] is None
-    assert summary_metrics["G-SRR_observed_slot_mean"] == float(
-        expected_score.g_srr_commit or 0
-    )
+    assert summary_metrics["G-SRR_observed_slot_mean"] == float(expected_score.g_srr_commit or 0)
 
 
 def test_report_rejects_zeroed_economics_envelope_against_completion_trace(
@@ -778,9 +773,7 @@ def test_report_reprices_complete_trace_from_the_bound_frozen_artifact(tmp_path:
     manifest["pricing_manifest_sha256"] = pricing_sha
     manifest["pricing_manifest_path"] = "pricing_manifest.json"
     manifest["run_config"]["pricing_manifest_sha256"] = pricing_sha
-    manifest["run_config_sha256"] = hashlib.sha256(
-        jcs_dumps(manifest["run_config"])
-    ).hexdigest()
+    manifest["run_config_sha256"] = hashlib.sha256(jcs_dumps(manifest["run_config"])).hexdigest()
     manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
 
     artifact = report_from_raw_artifacts(run_dir)
@@ -846,9 +839,7 @@ def test_report_leaves_economics_unmeasured_when_attestation_bytes_are_missing(
     manifest["pricing_manifest_sha256"] = pricing_sha
     manifest["pricing_manifest_path"] = "pricing_manifest.json"
     manifest["run_config"]["pricing_manifest_sha256"] = pricing_sha
-    manifest["run_config_sha256"] = hashlib.sha256(
-        jcs_dumps(manifest["run_config"])
-    ).hexdigest()
+    manifest["run_config_sha256"] = hashlib.sha256(jcs_dumps(manifest["run_config"])).hexdigest()
     manifest_path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
     for evidence_path in (run_dir / "usage_accounting" / "evidence").glob("*.json"):
         evidence_path.unlink()
@@ -1213,9 +1204,12 @@ def test_core_and_full_inference_reports_follow_preregistered_cluster_contract()
     assert core_inference.pairwise_randomization[0].p_exact == 1.0
     assert core_inference.pairwise_randomization[0].p_bh_adjusted == 1.0
     assert core_inference.escalated_pairs == (("model-a", "model-b"),)
-    assert core_inference.bootstrap_by_metric["G-SRR"].paired_intervals[
-        ("model-a", "model-b")
-    ].mean_difference == 0.0
+    assert (
+        core_inference.bootstrap_by_metric["G-SRR"]
+        .paired_intervals[("model-a", "model-b")]
+        .mean_difference
+        == 0.0
+    )
     core_markdown = render_v5_core_inference_markdown(core_inference)
     assert "4,096" in core_markdown
     assert "PRIMARY_HIGHEST" in core_markdown
@@ -1346,12 +1340,8 @@ def test_full_tiebreak_requires_one_seal_and_allows_model_config_variants() -> N
 
     matching = build_v5_full_tiebreak_inference(core_inference, full)
     assert len(matching.pairwise_randomization) == 1
-    assert {artifact.provenance.dataset_seal_sha256 for artifact in core.values()} == {
-        "e" * 64
-    }
-    assert {artifact.provenance.dataset_seal_sha256 for artifact in full.values()} == {
-        "f" * 64
-    }
+    assert {artifact.provenance.dataset_seal_sha256 for artifact in core.values()} == {"e" * 64}
+    assert {artifact.provenance.dataset_seal_sha256 for artifact in full.values()} == {"f" * 64}
 
     for invalid_seal in ("g" * 64, None):
         mismatched = dict(full)
@@ -1420,9 +1410,7 @@ def test_full_tiebreak_rejects_provider_execution_setting_changes(
             "v5_full",
             CORE_FAMILIES_V5,
             seed_indices=(1, 2),
-            run_config_sha256=(
-                changed_full_digest if model_id == "model-a" else core_digest
-            ),
+            run_config_sha256=(changed_full_digest if model_id == "model-a" else core_digest),
         )
         for model_id in ("model-a", "model-b")
     }

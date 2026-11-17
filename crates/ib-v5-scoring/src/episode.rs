@@ -222,6 +222,14 @@ fn all_pass(
 /// Compute all episode-level v5 metrics from assessments at exact boundaries.
 pub fn score_episode(item: &EpisodeScoringInputV5) -> Result<EpisodeScoreV5, ScoringError> {
     item.validate()?;
+    validate_attempt_status_outcome_fields(
+        &item.attempt_status,
+        item.provider_error,
+        item.parse_failure,
+        item.execution_valid,
+        item.termination_reason.as_deref(),
+        item.budget_exceeded,
+    )?;
     let commits = [item.phase1.commit.as_ref(), item.phase2.commit.as_ref()];
     let last = [
         item.phase1.last_stage.as_ref(),
@@ -1520,11 +1528,102 @@ fn completion_usage_rows(
     Ok(Some(rows))
 }
 
-fn validate_completion_outcome_flags(
-    raw_execution: &Map<String, Value>,
-    trace: Option<&[CompletionUsageRow<'_>]>,
+fn raw_attempt_status_field<'a>(
+    value: Option<&'a Value>,
+    label: &str,
+) -> Result<Option<&'a str>, ScoringError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(status)) => Ok(Some(status.as_str())),
+        Some(_) => Err(ScoringError::value(format!(
+            "{label} must be a string or null"
+        ))),
+    }
+}
+
+fn raw_attempt_status(raw_execution: &Map<String, Value>) -> Result<Option<&str>, ScoringError> {
+    let top_level =
+        raw_attempt_status_field(raw_execution.get("attempt_status"), "attempt_status")?;
+    let nested = raw_attempt_status_field(
+        raw_execution
+            .get("attempt")
+            .and_then(Value::as_object)
+            .and_then(|attempt| attempt.get("attempt_status")),
+        "attempt.attempt_status",
+    )?;
+    if top_level.is_some() && nested.is_some() && top_level != nested {
+        return Err(ScoringError::value(
+            "top-level attempt_status disagrees with attempt.attempt_status",
+        ));
+    }
+    Ok(top_level.or(nested))
+}
+
+fn validate_attempt_status_outcome_fields(
+    attempt_status: &str,
+    provider_error: Option<bool>,
+    parse_failure: Option<bool>,
+    execution_valid: Option<bool>,
+    termination_reason: Option<&str>,
+    output_budget_exceeded: Option<bool>,
 ) -> Result<(), ScoringError> {
-    let Some(trace) = trace else {
+    let expected_flags = match attempt_status {
+        "COMPLETED"
+        | "WITHIN_PROTOCOL_REFUSAL"
+        | "WITHIN_PROTOCOL_STEP_LIMIT"
+        | "WITHIN_PROTOCOL_OUTPUT_LIMIT"
+        | "WITHIN_PROTOCOL_CONTEXT_LIMIT" => (false, false, true),
+        "WITHIN_PROTOCOL_PARSE_FAILURE" => (false, true, false),
+        "INCOMPLETE_PROVIDER_QUOTA"
+        | "INCOMPLETE_PROVIDER_FAILURE"
+        | "INCOMPLETE_CONTEXT_INCOMPATIBLE"
+        | "INCOMPLETE_HARNESS_FAILURE" => (true, false, false),
+        _ => return Ok(()),
+    };
+
+    for (name, actual, expected) in [
+        ("provider_error", provider_error, expected_flags.0),
+        ("parse_failure", parse_failure, expected_flags.1),
+        ("execution_valid", execution_valid, expected_flags.2),
+    ] {
+        if actual.is_some_and(|value| value != expected) {
+            return Err(ScoringError::value(format!(
+                "attempt_status {attempt_status} disagrees with raw {name} flag"
+            )));
+        }
+    }
+
+    let expected_terminations: &[&str] = match attempt_status {
+        "COMPLETED" => &["EPISODE_COMPLETED", "NO_TOOL_CALL"],
+        "WITHIN_PROTOCOL_REFUSAL" => &["REFUSAL"],
+        "WITHIN_PROTOCOL_PARSE_FAILURE" => &["PARSE_FAILURE"],
+        "WITHIN_PROTOCOL_STEP_LIMIT" => &["MAX_TURNS_EXCEEDED", "NO_TOOL_CALL"],
+        "WITHIN_PROTOCOL_OUTPUT_LIMIT" => &["OUTPUT_BUDGET_STOP"],
+        "WITHIN_PROTOCOL_CONTEXT_LIMIT" => &["CONTEXT_LIMIT_EXCEEDED"],
+        "INCOMPLETE_PROVIDER_QUOTA"
+        | "INCOMPLETE_PROVIDER_FAILURE"
+        | "INCOMPLETE_CONTEXT_INCOMPATIBLE"
+        | "INCOMPLETE_HARNESS_FAILURE" => &["PROVIDER_ERROR"],
+        _ => return Ok(()),
+    };
+    let parse_failure_budget_stop = attempt_status == "WITHIN_PROTOCOL_PARSE_FAILURE"
+        && output_budget_exceeded == Some(true)
+        && termination_reason == Some("OUTPUT_BUDGET_STOP");
+    if termination_reason.is_some_and(|reason| {
+        !expected_terminations.contains(&reason) && !parse_failure_budget_stop
+    }) {
+        return Err(ScoringError::value(format!(
+            "attempt_status {attempt_status} disagrees with termination_reason"
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_raw_attempt_status_outcome_fields(
+    raw_execution: &Map<String, Value>,
+) -> Result<(), ScoringError> {
+    let Some(attempt_status) = raw_attempt_status(raw_execution)? else {
         return Ok(());
     };
     let provider_error = raw_execution.get("provider_error").and_then(Value::as_bool);
@@ -1532,7 +1631,35 @@ fn validate_completion_outcome_flags(
     let execution_valid = raw_execution
         .get("execution_valid")
         .and_then(Value::as_bool);
-    let attempt_status = raw_execution.get("attempt_status").and_then(Value::as_str);
+    let termination_reason = raw_execution
+        .get("termination_reason")
+        .and_then(Value::as_str);
+    let output_budget_exceeded = raw_execution
+        .get("output_budget_exceeded")
+        .and_then(Value::as_bool);
+    validate_attempt_status_outcome_fields(
+        attempt_status,
+        provider_error,
+        parse_failure,
+        execution_valid,
+        termination_reason,
+        output_budget_exceeded,
+    )
+}
+
+fn validate_completion_outcome_flags(
+    raw_execution: &Map<String, Value>,
+    trace: Option<&[CompletionUsageRow<'_>]>,
+) -> Result<(), ScoringError> {
+    let Some(trace) = trace else {
+        return validate_raw_attempt_status_outcome_fields(raw_execution);
+    };
+    let provider_error = raw_execution.get("provider_error").and_then(Value::as_bool);
+    let parse_failure = raw_execution.get("parse_failure").and_then(Value::as_bool);
+    let execution_valid = raw_execution
+        .get("execution_valid")
+        .and_then(Value::as_bool);
+    let attempt_status = raw_attempt_status(raw_execution)?;
     let trace_provider_error = trace.iter().any(|r| r.response_error);
     let trace_refusal = trace.iter().any(|r| r.refused && !r.response_error);
 
@@ -1594,6 +1721,7 @@ fn validate_completion_outcome_flags(
                 "termination_reason violates within-protocol refusal precedence",
             ));
         }
+        validate_raw_attempt_status_outcome_fields(raw_execution)?;
         return Ok(());
     }
 
@@ -1613,6 +1741,7 @@ fn validate_completion_outcome_flags(
                 "termination_reason violates within-protocol refusal precedence",
             ));
         }
+        validate_raw_attempt_status_outcome_fields(raw_execution)?;
         return Ok(());
     }
 
@@ -1635,6 +1764,7 @@ fn validate_completion_outcome_flags(
         }
     }
 
+    validate_raw_attempt_status_outcome_fields(raw_execution)?;
     Ok(())
 }
 

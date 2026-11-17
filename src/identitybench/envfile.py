@@ -1,50 +1,15 @@
-"""Minimal ``.env`` loading for the command line (SPEC §11.1, §11.4, §17.3).
+"""Minimal .env loading with command-specific export scope.
 
-Base URLs and keys live only in ``.env`` (gitignored); committed configs name the *variables*.
-The CLI loads the repo's ``.env`` at startup so ``identitybench run`` finds ``LOCAL_LLM_BASE_URL``
-and friends without the user exporting them by hand.
-
-Two rules matter more than parser features:
-
-- **Never override.** A variable already set in the environment wins over the file, so a
-  one-off ``LOCAL_LLM_BASE_URL=... identitybench run ...`` or a CI secret is never silently
-  replaced by a stale local value.
-- **Never print values.** Problems are reported by line number and variable name only, and the
-  loader returns names, not values, so no caller can echo a secret by accident.
-- **Never block a command.** ``.env`` is optional, so a line that can't be parsed is skipped and
-  a file that can't be read (not UTF-8, no permission) is skipped whole; each is reported as a
-  problem for the caller to warn about, and every command still runs.
-
-The format is the common subset every dotenv tool accepts: ``KEY=VALUE`` lines, blank lines and
-``#`` comments, an optional ``export`` prefix, single quotes (literal) and double quotes (with
-``\\n``, ``\\t``, ``\\r``, ``\\"``, ``\\$`` and ``\\\\`` escapes), and inline comments: a ``#``
-that starts an unquoted value or follows whitespace in it, or a ``#`` after a closing quote.
-Variables are not expanded (``$OTHER`` stays literal). Multi-line values are not supported, so
-an unterminated quote is reported, as is any other line that can't be parsed, rather than
-guessed at.
-
-An empty value (``KEY=``) means "not filled in", as in ``.env.example`` ("fill in what you
-have"), so it is skipped rather than set: an empty ``ANTHROPIC_API_KEY`` or
-``IDENTITYBENCH_PRICING`` in the environment would read as configured and fail later, far from
-the cause. Write ``KEY=""`` to set an empty string on purpose.
-
-**Only commands that call models get the secrets.** The file's values are exported into the
-process environment, because that is where the API providers read their key and base-URL
-variables (``openai_compat``, ``anthropic_api``) and the simplest place for them to keep doing
-so. But a process environment is inherited by every child process, so the export is limited to
-what a command can need: ``env_names_for`` lets a command that makes model calls (``run``,
-``judge``, the ``audit`` commands, ``v3 run`` and ``v4 run``) load every name, and every other
-command (``generate``, ``validate``, ``score``, ``report``, ``compare``, and the same under
-``v3`` and ``v4``) only the harness's own ``IDENTITYBENCH_*`` settings, never a key or an
-endpoint. The decision is by the full command path (``LIVE_COMMANDS``): the root callback
-decides for a top-level command, and for the ``v3`` and ``v4`` groups (``LEAF_GROUPS``) leaves
-it to the group's own callback, which sees the leaf. The CLI providers don't rely on this (their
-child environment is an allow-list, ``providers._cli.COMMON_ENV_KEEP``); it keeps the harness's
-own environment clean for everything else it starts.
+Existing environment values always win. Diagnostics contain names and line numbers,
+never values. Only ``v41 run`` receives model keys and endpoints; every offline command
+receives only the harness's own ``IDENTITYBENCH_*`` settings. Parsing accepts optional
+``export``, quoted values, common double-quote escapes and inline comments, without
+variable expansion. Unquoted empty values are skipped; quoted empty strings are kept.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 from collections.abc import Callable, MutableMapping, Sequence
@@ -61,22 +26,16 @@ __all__ = [
     "parse_env",
 ]
 
-LIVE_COMMANDS: frozenset[tuple[str, ...]] = frozenset(
-    {("run",), ("judge",), ("audit",), ("v3", "run"), ("v4", "run"), ("v41", "run")}
-)
-"""Command paths that call model endpoints and so get the whole ``.env``: a top-level command,
-a group every subcommand of which may (``audit``: its panel commands do), or the one live
-subcommand of a group whose others don't (``v3 run``, ``v4 run``, ``v41 run``). A path below one
-of these (``audit panel``) is live too; a group on its own (``v3``) is not: its leaf decides."""
-LEAF_GROUPS = frozenset({"v3", "v4", "v41"})
-"""Top-level groups whose subcommands differ in whether they call models: the root callback
-loads nothing for them and the group's own callback loads for its leaf."""
+LIVE_COMMANDS: frozenset[tuple[str, ...]] = frozenset({("v41", "run")})
+"""Only live v4.1 execution receives model endpoint settings."""
+LEAF_GROUPS = frozenset({"v41"})
+"""The group callback decides whether its leaf needs model settings."""
 HARNESS_PREFIX = "IDENTITYBENCH_"
 """The harness's own settings (``IDENTITYBENCH_PRICING``...): loaded for every command."""
 
 CommandPath = str | Sequence[str | None] | None
 """A command as the root callback or a group callback sees it: the top-level name, or the path
-from the top (``("v3", "score")``); ``None`` elements (no subcommand) make nothing live."""
+from the top (``("v41", "score")``); ``None`` elements (no subcommand) make nothing live."""
 
 
 def _as_path(command: CommandPath) -> tuple[str | None, ...]:
@@ -225,3 +184,20 @@ def load_env_file(
             target[key] = value
             loaded.append(key)
     return sorted(loaded), parsed.problems
+
+
+def _load_dotenv_if_present(repo_root: Path) -> None:
+    """Load `KEY=VALUE` pairs from `.env` into `os.environ` via `setdefault` without logging."""
+    env_path = repo_root / ".env"
+    if not env_path.is_file():
+        return
+    with contextlib.suppress(OSError):
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip("'").strip('"')
+            if key:
+                os.environ.setdefault(key, val)

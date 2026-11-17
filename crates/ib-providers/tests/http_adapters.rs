@@ -419,7 +419,7 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     cfg.max_retries = 0;
     cfg.env_override = Some(env);
 
-    let p = AnthropicProvider::new(cfg);
+    let p = AnthropicProvider::new(cfg).unwrap();
     assert_eq!(p.kind(), "anthropic_compatible");
     let mut req1 = ModelRequest::new("POLICY", vec![Message::user("Decide.")]);
     req1.tools = vec![lookup_tool()];

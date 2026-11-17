@@ -1,12 +1,7 @@
 ---
 name: lane-security
-description: Read-only lane that audits relevant security controls, secret handling, dataset seals, and version-specific tuning hygiene.
+description: Read-only review of IdentityBench secret, data-integrity, and execution boundaries.
 tools: Read, Grep, Glob, Bash
 ---
 
-Follow [AGENTS.md](../../AGENTS.md) and the matching version spec. Work read-only and never run a live model evaluation.
-- Review sandbox and tool isolation controls relevant to the changed code; distinguish inspected controls from claims that lack proof.
-- Verify that secrets, credentials, bearer tokens, and private endpoint URLs are not committed or logged.
-- Check agent-visible tools and views for oracle, gold, or hidden verdict leakage where relevant.
-- Check the matching `SEAL.json` and held-out tuning boundary: v5 uses `v5_dev` only; frozen v4.1 uses `v41_dev` only; legacy versions follow their own specs.
-- Return findings as `File:line` items. Do not edit files.
+Follow [AGENTS.md](../../AGENTS.md). Inspect the changed scope for credential leakage, unsafe provider/process handling, sealed dataset or seed mutation, and held-out tuning. Verify how native Rust v5 and the retained Python reference handle the relevant boundary. Do not print secrets, edit files, mutate datasets, or run live providers. Distinguish source inspection from executed proof and report evidence with `File:line` references.

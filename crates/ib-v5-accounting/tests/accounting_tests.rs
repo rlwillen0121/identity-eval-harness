@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ib_v5_accounting::{
     AccountingCoverageStatusV5, AdapterRetryAccountingContractV5, BuildProviderRequestUsageInput,
@@ -1339,15 +1339,11 @@ fn round_half_up_and_saturating_micros_overflow_guards() {
 
 #[test]
 fn read_only_pilot_manifest_descriptive_usage_parity() {
-    let pilot_dir = Path::new(
-        "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_draft5_pilot_v3_gemini_hydrogen_t0",
-    );
+    let Some(pilot_dir) = real_pilot_run_dir("v5_draft5_pilot_v3_gemini_hydrogen_t0") else {
+        return;
+    };
     let manifest_path = pilot_dir.join("manifest.json");
     let episodes_path = pilot_dir.join("episodes.jsonl");
-    if !manifest_path.exists() || !episodes_path.exists() {
-        // Gracefully skip when external pilot artifact directory is absent.
-        return;
-    }
 
     let manifest_file = File::open(&manifest_path).unwrap();
     let manifest: Value = serde_json::from_reader(manifest_file).unwrap();
@@ -1388,4 +1384,21 @@ fn read_only_pilot_manifest_descriptive_usage_parity() {
     );
     assert!(eval.passed, "G-ECON-01 errors: {:?}", eval.errors);
     assert_eq!(eval.status, "PASS");
+}
+
+fn real_pilot_run_dir(run_name: &str) -> Option<PathBuf> {
+    // Default local runs are optional; an explicit root makes the requested run required.
+    let explicit_root = std::env::var_os("IDENTITYBENCH_REAL_PILOT_ROOT");
+    let root = explicit_root
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runs"));
+    let run_dir = root.join(run_name);
+    if run_dir.exists() {
+        Some(run_dir)
+    } else if explicit_root.is_some() {
+        panic!("explicit real-pilot root is missing requested run: {run_name}")
+    } else {
+        None
+    }
 }

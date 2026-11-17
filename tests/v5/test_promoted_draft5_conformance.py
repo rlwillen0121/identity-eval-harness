@@ -502,9 +502,7 @@ def _build_43_violation_diagnostic_cases(
             "OPTIMIZATION_INFEASIBLE",
             0,
             1,
-            _phase_plan_recipe(
-                {"op": "replace", "path": f"/{opt0_idx}/selected_ids", "value": []}
-            ),
+            _phase_plan_recipe({"op": "replace", "path": f"/{opt0_idx}/selected_ids", "value": []}),
             5,
         ),
         (
@@ -624,9 +622,7 @@ def _build_43_violation_diagnostic_cases(
                     "op": "replace",
                     "path": f"/{uar0_idx}/uar_decisions/0/1",
                     "value": (
-                        "REVOKE"
-                        if uar0_mut["uar_decisions"][0][1] == "CERTIFY"
-                        else "CERTIFY"
+                        "REVOKE" if uar0_mut["uar_decisions"][0][1] == "CERTIFY" else "CERTIFY"
                     ),
                 }
             ),

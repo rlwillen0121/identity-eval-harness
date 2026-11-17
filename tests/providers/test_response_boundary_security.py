@@ -116,6 +116,77 @@ async def test_api_usage_is_bounded_before_returning(kind):
     json.dumps(response_to_dict(response), allow_nan=False)
 
 
+@pytest.mark.parametrize("value", [-(10**12), 10**400, float("nan"), float("inf"), "wrong", True])
+@pytest.mark.parametrize("kind", ["openai", "responses", "anthropic", "replay"])
+async def test_all_provider_usage_shapes_remain_cache_serializable(kind, value):
+    if kind == "openai":
+        reply = completion()
+        reply.usage.completion_tokens = value
+        reply.usage.prompt_tokens = value
+        response = await openai_provider(reply).complete(make_request())
+    elif kind == "responses":
+        reply = responses_reply()
+        reply.usage.output_tokens = value
+        reply.usage.input_tokens_details.cached_tokens = value
+        response = await responses_provider(reply).complete(make_request())
+    elif kind == "anthropic":
+        reply = api_message()
+        reply.usage.output_tokens = value
+        response = await anthropic_provider(reply).complete(make_request())
+    else:
+        response = response_from_dict({"usage": {"output_tokens": value}})
+    assert 0 <= response.usage.output_tokens <= 1_000_000_000
+    json.dumps(response_to_dict(response), allow_nan=False)
+
+
+@pytest.mark.parametrize("bad", [None, [], 42])
+@pytest.mark.parametrize("field", ["id", "name"])
+@pytest.mark.parametrize("kind", ["openai", "responses", "anthropic", "replay"])
+async def test_invalid_tool_identifiers_are_provider_errors(kind, field, bad):
+    if kind == "openai":
+        reply = completion(
+            tool_calls=[
+                {
+                    "id": "call",
+                    "type": "function",
+                    "function": {"name": "lookup", "arguments": "{}"},
+                }
+            ]
+        )
+        call = reply.choices[0].message.tool_calls[0]
+        setattr(call if field == "id" else call.function, field, bad)
+        response = await openai_provider(reply).complete(make_request())
+    elif kind == "responses":
+        reply = responses_reply(
+            None,
+            function_calls=[{"call_id": "call", "name": "lookup", "arguments": "{}"}],
+        )
+        setattr(reply.output[-1], "call_id" if field == "id" else field, bad)
+        response = await responses_provider(reply).complete(make_request())
+    elif kind == "anthropic":
+        reply = api_message([{"type": "tool_use", "id": "call", "name": "lookup", "input": {}}])
+        setattr(reply.content[0], field, bad)
+        response = await anthropic_provider(reply).complete(make_request())
+    else:
+        call = {"id": "call", "name": "lookup", "arguments": {}}
+        call[field] = bad
+        with pytest.raises(ValueError, match="invalid tool calls"):
+            response_from_dict({"tool_calls": [call]})
+        return
+    assert response.error and "malformed response" in response.error
+    assert not response.tool_calls
+
+
+async def test_nonfinite_diagnostic_metadata_does_not_discard_valid_answer():
+    reply = completion('{"decision":"DENY"}')
+    reply.id = float("nan")
+    response = await openai_provider(reply).complete(make_request())
+    assert response.ok
+    assert response.text == '{"decision":"DENY"}'
+    assert response.raw["id"] is None
+    json.dumps(response_to_dict(response), allow_nan=False)
+
+
 @pytest.mark.parametrize("bad_raw", [{"nested": object()}, {"nested": {1: "bad key"}}])
 def test_response_boundary_fails_closed_on_non_json_nested_raw_data(bad_raw):
     response = sanitize_response(ModelResponse(text="answer", raw=bad_raw), "fixture")

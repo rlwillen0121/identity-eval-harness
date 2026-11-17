@@ -2,7 +2,7 @@
 
 [Full Report (`report.md`)](report.md) · [Interactive Figures (`figures.html`)](figures.html) · [Methodology & Provenance (`METHOD.md`)](METHOD.md) · [Dataset Card (`DATASET_CARD.md`)](DATASET_CARD.md) · [Score Data (`summary.json`)](summary.json)
 
-Every chart is generated deterministically from [`runs/v41-lite-sub/records/*.jsonl`](../../runs/v41-lite-sub/records) and [`datasets/v41_lite/`](../../datasets/v41_lite) via `uv run python reports/v41-lite/build_charts.py` in paired light and dark SVG + PNG formats.
+Every chart is generated deterministically from `runs/v41-lite-sub/records/*.jsonl` (local run artifacts, not committed) and [`datasets/v41_lite/`](../../datasets/v41_lite) via `uv run python reports/v41-lite/build_charts.py` in paired light and dark SVG + PNG formats.
 
 ## 1. Category Tasks Leaderboard (`b-capability` / `readme-leaderboard`)
 

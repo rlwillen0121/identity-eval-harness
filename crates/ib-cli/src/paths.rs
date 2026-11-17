@@ -11,6 +11,24 @@ pub fn resolve(root: &Path, value: &Path) -> PathBuf {
     }
 }
 
+/// The canonical input location for the active Draft 5 suite artifacts.
+pub fn default_dataset(root: &Path, suite: &str) -> PathBuf {
+    root.join("datasets/v5_draft5").join(suite)
+}
+
+/// The committed Draft 5 blind-conformance receipt for a `v5_*` suite.
+pub fn default_draft5_receipt(root: &Path, suite: &str) -> PathBuf {
+    let suffix = suite.strip_prefix("v5_").unwrap_or(suite);
+    root.join("reports/v5/conformance")
+        .join(format!("v5_draft5_{suffix}"))
+        .join("receipt.json")
+}
+
+/// Compare paths after resolving any existing symlinks and their missing descendants.
+pub fn same_path(left: &Path, right: &Path) -> Result<bool> {
+    Ok(canonicalize_available(left)? == canonicalize_available(right)?)
+}
+
 pub fn sensitive_path(path: &Path) -> bool {
     path.components().any(|part| {
         let Component::Normal(part) = part else {
@@ -120,5 +138,40 @@ mod tests {
         }
         assert!(provenance_input(dir.path(), &secret).is_err());
         assert!(provenance_input(dir.path(), Path::new("missing/receipt.json")).is_ok());
+    }
+
+    #[test]
+    fn active_draft5_defaults_use_the_current_dataset_and_receipt_layout() {
+        let root = Path::new("repo");
+        for suite in ["v5_dev", "v5_lite", "v5_core", "v5_full"] {
+            let suffix = suite.strip_prefix("v5_").unwrap();
+            assert_eq!(
+                default_dataset(root, suite),
+                root.join("datasets/v5_draft5").join(suite)
+            );
+            assert_eq!(
+                default_draft5_receipt(root, suite),
+                root.join(format!(
+                    "reports/v5/conformance/v5_draft5_{suffix}/receipt.json"
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn same_path_resolves_aliases_before_matching_the_default_dataset() {
+        let dir = tempfile::tempdir().unwrap();
+        let dataset = default_dataset(dir.path(), "v5_dev");
+        std::fs::create_dir_all(&dataset).unwrap();
+        let custom = dir.path().join("custom-dataset");
+        std::fs::create_dir(&custom).unwrap();
+        assert!(!same_path(&custom, &dataset).unwrap());
+
+        #[cfg(unix)]
+        {
+            let alias = dir.path().join("dataset-alias");
+            std::os::unix::fs::symlink(&dataset, &alias).unwrap();
+            assert!(same_path(&alias, &dataset).unwrap());
+        }
     }
 }

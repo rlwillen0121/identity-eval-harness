@@ -1,0 +1,15 @@
+{
+  "crates/ib-providers/src/anthropic_api.rs": "efe9b26d2269209e6b22e07aa983ed8a01b855b31c247874f63ce08c90a521ae",
+  "crates/ib-providers/src/factory.rs": "4511fdabb6b92f1f3f7c7dc64af8ce2e6640851a41e61e89a4cf7fcf0cffc7af",
+  "crates/ib-providers/src/openai_compat.rs": "a70da74026a9c9714c5fb945e2f9e99d82b6f99e7bcc92ae4337a1f4fbc173fb",
+  "crates/ib-v5-report/src/report/atomic.rs": "70ffa9f40aba1c39916908567180caa1411a7088dfee28daf5841be4608a1d8c",
+  "crates/ib-v5-report/src/report/inference.rs": "421b83ab724264a946b67fda1447a279539421656edbc06744d90dbd1b5763fe",
+  "crates/ib-v5-report/src/report/render.rs": "bf600875c481828aa7bef257d41a1e9b99d0e966005d4c381d0177f5b8206a0b",
+  "crates/ib-v5-runtime/src/runtime/view.rs": "82a8e8d196767b7ad4be9c2e7ea0ecc86474ec0f362bcbb97b392e64f3ba0815",
+  "crates/ib-v5-scoring/src/episode.rs": "5c2629b40593c1f2104965eb8a0d00dae1144211201d04d0a6661fb4df38faf7",
+  "scripts/check_reference_pyright.py": "6ebdda00a7c61207c09fd7fa1653823786b82eb4ad57e0ad15db53e389149b85",
+  "scripts/reference_pyright_baseline.json": "b8a934721259a9095a9c54c81f9a53495d721a6f2f402cffad0e2aa836b5ec68",
+  "tests/fixtures/repo_hygiene_home_metadata.json": "9bc44a9d3d727406cef8cb294bb45db8b44d0aec52bd1f36921569eb0000a4d8",
+  "tests/test_reference_pyright_gate.py": "50c8d6996b7235fcab9646164c847d7e7af20bd49bb31c9d6c5bb2b1dc6590fa",
+  "tests/test_repo_hygiene.py": "c0068a54b1587ea2919ff487b6f37acb9f46d334afb620bd84bbd9ebdfb2d420"
+}

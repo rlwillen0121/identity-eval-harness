@@ -28,7 +28,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Literal, get_args
 
 from identitybench.providers._json import sanitize_response
 from identitybench.providers._subprocess import redact, redact_diagnostics
@@ -40,7 +40,8 @@ from identitybench.providers.base import (
     Usage,
     hash_endpoint,
 )
-from identitybench.schemas.predictions import CostSource
+
+CostSource = Literal["metered", "reported", "unmetered", "unknown"]
 
 CACHE_KEY_PARAM = "cache_key"
 

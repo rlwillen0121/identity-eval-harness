@@ -32,10 +32,9 @@ def escape_inline(text: str) -> str:
     flat = " ".join(text.split())
     escaped = _SPECIAL.sub(r"\\\1", _AMP.sub("&amp;", flat))
     return _AUTOLINK.sub(
-        lambda match: match.group()
-        .replace(":", "&#58;")
-        .replace(".", "&#46;")
-        .replace("@", "&#64;"),
+        lambda match: (
+            match.group().replace(":", "&#58;").replace(".", "&#46;").replace("@", "&#64;")
+        ),
         escaped,
     )
 

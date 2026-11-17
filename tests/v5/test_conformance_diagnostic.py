@@ -440,9 +440,7 @@ def test_failed_execution_and_non_ok_results_never_produce_a_match(
 ) -> None:
     case = _recipe_case()
     full_spec, production = _current_fixtures(monkeypatch, tmp_path, case)
-    full_receipt = _outer_receipt(
-        full_spec.evaluator, case, _valid_result(case, "full_spec")
-    )
+    full_receipt = _outer_receipt(full_spec.evaluator, case, _valid_result(case, "full_spec"))
     failed = {
         "protocol": PROTOCOL,
         "evaluator_id": "production",
@@ -501,9 +499,7 @@ def test_case_source_and_contract_mismatches_fail_closed(
 ) -> None:
     case = _recipe_case()
     full_spec, production = _current_fixtures(monkeypatch, tmp_path, case)
-    full_receipt = _outer_receipt(
-        full_spec.evaluator, case, _valid_result(case, "full_spec")
-    )
+    full_receipt = _outer_receipt(full_spec.evaluator, case, _valid_result(case, "full_spec"))
     production_execution = _outer_receipt(
         production.evaluator, case, _valid_result(case, "production")
     )
@@ -724,9 +720,7 @@ def test_case_validation_growth_is_linear_after_inventory_sealing(
     monkeypatch.setattr(process_module, "_run_frozen_evaluator_process", execute)
     for case in cases:
         production_receipt = run_diagnostic_production_evaluator(production, case.case_id)
-        full_receipt = _outer_receipt(
-            full_spec.evaluator, case, _valid_result(case, "full_spec")
-        )
+        full_receipt = _outer_receipt(full_spec.evaluator, case, _valid_result(case, "full_spec"))
         compare_full_spec_to_production_diagnostic(
             case, full_spec, production, full_receipt, production_receipt
         )

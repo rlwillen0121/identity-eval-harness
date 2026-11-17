@@ -1,5 +1,6 @@
 //! Strict offline IdentityBench v5 report generation with artifact provenance.
 
+pub(crate) mod atomic;
 pub mod inference;
 pub mod json_util;
 pub mod provenance;

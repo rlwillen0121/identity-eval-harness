@@ -93,7 +93,7 @@ models:
     timeout_s: 600
     concurrency: 2
     extra:
-      binary: /Users/ryanwillen/.local/bin/muse
+      binary: muse
   - provider: muse_cli
     model: muse-wonder-1.0
     label: muse-wonder-1.0-t0-medium
@@ -103,7 +103,7 @@ models:
     timeout_s: 900
     concurrency: 2
     extra:
-      binary: /Users/ryanwillen/.local/bin/muse
+      binary: muse
   - provider: openai_compatible
     model: moonshotai/kimi-k3
     label: kimi-k3-t0-medium
@@ -189,8 +189,8 @@ models:
     label: qwen3.8-flash-next-local
     topology_id: T0_SINGLE_MONOLITH
     steering_mode: UNSTEERED
-    base_url_env: CPA_OPENAI_BASE_URL
-    api_key_env: CPA_CLIENT_API_KEY
+    base_url_env: LOCAL_PROXY_BASE_URL
+    api_key_env: LOCAL_PROXY_API_KEY
     max_output_tokens: 16384
     timeout_s: 600
     concurrency: 8

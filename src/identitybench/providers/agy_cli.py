@@ -239,9 +239,7 @@ class AgyCliProvider(CliProvider):
     def _parse(self, result: ProcessResult, request: ModelRequest, io_dir: Path) -> ModelResponse:
         events = list(parse_jsonl(result.stdout))
         results = [
-            as_dict(event.get("result"))
-            for event in events
-            if event.get("event") == "result"
+            as_dict(event.get("result")) for event in events if event.get("event") == "result"
         ]
         if not results:
             failed = self._fail("no result event on stdout", result)
@@ -291,9 +289,9 @@ class AgyCliProvider(CliProvider):
                 if recovered_text is not None:
                     response.text = recovered_text
                     response.parsed = None
-                    meta = dict(response.raw or {})
-                    meta["recovered_empty_function_call"] = True
-                    response.raw = meta
+                    recovered_meta = dict(response.raw or {})
+                    recovered_meta["recovered_empty_function_call"] = True
+                    response.raw = recovered_meta
                     return response
             message = payload.get("error") or f"status {status!r}"
             response.error = self._error_text(str(message), result)

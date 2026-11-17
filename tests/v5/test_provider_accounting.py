@@ -237,8 +237,9 @@ def test_canonical_policy_registry_and_validation() -> None:
         "unknown_mapping",
     }
     assert set(CANONICAL_PROVIDER_USAGE_POLICIES_V5) == expected_keys
-    assert get_provider_usage_policy_v5("OPENAI_RESPONSES") == (
-        CANONICAL_PROVIDER_USAGE_POLICIES_V5["openai_responses"]
+    assert (
+        get_provider_usage_policy_v5("OPENAI_RESPONSES")
+        == (CANONICAL_PROVIDER_USAGE_POLICIES_V5["openai_responses"])
     )
     assert (
         get_provider_usage_policy_v5("anthropic_messages").to_canonical_json()
@@ -308,9 +309,7 @@ def test_normalization_included_vs_disjoint_vs_unknown_and_contradictory() -> No
         "output_tokens": 400,
         "cache_creation": {"ephemeral_5m_input_tokens": 250},
     }
-    norm_anth = normalize_raw_usage_v5(
-        raw_anth, get_provider_usage_policy_v5("anthropic_messages")
-    )
+    norm_anth = normalize_raw_usage_v5(raw_anth, get_provider_usage_policy_v5("anthropic_messages"))
     assert norm_anth.input_tokens_total == 1750
     assert norm_anth.cached_input_tokens == 1000
     assert norm_anth.output_tokens_total == 400
@@ -592,9 +591,12 @@ def test_billed_vs_estimated_cost_and_currency_mismatch_guard() -> None:
     assert summary.currency_code == "USD"
     assert summary.estimated_cost_micros == 22_050_000
     assert summary.provider_billed_cost_micros == 2_200
-    assert evaluate_g_econ_01_v5(
-        (a1, a2), summary, target_currency="USD", currency_conversions=(conv,)
-    )["passed"] is True
+    assert (
+        evaluate_g_econ_01_v5(
+            (a1, a2), summary, target_currency="USD", currency_conversions=(conv,)
+        )["passed"]
+        is True
+    )
 
 
 def test_interval_union_active_elapsed_ms_and_attempt_timings() -> None:

@@ -228,7 +228,7 @@ class MuseCliProvider(CliProvider):
                     and (not isinstance(value, float) or math.isfinite(value))
                 }
                 if subscription
-                else None
+                else None,
             },
         )
         problem = None

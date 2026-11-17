@@ -78,14 +78,10 @@ def test_scope_resolution_order_and_footprint_lattice() -> None:
     )
 
     assert catalog.leaves("/*") == frozenset(catalog.leaf_scopes)
-    assert catalog.leaves("/org/eng") == frozenset(
-        {"/org/eng/platform", "/org/eng/security"}
-    )
+    assert catalog.leaves("/org/eng") == frozenset({"/org/eng/platform", "/org/eng/security"})
     assert scope_leq(catalog, "/org/eng/platform", "/org/eng")
     assert not scope_leq(catalog, "/org/eng", "/org/eng/platform")
-    assert scope_meet(catalog, "/org/eng", "/org/eng/security") == frozenset(
-        {"/org/eng/security"}
-    )
+    assert scope_meet(catalog, "/org/eng", "/org/eng/security") == frozenset({"/org/eng/security"})
     assert scope_meet(catalog) == frozenset(catalog.leaf_scopes)
 
     algebra = ScopeAlgebraV5(catalog)
@@ -106,9 +102,7 @@ def test_scope_resolution_order_and_footprint_lattice() -> None:
 
 
 def test_cycle_safe_group_closure_and_deny_masks_group_and_grant_allow() -> None:
-    catalog = ScopeCatalogV5(
-        leaf_scopes=("/org/eng/platform", "/org/eng/security", "/org/finance")
-    )
+    catalog = ScopeCatalogV5(leaf_scopes=("/org/eng/platform", "/org/eng/security", "/org/finance"))
     allow_group = GroupV5(
         group_id="grp_allow",
         member_of_group_ids=("grp_deny",),
@@ -170,9 +164,7 @@ def test_cycle_safe_group_closure_and_deny_masks_group_and_grant_allow() -> None
 
 
 def test_sod_witnesses_are_symmetric_and_global_control_needs_full_catalog() -> None:
-    catalog = ScopeCatalogV5(
-        leaf_scopes=("/org/eng/platform", "/org/eng/security", "/org/finance")
-    )
+    catalog = ScopeCatalogV5(leaf_scopes=("/org/eng/platform", "/org/eng/security", "/org/finance"))
     first = frozenset({("read", "/org/eng/platform")})
     second = frozenset({("write", "/org/eng/security")})
     same_leaf = ScopedSoDRuleV5(
@@ -208,25 +200,25 @@ def test_sod_witnesses_are_symmetric_and_global_control_needs_full_catalog() -> 
         update={"cc_id": "cc_full", "covered_scope_path": "/*"}
     )
 
-    assert not syntactically_mitigates(
-        partial_control, "pers_a", witness, global_rule, catalog
-    )
+    assert not syntactically_mitigates(partial_control, "pers_a", witness, global_rule, catalog)
     assert syntactically_mitigates(full_control, "pers_a", witness, global_rule, catalog)
     assert not syntactically_mitigates(full_control, "pers_b", witness, global_rule, catalog)
-    assert unmitigated_witnesses(
-        first, second, "pers_a", (full_control,), (global_rule,), catalog
-    ) == frozenset()
-    assert unmitigated_witnesses(
-        first, second, "pers_a", (), (global_rule,), catalog
-    ) == witnesses
+    assert (
+        unmitigated_witnesses(first, second, "pers_a", (full_control,), (global_rule,), catalog)
+        == frozenset()
+    )
+    assert unmitigated_witnesses(first, second, "pers_a", (), (global_rule,), catalog) == witnesses
 
     # Rule codes are agent-visible witness IDs but the schema does not require
     # uniqueness. A same-leaf duplicate must not shadow the GLOBAL rule.
     duplicate_code = global_rule.model_copy(update={"scope_mode": "SAME_LEAF_SCOPE"})
     assert sod_witnesses(first, second, (global_rule, duplicate_code)) == witnesses
-    assert unmitigated_witnesses(
-        first, second, "pers_a", (partial_control,), (global_rule, duplicate_code), catalog
-    ) == witnesses
+    assert (
+        unmitigated_witnesses(
+            first, second, "pers_a", (partial_control,), (global_rule, duplicate_code), catalog
+        )
+        == witnesses
+    )
 
 
 def test_engagement_liveness_department_and_live_manager_walk() -> None:

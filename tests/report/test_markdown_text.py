@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import html
+import re
+
+import pytest
+
 from identitybench.report.markdown_text import code_cell, escape_cell, escape_inline, fenced
 
 
@@ -51,3 +56,22 @@ def test_code_cell_cannot_be_closed_by_backticks_or_split_by_hostile_text() -> N
 def test_inline_text_neutralizes_autolinks() -> None:
     assert "https://" not in escape_inline("https://bad.example")
     assert "@" not in escape_inline("person@example.test")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "http://example.com",
+        "https://example.com",
+        "HTTPS://example.com",
+        "ftp://example.com",
+        "mailto:user@example.com",
+        "www.example.com",
+        "WWW.example.com",
+        "user@example.com",
+    ],
+)
+def test_bare_links_are_readable_but_not_autolinkable(text: str) -> None:
+    escaped = escape_inline(text)
+    assert not re.search(r"(?i)(?:https?|ftp)://|mailto:|www\.|@", escaped)
+    assert html.unescape(escaped) == text

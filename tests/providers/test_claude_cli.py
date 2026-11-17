@@ -15,7 +15,6 @@ from identitybench.providers._cli import (
 )
 from identitybench.providers.base import Message, Role
 from identitybench.providers.claude_cli import ClaudeCliProvider
-from identitybench.render import tools as render_tools
 from tests.providers.fakes import DECISION_SCHEMA, FakeRunner, flag_value, make_request, ok
 
 # Real `claude -p --output-format json --json-schema ...` output (CLI 2.1.296).
@@ -124,7 +123,7 @@ async def test_an_action_protocol_turn_is_sent_without_the_schema() -> None:
 
 
 def test_the_action_schema_name_is_the_renderers() -> None:
-    assert ACTION_SCHEMA_NAME == render_tools.ACTION_SCHEMA_NAME
+    assert ACTION_SCHEMA_NAME == "tool_action"
 
 
 async def test_request_effort_overrides_the_constructor_default() -> None:

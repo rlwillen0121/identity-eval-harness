@@ -256,11 +256,14 @@ def test_snapshot_rows_preserve_staged_order_and_event_bindings() -> None:
         production._assert_stage_event_plan_bijection([(4, 1), (9, 2)], event_plan_rows[::-1])
 
     commit_snapshot = SimpleNamespace(phase_index=2)
-    assert production._snapshot_event_binding(
-        {id(commit_snapshot): (12, 2, "commit_phase_mutations")},
-        commit_snapshot,
-        boundary="COMMIT",
-    ) == 12
+    assert (
+        production._snapshot_event_binding(
+            {id(commit_snapshot): (12, 2, "commit_phase_mutations")},
+            commit_snapshot,
+            boundary="COMMIT",
+        )
+        == 12
+    )
     with pytest.raises(production._UnsupportedTrace):
         production._snapshot_event_binding(
             {id(commit_snapshot): (12, 2, "stage_phase_mutations")},
@@ -507,9 +510,7 @@ def test_public_transition_projection_clones_in_runtime_without_episode_metadata
         update={"world_rev": 2, "prior_phase_ledger": ledger("fedcba9876543210")},
         deep=True,
     )
-    gold_context = production._phase2_context_from_induced(
-        public_phase2_state, gold_induced_state2
-    )
+    gold_context = production._phase2_context_from_induced(public_phase2_state, gold_induced_state2)
     actual_context = production._phase2_context_from_induced(
         public_phase2_state, actual_induced_state2
     )
@@ -658,9 +659,7 @@ def test_phase_local_p2_uses_delivered_ledger_and_trace_replay_uses_own_p1_ledge
         production,
         "_phase2_context_from_induced",
         lambda _public_state, induced_state: (
-            gold_reference_state2
-            if induced_state is induced_gold_state2
-            else object()
+            gold_reference_state2 if induced_state is induced_gold_state2 else object()
         ),
     )
 
@@ -960,9 +959,7 @@ def test_p1_only_trace_replays_rejections_and_gaps_on_transition(monkeypatch) ->
     assert empty_trace_result["payload"]["metrics"]["G-SRR@first_stage"] is None
     assert empty_trace_result["payload"]["metrics"]["repair_lift"] is None
     assert empty_trace_result["gaps"] == stage_only_result["gaps"]
-    validate_evaluator_result(
-        empty_trace_result, freeze_case(empty_trace_case), "production"
-    )
+    validate_evaluator_result(empty_trace_result, freeze_case(empty_trace_case), "production")
 
     case["stimulus"]["events"][2]["args"]["stage_id"] = "stg_p1_only"
     transition_result = production.evaluate_shared_input(case)
@@ -970,19 +967,18 @@ def test_p1_only_trace_replays_rejections_and_gaps_on_transition(monkeypatch) ->
     assert transition_result["materialization"] == materialization
     assert transition_result["coverage"]["snapshots"] == _coverage["snapshots"]
     assert transition_result["coverage"]["rules"] == _coverage["rules"]
-    assert (
-        transition_result["payload"]["snapshot_derivations"]
-        == payload["snapshot_derivations"]
-    )
+    assert transition_result["payload"]["snapshot_derivations"] == payload["snapshot_derivations"]
     transition_metrics = transition_result["payload"]["metrics"]
     assert set(transition_metrics) == set(payload["metrics"])
-    assert transition_metrics["p1_first_stage_snapshot_ok"] == payload["metrics"][
-        "p1_first_stage_snapshot_ok"
-    ]
+    assert (
+        transition_metrics["p1_first_stage_snapshot_ok"]
+        == payload["metrics"]["p1_first_stage_snapshot_ok"]
+    )
     assert transition_metrics["p1_staged"] == 1
-    assert transition_metrics["P1-Action-SRR@last_stage"] == payload["metrics"][
-        "P1-Action-SRR@last_stage"
-    ]
+    assert (
+        transition_metrics["P1-Action-SRR@last_stage"]
+        == payload["metrics"]["P1-Action-SRR@last_stage"]
+    )
     assert transition_metrics["G-SRR@first_stage"] is None
     assert transition_metrics["repair_lift"] is None
     assert transition_metrics["Sem-SRR@commit"] == 0
@@ -992,8 +988,7 @@ def test_p1_only_trace_replays_rejections_and_gaps_on_transition(monkeypatch) ->
     assert transition_metrics["p2_observed"] == 0
     assert transition_metrics["both_phases_staged"] == 0
     assert not any(
-        row["boundary"] == "COMMIT"
-        for row in transition_result["payload"]["snapshot_derivations"]
+        row["boundary"] == "COMMIT" for row in transition_result["payload"]["snapshot_derivations"]
     )
     assert transition_result["gaps"] == [
         {

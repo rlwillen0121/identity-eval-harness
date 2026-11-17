@@ -19,7 +19,7 @@ models:
     timeout_s: 600
     concurrency: 3
     extra:
-      binary: /Users/ryanwillen/.local/bin/muse
+      binary: muse
   - provider: muse_cli
     model: muse-spark-1.3
     label: muse-spark-1.3-t0-medium
@@ -30,4 +30,4 @@ models:
     timeout_s: 600
     concurrency: 3
     extra:
-      binary: /Users/ryanwillen/.local/bin/muse
+      binary: muse

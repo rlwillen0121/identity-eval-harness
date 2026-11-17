@@ -7,10 +7,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from identitybench.v4.jcs import jcs_sha256
 from identitybench.v41.baselines import gold_policy
 from identitybench.v41.checker import make_semantic_checker
 from identitybench.v41.env import TOOL_NAMES, V41AgentEnvironment
+from identitybench.v41.jcs import jcs_sha256
 from identitybench.v41.mechanics import (
     compute_cosign_token,
     compute_dependency_digest,

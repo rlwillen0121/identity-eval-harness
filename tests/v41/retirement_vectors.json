@@ -1,0 +1,684 @@
+{
+  "bootstrap": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.2,
+      0.2,
+      0.2
+    ],
+    [
+      0.6375,
+      0.475,
+      0.9
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.522201,
+      0.4617,
+      0.585064
+    ]
+  ],
+  "experiments": [
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "9d0755251a94a2fe3f82e0134356124fad09f9efe121e7ccbf62ad8b61c171b3",
+      "label": "oracle_team_replay"
+    },
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "a2cfcfea77cb44a497ea1dfaa8a9860675128b8386363ba181ab25d5a8abb126",
+      "label": "noop_team"
+    },
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "174028d1854428138fc45172183103ba6aafb2f28e8d4ecfd0daf979ecd5cf97",
+      "label": "all_escalate"
+    },
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "1a81957b423f05fb5eaed76ac7843c0f818e562a7c4c4f2646a1508ebe907980",
+      "label": "all_keep_retain_all"
+    },
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "7c8c426765c3921adf977a38caa7c98a8ff37338cc5cebc66da7cf3f1cda827b",
+      "label": "all_disable_orphan"
+    },
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "8326d5556cf82253b546edc52ba37e1b639ce4ace181c94915a185a090fbdc09",
+      "label": "all_certify"
+    },
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "29e5d4deacc0d407d29bed745db1b2d124924b07a642af59936a5794b3901a71",
+      "label": "all_deny"
+    },
+    {
+      "config": "v41-dev-baselines.yaml",
+      "fingerprint": "8126b60b9cff82fc390d0b92722b71b713095153a82c6596bd8d42a47e013eae",
+      "label": "all_halt"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "9d0755251a94a2fe3f82e0134356124fad09f9efe121e7ccbf62ad8b61c171b3",
+      "label": "oracle_team_replay"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "a2cfcfea77cb44a497ea1dfaa8a9860675128b8386363ba181ab25d5a8abb126",
+      "label": "noop_team"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "174028d1854428138fc45172183103ba6aafb2f28e8d4ecfd0daf979ecd5cf97",
+      "label": "all_escalate"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "1a81957b423f05fb5eaed76ac7843c0f818e562a7c4c4f2646a1508ebe907980",
+      "label": "all_keep_retain_all"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "7c8c426765c3921adf977a38caa7c98a8ff37338cc5cebc66da7cf3f1cda827b",
+      "label": "all_disable_orphan"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "8326d5556cf82253b546edc52ba37e1b639ce4ace181c94915a185a090fbdc09",
+      "label": "all_certify"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "29e5d4deacc0d407d29bed745db1b2d124924b07a642af59936a5794b3901a71",
+      "label": "all_deny"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "8126b60b9cff82fc390d0b92722b71b713095153a82c6596bd8d42a47e013eae",
+      "label": "all_halt"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "30f7f5b610649f928293b1e1ba981f47cc38dd2da8ae639f7f8361408b12726d",
+      "label": "gemini-4-argon-t0-medium"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "06ae7f1ed510ea882eeeda5ffba96ab8a73ce53ea71cc9804e65e409ce5e0124",
+      "label": "gpt-6-astra-t0-medium"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "1fb40c769f272cb0875ed606dc69f3b16c7209101552f2f2571e00ffec083323",
+      "label": "claude-opus-5-5-t0-medium"
+    },
+    {
+      "config": "v41-dev-pilot.yaml",
+      "fingerprint": "4df34afc1040e351ede8c0e9cd20cc027a665bc873cc7e54fb64030d346fd79a",
+      "label": "claude-sonnet-5-5-t0-medium"
+    },
+    {
+      "config": "v41-full-agy-oss.yaml",
+      "fingerprint": "a3dada8ebf9c86d0cdc58330ea16005e9c77bca54c06c91f8c11791fd52715da",
+      "label": "gpt-oss-120b-t0-medium"
+    },
+    {
+      "config": "v41-full-claude.yaml",
+      "fingerprint": "b61179e6d378c51d82f0940650fc3a07d7dcaf29829ca666a1baeb29dcd6c1be",
+      "label": "claude-opus-5-5-t0-medium"
+    },
+    {
+      "config": "v41-full-claude.yaml",
+      "fingerprint": "1ffb68ca7a0e89c332d8b0ef4bdda10184ea49fd0c85155c371292771c11e92f",
+      "label": "claude-sonnet-5-5-t0-medium"
+    },
+    {
+      "config": "v41-full-claude.yaml",
+      "fingerprint": "27aee9e30836cb75224ffe540b50e17a816759bbf61560b8dc1aeb15e00b865d",
+      "label": "claude-haiku-5-5-t0-medium"
+    },
+    {
+      "config": "v41-full-claude.yaml",
+      "fingerprint": "ad2b046e7817ed8aee1e065e8fbf733221636dcf46f8555ecd210bd3b3c9a091",
+      "label": "gemini-4-argon-t0-medium"
+    },
+    {
+      "config": "v41-full-claude.yaml",
+      "fingerprint": "e4201fe69d47cf074cbf592b9052878d0971f0c2e7ced431ef9ec015c7d88e5e",
+      "label": "gemini-3.8-flash-t0-medium"
+    },
+    {
+      "config": "v41-full-codex-more.yaml",
+      "fingerprint": "cadaa88256532fbcaf44f428ae58016c3a014939871e0e7f1204f8f3335d3e19",
+      "label": "gpt-daybreak-blue-t0-medium"
+    },
+    {
+      "config": "v41-full-codex-more.yaml",
+      "fingerprint": "dd91ec1bf236dd94d2585d4e252d9b89ef85985aae19aa405ff6784f68b6038a",
+      "label": "gpt-reserve-t0-medium"
+    },
+    {
+      "config": "v41-full-codex-more.yaml",
+      "fingerprint": "fecf9dbc271633606f919e3dec2e8f2452af988c1c766b409cf662d6846b89bb",
+      "label": "gpt-6-sol-t0-medium"
+    },
+    {
+      "config": "v41-full-codex-more.yaml",
+      "fingerprint": "40274fede651a91fd86d5021852f632081fa919cdc0b753079c6063caf4b52ca",
+      "label": "gpt-5.6-terra-t0-medium"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "73a9db6fa42ad8f571fd9ba52ea4c80a05e3b4c2bd18ba39474e3ec1554368d9",
+      "label": "oracle_team_replay"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "d3597f3be054eed7153026c7fa65b65cb9f6580400a6eff26ca9a65ba94c6b9f",
+      "label": "noop_team"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "4fb3f8ddcefbecdb11b620971a6da25835bf4a51715514dbcc69df8e967d68df",
+      "label": "all_escalate"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "3780c930fc47ac3e6d529ecca40ce11e1ab1a061a1bbe3bac6a84dc122c8353f",
+      "label": "all_keep_retain_all"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "0884c27eb8b93a82e762f7b12f60e424e5e702931a9290b98dc3dbf6c5ee5781",
+      "label": "all_disable_orphan"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "7e7153ba763cec7f73ffaa5173913a3a138fec86ab4ee0ccec9b170caba1a882",
+      "label": "all_certify"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "ba7042790ee8135a2c4b08511c53af59ea6d579b404f215c38e93aff41bc5127",
+      "label": "all_deny"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "fc8347eca62e89f7b7237ba89d3bd446555eec335710080f5bb52293bb622531",
+      "label": "all_halt"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "00c81ea591747c531e920f1b951b47adcae5430c4b97585893586befaba05ab5",
+      "label": "gpt-6-astra-t0-medium"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "0796b442328c590b89c2f0c6568d6c4930dc211a0134f0eb979afb36e02d74e5",
+      "label": "gpt-6.1-sol-t0-medium"
+    },
+    {
+      "config": "v41-full-codex.yaml",
+      "fingerprint": "3700aa0367c2cba3011e8fa4079116a5aba416cebab0150cd82ebfcbee912b4e",
+      "label": "gpt-6-luna-t0-medium"
+    },
+    {
+      "config": "v41-full-cursor.yaml",
+      "fingerprint": "6876531b2b89c18a8243980813e00ccb7d716405c0c19a369ffded829d9db81f",
+      "label": "composer-2.5-t0-medium"
+    },
+    {
+      "config": "v41-full-cursor.yaml",
+      "fingerprint": "116f11cb4d9fe98852dfed9d153bab995275138450d833739987c0036294a8e9",
+      "label": "grok-4.7-t0-medium"
+    },
+    {
+      "config": "v41-full-go.yaml",
+      "fingerprint": "aaf08f6bd3f13e1f08f018b6629390e55634805532aac64e4f39de1e82ee7102",
+      "label": "kimi-k3-t0-medium"
+    },
+    {
+      "config": "v41-full-grok.yaml",
+      "fingerprint": "39f51ef42b7f365e74b6363e5e64e9a5466f6ff70210eb500458248a2c1af816",
+      "label": "grok-4.7-t0-medium"
+    },
+    {
+      "config": "v41-full-muse.yaml",
+      "fingerprint": "9fccd17cbb2ea63cadb5737c21344e627b35bce9c01f19231f1d2db56ce0f268",
+      "label": "muse-wonder-1.0-t0-medium"
+    },
+    {
+      "config": "v41-full-muse.yaml",
+      "fingerprint": "753bb85b8305648fa485e25b7e57a3c6f4a38ca23f8f0d759db66a01e884bb58",
+      "label": "muse-spark-1.3-t0-medium"
+    },
+    {
+      "config": "v41-full-openrouter.yaml",
+      "fingerprint": "0b2cc76aaaa51e4966e49a4f1a9b13c967ace80cf39ede6fdba4768e5b322a6c",
+      "label": "glm-5.3-flash-t0-medium"
+    },
+    {
+      "config": "v41-full-openrouter.yaml",
+      "fingerprint": "cb065f930576117b4a5c05f4f4fc5bc3d7f8e7154c3157affca0edb2403fb1ed",
+      "label": "deepseek-v4.1-flash-t0-medium"
+    },
+    {
+      "config": "v41-full-openrouter.yaml",
+      "fingerprint": "3ab74267ac13d76c2aa7a5ccdd9a8b626b3d1f78194fdf7b6b910e658efb05d7",
+      "label": "minimax-m3.1-flash-t0-medium"
+    },
+    {
+      "config": "v41-full-openrouter.yaml",
+      "fingerprint": "fa51d7910a905d7aa0c18f914c3d08b71274e73778a9d02cf34bca4ddf0eff1b",
+      "label": "glm-5.3-t0-medium"
+    },
+    {
+      "config": "v41-full-openrouter.yaml",
+      "fingerprint": "809891bd06d62192da763c575fc5bb0001ea3114bc0df353582fa281b0f23436",
+      "label": "deepseek-v4-pro-t0-medium"
+    },
+    {
+      "config": "v41-full-qwen.yaml",
+      "fingerprint": "49a7a0e6b968107d141765024a1579a254d0c9341808df7b10c18043211e3afd",
+      "label": "qwen3.8-27b-exl3-4bit-local"
+    },
+    {
+      "config": "v41-full-sparks.yaml",
+      "fingerprint": "e8f59dc2f2869febd62efc289f4fc715d5eeedc93a90fa9829093b69bbd0ff77",
+      "label": "qwen3.8-flash-next-local"
+    },
+    {
+      "config": "v41-full-terra.yaml",
+      "fingerprint": "447a0cc57f290b9e5cd276343928c1db62637475624010a1d82aa916abe81e1a",
+      "label": "gpt-6.1-terra-t0-medium"
+    },
+    {
+      "config": "v41-lite-muse-wonder.yaml",
+      "fingerprint": "73f45aba0d527c56a1c0ec18922eaf415f48e84ee7e2e070a6ca036775e42aa9",
+      "label": "muse-wonder-1.0-t0-medium"
+    },
+    {
+      "config": "v41-lite-muse-wonder.yaml",
+      "fingerprint": "6421ea675e76ebf704490e0c8f85c9346bb64b35226eede96ff9c0aa64d6fa77",
+      "label": "gemini-4-argon-t0-medium"
+    },
+    {
+      "config": "v41-lite-muse-wonder.yaml",
+      "fingerprint": "3a8ae669c9476f9f328e7651daf3b41778b7a4f11cfe76fa5f48beb669eb6a72",
+      "label": "gemini-3.8-flash-t0-medium"
+    },
+    {
+      "config": "v41-lite-or-resume.yaml",
+      "fingerprint": "6945827bbf98c5eb34eb214b04e426d9bfc0e0e2f801c9b8c8d9e8b5d38a57de",
+      "label": "deepseek-v4-pro-t0-medium"
+    },
+    {
+      "config": "v41-lite-or-resume.yaml",
+      "fingerprint": "0b7f90f5731ab2538ebf2bd731723cfae01350a8c877bebeedc31c5fec98fbcc",
+      "label": "minimax-m3-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "fb0127985b58e6f3e158ddaf6c96cc5d00542c33013831d6e83509483c6a3295",
+      "label": "oracle_team_replay"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "2b1b45867071323c4a236b792b8f65402588260f29eef68bb953b8c565b74073",
+      "label": "noop_team"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "c4a59ffd21387163198bc4d350b63b169cfaf97743aa7ea7bf46464b2c7f8cd3",
+      "label": "all_escalate"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "8fbd231009f3c12c853a3fe1b61c74d09c6f26dd803c17b527ffac94bc18c574",
+      "label": "all_keep_retain_all"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "3b269c29f296888f20a3da64ec471daaa940f3053b7420bc39b432aaa5ac6491",
+      "label": "all_disable_orphan"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "04455656fc9408547cbd8983e709b4e3c2dcb299e590bfb8fdd08fc481da52ef",
+      "label": "all_certify"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "67e3644a62d5b1074dd4fe0f022b4507e6ad6a41801c44fa88698b6f5ee2c005",
+      "label": "all_deny"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "319c9e73f607b3b292444ad5a47ebf0be0d748a66c351da190f583dd133cf78b",
+      "label": "all_halt"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "6421ea675e76ebf704490e0c8f85c9346bb64b35226eede96ff9c0aa64d6fa77",
+      "label": "gemini-4-argon-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "3a8ae669c9476f9f328e7651daf3b41778b7a4f11cfe76fa5f48beb669eb6a72",
+      "label": "gemini-3.8-flash-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "48be3a6a7ed28f2e69cca5a8f58c39e5f3bb7956c1dcf247865436371b8b4254",
+      "label": "claude-opus-5-5-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "d9c21a9e588a4fb17b1d6053a2ee0a3a9dd69da85f7e324b043c791b69359880",
+      "label": "claude-sonnet-5-5-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "af868df1a04cf7594c3fef13439a8c11fb49a5197e856e347b5807f051529e3b",
+      "label": "claude-haiku-5-5-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "1ff401533aa5adc68d92ec38f2d04165d6dd3b3e6e718134056599ebcfda9752",
+      "label": "gpt-6-astra-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "3cf80852633db711e3ccc4daabb3bc3b84c9720399cc7f3f3e0e2b9af5110f46",
+      "label": "gpt-6.1-sol-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "e1bc03c30bd036bb1b96332210af383b6fe17c4bb13794c7e85bcb33a8952019",
+      "label": "gpt-6-luna-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "aa6ee6902c20912a56aa2fabb787543ab7c94a73831054d3b8e1fd6e912cbb9f",
+      "label": "muse-spark-1.3-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "73f45aba0d527c56a1c0ec18922eaf415f48e84ee7e2e070a6ca036775e42aa9",
+      "label": "muse-wonder-1.0-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "cf3a3109d627fb3541456402c9f83c6756bf2c6e241df9936074fd981df070b2",
+      "label": "kimi-k3-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "2c7098b74ba9b01de73e1c431df2bbd8beafd2b3e1caaab148c6d0e549075fe0",
+      "label": "glm-5.3-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "407784e8fb03e039ee9eb0cec64ef9b8b2fbbeadd72be7bb334169b1796ac13b",
+      "label": "glm-5.3-flash-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "0b7f90f5731ab2538ebf2bd731723cfae01350a8c877bebeedc31c5fec98fbcc",
+      "label": "minimax-m3-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "9c53a6af0ed202e11adc9786aabac315d7c910c9588ce717412337e7c81f1450",
+      "label": "grok-4.7-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "6945827bbf98c5eb34eb214b04e426d9bfc0e0e2f801c9b8c8d9e8b5d38a57de",
+      "label": "deepseek-v4-pro-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "c5c5e313d941877b9f0fbb01c050ff36747e2945c90f0f292107e483c3a512e4",
+      "label": "deepseek-v4.1-flash-t0-medium"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "9f00589fc0e917bef0425a68d8f0c757b34ef20f64e2198885a45a1861b4cbbb",
+      "label": "qwen3.8-27b-exl3-4bit-local"
+    },
+    {
+      "config": "v41-lite-sub.yaml",
+      "fingerprint": "349d743f15cfe8875a59a8c2630ec29dcce56f7a25adac3193e9335d6d36764d",
+      "label": "qwen3.8-flash-next-local"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "af868df1a04cf7594c3fef13439a8c11fb49a5197e856e347b5807f051529e3b",
+      "label": "claude-haiku-5-5-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "cf3a3109d627fb3541456402c9f83c6756bf2c6e241df9936074fd981df070b2",
+      "label": "kimi-k3-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "2c7098b74ba9b01de73e1c431df2bbd8beafd2b3e1caaab148c6d0e549075fe0",
+      "label": "glm-5.3-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "407784e8fb03e039ee9eb0cec64ef9b8b2fbbeadd72be7bb334169b1796ac13b",
+      "label": "glm-5.3-flash-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "0b7f90f5731ab2538ebf2bd731723cfae01350a8c877bebeedc31c5fec98fbcc",
+      "label": "minimax-m3-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "9c53a6af0ed202e11adc9786aabac315d7c910c9588ce717412337e7c81f1450",
+      "label": "grok-4.7-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "6945827bbf98c5eb34eb214b04e426d9bfc0e0e2f801c9b8c8d9e8b5d38a57de",
+      "label": "deepseek-v4-pro-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "c5c5e313d941877b9f0fbb01c050ff36747e2945c90f0f292107e483c3a512e4",
+      "label": "deepseek-v4.1-flash-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "9f00589fc0e917bef0425a68d8f0c757b34ef20f64e2198885a45a1861b4cbbb",
+      "label": "qwen3.8-27b-exl3-4bit-local"
+    },
+    {
+      "config": "v41-lite-wave2.yaml",
+      "fingerprint": "349d743f15cfe8875a59a8c2630ec29dcce56f7a25adac3193e9335d6d36764d",
+      "label": "qwen3.8-flash-next-local"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "aa6ee6902c20912a56aa2fabb787543ab7c94a73831054d3b8e1fd6e912cbb9f",
+      "label": "muse-spark-1.3-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "a88d58e44be84974148040a7d021716719f548c7007d575bdf4f4ccecdcbd143",
+      "label": "claude-fable-5-1-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "96401049c3131d0911043674731c4703c708bcfbc0f4f78f5ecaecc06dfbba2f",
+      "label": "minimax-m3.1-flash-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "1d5d714b80c77dc90c144fa5f34140ab1a3872d1c0e1680f85ef75c70f346c2c",
+      "label": "gpt-oss-120b-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "0362e170e84f81c534e8699ec2166ee5546a011c530b87fafee79d8c3870a2fa",
+      "label": "beam-1.0-501b-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "109fe65e03ad6f80c851bd1422352221b1794e14b68203781104f412ca2881f1",
+      "label": "mistral-large-4-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "3378b9870b3fe693046714264bc5fda8ee5dc54bf3ea67680c4407750d3ad0d5",
+      "label": "muse-spark-open-t0-medium"
+    },
+    {
+      "config": "v41-lite-wave3.yaml",
+      "fingerprint": "d376011e070d091baac4c273482d2fb3d43bcd4f8e1dd882c5c096f666e2728e",
+      "label": "qwen3.8-max-prime-t0-medium"
+    }
+  ],
+  "fingerprints": [
+    {
+      "entry": {
+        "model": "noop_team",
+        "provider": "baseline"
+      },
+      "fingerprint": "18a62c7c9ac2bc74453775f3db2051b58bdea389f1a42299de395369c93a72c1",
+      "protocol": null
+    },
+    {
+      "entry": {
+        "effort": "high",
+        "model": "claude-example",
+        "provider": "claude_cli"
+      },
+      "fingerprint": "0f9e4b1178bd82b10af1cf98811fa056ada6d10601fa69ee5c132050897547d7",
+      "protocol": "no_thought_v1"
+    },
+    {
+      "entry": {
+        "extra": {
+          "api": "responses"
+        },
+        "model": "example",
+        "provider": "openai_compatible"
+      },
+      "fingerprint": "9c592c545f7e8bbb0eccb5965acb6fdfab23fc78cab4a5970a254a2965039f83",
+      "protocol": null
+    },
+    {
+      "entry": {
+        "effort": "xhigh",
+        "model": "example",
+        "provider": "codex_cli"
+      },
+      "fingerprint": "11963cbf15a0a55aa1be135cc8c14e13da724aef4cd30c4565123a466e09a76b",
+      "protocol": null
+    }
+  ],
+  "jcs_vectors_sha256": "7be0e2071ee0ce10e66153a5e5d67e2f717c26584adcde75a36766fad403c898",
+  "parser": [
+    {
+      "calls": [],
+      "text": ""
+    },
+    {
+      "calls": [],
+      "text": "not JSON"
+    },
+    {
+      "calls": [],
+      "text": "{}"
+    },
+    {
+      "calls": [],
+      "text": "{\"actions\": []}"
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "wave_index": 1
+          },
+          "id": "call_7_0",
+          "name": "read_wave_evidence"
+        }
+      ],
+      "text": "{\"thought\":\"Read evidence\",\"actions\":[{\"action\":\"read_wave_evidence\",\"arguments_json\":\"{\\\"wave_index\\\":1}\"}]}"
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "id": "call_7_0",
+          "name": "poll_interrupts"
+        }
+      ],
+      "text": "```json\n{\"actions\":[{\"name\":\"poll_interrupts\",\"arguments\":{}}]}\n```"
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unicode": "\u6f22\u5b57\ud83d\ude00"
+          },
+          "id": "call_7_0",
+          "name": "check"
+        }
+      ],
+      "text": "prefix {\"actions\":[{\"action\":\"check\",\"arguments_json\":\"{\\\"unicode\\\":\\\"\u6f22\u5b57\ud83d\ude00\\\"}\"}]} suffix"
+    },
+    {
+      "calls": [],
+      "text": "{\"actions\":[{\"action\":\"x\",\"arguments_json\":\"oops\"}]}"
+    },
+    {
+      "calls": [],
+      "text": "{\"actions\":[{\"action\":\"x\",\"arguments_json\":\"[]\"}]}"
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "id": "call_7_0",
+          "name": "x"
+        }
+      ],
+      "text": "{\"actions\":[{\"action\":\"x\",\"arguments_json\":\"\"}]}"
+    },
+    {
+      "calls": [],
+      "text": "{\"actions\":[{\"action\":\"x\",\"arguments\":{}},null]}"
+    },
+    {
+      "calls": [],
+      "text": "{\"actions\":[{\"action\":\"\",\"arguments\":{}}]}"
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "id": "call_7_0",
+          "name": "x"
+        }
+      ],
+      "text": "{\"actions\":[{\"action\":\"x\",\"arguments\":{},\"arguments_json\":\"bad\"}]}"
+    }
+  ]
+}

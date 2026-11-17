@@ -311,8 +311,7 @@ def _small_v3_corpus(root: Path) -> dict[str, object]:
                 "protocol": PROTOCOL,
                 "canonicalization": "canonical-json-v1",
                 "cases": [
-                    {"case_id": case_id, "input_sha256": digest}
-                    for case_id, digest in inventory
+                    {"case_id": case_id, "input_sha256": digest} for case_id, digest in inventory
                 ],
             }
         )
@@ -556,12 +555,8 @@ def test_approved_full_spec_profile_is_explicit_and_keeps_agent_view_blind() -> 
     agent_view = _resolve_source_profile("agent_view")
 
     assert profile.author_origin == "approved_full_spec_author_v1"
-    assert profile.entrypoint == (
-        "tests/conformance/v5/approved_full_spec_v1/reference.py"
-    )
-    assert profile.entrypoint_module == (
-        "tests.conformance.v5.approved_full_spec_v1.reference"
-    )
+    assert profile.entrypoint == ("tests/conformance/v5/approved_full_spec_v1/reference.py")
+    assert profile.entrypoint_module == ("tests.conformance.v5.approved_full_spec_v1.reference")
     assert profile.normative_contract_id == (
         "identitybench.v5.normative-contract.addendum-01.directive-01.v1"
     )
@@ -685,10 +680,7 @@ def test_approved_full_spec_entrypoint_uses_the_shared_case_transport(
     }
     audit = strict_json_loads(completed.stderr)
     assert isinstance(audit, dict)
-    assert (
-        "source:tests/conformance/v5/approved_full_spec_v1/reference.py"
-        in audit["read_paths"]
-    )
+    assert "source:tests/conformance/v5/approved_full_spec_v1/reference.py" in audit["read_paths"]
     assert "source:src/identitybench/v5/schemas.py" in audit["read_paths"]
     assert not any(
         "SPEC-v5-ADDENDUM-01.md" in path or "SPEC-v5-DIRECTIVE-01.md" in path
@@ -758,9 +750,7 @@ def test_current_profiles_capture_and_archive_under_approved_results_root(
         )
         assert Path(capture["capture_path"]).is_relative_to(current_results_root)
         if profile.profile_id == "approved_full_spec_v1":
-            source_rows = {
-                row["path"]: row["sha256"] for row in capture["source_files"]
-            }
+            source_rows = {row["path"]: row["sha256"] for row in capture["source_files"]}
             assert source_rows["src/identitybench/v5/scope_algebra.py"] == (
                 "ea639f4c8061a6e911fe53ddb024d1ac904c5da10e01600c6c98fca8db264db7"
             )
@@ -813,10 +803,7 @@ def test_bounded_full_spec_v1_profile_is_exact_and_preflights_regular_sources() 
     assert profile.profile_id == "bounded_full_spec_v1"
     assert profile.author_origin == "fresh_bounded_full_spec_author_v1"
     assert profile.entrypoint == "tests/conformance/v5/bounded_full_spec_reference/worker.py"
-    assert (
-        profile.entrypoint_module
-        == "tests.conformance.v5.bounded_full_spec_reference.worker"
-    )
+    assert profile.entrypoint_module == "tests.conformance.v5.bounded_full_spec_reference.worker"
     assert profile.source_files == (
         "src/identitybench/__init__.py",
         "src/identitybench/v5/__init__.py",
@@ -1812,8 +1799,7 @@ def test_full_shared_v3_freeze_binds_run_qualification_and_raw_statuses(
     ):
         profile = _resolve_source_profile(evaluator_id, profile_id)
         source_rows = [
-            {"path": source, "sha256": "a" * 64, "size_bytes": 1}
-            for source in profile.source_files
+            {"path": source, "sha256": "a" * 64, "size_bytes": 1} for source in profile.source_files
         ]
         capture_ref = write_result(
             f"{evaluator_id}-capture-manifest.json",
@@ -1875,9 +1861,7 @@ def test_full_shared_v3_freeze_binds_run_qualification_and_raw_statuses(
             "_verify_runtime_reference",
             runtime_verifier,
         )
-        runtime_archive_ref = write_result(
-            f"{evaluator_id}-runtime-archive.json", b"{}\n"
-        )
+        runtime_archive_ref = write_result(f"{evaluator_id}-runtime-archive.json", b"{}\n")
         dependency_ref = write_result(f"{evaluator_id}-dependency-manifest.json", b"{}\n")
         receipts: list[dict[str, object]] = []
         audits: list[dict[str, object]] = []
@@ -2029,8 +2013,7 @@ def test_full_shared_v3_freeze_binds_run_qualification_and_raw_statuses(
         assert len(raw_rows) == 5
         assert all(row["result"]["status"] == "underdefined" for row in raw_rows)
         assert all(
-            row["result"]["gaps"][0]["detail"] == "synthetic retained gap"
-            for row in raw_rows
+            row["result"]["gaps"][0]["detail"] == "synthetic retained gap" for row in raw_rows
         )
     token.assert_current()
 
@@ -2221,14 +2204,10 @@ def test_v3_sidecar_binds_exact_scope_and_contract_fields(tmp_path: Path) -> Non
 
 
 def test_full_v3_execution_classification_domain_is_narrow_and_v2_unchanged() -> None:
-    validate_classification = getattr(
-        process_module, "_validate_execution_classification", None
-    )
+    validate_classification = getattr(process_module, "_validate_execution_classification", None)
     assert callable(validate_classification)
     validate_classification("full_shared_conformance", "DIAGNOSTIC_NOT_STRICT_ELIGIBLE")
-    validate_classification(
-        "full_shared_conformance", "blind_full_shared_conformance_observation"
-    )
+    validate_classification("full_shared_conformance", "blind_full_shared_conformance_observation")
     with pytest.raises(SharedRuntimeError, match="full conformance freeze"):
         validate_classification("full_shared_conformance", "unknown_observation")
     with pytest.raises(SharedRuntimeError, match="full conformance freeze"):
@@ -2864,8 +2843,7 @@ def test_promoted_draft5_profiles_resolution_and_contract_binding() -> None:
     assert full_draft5.profile_id == "promoted_draft5_full_spec_v1"
     assert full_draft5.author_origin == V5_PROMOTED_DRAFT5_FULL_SPEC_AUTHOR_ORIGIN
     assert (
-        full_draft5.entrypoint
-        == "tests/conformance/v5/promoted_draft5_full_spec_v1/reference.py"
+        full_draft5.entrypoint == "tests/conformance/v5/promoted_draft5_full_spec_v1/reference.py"
     )
     assert (
         full_draft5.entrypoint_module
@@ -2897,10 +2875,7 @@ def test_promoted_draft5_profiles_resolution_and_contract_binding() -> None:
     card_draft5 = _resolve_source_profile("agent_view", V5_PROMOTED_DRAFT5_AGENT_VIEW_PROFILE)
     assert card_draft5.profile_id == "promoted_draft5_card_only_v1"
     assert card_draft5.author_origin == V5_PROMOTED_DRAFT5_AGENT_VIEW_AUTHOR_ORIGIN
-    assert (
-        card_draft5.entrypoint
-        == "tests/conformance/v5/promoted_draft5_card_only_v1/worker.py"
-    )
+    assert card_draft5.entrypoint == "tests/conformance/v5/promoted_draft5_card_only_v1/worker.py"
     assert card_draft5.entrypoint_module is None
     assert card_draft5.normative_contract_id is None
     assert process_module._profile_normative_contract(card_draft5) is None

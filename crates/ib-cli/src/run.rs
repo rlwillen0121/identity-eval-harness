@@ -71,7 +71,7 @@ pub struct RunArgs {
     /// Dataset suite.
     #[arg(long, default_value = "v5_core", value_parser = crate::suite_arg)]
     pub suite: String,
-    /// Sealed dataset directory.
+    /// Sealed dataset directory (defaults to datasets/v5_draft5/<suite>).
     #[arg(short = 'd', long)]
     pub dataset: Option<PathBuf>,
     /// Run artifact output directory.
@@ -138,7 +138,7 @@ pub async fn run(root: &Path, env_file: Option<&Path>, args: RunArgs) -> Result<
         .transpose()
         .map_err(|_| anyhow::anyhow!("usage-accounting input path is sensitive or unavailable"))?;
     let dataset_path = args.dataset.as_deref().map_or_else(
-        || root.join("datasets").join(&args.suite),
+        || paths::default_dataset(root, &args.suite),
         |p| paths::resolve(root, p),
     );
 

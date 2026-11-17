@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::Value;
+use tempfile::tempdir;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,12 +13,17 @@ fn root() -> PathBuf {
         .to_path_buf()
 }
 
-fn cli(args: &[&str]) -> Output {
+fn cli_at(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_identitybench"))
-        .args(["--root", root().to_str().unwrap()])
+        .arg("--root")
+        .arg(root)
         .args(args)
         .output()
         .unwrap()
+}
+
+fn cli(args: &[&str]) -> Output {
+    cli_at(&root(), args)
 }
 
 fn success(output: Output) -> Value {
@@ -97,14 +103,7 @@ fn heldout_build_requires_explicit_freeze_without_creating_output() {
 
 #[test]
 fn native_validation_executes_offline_proofs_without_nested_runtime() {
-    let output = cli(&[
-        "v5",
-        "validate",
-        "--suite",
-        "v5_dev",
-        "--dataset",
-        "datasets/v5_draft5/v5_dev",
-    ]);
+    let output = cli(&["v5", "validate", "--suite", "v5_dev"]);
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -112,7 +111,32 @@ fn native_validation_executes_offline_proofs_without_nested_runtime() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).expect("validation report JSON");
+    assert_eq!(
+        report["dataset_dir"],
+        root()
+            .join("datasets/v5_draft5/v5_dev")
+            .to_string_lossy()
+            .as_ref()
+    );
     let gates = report["gate_results"].as_array().unwrap();
+    let seal = gates
+        .iter()
+        .find(|gate| gate["gate_id"] == "G-SEAL-01")
+        .unwrap();
+    assert_eq!(
+        seal["evidence"]["seal_sha256"],
+        "677c34659c8edf7f4dcacf928a748ead3abc018d1eb5bbbed8d94aaf2c84ca20"
+    );
+    let blind = gates
+        .iter()
+        .find(|gate| gate["gate_id"] == "G-SPEC-01")
+        .unwrap();
+    assert_eq!(blind["status"], "FAIL");
+    assert!(blind["errors"].as_array().unwrap().iter().any(|error| {
+        error
+            .as_str()
+            .is_some_and(|error| error.contains("receipt is stale or unrelated"))
+    }));
     for id in ["NEGATIVE-MUTATION-V5", "G-BASE-01", "G-NONINTERFERENCE-V5"] {
         let gate = gates.iter().find(|gate| gate["gate_id"] == id).unwrap();
         assert_eq!(gate["status"], "PASS", "{id}: {}", gate["errors"]);
@@ -139,8 +163,6 @@ fn score_to_report_pipeline_has_bound_attempts_and_recomputed_scores() {
         "score",
         "--suite",
         "v5_dev",
-        "--dataset",
-        "datasets/v5_draft5/v5_dev",
         "--baseline",
         "oracle_team_replay",
         "--out",
@@ -149,6 +171,11 @@ fn score_to_report_pipeline_has_bound_attempts_and_recomputed_scores() {
     assert_eq!(scored["repeats"], 1);
     let manifest: Value =
         serde_json::from_slice(&std::fs::read(run.join("manifest.json")).unwrap()).unwrap();
+    let active_dataset = root().join("datasets/v5_draft5/v5_dev");
+    assert_eq!(
+        manifest["dataset_seal_sha256"],
+        ib_core::hashing::sha256_hex(&std::fs::read(active_dataset.join("SEAL.json")).unwrap())
+    );
     assert_eq!(
         manifest["descriptive_usage_summary"]["planned_attempt_slots"],
         12
@@ -195,6 +222,118 @@ fn score_to_report_pipeline_has_bound_attempts_and_recomputed_scores() {
             .status
             .success()
     );
+}
+
+#[test]
+fn read_defaults_do_not_fall_back_to_legacy_datasets_and_explicit_dataset_is_honored() {
+    let temp = tempdir().unwrap();
+    let legacy = temp.path().join("datasets/v5_dev");
+    std::fs::create_dir_all(&legacy).unwrap();
+    let source = root().join("datasets/v5_dev");
+    for name in ["SEAL.json", "episodes.jsonl", "oracles.jsonl"] {
+        std::fs::copy(source.join(name), legacy.join(name)).unwrap();
+    }
+
+    let default_validation = cli_at(
+        temp.path(),
+        &["v5", "validate", "--suite", "v5_dev", "--skip-baselines"],
+    );
+    assert!(!default_validation.status.success());
+    assert!(String::from_utf8_lossy(&default_validation.stderr).contains("No such file"));
+
+    let default_score_dir = temp.path().join("default-score");
+    let default_score = cli_at(
+        temp.path(),
+        &[
+            "v5",
+            "score",
+            "--suite",
+            "v5_dev",
+            "--baseline",
+            "noop_team",
+            "--out",
+            default_score_dir.to_str().unwrap(),
+        ],
+    );
+    assert!(!default_score.status.success());
+    assert!(!default_score_dir.exists());
+
+    let default_run = cli_at(
+        temp.path(),
+        &[
+            "--no-env-file",
+            "v5",
+            "run",
+            "--config",
+            "missing.yaml",
+            "--pricing",
+            "missing.json",
+            "--suite",
+            "v5_dev",
+            "--out",
+            temp.path().join("default-run").to_str().unwrap(),
+        ],
+    );
+    assert!(!default_run.status.success());
+    assert!(String::from_utf8_lossy(&default_run.stderr).contains("check the dataset"));
+    assert!(!temp.path().join("default-run").exists());
+
+    let explicit_score_dir = temp.path().join("explicit-score");
+    let explicit_score = cli_at(
+        temp.path(),
+        &[
+            "v5",
+            "score",
+            "--suite",
+            "v5_dev",
+            "--dataset",
+            "datasets/v5_dev",
+            "--baseline",
+            "noop_team",
+            "--out",
+            explicit_score_dir.to_str().unwrap(),
+        ],
+    );
+    let result = success(explicit_score);
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(explicit_score_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(result["suite_id"], "v5_dev");
+    assert_eq!(
+        manifest["dataset_seal_sha256"],
+        ib_core::hashing::sha256_hex(&std::fs::read(legacy.join("SEAL.json")).unwrap())
+    );
+}
+
+#[test]
+fn explicit_custom_dataset_does_not_inherit_the_default_draft5_receipt() {
+    let temp = tempdir().unwrap();
+    let custom = temp.path().join("custom-draft5-copy");
+    std::fs::create_dir_all(&custom).unwrap();
+    let source = root().join("datasets/v5_draft5/v5_dev");
+    for name in ["SEAL.json", "episodes.jsonl", "oracles.jsonl"] {
+        std::fs::copy(source.join(name), custom.join(name)).unwrap();
+    }
+
+    let output = cli(&[
+        "v5",
+        "validate",
+        "--suite",
+        "v5_dev",
+        "--dataset",
+        custom.to_str().unwrap(),
+        "--skip-baselines",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let blind = report["gate_results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|gate| gate["gate_id"] == "G-SPEC-01")
+        .unwrap();
+    assert_eq!(blind["status"], "UNKNOWN");
+    assert_eq!(blind["evidence"]["proof_artifact"], Value::Null);
 }
 
 #[test]

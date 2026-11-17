@@ -195,7 +195,9 @@ def test_committed_v41_dev_dataset_is_sealed_and_reproducible(tmp_path: Path) ->
 
 
 def test_in_memory_validate_passes_with_checker_stage_hits() -> None:
-    report = validate_v41_dataset(None, suite=SplitRingV41.v41_dev, double_build=False)
+    report = validate_v41_dataset(
+        None, suite=SplitRingV41.v41_dev, double_build=False, in_memory=True
+    )
     assert report.passed, report.errors
     assert all(report.negative_mutation_checker_hits.values())
     assert set(report.negative_mutation_checker_hits) == set(NEGATIVE_MUTATIONS)
