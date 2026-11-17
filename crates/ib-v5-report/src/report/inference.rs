@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use ib_core::pyfloat::format_fixed;
 use ib_v5_scoring::{
-    COMPARISON_TRACKS_V5, CORE_BOOTSTRAP_REPLICATES_V5, CORE_BOOTSTRAP_SEED_V5, CORE_FAMILIES_V5,
-    CORE_REGIMES_V5, ConfirmatoryFamilyKindV5, ConfirmatoryFamilyResultV5,
+    CATEGORY_IDS_V5, COMPARISON_TRACKS_V5, CORE_BOOTSTRAP_REPLICATES_V5, CORE_BOOTSTRAP_SEED_V5,
+    CORE_FAMILIES_V5, CORE_REGIMES_V5, ConfirmatoryFamilyKindV5, ConfirmatoryFamilyResultV5,
     ConfirmatoryFamilySpecV5, CoreBootstrapResultV5, EpisodeScoreV5, FamilyMetricInputV5,
     PLANNED_REPEATS_MODEL_V5, PairwiseRandomizationResultV5, compare_v5_full_models,
     describe_unregistered_contrasts_v5, evaluate_confirmatory_family_v5,
@@ -34,6 +34,8 @@ pub const METHODOLOGY_CAVEATS_V5: [&str; 5] = [
     "Separate-family FDR scope: Benjamini-Hochberg at q=0.05 controls false discovery rate separately within each complete preregistered confirmatory family and does not control global family-wise error across separate families.",
     "Non-rejection != equivalence: failing to reject a null hypothesis is failure to detect a difference and is never evidence of equivalence or a tie.",
 ];
+
+const CORE_HEADLINE_FAMILY_NAME: &str = "core_headline_pairs";
 
 /// Paired 12-family cluster bootstrap and confirmatory inference bundle for `v5_core`.
 #[derive(Debug, Clone, PartialEq)]
@@ -160,6 +162,102 @@ fn family_means_from_artifact(
         .into_iter()
         .map(|(fam, vals)| (fam.to_owned(), py_sum_f64(&vals) / (vals.len() as f64)))
         .collect())
+}
+
+fn category_family_means_from_artifact(
+    artifact: &V5ReportArtifact,
+    category_id: &str,
+) -> Result<BTreeMap<String, f64>, ReportError> {
+    if !CATEGORY_IDS_V5.contains(&category_id) {
+        return Err(ReportError::value(format!(
+            "unknown category selector {category_id:?}"
+        )));
+    }
+    if !artifact.summary.is_complete {
+        return Err(ReportError::value(format!(
+            "cannot extract complete category family means for incomplete run {:?}",
+            artifact.summary.context.model_id
+        )));
+    }
+    let mut by_family: BTreeMap<&str, Vec<f64>> =
+        CORE_FAMILIES_V5.iter().map(|&f| (f, Vec::new())).collect();
+    for row in &artifact.summary.episode_scores {
+        if row.is_incomplete() {
+            return Err(ReportError::value(format!(
+                "incomplete slot encountered in {:?}",
+                artifact.summary.context.model_id
+            )));
+        }
+        let value = row
+            .category_pass
+            .get(category_id)
+            .copied()
+            .flatten()
+            .ok_or_else(|| {
+                ReportError::value(format!(
+                    "missing category metric {category_id:?} for {:?}",
+                    artifact.summary.context.model_id
+                ))
+            })?;
+        if !matches!(value, 0 | 1) {
+            return Err(ReportError::value(format!(
+                "category metric {category_id:?} must be binary for {:?}",
+                artifact.summary.context.model_id
+            )));
+        }
+        let Some(bucket) = by_family.get_mut(row.family_id.as_str()) else {
+            return Err(ReportError::value(format!(
+                "unexpected family_id {:?}",
+                row.family_id
+            )));
+        };
+        bucket.push(value as f64);
+    }
+    if by_family.values().any(|values| values.len() != 12) {
+        return Err(ReportError::value(format!(
+            "category metric {category_id:?} for {:?} must cover all 12 planned attempts in each F01..F12 family",
+            artifact.summary.context.model_id
+        )));
+    }
+    Ok(by_family
+        .into_iter()
+        .map(|(family, values)| {
+            (
+                family.to_owned(),
+                py_sum_f64(&values) / (values.len() as f64),
+            )
+        })
+        .collect())
+}
+
+fn category_family_values_for_spec(
+    family_spec: &ConfirmatoryFamilySpecV5,
+    artifacts: &BTreeMap<String, V5ReportArtifact>,
+) -> Result<BTreeMap<String, Option<FamilyMetricInputV5>>, ReportError> {
+    let category_id = family_spec
+        .category_id
+        .as_deref()
+        .ok_or_else(|| ReportError::value("CATEGORY_CONTRAST requires an explicit category_id"))?;
+    let referenced_configs: BTreeSet<&str> = family_spec
+        .pairs
+        .iter()
+        .flat_map(|(a, b)| [a.as_str(), b.as_str()])
+        .collect();
+    let mut values = BTreeMap::new();
+    for config_id in referenced_configs {
+        let Some(artifact) = artifacts.get(config_id) else {
+            continue;
+        };
+        let metric = if artifact.summary.is_complete {
+            Some(FamilyMetricInputV5::FamilyMeans(
+                category_family_means_from_artifact(artifact, category_id)?,
+            ))
+        } else {
+            None
+        };
+        values.insert(config_id.to_owned(), metric);
+    }
+    Ok(values)
 }
 
 fn validated_core_grid(artifact: &V5ReportArtifact) -> Result<BTreeMap<String, f64>, ReportError> {
@@ -338,6 +436,22 @@ pub fn build_v5_core_inference_with_options(
     pre_registered_pairs: &[(String, String)],
     options: CoreInferenceOptionsV5<'_>,
 ) -> Result<V5CoreInferenceArtifact, ReportError> {
+    let mut additional_family_names = BTreeSet::new();
+    for family_spec in options.additional_families {
+        family_spec.validate()?;
+        if family_spec.family_name == CORE_HEADLINE_FAMILY_NAME {
+            return Err(ReportError::value(format!(
+                "additional family name {:?} is reserved for the core headline family",
+                family_spec.family_name
+            )));
+        }
+        if !additional_family_names.insert(family_spec.family_name.as_str()) {
+            return Err(ReportError::value(format!(
+                "duplicate additional confirmatory family name {:?}",
+                family_spec.family_name
+            )));
+        }
+    }
     if model_artifacts.is_empty() {
         return Err(ReportError::value(
             "v5_core inference requires at least one model run artifact",
@@ -458,7 +572,7 @@ pub fn build_v5_core_inference_with_options(
     }
 
     let core_spec = ConfirmatoryFamilySpecV5::new(
-        "core_headline_pairs",
+        CORE_HEADLINE_FAMILY_NAME,
         ConfirmatoryFamilyKindV5::CoreHeadline,
         pre_registered_pairs.to_vec(),
     )?;
@@ -567,10 +681,14 @@ pub fn build_v5_core_inference_with_options(
         .collect();
     let mut extra_family_results: BTreeMap<String, ConfirmatoryFamilyResultV5> = BTreeMap::new();
     for family_spec in options.additional_families {
-        extra_family_results.insert(
-            family_spec.family_name.clone(),
-            evaluate_confirmatory_family_v5(family_spec, &wrapped_all, 0.05)?,
-        );
+        let family_result = if family_spec.family_kind == ConfirmatoryFamilyKindV5::CategoryContrast
+        {
+            let category_values = category_family_values_for_spec(family_spec, &family_artifacts)?;
+            evaluate_confirmatory_family_v5(family_spec, &category_values, 0.05)?
+        } else {
+            evaluate_confirmatory_family_v5(family_spec, &wrapped_all, 0.05)?
+        };
+        extra_family_results.insert(family_spec.family_name.clone(), family_result);
     }
 
     let unregistered = if options.unregistered_pairs.is_empty() {
@@ -912,10 +1030,15 @@ pub fn render_v5_core_inference_markdown(artifact: &V5CoreInferenceArtifact) -> 
             String::new(),
         ]);
         for (family_name, family_result) in &artifact.additional_families {
+            let metric_name = family_result.category_id.as_ref().map_or_else(
+                || "G-SRR".to_owned(),
+                |category| format!("category_pass[{category}]"),
+            );
             lines.push(format!(
-                "- {} (`{}`): `{}` ({}/{} planned pairs)",
+                "- {} ({}; metric {}): `{}` ({}/{} planned pairs)",
                 code_cell(family_name),
-                family_result.family_kind,
+                code_cell(&family_result.family_kind),
+                code_cell(&metric_name),
                 family_result.status,
                 family_result.complete_pair_count,
                 family_result.planned_pair_count,
@@ -923,8 +1046,7 @@ pub fn render_v5_core_inference_markdown(artifact: &V5CoreInferenceArtifact) -> 
             if !family_result.results.is_empty() {
                 lines.extend([
                     String::new(),
-                    "| Config A | Config B | Δ G-SRR | Paired 95% CI | Exact p | BH q | Status |"
-                        .to_owned(),
+                    format!("| Config A | Config B | Δ {metric_name} | Paired 95% CI | Exact p | BH q | Status |"),
                     "| --- | --- | ---: | --- | ---: | ---: | --- |".to_owned(),
                 ]);
                 for res in &family_result.results {

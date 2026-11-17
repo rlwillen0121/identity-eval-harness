@@ -762,6 +762,54 @@ fn test_inference_bit_exact_bootstrap_bh_sign_flip_and_escalation() {
 }
 
 #[test]
+fn category_confirmatory_family_requires_one_known_explicit_selector() {
+    let pair = vec![("alpha".to_owned(), "beta".to_owned())];
+    let missing = ConfirmatoryFamilySpecV5::new(
+        "classification",
+        ConfirmatoryFamilyKindV5::CategoryContrast,
+        pair.clone(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(missing.contains("requires exactly one recognized category_id"));
+
+    let unknown = ConfirmatoryFamilySpecV5::new_category_contrast(
+        "classification",
+        "category-from-family-name-only",
+        pair.clone(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(unknown.contains("requires exactly one recognized category_id"));
+
+    let wrong_kind = ConfirmatoryFamilySpecV5 {
+        family_name: "effort".to_owned(),
+        family_kind: ConfirmatoryFamilyKindV5::EffortContrast,
+        pairs: pair.clone(),
+        category_id: Some("classification".to_owned()),
+    }
+    .validate()
+    .unwrap_err()
+    .to_string();
+    assert!(wrong_kind.contains("only valid for CATEGORY_CONTRAST"));
+
+    let selected =
+        ConfirmatoryFamilySpecV5::new_category_contrast("classification", "classification", pair)
+            .unwrap();
+    assert_eq!(selected.category_id.as_deref(), Some("classification"));
+
+    let old_non_category_shape = json!({
+        "family_name": "legacy-effort",
+        "family_kind": "EFFORT_CONTRAST",
+        "pairs": [["alpha", "beta"]],
+    });
+    let old_spec: ConfirmatoryFamilySpecV5 =
+        serde_json::from_value(old_non_category_shape).unwrap();
+    assert_eq!(old_spec.category_id, None);
+    old_spec.validate().unwrap();
+}
+
+#[test]
 fn test_incomplete_provisional_bounds_and_gates_g_econ_01_g_cal() {
     let base = score_episode(&make_episode_input()).unwrap();
     let run_sha = "f".repeat(64);

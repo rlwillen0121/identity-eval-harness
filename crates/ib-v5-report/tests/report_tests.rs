@@ -714,6 +714,12 @@ fn default_model_artifact(model_id: &str, suite_id: &str, family_ids: &[&str]) -
     )
 }
 
+fn set_category_metric(artifact: &mut V5ReportArtifact, category_id: &str, value: Option<i64>) {
+    for row in &mut artifact.summary.episode_scores {
+        row.category_pass.insert(category_id.to_owned(), value);
+    }
+}
+
 #[test]
 fn comparator_manifest_validates_exact_schema_and_pricing_digest() {
     let raw = serde_json::to_vec(&valid_comparator(60_000_000)).unwrap();
@@ -1674,6 +1680,250 @@ fn core_inference_separates_tracks_blocks_incomplete_and_descriptive_contrasts()
         .to_string();
     assert!(
         err.contains("rankings and confirmatory tests are blocked"),
+        "{err}"
+    );
+}
+
+#[test]
+fn category_contrast_uses_selected_category_vectors_not_g_srr() {
+    let mut model_a = default_model_artifact("model-a", "v5_core", &CORE_FAMILIES_V5);
+    let mut model_b = default_model_artifact("model-b", "v5_core", &CORE_FAMILIES_V5);
+    for row in &mut model_a.summary.episode_scores {
+        row.g_srr_commit = Some(1);
+    }
+    for row in &mut model_b.summary.episode_scores {
+        row.g_srr_commit = Some(0);
+    }
+    set_category_metric(&mut model_a, "classification", Some(1));
+    set_category_metric(&mut model_b, "classification", Some(1));
+
+    let core = BTreeMap::from([
+        ("model-a".to_owned(), model_a),
+        ("model-b".to_owned(), model_b),
+    ]);
+    let family = ConfirmatoryFamilySpecV5::new_category_contrast(
+        "classification_category",
+        "classification",
+        vec![("model-a".to_owned(), "model-b".to_owned())],
+    )
+    .unwrap();
+    let result = build_v5_core_inference_with_options(
+        &core,
+        &[("model-a".to_owned(), "model-b".to_owned())],
+        CoreInferenceOptionsV5 {
+            additional_families: &[family],
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap();
+
+    let category_family = &result.additional_families["classification_category"];
+    assert_eq!(
+        category_family.category_id.as_deref(),
+        Some("classification")
+    );
+    assert_eq!(category_family.results[0].mean_difference, 0.0);
+    assert_eq!(category_family.results[0].p_exact, Some(1.0));
+    assert_eq!(category_family.results[0].q_bh, Some(1.0));
+    let markdown = render_v5_core_inference_markdown(&result);
+    assert!(markdown.contains("metric `category_pass[classification]`"));
+    assert!(markdown.contains("Δ category_pass[classification]"));
+}
+
+#[test]
+fn category_contrast_detects_category_difference_when_g_srr_matches() {
+    let mut model_a = default_model_artifact("model-a", "v5_core", &CORE_FAMILIES_V5);
+    let mut model_b = default_model_artifact("model-b", "v5_core", &CORE_FAMILIES_V5);
+    set_category_metric(&mut model_a, "connectors", Some(1));
+    set_category_metric(&mut model_b, "connectors", Some(0));
+
+    let core = BTreeMap::from([
+        ("model-a".to_owned(), model_a),
+        ("model-b".to_owned(), model_b),
+    ]);
+    let family = ConfirmatoryFamilySpecV5::new_category_contrast(
+        "connector_category",
+        "connectors",
+        vec![("model-a".to_owned(), "model-b".to_owned())],
+    )
+    .unwrap();
+    let result = build_v5_core_inference_with_options(
+        &core,
+        &[],
+        CoreInferenceOptionsV5 {
+            additional_families: &[family],
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap();
+
+    let category_family = &result.additional_families["connector_category"];
+    assert_eq!(category_family.results[0].mean_difference, 1.0);
+    assert_eq!(category_family.results[0].p_exact, Some(2.0 / 4096.0));
+    assert_eq!(category_family.results[0].rejected_bh_0_05, Some(true));
+}
+
+#[test]
+fn category_contrast_fails_closed_on_missing_selector_or_category_coverage() {
+    let core = BTreeMap::from([
+        (
+            "model-a".to_owned(),
+            default_model_artifact("model-a", "v5_core", &CORE_FAMILIES_V5),
+        ),
+        (
+            "model-b".to_owned(),
+            default_model_artifact("model-b", "v5_core", &CORE_FAMILIES_V5),
+        ),
+    ]);
+    let missing_selector = ConfirmatoryFamilySpecV5 {
+        family_name: "classification_category".to_owned(),
+        family_kind: ConfirmatoryFamilyKindV5::CategoryContrast,
+        pairs: vec![("model-a".to_owned(), "model-b".to_owned())],
+        category_id: None,
+    };
+    let err = build_v5_core_inference_with_options(
+        &core,
+        &[],
+        CoreInferenceOptionsV5 {
+            additional_families: &[missing_selector],
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("requires exactly one recognized category_id"),
+        "{err}"
+    );
+
+    let mut missing_metric_core = core;
+    missing_metric_core
+        .get_mut("model-a")
+        .unwrap()
+        .summary
+        .episode_scores[0]
+        .category_pass
+        .remove("classification");
+    let family = ConfirmatoryFamilySpecV5::new_category_contrast(
+        "classification_category",
+        "classification",
+        vec![("model-a".to_owned(), "model-b".to_owned())],
+    )
+    .unwrap();
+    let err = build_v5_core_inference_with_options(
+        &missing_metric_core,
+        &[],
+        CoreInferenceOptionsV5 {
+            additional_families: &[family],
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("missing category metric \"classification\""),
+        "{err}"
+    );
+}
+
+#[test]
+fn category_incomplete_slots_stay_null_and_family_names_cannot_overwrite() {
+    let model_a = default_model_artifact("model-a", "v5_core", &CORE_FAMILIES_V5);
+    let mut model_b = model_report_artifact(
+        "model-b",
+        "v5_core",
+        &CORE_FAMILIES_V5,
+        &"d".repeat(64),
+        "PREREGISTERED_LOWER",
+        "T0_SINGLE_MONOLITH",
+        "UNSTEERED",
+        "COUPLED",
+        "low",
+        &[1, 2, 3],
+        &[1],
+        None,
+    );
+    model_b.summary.is_complete = false;
+    model_b.summary.observed_slots -= 1;
+    set_category_metric(&mut model_b, "classification", None);
+
+    let core = BTreeMap::from([("model-a".to_owned(), model_a)]);
+    let family = ConfirmatoryFamilySpecV5::new_category_contrast(
+        "classification_category",
+        "classification",
+        vec![("model-a".to_owned(), "model-b".to_owned())],
+    )
+    .unwrap();
+    let incomplete = build_v5_core_inference_with_options(
+        &core,
+        &[],
+        CoreInferenceOptionsV5 {
+            additional_families: &[family],
+            additional_family_artifacts: Some(&BTreeMap::from([("model-b".to_owned(), model_b)])),
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap();
+    let category_family = &incomplete.additional_families["classification_category"];
+    assert_eq!(category_family.status, "INCOMPLETE_FAMILY");
+    assert_eq!(
+        category_family.category_id.as_deref(),
+        Some("classification")
+    );
+    assert_eq!(category_family.results[0].p_exact, None);
+    assert_eq!(category_family.results[0].q_bh, None);
+
+    let model_a = default_model_artifact("model-a", "v5_core", &CORE_FAMILIES_V5);
+    let model_b = default_model_artifact("model-b", "v5_core", &CORE_FAMILIES_V5);
+    let core = BTreeMap::from([
+        ("model-a".to_owned(), model_a),
+        ("model-b".to_owned(), model_b),
+    ]);
+    let duplicate_a = ConfirmatoryFamilySpecV5::new(
+        "duplicate_name",
+        ConfirmatoryFamilyKindV5::EffortContrast,
+        vec![("model-a".to_owned(), "model-b".to_owned())],
+    )
+    .unwrap();
+    let duplicate_b = ConfirmatoryFamilySpecV5::new(
+        "duplicate_name",
+        ConfirmatoryFamilyKindV5::AblationContrast,
+        vec![("model-a".to_owned(), "model-b".to_owned())],
+    )
+    .unwrap();
+    let err = build_v5_core_inference_with_options(
+        &core,
+        &[],
+        CoreInferenceOptionsV5 {
+            additional_families: &[duplicate_a, duplicate_b],
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("duplicate additional confirmatory family name"),
+        "{err}"
+    );
+
+    let reserved = ConfirmatoryFamilySpecV5::new(
+        "core_headline_pairs",
+        ConfirmatoryFamilyKindV5::EffortContrast,
+        vec![("model-a".to_owned(), "model-b".to_owned())],
+    )
+    .unwrap();
+    let err = build_v5_core_inference_with_options(
+        &core,
+        &[],
+        CoreInferenceOptionsV5 {
+            additional_families: &[reserved],
+            ..CoreInferenceOptionsV5::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("is reserved for the core headline family"),
         "{err}"
     );
 }

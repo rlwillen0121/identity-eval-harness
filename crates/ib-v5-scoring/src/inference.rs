@@ -5,10 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ib_core::npcompat::{Generator, dot, mean_axis1, mean_pairwise, percentiles_linear};
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    CORE_BOOTSTRAP_REPLICATES_V5, CORE_BOOTSTRAP_SEED_V5, CORE_EXACT_SIGN_FLIPS_V5,
-    CORE_FAMILIES_V5, CORE_FAMILY_COUNT_V5, CORE_REGIMES_V5,
+    CATEGORY_IDS_V5, CORE_BOOTSTRAP_REPLICATES_V5, CORE_BOOTSTRAP_SEED_V5,
+    CORE_EXACT_SIGN_FLIPS_V5, CORE_FAMILIES_V5, CORE_FAMILY_COUNT_V5, CORE_REGIMES_V5,
 };
 use crate::error::ScoringError;
 use crate::snapshot::{EpisodeScoreV5, MetricCellsV5};
@@ -353,7 +354,8 @@ pub fn family_cluster_bootstrap_v5(
 }
 
 /// Kind of preregistered confirmatory family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ConfirmatoryFamilyKindV5 {
     CoreHeadline,
     FullEscalationHeadline,
@@ -376,11 +378,14 @@ impl ConfirmatoryFamilyKindV5 {
 }
 
 /// Preregistered confirmatory comparison family membership.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfirmatoryFamilySpecV5 {
     pub family_name: String,
     pub family_kind: ConfirmatoryFamilyKindV5,
     pub pairs: Vec<(String, String)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
 }
 
 impl ConfirmatoryFamilySpecV5 {
@@ -393,6 +398,23 @@ impl ConfirmatoryFamilySpecV5 {
             family_name: family_name.into(),
             family_kind,
             pairs,
+            category_id: None,
+        };
+        spec.validate()?;
+        Ok(spec)
+    }
+
+    /// Build a category contrast with its preregistered category metric selected explicitly.
+    pub fn new_category_contrast(
+        family_name: impl Into<String>,
+        category_id: impl Into<String>,
+        pairs: Vec<(String, String)>,
+    ) -> Result<Self, ScoringError> {
+        let spec = Self {
+            family_name: family_name.into(),
+            family_kind: ConfirmatoryFamilyKindV5::CategoryContrast,
+            pairs,
+            category_id: Some(category_id.into()),
         };
         spec.validate()?;
         Ok(spec)
@@ -401,6 +423,21 @@ impl ConfirmatoryFamilySpecV5 {
     pub fn validate(&self) -> Result<(), ScoringError> {
         if self.family_name.is_empty() {
             return Err(ScoringError::value("family_name must be non-empty"));
+        }
+        match (self.family_kind, self.category_id.as_deref()) {
+            (ConfirmatoryFamilyKindV5::CategoryContrast, Some(category_id))
+                if CATEGORY_IDS_V5.contains(&category_id) => {}
+            (ConfirmatoryFamilyKindV5::CategoryContrast, _) => {
+                return Err(ScoringError::value(
+                    "CATEGORY_CONTRAST requires exactly one recognized category_id",
+                ));
+            }
+            (_, Some(_)) => {
+                return Err(ScoringError::value(
+                    "category_id is only valid for CATEGORY_CONTRAST families",
+                ));
+            }
+            (_, None) => {}
         }
         let mut seen = BTreeSet::new();
         for (a, b) in &self.pairs {
@@ -455,6 +492,7 @@ impl PairwiseRandomizationResultV5 {
 pub struct ConfirmatoryFamilyResultV5 {
     pub family_name: String,
     pub family_kind: String,
+    pub category_id: Option<String>,
     pub status: String,
     pub planned_pair_count: usize,
     pub complete_pair_count: usize,
@@ -535,6 +573,7 @@ pub fn evaluate_confirmatory_family_v5(
         return Ok(ConfirmatoryFamilyResultV5 {
             family_name: family_spec.family_name.clone(),
             family_kind: family_spec.family_kind.as_str().to_owned(),
+            category_id: family_spec.category_id.clone(),
             status: "COMPLETE".to_owned(),
             planned_pair_count: 0,
             complete_pair_count: 0,
@@ -635,6 +674,7 @@ pub fn evaluate_confirmatory_family_v5(
         return Ok(ConfirmatoryFamilyResultV5 {
             family_name: family_spec.family_name.clone(),
             family_kind: family_spec.family_kind.as_str().to_owned(),
+            category_id: family_spec.category_id.clone(),
             status: "INCOMPLETE_FAMILY".to_owned(),
             planned_pair_count: family_spec.pairs.len(),
             complete_pair_count,
@@ -709,6 +749,7 @@ pub fn evaluate_confirmatory_family_v5(
     Ok(ConfirmatoryFamilyResultV5 {
         family_name: family_spec.family_name.clone(),
         family_kind: family_spec.family_kind.as_str().to_owned(),
+        category_id: family_spec.category_id.clone(),
         status: "COMPLETE".to_owned(),
         planned_pair_count: family_spec.pairs.len(),
         complete_pair_count: family_spec.pairs.len(),
