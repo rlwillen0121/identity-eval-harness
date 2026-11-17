@@ -623,6 +623,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ib-v5-report"
+version = "5.0.0"
+dependencies = [
+ "hex",
+ "ib-core",
+ "ib-v5-accounting",
+ "ib-v5-generator",
+ "ib-v5-runtime",
+ "ib-v5-schemas",
+ "ib-v5-scoring",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "ib-v5-runtime"
 version = "5.0.0"
 dependencies = [
