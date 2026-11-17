@@ -311,7 +311,10 @@ impl StrictV5Model for HRSourceMappingMutationV5 {
             "resolved_person_statuses",
             "HRSourceMappingMutationV5",
         )?;
-        check_sorted_unique(&self.quarantined_assertion_keys, "quarantined_assertion_keys")?;
+        check_sorted_unique(
+            &self.quarantined_assertion_keys,
+            "quarantined_assertion_keys",
+        )?;
         Ok(())
     }
 }
@@ -621,7 +624,10 @@ impl StrictV5Model for CloudCIEMMutationV5 {
                     f.cprin_id
                 )));
             }
-            check_sorted_unique(&f.effective_forbidden_actions, "effective_forbidden_actions")?;
+            check_sorted_unique(
+                &f.effective_forbidden_actions,
+                "effective_forbidden_actions",
+            )?;
         }
         Ok(())
     }
@@ -847,12 +853,7 @@ impl StrictV5Model for UARCampaignMutationV5 {
         }
         let iids: Vec<String> = self.uar_decisions.iter().map(|(i, _)| i.clone()).collect();
         check_sorted_unique(&iids, "uar_decisions")?;
-        check_slice_re(
-            &iids,
-            &ITEM_ID_RE,
-            "uar_decisions",
-            "UARCampaignMutationV5",
-        )?;
+        check_slice_re(&iids, &ITEM_ID_RE, "uar_decisions", "UARCampaignMutationV5")?;
         let ov_iids: Vec<String> = self
             .reviewer_overrides
             .iter()

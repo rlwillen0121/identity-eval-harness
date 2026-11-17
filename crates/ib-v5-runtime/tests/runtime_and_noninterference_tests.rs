@@ -6,36 +6,34 @@ use ib_v5_runtime::{
     ViewV5, induce_phase2_world, ledger_from_projection, live_version, sim_jml_workflow,
 };
 use ib_v5_schemas::{
-    AccountReconActionV5, AccountReconMutationKind, AccountReconMutationV5,
-    ActiveDisabledStatusV5, AffiliationKindV5, AgentDelegationDecisionKindV5,
-    AgentDelegationMutationKind, AgentDelegationMutationV5, AgentDelegationRequestV5,
-    AgentRegistryActionV5, AgentRegistryMutationKind, AgentRegistryMutationV5, AtomicMutationV5,
-    AuthorityTierV5, BirthrightRuleV5, CAEContainmentMutationKind, CAEContainmentMutationV5,
-    CAEIncidentV5, CAETokenBindingKindV5, CAETokenKindV5, CAETokenV5, CAETriggerKindV5,
-    CIEMPrincipalFindingV5, CIEMEscalationVectorV5, CIEMRemediationActionV5,
-    CIEMTaskV5, CloudCIEMMutationKind, CloudCIEMMutationV5, CoSignReceiptStatusV5,
-    CoSignScopeKindV5, CommitReceiptStatusV5, ConnectorHaltReasonV5,
-    ConnectorProvisioningModeV5, ConnectorSchemaV5, ConnectorSyncModeV5,
+    AccountReconActionV5, AccountReconMutationKind, AccountReconMutationV5, ActiveDisabledStatusV5,
+    AffiliationKindV5, AgentDelegationDecisionKindV5, AgentDelegationMutationKind,
+    AgentDelegationMutationV5, AgentDelegationRequestV5, AgentRegistryActionV5,
+    AgentRegistryMutationKind, AgentRegistryMutationV5, AtomicMutationV5, AuthorityTierV5,
+    BirthrightRuleV5, CAEContainmentMutationKind, CAEContainmentMutationV5, CAEIncidentV5,
+    CAETokenBindingKindV5, CAETokenKindV5, CAETokenV5, CAETriggerKindV5, CIEMEscalationVectorV5,
+    CIEMPrincipalFindingV5, CIEMRemediationActionV5, CIEMTaskV5, CloudCIEMMutationKind,
+    CloudCIEMMutationV5, CoSignReceiptStatusV5, CoSignScopeKindV5, CommitReceiptStatusV5,
+    ConnectorHaltReasonV5, ConnectorProvisioningModeV5, ConnectorSchemaV5, ConnectorSyncModeV5,
     ConnectorSyncMutationKind, ConnectorSyncMutationV5, ConnectorTransportKindV5,
     ConnectorUnmappedPolicyDefaultV5, ContractorSponsorCheckModeV5, DeliveredSliceV5,
-    DisconnectedTargetPolicyV5, EngagementStatusV5, EngagementV5, EnterpriseAgentV5,
-    EpisodeV5, GrantModeV5, GrantV5, HRPersonV5, HRSourceMappingMutationKind,
-    HRSourceMappingMutationV5, HRSourceMappingTaskV5, HumanSubkindV5, ITSMTicketActionKindV5,
-    ITSMTicketActionV5, IdPAccountV5, JITDecisionKindV5, JITDecisionMutationKind,
-    JITDecisionMutationV5, JITExternalSyncStatusV5, JITRequestChannelV5, JITRequestV5,
-    JMLTraceEventKindV5, JMLTraceEventV5, JMLWorkflowMutationKind, JMLWorkflowMutationV5,
-    JMLWorkflowSpecV5, JMLWorkflowTaskV5, JoinerContractorSponsorPolicyV5, JoinerStepV5,
-    LeaverStepV5, LegalHoldDispositionV5, LegalHoldScopeModeV5, MoverStepV5,
-    NHIGovernanceActionV5, NHIGovernanceMutationKind, NHIGovernanceMutationV5,
-    NoShowDispositionV5, OptActionKindV5, OptCandidateActionV5, OptimizationMutationKind,
-    OptimizationMutationV5, OptimizationPhaseKindV5, OptimizationTaskV5, OrphanCustodyModeV5,
-    OrphanHandoffPolicyV5, PhaseManifestV5, PhaseWorkQueueV5, PolicyCardV5, PolicyOverlayV5,
-    PrivilegeTierV5, QuerySourcesStatusV5, RoleV5, ScopeCatalogV5, ScopedSoDRuleV5,
-    SliceDescriptorV5, SoDScopeModeV5, SpokeErrorPolicyV5, StageReceiptStatusV5,
-    SteerProcessDirectiveV5, SteerReceiptStatusV5, SteerTriggerReasonV5, StrictV5Model,
-    SuiteIdV5, TableRowV5, TargetNHIV5, UARCampaignMutationKind, UARCampaignMutationV5,
-    UARCampaignV5, UARDecisionKindV5, UARItemV5, ViolationCategoryV5, WorldStateV5,
-    encode_compact_table_v5,
+    DisconnectedTargetPolicyV5, EngagementStatusV5, EngagementV5, EnterpriseAgentV5, EpisodeV5,
+    GrantModeV5, GrantV5, HRPersonV5, HRSourceMappingMutationKind, HRSourceMappingMutationV5,
+    HRSourceMappingTaskV5, HumanSubkindV5, ITSMTicketActionKindV5, ITSMTicketActionV5,
+    IdPAccountV5, JITDecisionKindV5, JITDecisionMutationKind, JITDecisionMutationV5,
+    JITExternalSyncStatusV5, JITRequestChannelV5, JITRequestV5, JMLTraceEventKindV5,
+    JMLTraceEventV5, JMLWorkflowMutationKind, JMLWorkflowMutationV5, JMLWorkflowSpecV5,
+    JMLWorkflowTaskV5, JoinerContractorSponsorPolicyV5, JoinerStepV5, LeaverStepV5,
+    LegalHoldDispositionV5, LegalHoldScopeModeV5, MoverStepV5, NHIGovernanceActionV5,
+    NHIGovernanceMutationKind, NHIGovernanceMutationV5, NoShowDispositionV5, OptActionKindV5,
+    OptCandidateActionV5, OptimizationMutationKind, OptimizationMutationV5,
+    OptimizationPhaseKindV5, OptimizationTaskV5, OrphanCustodyModeV5, OrphanHandoffPolicyV5,
+    PhaseManifestV5, PhaseWorkQueueV5, PolicyCardV5, PolicyOverlayV5, PrivilegeTierV5,
+    QuerySourcesStatusV5, RoleV5, ScopeCatalogV5, ScopedSoDRuleV5, SliceDescriptorV5,
+    SoDScopeModeV5, SpokeErrorPolicyV5, StageReceiptStatusV5, SteerProcessDirectiveV5,
+    SteerReceiptStatusV5, SteerTriggerReasonV5, StrictV5Model, SuiteIdV5, TableRowV5, TargetNHIV5,
+    UARCampaignMutationKind, UARCampaignMutationV5, UARCampaignV5, UARDecisionKindV5, UARItemV5,
+    ViolationCategoryV5, WorldStateV5, encode_compact_table_v5,
 };
 use indexmap::IndexMap;
 
@@ -244,7 +242,8 @@ fn runtime_fixture() -> (RuntimeV5, OptimizationTaskV5, JITRequestV5) {
         admin_role_id: "role_1".to_owned(),
         m_standing: 0,
         m_eligible: 0,
-        preserve_standing_floor_override: ib_v5_schemas::UARPreserveStandingFloorOverrideV5::UseOverlayDefault,
+        preserve_standing_floor_override:
+            ib_v5_schemas::UARPreserveStandingFloorOverrideV5::UseOverlayDefault,
         backup_reviewer_account_ids: Vec::new(),
         candidate_custodian_account_ids: vec!["acct_1".to_owned()],
         items: vec![UARItemV5 {
@@ -319,16 +318,41 @@ fn runtime_fixture() -> (RuntimeV5, OptimizationTaskV5, JITRequestV5) {
     };
 
     let tables = vec![
-        encode_compact_table_v5("optimization_tasks", &[TableRowV5::OptimizationTask(opt1.clone())]).unwrap(),
-        encode_compact_table_v5("optimization_tasks", &[TableRowV5::OptimizationTask(opt2.clone())]).unwrap(),
+        encode_compact_table_v5(
+            "optimization_tasks",
+            &[TableRowV5::OptimizationTask(opt1.clone())],
+        )
+        .unwrap(),
+        encode_compact_table_v5(
+            "optimization_tasks",
+            &[TableRowV5::OptimizationTask(opt2.clone())],
+        )
+        .unwrap(),
         encode_compact_table_v5("hr_persons", &[TableRowV5::HrPerson(person.clone())]).unwrap(),
-        encode_compact_table_v5("idp_accounts", &[TableRowV5::IdpAccount(account.clone())]).unwrap(),
+        encode_compact_table_v5("idp_accounts", &[TableRowV5::IdpAccount(account.clone())])
+            .unwrap(),
         encode_compact_table_v5("roles", &[TableRowV5::Role(role.clone())]).unwrap(),
         encode_compact_table_v5("grants", &[TableRowV5::Grant(grant.clone())]).unwrap(),
-        encode_compact_table_v5("cae_incidents", &[TableRowV5::CaeIncident(incident.clone())]).unwrap(),
-        encode_compact_table_v5("uar_campaigns", &[TableRowV5::UarCampaign(campaign.clone())]).unwrap(),
-        encode_compact_table_v5("jit_requests", &[TableRowV5::JitRequest(jit_request.clone())]).unwrap(),
-        encode_compact_table_v5("agent_delegation_requests", &[TableRowV5::AgentDelegationRequest(dl_request.clone())]).unwrap(),
+        encode_compact_table_v5(
+            "cae_incidents",
+            &[TableRowV5::CaeIncident(incident.clone())],
+        )
+        .unwrap(),
+        encode_compact_table_v5(
+            "uar_campaigns",
+            &[TableRowV5::UarCampaign(campaign.clone())],
+        )
+        .unwrap(),
+        encode_compact_table_v5(
+            "jit_requests",
+            &[TableRowV5::JitRequest(jit_request.clone())],
+        )
+        .unwrap(),
+        encode_compact_table_v5(
+            "agent_delegation_requests",
+            &[TableRowV5::AgentDelegationRequest(dl_request.clone())],
+        )
+        .unwrap(),
     ];
     let p1_table_names: Vec<String> = tables.iter().map(|t| t.table_name.clone()).collect();
     let phase1_payload = DeliveredSliceV5 {
@@ -337,7 +361,11 @@ fn runtime_fixture() -> (RuntimeV5, OptimizationTaskV5, JITRequestV5) {
         watermark_s: 50,
         tables,
     };
-    let fresh_person = hr_person(&"7".repeat(16), "ev_person_new", EngagementStatusV5::Terminated);
+    let fresh_person = hr_person(
+        &"7".repeat(16),
+        "ev_person_new",
+        EngagementStatusV5::Terminated,
+    );
     let mut fresh_request = jit_request.clone();
     fresh_request.etag = "8".repeat(16);
     fresh_request.evidence_id = "ev_request_new".to_owned();
@@ -347,7 +375,8 @@ fn runtime_fixture() -> (RuntimeV5, OptimizationTaskV5, JITRequestV5) {
         watermark_s: 100,
         tables: vec![
             encode_compact_table_v5("hr_persons", &[TableRowV5::HrPerson(fresh_person)]).unwrap(),
-            encode_compact_table_v5("jit_requests", &[TableRowV5::JitRequest(fresh_request)]).unwrap(),
+            encode_compact_table_v5("jit_requests", &[TableRowV5::JitRequest(fresh_request)])
+                .unwrap(),
         ],
     };
 
@@ -500,13 +529,25 @@ fn phase2_mutations(runtime: &RuntimeV5) -> Vec<AtomicMutationV5> {
 fn cosign_both(runtime: &mut RuntimeV5, stage_id: &str) {
     assert_eq!(
         runtime
-            .request_cosign(2, stage_id, CoSignScopeKindV5::UarCustodian, "camp_1", "acct_1")
+            .request_cosign(
+                2,
+                stage_id,
+                CoSignScopeKindV5::UarCustodian,
+                "camp_1",
+                "acct_1"
+            )
             .status,
         CoSignReceiptStatusV5::CoSigned
     );
     assert_eq!(
         runtime
-            .request_cosign(2, stage_id, CoSignScopeKindV5::CriticalJit, "req_1", "acct_1")
+            .request_cosign(
+                2,
+                stage_id,
+                CoSignScopeKindV5::CriticalJit,
+                "req_1",
+                "acct_1"
+            )
             .status,
         CoSignReceiptStatusV5::CoSigned
     );
@@ -746,7 +787,15 @@ fn non_account_outcome_etags_match_independent_phase_one_preimages() {
 
     let ledger = ledger_from_projection(
         &projection,
-        &[nhi, agent, connector, halted_connector, hr_mapping, ciem, workflow],
+        &[
+            nhi,
+            agent,
+            connector,
+            halted_connector,
+            hr_mapping,
+            ciem,
+            workflow,
+        ],
         &work_queue,
         false,
     )
@@ -771,11 +820,9 @@ fn delivered_view_is_order_independent_and_unknown_versions_are_total() {
     runtime.query_sources(1, &["sl_p1".to_owned()]).unwrap();
     let low = runtime.episode().phase1_slices["sl_p1"].clone();
     opt1.etag = "9".repeat(16);
-    let high_table = encode_compact_table_v5(
-        "optimization_tasks",
-        &[TableRowV5::OptimizationTask(opt1)],
-    )
-    .unwrap();
+    let high_table =
+        encode_compact_table_v5("optimization_tasks", &[TableRowV5::OptimizationTask(opt1)])
+            .unwrap();
     let high = DeliveredSliceV5 {
         slice_id: "sl_z_primary".to_owned(),
         authority_tier: AuthorityTierV5::AuthoritativePrimary,
@@ -889,8 +936,14 @@ fn stage_handle_fullmatch_and_rejection_preserve_prior_staged_buffer() {
     assert!(snaps.first_stage.is_some() && snaps.last_stage.is_some());
     assert_eq!(snaps.stage_attempts.len(), 2);
     assert_eq!(snaps.stage_attempts[0].receipt_status, "STAGED");
-    assert_eq!(snaps.stage_attempts[1].receipt_status, "REJECTED_STRUCTURAL");
-    assert_eq!(snaps.first_stage.as_ref().unwrap(), &snaps.stage_attempts[0]);
+    assert_eq!(
+        snaps.stage_attempts[1].receipt_status,
+        "REJECTED_STRUCTURAL"
+    );
+    assert_eq!(
+        snaps.first_stage.as_ref().unwrap(),
+        &snaps.stage_attempts[0]
+    );
     assert_eq!(snaps.last_stage.as_ref().unwrap(), &snaps.stage_attempts[0]);
 }
 
@@ -917,7 +970,10 @@ fn induce_phase2_world_matches_runtime_coupled_transition() {
         StageReceiptStatusV5::Staged
     );
     assert_eq!(
-        runtime.commit_phase_mutations(1, "stg_induce").unwrap().status,
+        runtime
+            .commit_phase_mutations(1, "stg_induce")
+            .unwrap()
+            .status,
         CommitReceiptStatusV5::CommittedAndAdvanced
     );
     assert_eq!(*runtime.world(), induced);
@@ -979,7 +1035,11 @@ fn steer_queries_missing_gold_evidence_when_submitted_cites_were_read() {
         StageReceiptStatusV5::Staged
     );
     let receipt = runtime
-        .request_team_steer(1, "stg_unread_gold", SteerTriggerReasonV5::InitialCheckpoint)
+        .request_team_steer(
+            1,
+            "stg_unread_gold",
+            SteerTriggerReasonV5::InitialCheckpoint,
+        )
         .unwrap();
     assert_eq!(receipt.status, SteerReceiptStatusV5::CorrectiveRedirect);
     assert_eq!(
@@ -1030,18 +1090,33 @@ fn gate3_burns_extra_mints_and_occ_failure_requires_fresh_cosign_and_stage() {
         ),
     ));
     let extra_block = runtime.commit_phase_mutations(2, "stg_p2").unwrap();
-    assert_eq!(extra_block.status, CommitReceiptStatusV5::CommitBlockedToken);
+    assert_eq!(
+        extra_block.status,
+        CommitReceiptStatusV5::CommitBlockedToken
+    );
     assert!(!runtime.minted_cosigns().iter().any(|e| e.2 == "stg_p2"));
 
     assert_eq!(
         runtime
-            .request_cosign(2, "stg_p2", CoSignScopeKindV5::UarCustodian, "camp_1", "acct_1")
+            .request_cosign(
+                2,
+                "stg_p2",
+                CoSignScopeKindV5::UarCustodian,
+                "camp_1",
+                "acct_1"
+            )
             .status,
         CoSignReceiptStatusV5::RejectedStructural
     );
     assert_eq!(
         runtime
-            .request_cosign(2, "stg_p2", CoSignScopeKindV5::CriticalJit, "req_1", "acct_1")
+            .request_cosign(
+                2,
+                "stg_p2",
+                CoSignScopeKindV5::CriticalJit,
+                "req_1",
+                "acct_1"
+            )
             .status,
         CoSignReceiptStatusV5::RejectedStructural
     );
@@ -1054,10 +1129,16 @@ fn gate3_burns_extra_mints_and_occ_failure_requires_fresh_cosign_and_stage() {
         StageReceiptStatusV5::Staged
     );
     cosign_both(&mut runtime, "stg_p2_fresh");
-    let occ_block = runtime.query_sources(2, &["sl_p2_delta".to_owned()]).unwrap();
+    let occ_block = runtime
+        .query_sources(2, &["sl_p2_delta".to_owned()])
+        .unwrap();
     assert_eq!(occ_block.status, QuerySourcesStatusV5::Ok);
     assert_eq!(
-        runtime.view().resolve_hr_person("pers_1").unwrap().evidence_id,
+        runtime
+            .view()
+            .resolve_hr_person("pers_1")
+            .unwrap()
+            .evidence_id,
         "ev_person_new"
     );
     assert!(!runtime.read_ledger().contains("ev_person_old"));
@@ -1069,16 +1150,33 @@ fn gate3_burns_extra_mints_and_occ_failure_requires_fresh_cosign_and_stage() {
             .status,
         CommitReceiptStatusV5::CommitBlockedPrecondition
     );
-    assert!(!runtime.minted_cosigns().iter().any(|e| e.2 == "stg_p2_fresh"));
+    assert!(
+        !runtime
+            .minted_cosigns()
+            .iter()
+            .any(|e| e.2 == "stg_p2_fresh")
+    );
     assert_eq!(
         runtime
-            .request_cosign(2, "stg_p2_fresh", CoSignScopeKindV5::UarCustodian, "camp_1", "acct_1")
+            .request_cosign(
+                2,
+                "stg_p2_fresh",
+                CoSignScopeKindV5::UarCustodian,
+                "camp_1",
+                "acct_1"
+            )
             .status,
         CoSignReceiptStatusV5::RejectedStructural
     );
     assert_eq!(
         runtime
-            .request_cosign(2, "stg_p2_fresh", CoSignScopeKindV5::CriticalJit, "req_1", "acct_1")
+            .request_cosign(
+                2,
+                "stg_p2_fresh",
+                CoSignScopeKindV5::CriticalJit,
+                "req_1",
+                "acct_1"
+            )
             .status,
         CoSignReceiptStatusV5::RejectedStructural
     );
@@ -1228,11 +1326,21 @@ fn jml_workflow_dag_checks_order_and_task_parameterized_policies() {
 
     let mut swapped = task.draft_spec.clone();
     swapped.joiner_steps.swap(0, 1);
-    assert!(!sim_jml_workflow(&swapped, &task.visible_trace_events, &task, None));
+    assert!(!sim_jml_workflow(
+        &swapped,
+        &task.visible_trace_events,
+        &task,
+        None
+    ));
 
     let mut wrong = task.draft_spec.clone();
     wrong.spoke_error_policy = SpokeErrorPolicyV5::IgnoreAndMarkComplete;
-    assert!(!sim_jml_workflow(&wrong, &task.visible_trace_events, &task, None));
+    assert!(!sim_jml_workflow(
+        &wrong,
+        &task.visible_trace_events,
+        &task,
+        None
+    ));
 
     let mut alt_task = task.clone();
     alt_task.contractor_sponsor_check_mode = ContractorSponsorCheckModeV5::ExemptInternalConversion;

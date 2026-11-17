@@ -95,7 +95,9 @@ impl From<Vec<EpisodeScoreV5>> for FamilyMetricInputV5 {
     }
 }
 
-fn extract_family_means_v5(values: &FamilyMetricInputV5) -> Result<[f64; CORE_FAMILY_COUNT_V5], ScoringError> {
+fn extract_family_means_v5(
+    values: &FamilyMetricInputV5,
+) -> Result<[f64; CORE_FAMILY_COUNT_V5], ScoringError> {
     let mut out = [0.0_f64; CORE_FAMILY_COUNT_V5];
     match values {
         FamilyMetricInputV5::EpisodeScores(rows) => {
@@ -274,13 +276,18 @@ pub fn family_cluster_bootstrap_v5(
         ));
     }
     if values_by_model.is_empty() {
-        return Err(ScoringError::value("at least one model metric grid is required"));
+        return Err(ScoringError::value(
+            "at least one model metric grid is required",
+        ));
     }
 
     let model_names: Vec<String> = values_by_model.keys().cloned().collect();
     let mut family_vectors: BTreeMap<String, [f64; CORE_FAMILY_COUNT_V5]> = BTreeMap::new();
     for model in &model_names {
-        family_vectors.insert(model.clone(), extract_family_means_v5(&values_by_model[model])?);
+        family_vectors.insert(
+            model.clone(),
+            extract_family_means_v5(&values_by_model[model])?,
+        );
     }
 
     let mut rng = Generator::new(CORE_BOOTSTRAP_SEED_V5);
@@ -456,7 +463,9 @@ pub struct ConfirmatoryFamilyResultV5 {
 }
 
 /// Benjamini-Hochberg adjusted p-values, with deterministic tie ordering.
-pub fn benjamini_hochberg_v5(p_values: &BTreeMap<String, f64>) -> Result<BTreeMap<String, f64>, ScoringError> {
+pub fn benjamini_hochberg_v5(
+    p_values: &BTreeMap<String, f64>,
+) -> Result<BTreeMap<String, f64>, ScoringError> {
     if p_values.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -589,8 +598,16 @@ pub fn evaluate_confirmatory_family_v5(
                 let sign = if model_a < model_b { 1.0 } else { -1.0 };
                 let diffs: Vec<f64> = va.iter().zip(vb).map(|(&a, &b)| a - b).collect();
                 let d = mean_pairwise(&diffs);
-                let lo = if sign > 0.0 { pi.ci95_low } else { -pi.ci95_high };
-                let hi = if sign > 0.0 { pi.ci95_high } else { -pi.ci95_low };
+                let lo = if sign > 0.0 {
+                    pi.ci95_low
+                } else {
+                    -pi.ci95_high
+                };
+                let hi = if sign > 0.0 {
+                    pi.ci95_high
+                } else {
+                    -pi.ci95_low
+                };
                 (d, Some(lo), Some(hi))
             } else {
                 (f64::NAN, None, None)
@@ -641,8 +658,16 @@ pub fn evaluate_confirmatory_family_v5(
         };
         let pi = &bs.paired_intervals[&(lo_key, hi_key)];
         let sign = if model_a < model_b { 1.0 } else { -1.0 };
-        let ci_low = if sign > 0.0 { pi.ci95_low } else { -pi.ci95_high };
-        let ci_high = if sign > 0.0 { pi.ci95_high } else { -pi.ci95_low };
+        let ci_low = if sign > 0.0 {
+            pi.ci95_low
+        } else {
+            -pi.ci95_high
+        };
+        let ci_high = if sign > 0.0 {
+            pi.ci95_high
+        } else {
+            -pi.ci95_low
+        };
         let key = format!("{model_a}\u{0000}{model_b}");
         p_map.insert(key.clone(), p_val);
         pair_data.insert(
@@ -661,22 +686,24 @@ pub fn evaluate_confirmatory_family_v5(
     let adjusted = benjamini_hochberg_v5(&p_map)?;
     let results = pair_data
         .into_iter()
-        .map(|(key, (model_a, model_b, mean_diff, p_val, ci_low, ci_high))| {
-            let q = adjusted[&key];
-            PairwiseRandomizationResultV5 {
-                model_a,
-                model_b,
-                mean_difference: mean_diff,
-                p_exact: Some(p_val),
-                q_bh: Some(q),
-                rejected_bh_0_05: Some(q < fdr_q),
-                ci95_low: Some(ci_low),
-                ci95_high: Some(ci_high),
-                confirmatory: true,
-                family_name: family_spec.family_name.clone(),
-                status: "COMPLETE".to_owned(),
-            }
-        })
+        .map(
+            |(key, (model_a, model_b, mean_diff, p_val, ci_low, ci_high))| {
+                let q = adjusted[&key];
+                PairwiseRandomizationResultV5 {
+                    model_a,
+                    model_b,
+                    mean_difference: mean_diff,
+                    p_exact: Some(p_val),
+                    q_bh: Some(q),
+                    rejected_bh_0_05: Some(q < fdr_q),
+                    ci95_low: Some(ci_low),
+                    ci95_high: Some(ci_high),
+                    confirmatory: true,
+                    family_name: family_spec.family_name.clone(),
+                    status: "COMPLETE".to_owned(),
+                }
+            },
+        )
         .collect();
 
     Ok(ConfirmatoryFamilyResultV5 {
@@ -727,8 +754,16 @@ pub fn describe_unregistered_contrasts_v5(
         let pi = &bootstrap.paired_intervals[&(lo_key, hi_key)];
         let sign = if model_a < model_b { 1.0 } else { -1.0 };
         let diff = pi.mean_difference * sign;
-        let ci_low = if sign > 0.0 { pi.ci95_low } else { -pi.ci95_high };
-        let ci_high = if sign > 0.0 { pi.ci95_high } else { -pi.ci95_low };
+        let ci_low = if sign > 0.0 {
+            pi.ci95_low
+        } else {
+            -pi.ci95_high
+        };
+        let ci_high = if sign > 0.0 {
+            pi.ci95_high
+        } else {
+            -pi.ci95_low
+        };
         out.push(PairwiseRandomizationResultV5 {
             model_a,
             model_b,

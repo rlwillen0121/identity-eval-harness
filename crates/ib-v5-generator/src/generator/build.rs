@@ -20,8 +20,8 @@ use serde_json::{Map, Value};
 use crate::error::GeneratorError;
 use crate::family_couplings::{prepare_initial_family_world, prepare_phase2_family_world};
 use crate::generator::planner::{
-    COMPACT_OBSERVATION_PROFILE_V1, DEFAULT_V5_SEED, V5Cell, V5Suite, plan_v5_cells,
-    regime_as_str, verify_v5_split_seed_disjointness,
+    COMPACT_OBSERVATION_PROFILE_V1, DEFAULT_V5_SEED, V5Cell, V5Suite, plan_v5_cells, regime_as_str,
+    verify_v5_split_seed_disjointness,
 };
 use crate::generator::slices::{
     collect_evidence_ids_in_slice_map, collect_evidence_ids_in_value,
@@ -29,9 +29,7 @@ use crate::generator::slices::{
     order_preserving_evidence_map, phase1_queue, phase2_queue, rewrite_model_evidence,
     rewrite_slices_evidence,
 };
-use crate::generator::world::{
-    build_phase2_world, build_world, regime_overlay, sealed_jml_events,
-};
+use crate::generator::world::{build_phase2_world, build_world, regime_overlay, sealed_jml_events};
 
 /// In-memory sealed v5 dataset bundle.
 #[derive(Debug, Clone, PartialEq)]
@@ -181,7 +179,10 @@ pub fn build_v5_compact_candidate(
     let mut episode = compact_observation_source_rows(cell, &plan.episode)?;
 
     let mut all_ev = BTreeSet::new();
-    collect_evidence_ids_in_value(&episode.phase1_manifest.to_strict_json_value()?, &mut all_ev);
+    collect_evidence_ids_in_value(
+        &episode.phase1_manifest.to_strict_json_value()?,
+        &mut all_ev,
+    );
     collect_evidence_ids_in_slice_map(&episode.phase1_slices, &mut all_ev)?;
     collect_evidence_ids_in_value(
         &episode.phase2_base_manifest.to_strict_json_value()?,
@@ -200,8 +201,7 @@ pub fn build_v5_compact_candidate(
     let ev_map = order_preserving_evidence_map(&all_ev, &policy_ev)?;
     episode.phase1_manifest = rewrite_model_evidence(&episode.phase1_manifest, &ev_map)?;
     episode.phase1_slices = rewrite_slices_evidence(&episode.phase1_slices, &ev_map)?;
-    episode.phase2_base_manifest =
-        rewrite_model_evidence(&episode.phase2_base_manifest, &ev_map)?;
+    episode.phase2_base_manifest = rewrite_model_evidence(&episode.phase2_base_manifest, &ev_map)?;
     episode.phase2_slices = rewrite_slices_evidence(&episode.phase2_slices, &ev_map)?;
 
     let world_s1 = rewrite_model_evidence(&plan.initial_world, &ev_map)?;

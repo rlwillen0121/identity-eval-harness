@@ -175,7 +175,9 @@ pub fn parse_env(text: &str) -> EnvFile {
         };
         let key = key_raw.trim();
         if !KEY_RE.is_match(key) {
-            problems.push(format!("line {number}: invalid variable name; line skipped"));
+            problems.push(format!(
+                "line {number}: invalid variable name; line skipped"
+            ));
             continue;
         }
         let (value, problem) = parse_value(raw);

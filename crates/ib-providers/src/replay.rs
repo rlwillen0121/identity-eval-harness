@@ -146,9 +146,7 @@ pub fn response_to_dict(response: &ModelResponse) -> Value {
     );
     map.insert(
         "reported_cost_usd".to_string(),
-        response
-            .reported_cost_usd
-            .map_or(Value::Null, Value::from),
+        response.reported_cost_usd.map_or(Value::Null, Value::from),
     );
     map.insert(
         "error".to_string(),
@@ -159,10 +157,9 @@ pub fn response_to_dict(response: &ModelResponse) -> Value {
     );
     map.insert(
         "raw".to_string(),
-        response
-            .raw
-            .as_ref()
-            .map_or(Value::Null, |r| Value::Object(redact_diagnostics_map(r, None, &[]))),
+        response.raw.as_ref().map_or(Value::Null, |r| {
+            Value::Object(redact_diagnostics_map(r, None, &[]))
+        }),
     );
     Value::Object(map)
 }
@@ -290,10 +287,7 @@ pub fn response_from_dict(data: &Map<String, Value>) -> Result<ModelResponse, Re
             .and_then(Value::as_bool)
             .unwrap_or(false),
         usage,
-        latency_s: data
-            .get("latency_s")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0),
+        latency_s: data.get("latency_s").and_then(Value::as_f64).unwrap_or(0.0),
         served_model: match data.get("served_model") {
             None | Some(Value::Null) => None,
             Some(Value::String(s)) => Some(s.clone()),
@@ -326,29 +320,23 @@ pub fn response_from_dict(data: &Map<String, Value>) -> Result<ModelResponse, Re
         },
     };
 
-    inspect_and_clamp_usage(
-        raw_usage_fields.as_ref(),
-        &mut resp.usage,
-        &mut resp.raw,
-    );
+    inspect_and_clamp_usage(raw_usage_fields.as_ref(), &mut resp.usage, &mut resp.raw);
     Ok(sanitize_response_post_usage(resp, "replay"))
 }
 
-pub fn recorded_cost_from(record: &Map<String, Value>) -> Result<Option<RecordedCost>, ReplayError> {
+pub fn recorded_cost_from(
+    record: &Map<String, Value>,
+) -> Result<Option<RecordedCost>, ReplayError> {
     let has_usd = record.contains_key("cost_usd");
     let has_src = record.contains_key("cost_source");
     if !has_usd && !has_src {
         return Ok(None);
     }
     if has_usd && !has_src {
-        return Err(ReplayError(
-            "'cost_usd' needs {'cost_source'}".to_string(),
-        ));
+        return Err(ReplayError("'cost_usd' needs {'cost_source'}".to_string()));
     }
     if !has_usd && has_src {
-        return Err(ReplayError(
-            "'cost_source' needs {'cost_usd'}".to_string(),
-        ));
+        return Err(ReplayError("'cost_source' needs {'cost_usd'}".to_string()));
     }
 
     let cost_usd = match record.get("cost_usd") {
@@ -459,10 +447,7 @@ pub fn load_responses_jsonl(
     path: impl AsRef<Path>,
 ) -> Result<BTreeMap<String, ModelResponse>, ReplayError> {
     let loaded = load_records(path.as_ref())?;
-    Ok(loaded
-        .into_iter()
-        .map(|(k, (resp, _))| (k, resp))
-        .collect())
+    Ok(loaded.into_iter().map(|(k, (resp, _))| (k, resp)).collect())
 }
 
 pub struct ReplayProvider {
@@ -473,7 +458,10 @@ pub struct ReplayProvider {
 }
 
 impl ReplayProvider {
-    pub fn from_path(path: impl AsRef<Path>, model: impl Into<String>) -> Result<Self, ReplayError> {
+    pub fn from_path(
+        path: impl AsRef<Path>,
+        model: impl Into<String>,
+    ) -> Result<Self, ReplayError> {
         let model = model.into();
         let loaded = load_records(path.as_ref())?;
         let mut records = BTreeMap::new();

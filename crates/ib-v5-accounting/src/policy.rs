@@ -663,7 +663,8 @@ fn normalize_output_tokens(
         return (None, None, None);
     }
 
-    let total_out_i128 = i128::from(raw_base) + i128::from(add_reasoning) + i128::from(add_tool_ser);
+    let total_out_i128 =
+        i128::from(raw_base) + i128::from(add_reasoning) + i128::from(add_tool_ser);
     if let Some(rv) = reasoning_val
         && i128::from(rv) > total_out_i128
     {
@@ -712,7 +713,8 @@ pub fn normalize_raw_usage_v5(
     }
 
     let (input_total, cached_input) = normalize_input_tokens(raw_map, policy);
-    let (output_total, reasoning_subset, tool_ser_subset) = normalize_output_tokens(raw_map, policy);
+    let (output_total, reasoning_subset, tool_ser_subset) =
+        normalize_output_tokens(raw_map, policy);
     Ok(NormalizedUsageBreakdownV5 {
         input_tokens_total: input_total,
         cached_input_tokens: cached_input,
@@ -858,15 +860,12 @@ pub fn estimate_frozen_cost_micros_v5(
             ),
         );
 
-    let output_num = (remaining_output as u128)
-        .saturating_mul(pricing_rate.output_cost_per_million_micros as u128)
-        .saturating_add(
-            (reasoning_tokens as u128).saturating_mul(
-                pricing_rate
-                    .reasoning_cost_per_million_micros
-                    .unwrap_or(0) as u128,
-            ),
-        );
+    let output_num =
+        (remaining_output as u128)
+            .saturating_mul(pricing_rate.output_cost_per_million_micros as u128)
+            .saturating_add((reasoning_tokens as u128).saturating_mul(
+                pricing_rate.reasoning_cost_per_million_micros.unwrap_or(0) as u128,
+            ));
 
     let total_num = input_num.saturating_add(output_num);
     let rounded = total_num.saturating_add(500_000) / 1_000_000;
@@ -944,20 +943,16 @@ pub fn build_provider_request_usage_v5(
                 rate.currency_code
             )));
         }
-        estimated_micros = estimate_frozen_cost_micros_v5(
-            &normalized,
-            rate,
-            input.raw_usage,
-            Some(input.policy),
-        );
+        estimated_micros =
+            estimate_frozen_cost_micros_v5(&normalized, rate, input.raw_usage, Some(input.policy));
         if estimated_micros.is_some() {
             if !SHA256_HEX_RE.is_match(&rate.pricing_manifest_sha256) {
-                return Err(AccountingError::Schema(
-                    SchemaValidationError::validation(format!(
+                return Err(AccountingError::Schema(SchemaValidationError::validation(
+                    format!(
                         "invalid pricing_manifest_sha256 in FrozenPricingRateV5: {:?}",
                         rate.pricing_manifest_sha256
-                    )),
-                ));
+                    ),
+                )));
             }
             cost_basis = CostBasisV5::FrozenRateEstimate;
             pricing_sha256 = Some(rate.pricing_manifest_sha256.clone());

@@ -1,4 +1,7 @@
-"""Regenerate NumPy 2.5.4 golden vectors for ib-core (run: uv run python crates/ib-core/tests/fixtures/gen_npcompat_vectors.py)."""
+"""Regenerate NumPy 2.5.4 golden vectors for ib-core.
+
+Run: uv run python crates/ib-core/tests/fixtures/gen_npcompat_vectors.py
+"""
 
 from __future__ import annotations
 
@@ -134,9 +137,7 @@ def mean_cases() -> dict[str, object]:
     means_1_to_300 = [f64_bits(src_300[:n].mean()) for n in range(1, 301)]
 
     neg_zero_ns = [1, 7, 8, 9, 16, 129]
-    neg_zero_means = [
-        f64_bits(np.array([-0.0] * n, dtype=np.float64).mean()) for n in neg_zero_ns
-    ]
+    neg_zero_means = [f64_bits(np.array([-0.0] * n, dtype=np.float64).mean()) for n in neg_zero_ns]
 
     mat_100_129 = rng.random((100, 129)) - 0.5
     means_100_129 = [f64_bits(x) for x in mat_100_129.mean(axis=1)]
@@ -175,7 +176,11 @@ def percentile_cases() -> list[dict[str, object]]:
         ("len2", [10.0, 20.0], [0.0, 2.5, 25.0, 50.0, 75.0, 95.0, 97.5, 100.0]),
         ("len12", rng.normal(0.0, 10.0, size=12).tolist(), [0.0, 2.5, 50.0, 95.0, 97.5, 100.0]),
         ("len100", rng.random(100).tolist(), [2.5, 95.0, 97.5]),
-        ("len10000_ints", rng.integers(0, 5000, size=10000).astype(np.float64).tolist(), [2.5, 95.0, 97.5]),
+        (
+            "len10000_ints",
+            rng.integers(0, 5000, size=10000).astype(np.float64).tolist(),
+            [2.5, 95.0, 97.5],
+        ),
     ]
     out = []
     for name, arr, qs in arrays:
@@ -218,9 +223,7 @@ def synthetic_bootstrap_case() -> dict[str, object]:
         "gamma": rng_data.uniform(0.4, 0.95, size=12).tolist(),
     }
     model_names = sorted(models)
-    sampled = np.random.Generator(np.random.PCG64(20261111)).integers(
-        0, 12, size=(10000, 12)
-    )
+    sampled = np.random.Generator(np.random.PCG64(20261111)).integers(0, 12, size=(10000, 12))
     intervals = {}
     model_draws = {}
     means = {}

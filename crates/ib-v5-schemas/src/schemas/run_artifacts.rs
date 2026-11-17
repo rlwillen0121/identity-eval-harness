@@ -257,12 +257,15 @@ impl StrictV5Model for RunConfigurationV5 {
             }
         }
         if self.effort_track == EffortTrackV5::PrimaryHighest
-            && (self.topology.as_str(), self.steering_mode, self.coupling_mode)
-                != (
-                    "T0_SINGLE_MONOLITH",
-                    SteeringModeV5::Unsteered,
-                    CouplingModeV5::Coupled,
-                )
+            && (
+                self.topology.as_str(),
+                self.steering_mode,
+                self.coupling_mode,
+            ) != (
+                "T0_SINGLE_MONOLITH",
+                SteeringModeV5::Unsteered,
+                CouplingModeV5::Coupled,
+            )
         {
             return Err(SchemaValidationError::validation(
                 "primary track requires the shared unsteered coupled single agent",
@@ -773,10 +776,14 @@ impl StrictV5Model for DescriptiveUsageSummaryV5 {
             }
         }
 
-        let parsed: Value = serde_json::from_str(&self.attempt_status_counts_json)
-            .map_err(|_| SchemaValidationError::validation("attempt_status_counts_json must be valid JSON"))?;
+        let parsed: Value =
+            serde_json::from_str(&self.attempt_status_counts_json).map_err(|_| {
+                SchemaValidationError::validation("attempt_status_counts_json must be valid JSON")
+            })?;
         let obj = parsed.as_object().ok_or_else(|| {
-            SchemaValidationError::validation("attempt_status_counts_json must decode to a JSON object")
+            SchemaValidationError::validation(
+                "attempt_status_counts_json must decode to a JSON object",
+            )
         })?;
 
         let mut total: i64 = 0;

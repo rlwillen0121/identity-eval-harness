@@ -52,7 +52,10 @@ async fn captures_stdout_stderr_exit_code_cwd_and_stdin() {
         tmp.path().to_path_buf(),
     );
     let res = run_command(&cmd).await;
-    assert!(res.launch_error.is_none(), "unexpected launch error: {res:?}");
+    assert!(
+        res.launch_error.is_none(),
+        "unexpected launch error: {res:?}"
+    );
     assert_eq!(res.returncode, 3);
     let lines: Vec<&str> = res.stdout.lines().collect();
     assert_eq!(lines[0], "hello-stdin");
@@ -86,16 +89,17 @@ async fn timeout_kills_process_group_including_grandchild() {
     let _guard = LIVE_GROUP_RWLOCK.read().await;
     let tmp = TempDir::new().unwrap();
     let pid_file = tmp.path().join("grandchild.pid");
-    let script = format!(
-        "sleep 30 & echo $! > '{}'; sleep 30",
-        pid_file.display()
-    );
+    let script = format!("sleep 30 & echo $! > '{}'; sleep 30", pid_file.display());
     let start = Instant::now();
     let res = run_command(&sh_cmd(&script, None, 0.5, tmp.path().to_path_buf())).await;
     assert!(res.timed_out);
     assert!(start.elapsed().as_secs_f64() < 10.0);
 
-    let grandchild: i32 = fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    let grandchild: i32 = fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     let mut dead = false;
     for _ in 0..50 {
         let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(grandchild), None).is_ok();
@@ -121,7 +125,11 @@ async fn helpers_left_running_after_normal_exit_are_killed() {
     assert_eq!(res.returncode, 0);
     assert!(!res.timed_out);
 
-    let helper: i32 = fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    let helper: i32 = fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     let mut dead = false;
     for _ in 0..50 {
         let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(helper), None).is_ok();
@@ -146,7 +154,12 @@ async fn missing_binary_is_launch_error_and_output_is_capped() {
         stdin: None,
     };
     let res = run_command(&missing).await;
-    assert!(res.launch_error.as_deref().unwrap().contains("could not start"));
+    assert!(
+        res.launch_error
+            .as_deref()
+            .unwrap()
+            .contains("could not start")
+    );
     assert_eq!(res.returncode, -1);
 
     // Output cap test
@@ -157,8 +170,14 @@ async fn missing_binary_is_launch_error_and_output_is_capped() {
     )
     .await;
     assert_eq!(capped.returncode, 0);
-    assert_eq!(capped.stdout, format!("{}{TRUNCATION_MARKER}", "o".repeat(1000)));
-    assert_eq!(capped.stderr, format!("{}{TRUNCATION_MARKER}", "e".repeat(1000)));
+    assert_eq!(
+        capped.stdout,
+        format!("{}{TRUNCATION_MARKER}", "o".repeat(1000))
+    );
+    assert_eq!(
+        capped.stderr,
+        format!("{}{TRUNCATION_MARKER}", "e".repeat(1000))
+    );
 
     // Flooding stdout before reading stdin must not deadlock
     let flood_script = "head -c 200000 /dev/zero | tr '\\0' 'x'; cat >/dev/null";
@@ -235,8 +254,16 @@ fn transient_errors_and_redaction_and_tail() {
         "assistant_content": [{"text": "preserve synthetic-cred-7319"}],
     });
     let red_diag = redact_diagnostics(&payload, Some(&env), &["AUTH_BLOB"]);
-    assert!(!red_diag["request"].to_string().contains("synthetic-cred-7319"));
-    assert!(!red_diag["metadata"].to_string().contains("synthetic-cred-7319"));
+    assert!(
+        !red_diag["request"]
+            .to_string()
+            .contains("synthetic-cred-7319")
+    );
+    assert!(
+        !red_diag["metadata"]
+            .to_string()
+            .contains("synthetic-cred-7319")
+    );
     assert_eq!(
         red_diag["assistant_content"],
         json!([{"text": "preserve synthetic-cred-7319"}])
@@ -314,22 +341,13 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
         format!("{SYSTEM_BEGIN}\nrules\n{SYSTEM_END}\n\nbody")
     );
     let big = "x".repeat(MAX_ARG_BYTES + 1);
-    assert_eq!(
-        system_override(&big, "body", "").0,
-        SYSTEM_POINTER
-    );
-    assert_eq!(
-        system_override(" \n\t", "body", "").0,
-        NEUTRAL_SYSTEM
-    );
+    assert_eq!(system_override(&big, "body", "").0, SYSTEM_POINTER);
+    assert_eq!(system_override(" \n\t", "body", "").0, NEUTRAL_SYSTEM);
     assert!(valid_effort("xhigh"));
     assert!(!valid_effort("-bad"));
 
     let lines = "{\"type\": \"system\"}\n{\"type\": \"result\", \"n\": 1}\n{\"type\": \"event\"}\n";
-    assert_eq!(
-        parse_json_payload(lines).unwrap()["n"],
-        json!(1)
-    );
+    assert_eq!(parse_json_payload(lines).unwrap()["n"], json!(1));
     assert_eq!(
         parse_jsonl("{\"type\":\"a\"}\nnoise\n[1]\n{\"type\":\"b\"}\n").len(),
         2
@@ -346,13 +364,18 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
     );
     assert_eq!(
         structured_text(Some(&json!("Here you go")), Some(&s_map)),
-        (Some("{\"a\": 1}".to_string()), Some("Here you go".to_string()))
+        (
+            Some("{\"a\": 1}".to_string()),
+            Some("Here you go".to_string())
+        )
     );
 
     // scrub_stderr removes prompt echoes
     let req = ModelRequest::new(
         "Secret policy line number one that is long enough",
-        vec![Message::user("User prompt line that must not appear in errors")],
+        vec![Message::user(
+            "User prompt line that must not appear in errors",
+        )],
     );
     let stderr = "Secret policy line number one that is long enough\nUser prompt line that must not appear in errors\nactual CLI failure";
     assert_eq!(scrub_stderr(stderr, Some(&req), 300), "actual CLI failure");
@@ -364,9 +387,13 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
     fs::create_dir_all(&real).unwrap();
     fs::write(real.join("auth.json"), r#"{"token": "old"}"#).unwrap();
     fs::write(real.join("auth.json.lock"), "").unwrap();
-    let links =
-        link_credentials(&real, &priv_dir, &["auth.json", "missing.json"], &["auth.json.lock"])
-            .unwrap();
+    let links = link_credentials(
+        &real,
+        &priv_dir,
+        &["auth.json", "missing.json"],
+        &["auth.json.lock"],
+    )
+    .unwrap();
     assert_eq!(links.len(), 2);
     // Replace symlink atomically as a CLI refreshing OAuth would
     let staged = priv_dir.join("auth.json.tmp");
@@ -391,7 +418,8 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
         let dir = CallDirGuard::new("identitybench-claude_cli-").unwrap();
         assert!(dir.path().join(OWNER_FILE).is_file());
         assert_eq!(owner_alive(dir.path()), Some(true));
-        assert_eq!(sweep_stale_call_dirs(0.0), 0); // live dir must not be swept
+        let _ = sweep_stale_call_dirs(0.0);
+        assert!(dir.path().is_dir(), "sweeper removed a live call directory");
     }
 
     // base_child_env + keeps

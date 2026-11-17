@@ -20,7 +20,9 @@ use crate::constants::{
     FULL_SEEDS_PER_FAMILY_V5, G_BASELINE_IDS_V5, PLANNED_REPEATS_MODEL_V5, category_phase_kinds_v5,
 };
 use crate::error::ScoringError;
-use crate::inference::{FamilyMetricInputV5, conditional_rate, family_cluster_bootstrap_v5, py_sum_f64};
+use crate::inference::{
+    FamilyMetricInputV5, conditional_rate, family_cluster_bootstrap_v5, py_sum_f64,
+};
 use crate::snapshot::EpisodeScoreV5;
 
 /// Planned-slot and observed-conditional summary for one v5 category.
@@ -71,7 +73,9 @@ pub fn score_categories_v5(
     let effective_planned = planned_slots.unwrap_or(episode_scores.len());
     let use_family_equal = planned_slots_by_family.is_some_and(|map| {
         map.len() == CORE_FAMILY_COUNT_V5
-            && CORE_FAMILIES_V5.iter().all(|f| map.get(*f).is_some_and(|&v| v > 0))
+            && CORE_FAMILIES_V5
+                .iter()
+                .all(|f| map.get(*f).is_some_and(|&v| v > 0))
     });
 
     let mut summaries = BTreeMap::new();
@@ -344,9 +348,7 @@ pub struct RunScoreSummaryV5 {
 /// Compute `np.percentile(values, 95, method="linear")` on integer observations.
 pub fn p95_i64(values: &[i64]) -> Result<f64, ScoringError> {
     if values.is_empty() {
-        return Err(ScoringError::value(
-            "p95 requires at least one observation",
-        ));
+        return Err(ScoringError::value("p95 requires at least one observation"));
     }
     let floats: Vec<f64> = values.iter().map(|&v| v as f64).collect();
     Ok(percentile_linear(&floats, 95.0)?)
@@ -540,9 +542,9 @@ fn evaluate_g_cal_02(
         if meta.is_some_and(|m| m.effort_is_highest_valid == Some(false)) {
             return "FAIL";
         }
-        if run_configuration
-            .is_some_and(|rc| rc.native_effort_policy == NativeEffortPolicyV5::MaximumValidNativeBudget)
-            && meta.is_some_and(|m| m.budget_calculation_documented == Some(false))
+        if run_configuration.is_some_and(|rc| {
+            rc.native_effort_policy == NativeEffortPolicyV5::MaximumValidNativeBudget
+        }) && meta.is_some_and(|m| m.budget_calculation_documented == Some(false))
         {
             return "FAIL";
         }
@@ -602,7 +604,8 @@ fn evaluate_g_cal_03(
         if context.topology_profile_sha256.as_deref() != Some(expected_sha) {
             return "FAIL";
         }
-    } else if context.topology != "T0_SINGLE_MONOLITH" && context.topology_profile_sha256.is_none() {
+    } else if context.topology != "T0_SINGLE_MONOLITH" && context.topology_profile_sha256.is_none()
+    {
         return "FAIL";
     }
 
@@ -646,7 +649,9 @@ pub fn aggregate_run_scores(
 ) -> Result<RunScoreSummaryV5, ScoringError> {
     context.validate()?;
     if episode_scores.is_empty() {
-        return Err(ScoringError::value("at least one episode score is required"));
+        return Err(ScoringError::value(
+            "at least one episode score is required",
+        ));
     }
     let mut slot_keys = BTreeSet::new();
     for row in episode_scores {
@@ -660,8 +665,7 @@ pub fn aggregate_run_scores(
                 "run context suite_id must match every episode score",
             ));
         }
-        if row.repeat_index < 1
-            || (row.repeat_index as usize) > context.planned_repeats_per_episode
+        if row.repeat_index < 1 || (row.repeat_index as usize) > context.planned_repeats_per_episode
         {
             return Err(ScoringError::value(
                 "episode score repeat_index exceeds context.planned_repeats_per_episode",
@@ -701,9 +705,10 @@ pub fn aggregate_run_scores(
 
     let planned_slots_from_grid = planned_episodes.len() * context.planned_repeats_per_episode;
     let planned_slots = if let Some(summary) = options.descriptive_usage_summary {
-        let planned_from_summary = usize::try_from(summary.planned_attempt_slots).map_err(|_| {
-            ScoringError::value("descriptive_usage_summary.planned_attempt_slots < 0")
-        })?;
+        let planned_from_summary =
+            usize::try_from(summary.planned_attempt_slots).map_err(|_| {
+                ScoringError::value("descriptive_usage_summary.planned_attempt_slots < 0")
+            })?;
         if planned_from_summary < rows.len() {
             return Err(ScoringError::value(
                 "descriptive_usage_summary.planned_attempt_slots < len(episode_scores)",
@@ -759,8 +764,7 @@ pub fn aggregate_run_scores(
         .iter()
         .map(|(_, fam, reg)| (fam.as_str(), reg.as_str()))
         .collect();
-    let valid_core_grid = planned_episodes.len()
-        == CORE_FAMILY_COUNT_V5 * CORE_REGIMES_V5.len()
+    let valid_core_grid = planned_episodes.len() == CORE_FAMILY_COUNT_V5 * CORE_REGIMES_V5.len()
         && ep_grid_pairs == expected_pairs;
     let valid_full_grid = planned_episodes.len()
         == CORE_FAMILY_COUNT_V5 * FULL_SEEDS_PER_FAMILY_V5 * CORE_REGIMES_V5.len()
@@ -964,27 +968,29 @@ pub fn aggregate_run_scores(
 
     let valid_rows: Vec<Option<bool>> = rows.iter().map(|r| r.execution_valid).collect();
     let execution_rate = if rows.len() == planned_slots && valid_rows.iter().all(Option::is_some) {
-        let ints: Vec<i64> = valid_rows
-            .iter()
-            .flatten()
-            .map(|&v| i64::from(v))
-            .collect();
+        let ints: Vec<i64> = valid_rows.iter().flatten().map(|&v| i64::from(v)).collect();
         Some(mean_f64(&ints))
     } else {
         None
     };
-    let provider_error_count =
-        if is_complete && rows.iter().all(|r| r.provider_error.is_some()) {
-            Some(rows.iter().filter(|r| r.provider_error == Some(true)).count() as f64)
-        } else {
-            None
-        };
-    let parse_failure_count =
-        if is_complete && rows.iter().all(|r| r.parse_failure.is_some()) {
-            Some(rows.iter().filter(|r| r.parse_failure == Some(true)).count() as f64)
-        } else {
-            None
-        };
+    let provider_error_count = if is_complete && rows.iter().all(|r| r.provider_error.is_some()) {
+        Some(
+            rows.iter()
+                .filter(|r| r.provider_error == Some(true))
+                .count() as f64,
+        )
+    } else {
+        None
+    };
+    let parse_failure_count = if is_complete && rows.iter().all(|r| r.parse_failure.is_some()) {
+        Some(
+            rows.iter()
+                .filter(|r| r.parse_failure == Some(true))
+                .count() as f64,
+        )
+    } else {
+        None
+    };
     let max_turns_exceeded_count =
         if is_complete && rows.iter().all(|r| r.termination_reason.is_some()) {
             Some(
@@ -1054,8 +1060,14 @@ pub fn aggregate_run_scores(
             0.0
         }
     };
-    metric_values.insert("p1_staged_rate".to_owned(), Some(div_planned(p1_staged_obs)));
-    metric_values.insert("p2_observed_rate".to_owned(), Some(div_planned(p2_observed_obs)));
+    metric_values.insert(
+        "p1_staged_rate".to_owned(),
+        Some(div_planned(p1_staged_obs)),
+    );
+    metric_values.insert(
+        "p2_observed_rate".to_owned(),
+        Some(div_planned(p2_observed_obs)),
+    );
     metric_values.insert(
         "both_phases_staged_rate".to_owned(),
         Some(div_planned(both_staged_obs)),
@@ -1071,7 +1083,10 @@ pub fn aggregate_run_scores(
     metric_values.insert("execution_valid_rate".to_owned(), execution_rate);
     metric_values.insert("provider_error_count".to_owned(), provider_error_count);
     metric_values.insert("parse_failure_count".to_owned(), parse_failure_count);
-    metric_values.insert("max_turns_exceeded_count".to_owned(), max_turns_exceeded_count);
+    metric_values.insert(
+        "max_turns_exceeded_count".to_owned(),
+        max_turns_exceeded_count,
+    );
 
     let mean_if_complete = |vals: &[i64]| -> Option<f64> {
         if is_complete && !vals.is_empty() {
@@ -1282,7 +1297,8 @@ pub fn aggregate_run_scores(
     };
 
     let owned_summary = if options.descriptive_usage_summary.is_none()
-        && let (Some(atts), Some(run_sha)) = (options.attempts, context.run_config_sha256.as_deref())
+        && let (Some(atts), Some(run_sha)) =
+            (options.attempts, context.run_config_sha256.as_deref())
     {
         Some(summarize_descriptive_usage_v5(
             run_sha,
@@ -1297,9 +1313,7 @@ pub fn aggregate_run_scores(
     } else {
         None
     };
-    let effective_usage_summary = options
-        .descriptive_usage_summary
-        .or(owned_summary.as_ref());
+    let effective_usage_summary = options.descriptive_usage_summary.or(owned_summary.as_ref());
 
     let mut gate_status: BTreeMap<String, String> = BTreeMap::new();
     gate_status.insert(
@@ -1311,10 +1325,7 @@ pub fn aggregate_run_scores(
         }
         .to_owned(),
     );
-    gate_status.insert(
-        "G-TOK-01".to_owned(),
-        evaluate_g_tok_01(context).to_owned(),
-    );
+    gate_status.insert("G-TOK-01".to_owned(), evaluate_g_tok_01(context).to_owned());
     gate_status.insert(
         "G-TURN-01".to_owned(),
         evaluate_g_turn_01(context, options.attempts).to_owned(),

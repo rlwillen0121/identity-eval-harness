@@ -16,8 +16,12 @@ fn draft5_datasets_roundtrip_byte_exact() {
     for suite in ["v5_dev", "v5_lite", "v5_core", "v5_full"] {
         let dir = base.join(suite);
         let seal: Value =
-            serde_json::from_slice(&std::fs::read(dir.join("SEAL.json")).expect("seal")).expect("seal json");
-        for (file, key) in [("episodes.jsonl", "episodes_sha256"), ("oracles.jsonl", "oracles_sha256")] {
+            serde_json::from_slice(&std::fs::read(dir.join("SEAL.json")).expect("seal"))
+                .expect("seal json");
+        for (file, key) in [
+            ("episodes.jsonl", "episodes_sha256"),
+            ("oracles.jsonl", "oracles_sha256"),
+        ] {
             let bytes = std::fs::read(dir.join(file)).expect("dataset file");
             assert_eq!(
                 sha256_hex(&bytes),

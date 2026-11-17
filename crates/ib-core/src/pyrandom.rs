@@ -18,13 +18,18 @@ pub struct PyRandom {
 
 impl std::fmt::Debug for PyRandom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PyRandom").field("mti", &self.mti).finish_non_exhaustive()
+        f.debug_struct("PyRandom")
+            .field("mti", &self.mti)
+            .finish_non_exhaustive()
     }
 }
 
 impl PyRandom {
     fn blank() -> Self {
-        Self { mt: [0; N], mti: N + 1 }
+        Self {
+            mt: [0; N],
+            mti: N + 1,
+        }
     }
 
     fn init_genrand(&mut self, s: u32) {
@@ -81,7 +86,10 @@ impl PyRandom {
     #[must_use]
     pub fn from_int_be_bytes(magnitude_be: &[u8]) -> Self {
         // Strip leading zero bytes, then pack into little-endian 32-bit words.
-        let first = magnitude_be.iter().position(|b| *b != 0).unwrap_or(magnitude_be.len());
+        let first = magnitude_be
+            .iter()
+            .position(|b| *b != 0)
+            .unwrap_or(magnitude_be.len());
         let bytes = &magnitude_be[first..];
         let mut key: Vec<u32> = Vec::with_capacity(bytes.len() / 4 + 1);
         let mut idx = bytes.len();
@@ -249,7 +257,11 @@ impl PyRandom {
         assert!(k <= n, "Sample larger than population or is negative");
         let mut setsize: usize = 21;
         if k > 5 {
-            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[allow(
+                clippy::cast_precision_loss,
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss
+            )]
             let exp = ((k as f64 * 3.0).ln() / 4f64.ln()).ceil() as u32;
             setsize += 4usize.pow(exp);
         }

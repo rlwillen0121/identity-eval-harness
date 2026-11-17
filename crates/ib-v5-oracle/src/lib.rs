@@ -18,7 +18,7 @@ pub use oracle::{
 pub use oracle_p2::{
     Phase2WorkingState, active_session_footprint, bound_person_hist, campaign_quorum_sets,
     effective_authorization_footprint, evaluate_phase2, initialize_working_state,
-    interval_union_measure, phase21_cae, phase22_uar, phase24_optimization, phase2_feasibility,
+    interval_union_measure, phase2_feasibility, phase21_cae, phase22_uar, phase24_optimization,
     post_uar_live_controls, retro_taint, reviewer_assignment_feasibility, session_end_s,
     token_active_interval, verify_post_uar_invariants,
 };

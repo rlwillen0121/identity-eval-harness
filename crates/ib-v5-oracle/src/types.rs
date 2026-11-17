@@ -4,11 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
-use ib_v5_schemas::{
-    AtomicMutationV5, EngagementStatusV5, NHIGovernanceMutationV5, NHISubkindV5,
-    PhaseWorkQueueV5, WorldStateV5,
-};
 use ib_v5_schemas::scope_algebra::CapabilityFootprint;
+use ib_v5_schemas::{
+    AtomicMutationV5, EngagementStatusV5, NHIGovernanceMutationV5, NHISubkindV5, PhaseWorkQueueV5,
+    WorldStateV5,
+};
 
 /// `(mutation_kind, target_entity_id)` target key.
 pub type TargetKey = (String, String);
@@ -175,7 +175,8 @@ pub struct AccountPlanV5 {
     pub sod_pruned_grant_ids: BTreeSet<String>,
     pub sod_pruned_by_group_ids: BTreeMap<String, Vec<String>>,
     pub sod_pruned_by_prior_grant_ids: BTreeMap<String, Vec<String>>,
-    pub sod_witnesses_by_grant: BTreeMap<String, BTreeSet<ib_v5_schemas::scope_algebra::SoDWitness>>,
+    pub sod_witnesses_by_grant:
+        BTreeMap<String, BTreeSet<ib_v5_schemas::scope_algebra::SoDWitness>>,
     pub k_before_by_grant: BTreeMap<String, CapabilityFootprint>,
     pub cc_sensitive_grant_ids: BTreeSet<String>,
     pub gold_engagement_status: Option<EngagementStatusV5>,

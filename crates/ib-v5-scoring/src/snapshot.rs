@@ -408,7 +408,11 @@ impl EpisodeScoringInputV5 {
                 "propagation_mode must be COUPLED or ORACLE_PHASE_RESET",
             ));
         }
-        if self.termination_reason.as_deref().is_some_and(str::is_empty) {
+        if self
+            .termination_reason
+            .as_deref()
+            .is_some_and(str::is_empty)
+        {
             return Err(ScoringError::value(
                 "termination_reason must be non-empty or None",
             ));
@@ -553,9 +557,8 @@ pub fn snapshot_evidence_sha256(snapshot: &Value) -> Result<String, ScoringError
             "trajectory snapshot must be finite JSON-safe data",
         ));
     }
-    let serialized = dumps(snapshot, &DumpOptions::compact_sorted()).map_err(|_| {
-        ScoringError::value("trajectory snapshot must be finite JSON-safe data")
-    })?;
+    let serialized = dumps(snapshot, &DumpOptions::compact_sorted())
+        .map_err(|_| ScoringError::value("trajectory snapshot must be finite JSON-safe data"))?;
     Ok(sha256_hex(serialized.as_bytes()))
 }
 
@@ -754,10 +757,8 @@ pub fn snapshot_assessment_from_mapping(
         ));
     }
 
-    let semantic = parse_target_map_rows(
-        "semantic_equal_by_target",
-        &obj["semantic_equal_by_target"],
-    )?;
+    let semantic =
+        parse_target_map_rows("semantic_equal_by_target", &obj["semantic_equal_by_target"])?;
     let stage2 = parse_target_map_rows("stage2_valid_by_target", &obj["stage2_valid_by_target"])?;
     let overgrant = parse_target_map_rows("overgrant_by_target", &obj["overgrant_by_target"])?;
     let availability = parse_target_map_rows(
@@ -897,7 +898,9 @@ pub fn phase_snapshot_set_from_mapping(value: &Value) -> Result<PhaseSnapshotSet
     let obj = value.as_object().ok_or_else(|| {
         ScoringError::value("phase snapshot set requires exactly first_stage, commit, last_stage")
     })?;
-    let expected: BTreeSet<&str> = ["first_stage", "commit", "last_stage"].into_iter().collect();
+    let expected: BTreeSet<&str> = ["first_stage", "commit", "last_stage"]
+        .into_iter()
+        .collect();
     let actual: BTreeSet<&str> = obj.keys().map(String::as_str).collect();
     if actual != expected {
         return Err(ScoringError::value(
@@ -927,12 +930,27 @@ fn opt_str_to_json(v: Option<&str>) -> Value {
 #[must_use]
 pub fn episode_scoring_input_to_mapping(item: &EpisodeScoringInputV5) -> Value {
     let mut obj = Map::new();
-    obj.insert("episode_id".to_owned(), Value::String(item.episode_id.clone()));
+    obj.insert(
+        "episode_id".to_owned(),
+        Value::String(item.episode_id.clone()),
+    );
     obj.insert("suite_id".to_owned(), Value::String(item.suite_id.clone()));
-    obj.insert("family_id".to_owned(), Value::String(item.family_id.clone()));
-    obj.insert("regime_id".to_owned(), Value::String(item.regime_id.clone()));
-    obj.insert("phase1".to_owned(), phase_snapshot_set_to_mapping(&item.phase1));
-    obj.insert("phase2".to_owned(), phase_snapshot_set_to_mapping(&item.phase2));
+    obj.insert(
+        "family_id".to_owned(),
+        Value::String(item.family_id.clone()),
+    );
+    obj.insert(
+        "regime_id".to_owned(),
+        Value::String(item.regime_id.clone()),
+    );
+    obj.insert(
+        "phase1".to_owned(),
+        phase_snapshot_set_to_mapping(&item.phase1),
+    );
+    obj.insert(
+        "phase2".to_owned(),
+        phase_snapshot_set_to_mapping(&item.phase2),
+    );
     obj.insert("p1_committed".to_owned(), Value::Bool(item.p1_committed));
     obj.insert("p2_opened".to_owned(), Value::Bool(item.p2_opened));
     obj.insert("p2_committed".to_owned(), Value::Bool(item.p2_committed));
@@ -1023,14 +1041,20 @@ pub fn episode_scoring_input_to_mapping(item: &EpisodeScoringInputV5) -> Value {
 fn parse_opt_bool(obj: &Map<String, Value>, key: &str) -> Result<Option<bool>, ScoringError> {
     match &obj[key] {
         Value::Null => Ok(None),
-        v => Ok(Some(as_strict_bool(v, &format!("{key} must be bool or None"))?)),
+        v => Ok(Some(as_strict_bool(
+            v,
+            &format!("{key} must be bool or None"),
+        )?)),
     }
 }
 
 fn parse_opt_i64(obj: &Map<String, Value>, key: &str) -> Result<Option<i64>, ScoringError> {
     match obj.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(v) => Ok(Some(as_strict_i64(v, &format!("{key} must be int or None"))?)),
+        Some(v) => Ok(Some(as_strict_i64(
+            v,
+            &format!("{key} must be int or None"),
+        )?)),
     }
 }
 
@@ -1171,12 +1195,27 @@ pub fn episode_scoring_input_from_mapping(
 #[must_use]
 pub fn episode_score_to_mapping(score: &EpisodeScoreV5) -> Value {
     let mut obj = Map::new();
-    obj.insert("episode_id".to_owned(), Value::String(score.episode_id.clone()));
+    obj.insert(
+        "episode_id".to_owned(),
+        Value::String(score.episode_id.clone()),
+    );
     obj.insert("suite_id".to_owned(), Value::String(score.suite_id.clone()));
-    obj.insert("family_id".to_owned(), Value::String(score.family_id.clone()));
-    obj.insert("regime_id".to_owned(), Value::String(score.regime_id.clone()));
-    obj.insert("g_srr_commit".to_owned(), opt_i64_to_json(score.g_srr_commit));
-    obj.insert("sem_srr_commit".to_owned(), opt_i64_to_json(score.sem_srr_commit));
+    obj.insert(
+        "family_id".to_owned(),
+        Value::String(score.family_id.clone()),
+    );
+    obj.insert(
+        "regime_id".to_owned(),
+        Value::String(score.regime_id.clone()),
+    );
+    obj.insert(
+        "g_srr_commit".to_owned(),
+        opt_i64_to_json(score.g_srr_commit),
+    );
+    obj.insert(
+        "sem_srr_commit".to_owned(),
+        opt_i64_to_json(score.sem_srr_commit),
+    );
     obj.insert(
         "action_srr_last_stage".to_owned(),
         opt_i64_to_json(score.action_srr_last_stage),
@@ -1191,9 +1230,18 @@ pub fn episode_score_to_mapping(score: &EpisodeScoreV5) -> Value {
     );
     obj.insert("repair_lift".to_owned(), opt_i64_to_json(score.repair_lift));
     obj.insert("g_prop".to_owned(), opt_i64_to_json(score.g_prop));
-    obj.insert("g_prop_reset".to_owned(), opt_i64_to_json(score.g_prop_reset));
-    obj.insert("p1_staged".to_owned(), Value::Number(Number::from(score.p1_staged)));
-    obj.insert("p2_observed".to_owned(), Value::Number(Number::from(score.p2_observed)));
+    obj.insert(
+        "g_prop_reset".to_owned(),
+        opt_i64_to_json(score.g_prop_reset),
+    );
+    obj.insert(
+        "p1_staged".to_owned(),
+        Value::Number(Number::from(score.p1_staged)),
+    );
+    obj.insert(
+        "p2_observed".to_owned(),
+        Value::Number(Number::from(score.p2_observed)),
+    );
     obj.insert(
         "both_phases_staged".to_owned(),
         Value::Number(Number::from(score.both_phases_staged)),
@@ -1206,7 +1254,10 @@ pub fn episode_score_to_mapping(score: &EpisodeScoreV5) -> Value {
         "action_eval_status_p2".to_owned(),
         Value::String(score.action_eval_status_p2.clone()),
     );
-    obj.insert("overgrant_count".to_owned(), opt_i64_to_json(score.overgrant_count));
+    obj.insert(
+        "overgrant_count".to_owned(),
+        opt_i64_to_json(score.overgrant_count),
+    );
     obj.insert(
         "availability_breach_count".to_owned(),
         opt_i64_to_json(score.availability_breach_count),
@@ -1219,7 +1270,10 @@ pub fn episode_score_to_mapping(score: &EpisodeScoreV5) -> Value {
         "safety_valid_mutation_count".to_owned(),
         opt_i64_to_json(score.safety_valid_mutation_count),
     );
-    obj.insert("budget_exceeded".to_owned(), opt_bool_to_json(score.budget_exceeded));
+    obj.insert(
+        "budget_exceeded".to_owned(),
+        opt_bool_to_json(score.budget_exceeded),
+    );
     obj.insert(
         "input_tokens_actual".to_owned(),
         opt_i64_to_json(score.input_tokens_actual),
@@ -1228,13 +1282,22 @@ pub fn episode_score_to_mapping(score: &EpisodeScoreV5) -> Value {
         "output_tokens_actual".to_owned(),
         opt_i64_to_json(score.output_tokens_actual),
     );
-    obj.insert("cost_usd_micros".to_owned(), opt_i64_to_json(score.cost_usd_micros));
-    obj.insert("execution_valid".to_owned(), opt_bool_to_json(score.execution_valid));
+    obj.insert(
+        "cost_usd_micros".to_owned(),
+        opt_i64_to_json(score.cost_usd_micros),
+    );
+    obj.insert(
+        "execution_valid".to_owned(),
+        opt_bool_to_json(score.execution_valid),
+    );
     obj.insert(
         "g_srr_episode_envelope".to_owned(),
         opt_i64_to_json(score.g_srr_episode_envelope),
     );
-    obj.insert("g_srr_budget".to_owned(), opt_i64_to_json(score.g_srr_budget));
+    obj.insert(
+        "g_srr_budget".to_owned(),
+        opt_i64_to_json(score.g_srr_budget),
+    );
     obj.insert(
         "safety_stage_attempt_count".to_owned(),
         opt_i64_to_json(score.safety_stage_attempt_count),
@@ -1251,8 +1314,14 @@ pub fn episode_score_to_mapping(score: &EpisodeScoreV5) -> Value {
         "safety_commit_valid_target_count".to_owned(),
         opt_i64_to_json(score.safety_commit_valid_target_count),
     );
-    obj.insert("provider_error".to_owned(), opt_bool_to_json(score.provider_error));
-    obj.insert("parse_failure".to_owned(), opt_bool_to_json(score.parse_failure));
+    obj.insert(
+        "provider_error".to_owned(),
+        opt_bool_to_json(score.provider_error),
+    );
+    obj.insert(
+        "parse_failure".to_owned(),
+        opt_bool_to_json(score.parse_failure),
+    );
     obj.insert(
         "termination_reason".to_owned(),
         opt_str_to_json(score.termination_reason.as_deref()),
@@ -1271,7 +1340,10 @@ pub fn episode_score_to_mapping(score: &EpisodeScoreV5) -> Value {
     );
     obj.insert("p1_committed".to_owned(), Value::Bool(score.p1_committed));
     obj.insert("p2_committed".to_owned(), Value::Bool(score.p2_committed));
-    obj.insert("p2_staged".to_owned(), Value::Number(Number::from(score.p2_staged)));
+    obj.insert(
+        "p2_staged".to_owned(),
+        Value::Number(Number::from(score.p2_staged)),
+    );
     obj.insert("seed_index".to_owned(), opt_i64_to_json(score.seed_index));
     obj.insert(
         "safety_last_stage_overgrant_count".to_owned(),
@@ -1374,15 +1446,19 @@ pub fn episode_score_from_mapping(value: &Value) -> Result<EpisodeScoreV5, Scori
         "episode score attempt_status is invalid",
     )?;
     if !ATTEMPT_STATUSES_V5.contains(&attempt_status) {
-        return Err(ScoringError::value("episode score attempt_status is invalid"));
+        return Err(ScoringError::value(
+            "episode score attempt_status is invalid",
+        ));
     }
     let incomplete = crate::constants::is_incomplete_attempt_status_v5(attempt_status)?;
 
-    for name in ["p1_staged", "p2_observed", "both_phases_staged", "p2_staged"] {
-        let v = as_strict_i64(
-            &obj[name],
-            &format!("episode score {name} must be 0 or 1"),
-        )?;
+    for name in [
+        "p1_staged",
+        "p2_observed",
+        "both_phases_staged",
+        "p2_staged",
+    ] {
+        let v = as_strict_i64(&obj[name], &format!("episode score {name} must be 0 or 1"))?;
         if !matches!(v, 0 | 1) {
             return Err(ScoringError::value(format!(
                 "episode score {name} must be 0 or 1"
@@ -1452,10 +1528,7 @@ pub fn episode_score_from_mapping(value: &Value) -> Result<EpisodeScoreV5, Scori
         }
     } else {
         for name in binary_or_null {
-            let v = as_strict_i64(
-                &obj[name],
-                &format!("episode score {name} must be 0 or 1"),
-            )?;
+            let v = as_strict_i64(&obj[name], &format!("episode score {name} must be 0 or 1"))?;
             if !matches!(v, 0 | 1) {
                 return Err(ScoringError::value(format!(
                     "episode score {name} must be 0 or 1"
@@ -1493,9 +1566,9 @@ pub fn episode_score_from_mapping(value: &Value) -> Result<EpisodeScoreV5, Scori
         }
     }
 
-    let raw_cat = obj["category_pass"]
-        .as_object()
-        .ok_or_else(|| ScoringError::value("episode score category_pass must cover all 7 categories"))?;
+    let raw_cat = obj["category_pass"].as_object().ok_or_else(|| {
+        ScoringError::value("episode score category_pass must cover all 7 categories")
+    })?;
     let expected_cats: BTreeSet<&str> = CATEGORY_IDS_V5.iter().copied().collect();
     if raw_cat.keys().map(String::as_str).collect::<BTreeSet<_>>() != expected_cats {
         return Err(ScoringError::value(
@@ -1553,7 +1626,11 @@ pub fn episode_score_from_mapping(value: &Value) -> Result<EpisodeScoreV5, Scori
             "episode score termination_reason must be a non-empty string or None",
         ));
     }
-    for name in ["input_tokens_actual", "output_tokens_actual", "cost_usd_micros"] {
+    for name in [
+        "input_tokens_actual",
+        "output_tokens_actual",
+        "cost_usd_micros",
+    ] {
         if let Some(v) = parse_opt_i64(obj, name)?
             && v < 0
         {
@@ -1591,8 +1668,14 @@ pub fn episode_score_from_mapping(value: &Value) -> Result<EpisodeScoreV5, Scori
         p1_staged: as_strict_i64(&obj["p1_staged"], "p1_staged")?,
         p2_observed: as_strict_i64(&obj["p2_observed"], "p2_observed")?,
         both_phases_staged: as_strict_i64(&obj["both_phases_staged"], "both_phases_staged")?,
-        action_eval_status_p1: obj["action_eval_status_p1"].as_str().expect("checked").to_owned(),
-        action_eval_status_p2: obj["action_eval_status_p2"].as_str().expect("checked").to_owned(),
+        action_eval_status_p1: obj["action_eval_status_p1"]
+            .as_str()
+            .expect("checked")
+            .to_owned(),
+        action_eval_status_p2: obj["action_eval_status_p2"]
+            .as_str()
+            .expect("checked")
+            .to_owned(),
         overgrant_count: parse_opt_i64(obj, "overgrant_count")?,
         availability_breach_count: parse_opt_i64(obj, "availability_breach_count")?,
         safety_valid_target_count: parse_opt_i64(obj, "safety_valid_target_count")?,
@@ -1621,10 +1704,7 @@ pub fn episode_score_from_mapping(value: &Value) -> Result<EpisodeScoreV5, Scori
         p2_committed: as_strict_bool(&obj["p2_committed"], "p2_committed")?,
         p2_staged: as_strict_i64(&obj["p2_staged"], "p2_staged")?,
         seed_index,
-        safety_last_stage_overgrant_count: parse_opt_i64(
-            obj,
-            "safety_last_stage_overgrant_count",
-        )?,
+        safety_last_stage_overgrant_count: parse_opt_i64(obj, "safety_last_stage_overgrant_count")?,
         safety_last_stage_availability_breach_count: parse_opt_i64(
             obj,
             "safety_last_stage_availability_breach_count",

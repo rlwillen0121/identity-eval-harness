@@ -18,9 +18,9 @@ use super::profiles::{
 };
 use super::verify::validate_audit_receipt;
 use crate::shared::{
-    FrozenCase, base64_decode_strict, base64_encode, canonical_json_bytes, freeze_case,
-    is_sha256, json_diff_paths, materialization_hash, sha256_bytes, sha256_json,
-    strict_json_loads, validate_evaluator_result, validate_public_case,
+    FrozenCase, base64_decode_strict, base64_encode, canonical_json_bytes, freeze_case, is_sha256,
+    json_diff_paths, materialization_hash, sha256_bytes, sha256_json, strict_json_loads,
+    validate_evaluator_result, validate_public_case,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,9 +96,9 @@ pub fn capture_source_closure(
             "capture paths must match the exact evaluator allowlist".to_owned(),
         ));
     }
-    let root = repository_root.canonicalize().map_err(|exc| {
-        SharedRuntimeError(format!("repository root invalid: {exc}"))
-    })?;
+    let root = repository_root
+        .canonicalize()
+        .map_err(|exc| SharedRuntimeError(format!("repository root invalid: {exc}")))?;
     let target_root = match result_root {
         Some(p) => p.to_path_buf(),
         None => {
@@ -126,7 +126,9 @@ pub fn capture_source_closure(
         validate_relative_source(relative, Some(evaluator_id))?;
         let source = root.join(relative);
         let meta = std::fs::symlink_metadata(&source).map_err(|_| {
-            SharedRuntimeError(format!("approved source is missing or symlinked: {relative}"))
+            SharedRuntimeError(format!(
+                "approved source is missing or symlinked: {relative}"
+            ))
         })?;
         if meta.file_type().is_symlink() || !meta.file_type().is_file() {
             return Err(SharedRuntimeError(format!(
@@ -134,7 +136,9 @@ pub fn capture_source_closure(
             )));
         }
         let bytes = std::fs::read(&source).map_err(|_| {
-            SharedRuntimeError(format!("approved source is missing or symlinked: {relative}"))
+            SharedRuntimeError(format!(
+                "approved source is missing or symlinked: {relative}"
+            ))
         })?;
         before.insert(relative.clone(), bytes);
     }
@@ -173,7 +177,9 @@ pub fn capture_source_closure(
     }
     let schema_path = "src/identitybench/v5/schemas.py";
     let schema_bytes = before.get(schema_path).ok_or_else(|| {
-        SharedRuntimeError("source closure does not capture the public schemas.py dependency".to_owned())
+        SharedRuntimeError(
+            "source closure does not capture the public schemas.py dependency".to_owned(),
+        )
     })?;
     let schema_hash = sha256_bytes(schema_bytes);
     if schema_hash != SCHEMA_SHA256 {
@@ -188,9 +194,8 @@ pub fn capture_source_closure(
             target_root.display()
         )));
     }
-    std::fs::create_dir_all(&target_root).map_err(|exc| {
-        SharedRuntimeError(format!("failed creating source capture dir: {exc}"))
-    })?;
+    std::fs::create_dir_all(&target_root)
+        .map_err(|exc| SharedRuntimeError(format!("failed creating source capture dir: {exc}")))?;
 
     let write_res = (|| -> Result<Value, SharedRuntimeError> {
         let mut records = Vec::with_capacity(profile.source_files.len());
@@ -219,7 +224,10 @@ pub fn capture_source_closure(
             let mut rec = Map::new();
             rec.insert("path".to_owned(), Value::String(relative.clone()));
             rec.insert("sha256".to_owned(), Value::String(digest));
-            rec.insert("size_bytes".to_owned(), Value::Number((raw.len() as u64).into()));
+            rec.insert(
+                "size_bytes".to_owned(),
+                Value::Number((raw.len() as u64).into()),
+            );
             records.push(Value::Object(rec));
         }
         for relative in &profile.source_files {
@@ -270,10 +278,7 @@ pub fn capture_source_closure(
             Value::String("verified_source_copy".to_owned()),
         );
         let manifest_sha = sha256_bytes(&canonical_json_bytes(&Value::Object(manifest.clone()))?);
-        manifest.insert(
-            "manifest_sha256".to_owned(),
-            Value::String(manifest_sha),
-        );
+        manifest.insert("manifest_sha256".to_owned(), Value::String(manifest_sha));
         let mut out_bytes = canonical_json_bytes(&Value::Object(manifest.clone()))?;
         out_bytes.push(b'\n');
         let manifest_path = target_root.join("capture-manifest.json");
@@ -321,11 +326,22 @@ impl DiagnosticComparison {
         let mut map = Map::new();
         map.insert(
             "schema_version".to_owned(),
-            Value::String("identitybench.v5.full-spec-production-diagnostic-comparison.v1".to_owned()),
+            Value::String(
+                "identitybench.v5.full-spec-production-diagnostic-comparison.v1".to_owned(),
+            ),
         );
-        map.insert("diagnostic_only".to_owned(), Value::Bool(self.diagnostic_only));
-        map.insert("g_spec_01".to_owned(), Value::String(self.g_spec_01.clone()));
-        map.insert("agent_view".to_owned(), Value::String(self.agent_view.clone()));
+        map.insert(
+            "diagnostic_only".to_owned(),
+            Value::Bool(self.diagnostic_only),
+        );
+        map.insert(
+            "g_spec_01".to_owned(),
+            Value::String(self.g_spec_01.clone()),
+        );
+        map.insert(
+            "agent_view".to_owned(),
+            Value::String(self.agent_view.clone()),
+        );
         map.insert(
             "author_independence".to_owned(),
             Value::String(self.author_independence.clone()),
@@ -450,9 +466,7 @@ pub fn validate_diagnostic_outer_receipt<'a>(
             || receipt.get("g_spec_01").and_then(Value::as_str) != Some("not_evaluated")
             || receipt.get("agent_view").and_then(Value::as_str) != Some("outstanding")
             || receipt.get("author_independence").and_then(Value::as_str) != Some("not_asserted")
-            || receipt
-                .get("normative_contract")
-                .and_then(Value::as_object)
+            || receipt.get("normative_contract").and_then(Value::as_object)
                 != expected_normative_contract
             || receipt
                 .get("normative_contract_sha256")
@@ -545,10 +559,14 @@ pub fn validate_diagnostic_outer_receipt<'a>(
         ));
     }
 
-    let stdout = base64_decode_strict(execution["raw_stdout_b64"].as_str().unwrap_or(""))
-        .map_err(|_| SharedRuntimeError("diagnostic execution raw output encoding is invalid".to_owned()))?;
-    let stderr = base64_decode_strict(execution["raw_stderr_b64"].as_str().unwrap_or(""))
-        .map_err(|_| SharedRuntimeError("diagnostic execution raw output encoding is invalid".to_owned()))?;
+    let stdout =
+        base64_decode_strict(execution["raw_stdout_b64"].as_str().unwrap_or("")).map_err(|_| {
+            SharedRuntimeError("diagnostic execution raw output encoding is invalid".to_owned())
+        })?;
+    let stderr =
+        base64_decode_strict(execution["raw_stderr_b64"].as_str().unwrap_or("")).map_err(|_| {
+            SharedRuntimeError("diagnostic execution raw output encoding is invalid".to_owned())
+        })?;
     if Some(sha256_bytes(&stdout).as_str()) != execution["stdout_sha256"].as_str()
         || Some(sha256_bytes(&stderr).as_str()) != execution["stderr_sha256"].as_str()
     {
@@ -605,7 +623,9 @@ pub fn compare_diagnostic_receipt_pair(
         ));
     }
     let expected_contract = current_v5_normative_contract()?;
-    let contract_sha = sha256_bytes(&canonical_json_bytes(&Value::Object(expected_contract.clone()))?);
+    let contract_sha = sha256_bytes(&canonical_json_bytes(&Value::Object(
+        expected_contract.clone(),
+    ))?);
     if !is_sha256(full_spec_closure_sha256) || !is_sha256(production_closure_sha256) {
         return Err(SharedRuntimeError(
             "diagnostic source closure hash is malformed".to_owned(),
@@ -639,7 +659,10 @@ pub fn compare_diagnostic_receipt_pair(
 
     let mut source_hashes = BTreeMap::new();
     source_hashes.insert("full_spec".to_owned(), full_spec_closure_sha256.to_owned());
-    source_hashes.insert("production".to_owned(), production_closure_sha256.to_owned());
+    source_hashes.insert(
+        "production".to_owned(),
+        production_closure_sha256.to_owned(),
+    );
 
     let full_status = full_exec["execution_status"].as_str().unwrap_or("");
     let prod_status = prod_exec["execution_status"].as_str().unwrap_or("");
@@ -708,18 +731,34 @@ pub fn compare_diagnostic_receipt_pair(
         });
     }
 
-    let full_result = full_exec.get("result").filter(|v| v.is_object()).ok_or_else(|| {
-        SharedRuntimeError("successful diagnostic execution omitted an evaluator result".to_owned())
-    })?;
-    let prod_result = prod_exec.get("result").filter(|v| v.is_object()).ok_or_else(|| {
-        SharedRuntimeError("successful diagnostic execution omitted an evaluator result".to_owned())
-    })?;
-    let left = validate_evaluator_result(full_result, &verified_case, "full_spec").map_err(|e| {
-        SharedRuntimeError(format!("diagnostic result failed the shared protocol contract: {e}"))
-    })?;
-    let right = validate_evaluator_result(prod_result, &verified_case, "production").map_err(|e| {
-        SharedRuntimeError(format!("diagnostic result failed the shared protocol contract: {e}"))
-    })?;
+    let full_result = full_exec
+        .get("result")
+        .filter(|v| v.is_object())
+        .ok_or_else(|| {
+            SharedRuntimeError(
+                "successful diagnostic execution omitted an evaluator result".to_owned(),
+            )
+        })?;
+    let prod_result = prod_exec
+        .get("result")
+        .filter(|v| v.is_object())
+        .ok_or_else(|| {
+            SharedRuntimeError(
+                "successful diagnostic execution omitted an evaluator result".to_owned(),
+            )
+        })?;
+    let left =
+        validate_evaluator_result(full_result, &verified_case, "full_spec").map_err(|e| {
+            SharedRuntimeError(format!(
+                "diagnostic result failed the shared protocol contract: {e}"
+            ))
+        })?;
+    let right =
+        validate_evaluator_result(prod_result, &verified_case, "production").map_err(|e| {
+            SharedRuntimeError(format!(
+                "diagnostic result failed the shared protocol contract: {e}"
+            ))
+        })?;
 
     let mut mismatch_paths = Vec::new();
     if left.status != right.status {
@@ -842,7 +881,10 @@ pub fn failed_receipt(
         Value::String(author_origin.to_owned()),
     );
     map.insert("case_id".to_owned(), Value::String(case_id.to_owned()));
-    map.insert("input_sha256".to_owned(), Value::String(input_sha.to_owned()));
+    map.insert(
+        "input_sha256".to_owned(),
+        Value::String(input_sha.to_owned()),
+    );
     map.insert(
         "source_closure_sha256".to_owned(),
         Value::String(source_closure_sha256.to_owned()),

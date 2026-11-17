@@ -269,14 +269,21 @@ fn parse_jsonl<T: StrictV5Model>(raw: &[u8], label: &str) -> Result<Vec<T>, V5Ar
 
 /// Read and strictly reparse all three sealed dataset artifacts (`SEAL.json`, `episodes.jsonl`, `oracles.jsonl`).
 pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5ArtifactError> {
-    let root = std::fs::canonicalize(dataset_dir)
-        .map_err(|err| V5ArtifactError::new(format!("incomplete v5 dataset at {}: {err}", dataset_dir.display())))?;
+    let root = std::fs::canonicalize(dataset_dir).map_err(|err| {
+        V5ArtifactError::new(format!(
+            "incomplete v5 dataset at {}: {err}",
+            dataset_dir.display()
+        ))
+    })?;
     let artifact_names = [SEAL_FILENAME_V5, EPISODES_FILENAME_V5, ORACLES_FILENAME_V5];
     let mut resolved_paths = Vec::with_capacity(3);
     for name in artifact_names {
         let artifact_path = root.join(name);
         let resolved = std::fs::canonicalize(&artifact_path).map_err(|err| {
-            V5ArtifactError::new(format!("incomplete v5 dataset at {}: {err}", root.display()))
+            V5ArtifactError::new(format!(
+                "incomplete v5 dataset at {}: {err}",
+                root.display()
+            ))
         })?;
         if is_sensitive_provenance_path(&resolved) {
             return Err(V5ArtifactError::new(
@@ -292,13 +299,22 @@ pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5Artifact
     }
 
     let seal_bytes = std::fs::read(&resolved_paths[0]).map_err(|err| {
-        V5ArtifactError::new(format!("incomplete v5 dataset at {}: {err}", root.display()))
+        V5ArtifactError::new(format!(
+            "incomplete v5 dataset at {}: {err}",
+            root.display()
+        ))
     })?;
     let episodes_bytes = std::fs::read(&resolved_paths[1]).map_err(|err| {
-        V5ArtifactError::new(format!("incomplete v5 dataset at {}: {err}", root.display()))
+        V5ArtifactError::new(format!(
+            "incomplete v5 dataset at {}: {err}",
+            root.display()
+        ))
     })?;
     let oracles_bytes = std::fs::read(&resolved_paths[2]).map_err(|err| {
-        V5ArtifactError::new(format!("incomplete v5 dataset at {}: {err}", root.display()))
+        V5ArtifactError::new(format!(
+            "incomplete v5 dataset at {}: {err}",
+            root.display()
+        ))
     })?;
 
     let seal_value = strict_json(&seal_bytes, SEAL_FILENAME_V5)?;
@@ -364,11 +380,7 @@ pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5Artifact
     let mut extra_gp: Vec<&str> = generator_params
         .keys()
         .map(String::as_str)
-        .filter(|k| {
-            *k != "suite"
-                && *k != "seed"
-                && !GENERATOR_PARAMS_OPTIONAL_KEYS_V5.contains(k)
-        })
+        .filter(|k| *k != "suite" && *k != "seed" && !GENERATOR_PARAMS_OPTIONAL_KEYS_V5.contains(k))
         .collect();
     if !extra_gp.is_empty() {
         extra_gp.sort_unstable();
@@ -378,8 +390,7 @@ pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5Artifact
         )));
     }
     let gp_seed = generator_params.get("seed").and_then(strict_json_int);
-    if generator_params.get("suite").and_then(Value::as_str) != Some(suite)
-        || gp_seed != Some(seed)
+    if generator_params.get("suite").and_then(Value::as_str) != Some(suite) || gp_seed != Some(seed)
     {
         return Err(V5ArtifactError::new(
             "SEAL.json generator_params disagree with normalized suite and seed",
@@ -394,7 +405,9 @@ pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5Artifact
         let declared = seal[name]
             .as_str()
             .filter(|s| SHA256_HEX_RE.is_match(s))
-            .ok_or_else(|| V5ArtifactError::new(format!("SEAL.json {name} must be lowercase SHA-256")))?;
+            .ok_or_else(|| {
+                V5ArtifactError::new(format!("SEAL.json {name} must be lowercase SHA-256"))
+            })?;
         if declared != actual {
             return Err(V5ArtifactError::new(format!(
                 "SEAL.json {name} does not match artifact bytes"
@@ -403,9 +416,9 @@ pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5Artifact
     }
 
     if let Some(spec_sha_val) = seal.get("spec_sha256") {
-        let valid = spec_sha_val
-            .as_str()
-            .is_some_and(|s| SHA256_HEX_RE.is_match(s) && ACCEPTED_SEAL_SPEC_SHA256_V5.contains(&s));
+        let valid = spec_sha_val.as_str().is_some_and(|s| {
+            SHA256_HEX_RE.is_match(s) && ACCEPTED_SEAL_SPEC_SHA256_V5.contains(&s)
+        });
         if !valid {
             return Err(V5ArtifactError::new(
                 "SEAL.json spec_sha256 does not match normative SPEC-v5.md or SPEC-v5.0-draft.5.md",

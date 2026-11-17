@@ -3,17 +3,16 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use ib_v5_schemas::{
-    AtomicMutationV5, AuthorityTierV5, BaselineAgentV5, BaselineNHIV5, CAEIncidentV5, CIEMTaskV5,
-    ChangeTicketV5, CompensatingControlV5, ConnectorPageV5, ConnectorSchemaV5,
-    ConnectorSyncModeV5, ConnectorTransportKindV5, DeliveredSliceV5, EnterpriseAgentV5, GrantV5,
-    GroupV5, HRPersonV5, HRSourceMappingTaskV5, HistoricalSessionV5, IdPAccountV5, JITRequestV5,
-    JMLWorkflowTaskV5, OptimizationTaskV5, PhaseManifestV5, PhaseWorkQueueV5, PolicyCardV5,
-    PriorPhaseLedgerV5, RoleV5, SchemaValidationError, TableRowV5, TargetNHIV5,
-    TransferBridgeV5, UARCampaignV5, WorldStateV5, AgentDelegationRequestV5,
-    decode_compact_table_v5,
+    AgentDelegationRequestV5, AtomicMutationV5, AuthorityTierV5, BaselineAgentV5, BaselineNHIV5,
+    CAEIncidentV5, CIEMTaskV5, ChangeTicketV5, CompensatingControlV5, ConnectorPageV5,
+    ConnectorSchemaV5, ConnectorSyncModeV5, ConnectorTransportKindV5, DeliveredSliceV5,
+    EnterpriseAgentV5, GrantV5, GroupV5, HRPersonV5, HRSourceMappingTaskV5, HistoricalSessionV5,
+    IdPAccountV5, JITRequestV5, JMLWorkflowTaskV5, OptimizationTaskV5, PhaseManifestV5,
+    PhaseWorkQueueV5, PolicyCardV5, PriorPhaseLedgerV5, RoleV5, SchemaValidationError, TableRowV5,
+    TargetNHIV5, TransferBridgeV5, UARCampaignV5, WorldStateV5, decode_compact_table_v5,
 };
 use indexmap::IndexMap;
-use serde_json::Value;
+use serde_json::{Value, json};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -55,6 +54,17 @@ pub struct ViewV5 {
     inherited_slices: Vec<DeliveredSliceV5>,
     candidates: Vec<RowCandidate>,
     resolved: BTreeMap<(String, String), TableRowV5>,
+}
+
+/// Private derived data emitted only in execution snapshots for Python artifact parity.
+///
+/// These values are not part of the policy-visible view projection.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewSnapshotSerializationV5 {
+    pub candidates: Value,
+    pub resolved: Value,
+    pub phase_slice_payloads: Value,
+    pub inherited_slice_payloads: Value,
 }
 
 impl ViewV5 {
@@ -120,10 +130,8 @@ impl ViewV5 {
             }
         }
 
-        let resolved: BTreeMap<(String, String), TableRowV5> = winners
-            .into_iter()
-            .map(|(k, c)| (k, c.record))
-            .collect();
+        let resolved: BTreeMap<(String, String), TableRowV5> =
+            winners.into_iter().map(|(k, c)| (k, c.record)).collect();
 
         Ok(Self {
             manifest: manifest.clone(),
@@ -150,6 +158,64 @@ impl ViewV5 {
     #[must_use]
     pub fn inherited_delivered_slices(&self) -> &[DeliveredSliceV5] {
         &self.inherited_slices
+    }
+
+    /// Serialize private runtime snapshot fields without adding them to the policy-visible view.
+    ///
+    /// The Python artifact serializer includes these dataclass fields: candidate and resolved
+    /// records preserve their runtime order, and the slice payloads are Python `repr(bytes)`
+    /// strings generated from compact, UTF-8 JSON payloads.
+    pub fn snapshot_serialization_v5(&self) -> Result<ViewSnapshotSerializationV5, RuntimeError> {
+        let candidates = self
+            .candidates
+            .iter()
+            .map(|candidate| {
+                Ok(json!({
+                    "table_name": candidate.table_name,
+                    "primary_key": candidate.primary_key,
+                    "rank": [candidate.rank.0, candidate.rank.1, candidate.rank.2],
+                    "record": candidate.record.to_strict_json_value()?,
+                }))
+            })
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
+        let resolved = self
+            .resolved
+            .iter()
+            .map(|((table_name, primary_key), record)| {
+                Ok(json!([
+                    table_name,
+                    primary_key,
+                    record.to_strict_json_value()?,
+                ]))
+            })
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
+        let phase_slice_payloads = self
+            .phase_slices
+            .iter()
+            .map(slice_payload_python_repr)
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
+        let inherited_slice_payloads = self
+            .inherited_slices
+            .iter()
+            .map(slice_payload_python_repr)
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
+
+        Ok(ViewSnapshotSerializationV5 {
+            candidates: Value::Array(candidates),
+            resolved: Value::Array(resolved),
+            phase_slice_payloads: Value::Array(
+                phase_slice_payloads
+                    .into_iter()
+                    .map(Value::String)
+                    .collect(),
+            ),
+            inherited_slice_payloads: Value::Array(
+                inherited_slice_payloads
+                    .into_iter()
+                    .map(Value::String)
+                    .collect(),
+            ),
+        })
     }
 
     #[must_use]
@@ -513,6 +579,39 @@ impl ViewV5 {
     }
 }
 
+fn slice_payload_python_repr(slice: &DeliveredSliceV5) -> Result<String, RuntimeError> {
+    let bytes = serde_json::to_vec(slice)
+        .map_err(|_| RuntimeError::InvalidArgument("slice payload serialization failed".into()))?;
+    Ok(python_bytes_repr(&bytes))
+}
+
+fn python_bytes_repr(bytes: &[u8]) -> String {
+    let quote = if bytes.contains(&b'\'') && !bytes.contains(&b'"') {
+        b'"'
+    } else {
+        b'\''
+    };
+    let mut repr = String::with_capacity(bytes.len() + 3);
+    repr.push('b');
+    repr.push(char::from(quote));
+    for byte in bytes {
+        match *byte {
+            b'\\' => repr.push_str("\\\\"),
+            b'\t' => repr.push_str("\\t"),
+            b'\n' => repr.push_str("\\n"),
+            b'\r' => repr.push_str("\\r"),
+            b if b == quote => {
+                repr.push('\\');
+                repr.push(char::from(b));
+            }
+            0x20..=0x7e => repr.push(char::from(*byte)),
+            other => repr.push_str(&format!("\\x{other:02x}")),
+        }
+    }
+    repr.push(char::from(quote));
+    repr
+}
+
 /// Public factory shared by runtime, fixture validation, and baselines.
 pub fn build_view_v5(
     manifest: &PhaseManifestV5,
@@ -558,9 +657,8 @@ pub fn live_version(entity_id: &str, view: &ViewV5) -> Option<String> {
         }
         "nhi" => {
             let nhi = view.resolve_target_nhi(entity_id)?;
-            let outcome = ledger.and_then(|l| {
-                l.nhi_outcomes.iter().find(|o| o.nhi_id == entity_id)
-            });
+            let outcome =
+                ledger.and_then(|l| l.nhi_outcomes.iter().find(|o| o.nhi_id == entity_id));
             Some(match outcome {
                 None => format!("{entity_id}@{}:{}", nhi.etag, nhi.nhi_gen),
                 Some(o) => format!("{entity_id}@{}:{}", o.current_etag, o.current_nhi_gen),
@@ -568,9 +666,8 @@ pub fn live_version(entity_id: &str, view: &ViewV5) -> Option<String> {
         }
         "agt" => {
             let agent = view.resolve_enterprise_agent(entity_id)?;
-            let outcome = ledger.and_then(|l| {
-                l.agent_outcomes.iter().find(|o| o.agent_id == entity_id)
-            });
+            let outcome =
+                ledger.and_then(|l| l.agent_outcomes.iter().find(|o| o.agent_id == entity_id));
             Some(match outcome {
                 None => format!("{entity_id}@{}:{}", agent.etag, agent.agent_gen),
                 Some(o) => format!("{entity_id}@{}:{}", o.current_etag, o.current_agent_gen),
@@ -602,11 +699,8 @@ pub fn live_version(entity_id: &str, view: &ViewV5) -> Option<String> {
         }
         "ciem" => {
             let task = view.resolve_cloud_ciem_task(entity_id)?;
-            let outcome = ledger.and_then(|l| {
-                l.ciem_outcomes
-                    .iter()
-                    .find(|o| o.ciem_task_id == entity_id)
-            });
+            let outcome =
+                ledger.and_then(|l| l.ciem_outcomes.iter().find(|o| o.ciem_task_id == entity_id));
             Some(match outcome {
                 None => format!("{entity_id}@{}:{}", task.etag, task.ciem_gen),
                 Some(o) => format!("{entity_id}@{}:{}", o.current_etag, o.current_ciem_gen),
@@ -708,14 +802,23 @@ pub fn required_mutation_keys(
     };
     if phase_index == 1 {
         add("CONNECTOR_SYNC_MUTATION", &work_queue.target_connector_ids);
-        add("HR_SOURCE_MAPPING_MUTATION", &work_queue.target_hr_mapping_ids);
-        add("ACCOUNT_RECON_MUTATION", &work_queue.target_human_account_ids);
+        add(
+            "HR_SOURCE_MAPPING_MUTATION",
+            &work_queue.target_hr_mapping_ids,
+        );
+        add(
+            "ACCOUNT_RECON_MUTATION",
+            &work_queue.target_human_account_ids,
+        );
         add("NHI_GOVERNANCE_MUTATION", &work_queue.target_nhi_ids);
         add("AGENT_REGISTRY_MUTATION", &work_queue.target_agent_ids);
         add("CLOUD_CIEM_MUTATION", &work_queue.target_ciem_task_ids);
         add("JML_WORKFLOW_MUTATION", &work_queue.target_jml_workflow_ids);
     } else if phase_index == 2 {
-        add("CAE_CONTAINMENT_MUTATION", &work_queue.target_cae_incident_ids);
+        add(
+            "CAE_CONTAINMENT_MUTATION",
+            &work_queue.target_cae_incident_ids,
+        );
         add("UAR_CAMPAIGN_MUTATION", &work_queue.target_uar_campaign_ids);
         add("JIT_DECISION_MUTATION", &work_queue.target_jit_request_ids);
         add(
@@ -797,7 +900,11 @@ pub fn structural_errors(
                 {
                     admitted.extend(conn.baseline_reconciled_account_ids.iter().cloned());
                 }
-                if !m.reconciled_account_ids.iter().all(|id| admitted.contains(id)) {
+                if !m
+                    .reconciled_account_ids
+                    .iter()
+                    .all(|id| admitted.contains(id))
+                {
                     errors.insert(format!("{entity_id}:reconciled_account_fk"));
                 }
                 let mapping_roles: BTreeSet<&str> =
@@ -819,8 +926,11 @@ pub fn structural_errors(
                         break;
                     }
                 }
-                let remediated_set: BTreeSet<&str> =
-                    m.remediated_spoke_drift.iter().map(String::as_str).collect();
+                let remediated_set: BTreeSet<&str> = m
+                    .remediated_spoke_drift
+                    .iter()
+                    .map(String::as_str)
+                    .collect();
                 for action in &m.itsm_ticket_actions {
                     if !remediated_set.contains(action.drift_token.as_str()) {
                         errors.insert(format!("{entity_id}:itsm_drift_fk"));
@@ -839,8 +949,11 @@ pub fn structural_errors(
                     errors.insert(format!("{entity_id}:hr_mapping_missing"));
                     continue;
                 };
-                let feeds: BTreeSet<&str> =
-                    mapping_task.feeds.iter().map(|f| f.feed_id.as_str()).collect();
+                let feeds: BTreeSet<&str> = mapping_task
+                    .feeds
+                    .iter()
+                    .map(|f| f.feed_id.as_str())
+                    .collect();
                 let assertion_people: BTreeSet<&str> = mapping_task
                     .feeds
                     .iter()
@@ -887,18 +1000,20 @@ pub fn structural_errors(
                             errors.insert(format!("{entity_id}:person_missing"));
                         }
                         Some(person) => {
-                            let has_eng = m
-                                .bound_engagement_id
-                                .as_deref()
-                                .is_some_and(|eid| person.engagements.iter().any(|e| e.eng_id == eid));
+                            let has_eng = m.bound_engagement_id.as_deref().is_some_and(|eid| {
+                                person.engagements.iter().any(|e| e.eng_id == eid)
+                            });
                             if !has_eng {
                                 errors.insert(format!("{entity_id}:engagement_missing"));
                             }
                         }
                     }
                 }
-                let direct: BTreeSet<&str> =
-                    account.direct_grant_ids.iter().map(String::as_str).collect();
+                let direct: BTreeSet<&str> = account
+                    .direct_grant_ids
+                    .iter()
+                    .map(String::as_str)
+                    .collect();
                 if !m
                     .retained_grant_ids
                     .iter()
@@ -992,7 +1107,11 @@ pub fn structural_errors(
                     .iter()
                     .map(|c| c.candidate_id.as_str())
                     .collect();
-                if !m.selected_ids.iter().all(|cid| cands.contains(cid.as_str())) {
+                if !m
+                    .selected_ids
+                    .iter()
+                    .all(|cid| cands.contains(cid.as_str()))
+                {
                     errors.insert(format!("{entity_id}:optimization_candidate_fk"));
                 }
             }
@@ -1106,6 +1225,25 @@ pub fn structural_ok(
 
 /// Build a lookup map from `(mutation_kind, target_entity_id)` to mutation.
 #[must_use]
-pub fn mutation_map(mutations: &[AtomicMutationV5]) -> HashMap<(String, String), &AtomicMutationV5> {
+pub fn mutation_map(
+    mutations: &[AtomicMutationV5],
+) -> HashMap<(String, String), &AtomicMutationV5> {
     mutations.iter().map(|m| (mutation_key(m), m)).collect()
+}
+
+#[cfg(test)]
+mod snapshot_serialization_tests {
+    use super::python_bytes_repr;
+
+    #[test]
+    fn byte_repr_matches_python_quote_and_escape_rules() {
+        assert_eq!(python_bytes_repr(b""), "b''");
+        assert_eq!(python_bytes_repr(b"ascii"), "b'ascii'");
+        assert_eq!(python_bytes_repr(b"one'quote"), "b\"one'quote\"");
+        assert_eq!(python_bytes_repr(b"both'\"quotes"), "b'both\\'\"quotes'");
+        assert_eq!(
+            python_bytes_repr(b"line\n\t\\\xc3\xa9"),
+            "b'line\\n\\t\\\\\\xc3\\xa9'"
+        );
+    }
 }

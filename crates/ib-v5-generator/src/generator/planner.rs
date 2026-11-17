@@ -329,11 +329,7 @@ pub fn plan_v5_cells(suite: V5Suite, seed: u64) -> Vec<V5Cell> {
             .enumerate()
             .flat_map(|(family_index, &family)| {
                 (0..2).map(move |regime_offset| {
-                    (
-                        family,
-                        V5_REGIMES[(family_index + regime_offset) % 4],
-                        0,
-                    )
+                    (family, V5_REGIMES[(family_index + regime_offset) % 4], 0)
                 })
             })
             .collect(),
@@ -422,10 +418,7 @@ pub fn verify_v5_split_seed_disjointness(
             )));
         }
         split_seeds.insert(suite, seeds);
-        split_episode_ids.insert(
-            suite,
-            cells.iter().map(|c| c.episode_id.clone()).collect(),
-        );
+        split_episode_ids.insert(suite, cells.iter().map(|c| c.episode_id.clone()).collect());
     }
 
     let full_replicates: BTreeMap<(&str, u64), u64> = planned[&V5Suite::V5Full]
@@ -470,10 +463,13 @@ pub fn verify_v5_split_seed_disjointness(
             .entry(regime_as_str(cell.regime_id).to_owned())
             .or_insert(0) += 1;
     }
-    if V5_REGIMES
-        .iter()
-        .any(|&r| lite_regime_counts.get(regime_as_str(r)).copied().unwrap_or(0) != 6)
-    {
+    if V5_REGIMES.iter().any(|&r| {
+        lite_regime_counts
+            .get(regime_as_str(r))
+            .copied()
+            .unwrap_or(0)
+            != 6
+    }) {
         return Err(GeneratorError::DisjointnessViolation(format!(
             "v5_lite regime counts {lite_regime_counts:?} must assign 6 cells per regime"
         )));
@@ -501,8 +497,7 @@ pub fn verify_v5_split_seed_disjointness(
         }
     }
 
-    let all_candidate_seeds: BTreeSet<u64> =
-        split_seeds.values().flatten().copied().collect();
+    let all_candidate_seeds: BTreeSet<u64> = split_seeds.values().flatten().copied().collect();
     let all_candidate_episodes: BTreeSet<&str> = split_episode_ids
         .values()
         .flatten()
@@ -676,7 +671,10 @@ pub(crate) fn replica<T: StrictV5Model>(
                         }
                         result.insert(
                             key,
-                            Value::String(format!("ev_{:05}", 50_000 + replica_code * 100 + *counter)),
+                            Value::String(format!(
+                                "ev_{:05}",
+                                50_000 + replica_code * 100 + *counter
+                            )),
                         );
                     } else if key == "etag" && child.is_string() {
                         *counter += 1;
@@ -684,7 +682,8 @@ pub(crate) fn replica<T: StrictV5Model>(
                         result.insert(key, Value::String(tag));
                     } else {
                         let next_path = format!("{path}.{key}");
-                        let replaced = replace(cell, label, replica_code, counter, child, &next_path)?;
+                        let replaced =
+                            replace(cell, label, replica_code, counter, child, &next_path)?;
                         result.insert(key, replaced);
                     }
                 }
@@ -694,7 +693,14 @@ pub(crate) fn replica<T: StrictV5Model>(
                 let mut out = Vec::with_capacity(items.len());
                 for (index, child) in items.into_iter().enumerate() {
                     let next_path = format!("{path}[{index}]");
-                    out.push(replace(cell, label, replica_code, counter, child, &next_path)?);
+                    out.push(replace(
+                        cell,
+                        label,
+                        replica_code,
+                        counter,
+                        child,
+                        &next_path,
+                    )?);
                 }
                 Ok(Value::Array(out))
             }

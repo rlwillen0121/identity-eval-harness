@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, ProviderCapabilities, Usage};
 use crate::cli::{
-    CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int,
-    parse_json_payload, prepend_system, render_transcript,
+    CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int, parse_json_payload,
+    prepend_system, render_transcript,
 };
 use crate::subprocess::{ProcessResult, user_home_dir};
 

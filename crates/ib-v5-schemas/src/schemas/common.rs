@@ -106,8 +106,7 @@ fn compile_fullmatch(pattern: &str) -> Regex {
 
 pub static STAGE_ID_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_fullmatch(r"\Astg_[a-z0-9_]{1,24}\z"));
-pub static ETAG_HEX_RE: LazyLock<Regex> =
-    LazyLock::new(|| compile_fullmatch(r"\A[a-f0-9]{16}\z"));
+pub static ETAG_HEX_RE: LazyLock<Regex> = LazyLock::new(|| compile_fullmatch(r"\A[a-f0-9]{16}\z"));
 pub static SHA256_HEX_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_fullmatch(r"\A[a-f0-9]{64}\z"));
 pub static VERSION_TOK_RE: LazyLock<Regex> = LazyLock::new(|| {

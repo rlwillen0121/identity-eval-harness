@@ -24,8 +24,8 @@ use ib_v5_schemas::{
     HRSourceKindV5, HRSourceMappingMutationKind, HRSourceMappingMutationV5, ITSMTicketActionKindV5,
     ITSMTicketActionV5, ITSMTicketRecordV5, ITSMTicketStatusV5, JMLTraceEventKindV5,
     JMLTraceEventV5, JMLWorkflowMutationKind, JMLWorkflowMutationV5, JMLWorkflowSpecV5,
-    JoinerContractorSponsorPolicyV5, JoinerStepV5, LegalHoldDispositionV5, LegalHoldScopeModeV5,
-    LeaverStepV5, MoverStepV5, NHIGovernanceActionV5, NHIGovernanceMutationKind,
+    JoinerContractorSponsorPolicyV5, JoinerStepV5, LeaverStepV5, LegalHoldDispositionV5,
+    LegalHoldScopeModeV5, MoverStepV5, NHIGovernanceActionV5, NHIGovernanceMutationKind,
     NHIGovernanceMutationV5, NHIOwnerResolutionSourceV5, NHISubkindV5, NoShowDispositionV5,
     OptActionKindV5, OptCandidateActionV5, OptimizationMutationKind, OptimizationMutationV5,
     OptimizationPhaseKindV5, OrphanCustodyModeV5, OrphanHandoffPolicyV5, PrivilegeTierV5,
@@ -301,7 +301,11 @@ pub fn phase1_connectors(
             halt = ConnectorHaltReasonV5::HaltSchemaOrTrailer;
         }
 
-        let baseline: BTreeSet<String> = conn.baseline_reconciled_account_ids.iter().cloned().collect();
+        let baseline: BTreeSet<String> = conn
+            .baseline_reconciled_account_ids
+            .iter()
+            .cloned()
+            .collect();
         let mut candidate = BTreeSet::new();
         if halt == ConnectorHaltReasonV5::None {
             if conn.sync_mode == ConnectorSyncModeV5::FullSnapshot {
@@ -518,7 +522,9 @@ pub fn phase1_hr(
                     }
                 }
                 let mut ok = p.is_some()
-                    && feed.authorized_affiliations.contains(&assertion.affiliation)
+                    && feed
+                        .authorized_affiliations
+                        .contains(&assertion.affiliation)
                     && status_map.contains_key(assertion.raw_status_code.as_str());
                 if ok {
                     if let Some(ref emp_id) = assertion.emp_immutable_id {
@@ -612,7 +618,10 @@ pub fn phase1_hr(
             ));
         }
         for pid in &consulted_vec {
-            cites.push(format!("HR-AUTH-V5-01:{}", world.hr_persons[pid.as_str()].evidence_id));
+            cites.push(format!(
+                "HR-AUTH-V5-01:{}",
+                world.hr_persons[pid.as_str()].evidence_id
+            ));
         }
 
         let pre = version_tokens(&world, pre_ids.iter().map(String::as_str))?;
@@ -718,7 +727,8 @@ pub fn phase1_accounts(
         }
 
         let mut conversion_pruned = BTreeSet::new();
-        let mut after_conversion: BTreeSet<String> = acct.direct_grant_ids.iter().cloned().collect();
+        let mut after_conversion: BTreeSet<String> =
+            acct.direct_grant_ids.iter().cloned().collect();
         if action == AccountReconActionV5::KeepActive
             && let Some(ref eng) = engagement
             && eng.eng_status == EngagementStatusV5::ContractorToFtePending
@@ -869,7 +879,9 @@ pub fn phase1_accounts(
         .iter()
         .filter_map(|(aid, p)| {
             if p.account_action == AccountReconActionV5::KeepActive {
-                p.bound_person_id.as_ref().map(|pid| (aid.clone(), pid.clone()))
+                p.bound_person_id
+                    .as_ref()
+                    .map(|pid| (aid.clone(), pid.clone()))
             } else {
                 None
             }
@@ -887,7 +899,9 @@ pub fn phase1_accounts(
             .filter(|c| &c.monitored_person_id == pid)
         {
             let monitor_acct = plans.get(&cc.monitor_account_id);
-            let monitor_pid = control_monitor_people.get(&cc.cc_id).and_then(|o| o.as_ref());
+            let monitor_pid = control_monitor_people
+                .get(&cc.cc_id)
+                .and_then(|o| o.as_ref());
             let audit_healthy = conn_results
                 .get(&cc.audit_connector_id)
                 .is_some_and(|c| c.audit_sink_healthy);
@@ -895,7 +909,8 @@ pub fn phase1_accounts(
                 continue;
             };
             if !(audit_healthy
-                && monitor_acct.is_some_and(|a| a.account_action == AccountReconActionV5::KeepActive)
+                && monitor_acct
+                    .is_some_and(|a| a.account_action == AccountReconActionV5::KeepActive)
                 && mon_pid != pid
                 && !is_subordinate(mon_pid, pid, clock, &world.hr_persons))
             {
@@ -927,7 +942,8 @@ pub fn phase1_accounts(
             .cloned()
             .collect();
 
-        let mut effective_allow_groups_by_id: BTreeMap<String, CapabilityFootprint> = BTreeMap::new();
+        let mut effective_allow_groups_by_id: BTreeMap<String, CapabilityFootprint> =
+            BTreeMap::new();
         let mut group_fp_union = CapabilityFootprint::new();
         for group_aid in &active_accounts {
             let group_acct = &world.idp_accounts[group_aid.as_str()];
@@ -948,11 +964,8 @@ pub fn phase1_accounts(
                             .map(String::as_str),
                     );
                 }
-                let mut gfp = capability_footprint(
-                    ctx.catalog(),
-                    group_caps,
-                    [group.scope_path.as_str()],
-                )?;
+                let mut gfp =
+                    capability_footprint(ctx.catalog(), group_caps, [group.scope_path.as_str()])?;
                 gfp.retain(|item| !group_deny.contains(item));
                 if !gfp.is_empty() {
                     effective_allow_groups_by_id
@@ -1014,8 +1027,11 @@ pub fn phase1_accounts(
         }
 
         d1.sort_by(|a, b| {
-            (world.grants[a.1.as_str()].sod_prune_priority, &a.1, &a.0)
-                .cmp(&(world.grants[b.1.as_str()].sod_prune_priority, &b.1, &b.0))
+            (world.grants[a.1.as_str()].sod_prune_priority, &a.1, &a.0).cmp(&(
+                world.grants[b.1.as_str()].sod_prune_priority,
+                &b.1,
+                &b.0,
+            ))
         });
 
         let mut k_kept = group_fp_union.clone();
@@ -1075,8 +1091,11 @@ pub fn phase1_accounts(
             .collect();
         let mut sorted_candidates = candidates.clone();
         sorted_candidates.sort_by(|a, b| {
-            (world.grants[a.1.as_str()].sod_prune_priority, &a.1, &a.0)
-                .cmp(&(world.grants[b.1.as_str()].sod_prune_priority, &b.1, &b.0))
+            (world.grants[a.1.as_str()].sod_prune_priority, &a.1, &a.0).cmp(&(
+                world.grants[b.1.as_str()].sod_prune_priority,
+                &b.1,
+                &b.0,
+            ))
         });
         let mut all_kept = BTreeSet::new();
         let mut k_all = group_fp_union;
@@ -1154,7 +1173,10 @@ pub fn phase1_accounts(
                 world.hr_persons[pid.as_str()].evidence_id
             ));
             for gid in &plan.conversion_pruned_grant_ids {
-                cites.push(format!("CONV-V5-02:{}", world.grants[gid.as_str()].evidence_id));
+                cites.push(format!(
+                    "CONV-V5-02:{}",
+                    world.grants[gid.as_str()].evidence_id
+                ));
             }
         }
         if plan.account_action == AccountReconActionV5::KeepActive {
@@ -1263,7 +1285,8 @@ pub fn phase1_accounts(
                         )?;
                         let intersection: CapabilityFootprint =
                             raw_fp.intersection(&denied_fp).cloned().collect();
-                        let masked_witnesses = sod_witnesses(&intersection, before, ctx.sod_rules());
+                        let masked_witnesses =
+                            sod_witnesses(&intersection, before, ctx.sod_rules());
                         if !raw_witnesses.is_disjoint(&masked_witnesses) {
                             cites.push(format!("SOD-V5-01:{}", group.evidence_id));
                         }
@@ -1317,11 +1340,7 @@ pub fn phase1_accounts(
         }
 
         let trace_ctx = TraceContextV5 {
-            pruned_conversion_grant_ids: plan
-                .conversion_pruned_grant_ids
-                .iter()
-                .cloned()
-                .collect(),
+            pruned_conversion_grant_ids: plan.conversion_pruned_grant_ids.iter().cloned().collect(),
             cc_sensitive_grant_ids: plan.cc_sensitive_grant_ids.iter().cloned().collect(),
             gold_engagement_status: plan.gold_engagement_status,
             binding_person_ids: plan.binding_people.clone(),
@@ -1367,12 +1386,8 @@ pub fn phase1_itsm(
     let world = ctx.state.clone();
     let clock = ctx.clock();
     let outcomes = ctx.semantic.p1_account_outcomes.clone();
-    let target_accounts: BTreeSet<String> = ctx
-        .queue
-        .target_human_account_ids
-        .iter()
-        .cloned()
-        .collect();
+    let target_accounts: BTreeSet<String> =
+        ctx.queue.target_human_account_ids.iter().cloned().collect();
 
     let mut mutations = Vec::new();
     for (cid, outcome) in conn_results {
@@ -1574,7 +1589,9 @@ pub fn phase1_itsm(
     Ok(mutations)
 }
 
-fn nhi_source_rank(source: TelemetrySignalSourceV5) -> Option<(i64, NHIOwnerResolutionSourceV5, &'static str)> {
+fn nhi_source_rank(
+    source: TelemetrySignalSourceV5,
+) -> Option<(i64, NHIOwnerResolutionSourceV5, &'static str)> {
     match source {
         TelemetrySignalSourceV5::IacStateAttestation => Some((
             1,
@@ -1822,8 +1839,7 @@ pub fn phase1_nhi(ctx: &mut PhaseContext) -> Result<Vec<AtomicMutationV5>, Oracl
             let winner_rank = (1..=5).find(|r| eligible_by_rank.contains_key(r));
             if let Some(wr) = winner_rank {
                 let ranked = &eligible_by_rank[&wr];
-                let rank_people: BTreeSet<&str> =
-                    ranked.iter().map(|(pid, _, _)| *pid).collect();
+                let rank_people: BTreeSet<&str> = ranked.iter().map(|(pid, _, _)| *pid).collect();
                 if rank_people.len() == 1 {
                     action = NHIGovernanceActionV5::AttributeOwner;
                     let win_owner = rank_people.into_iter().next().expect("len == 1").to_owned();
@@ -1945,16 +1961,11 @@ pub fn phase1_nhi(ctx: &mut PhaseContext) -> Result<Vec<AtomicMutationV5>, Oracl
                 }
             }
             NHIGovernanceActionV5::Escalate => {
-                let source_rank = (1..=5).find(|r| {
-                    rank_candidates
-                        .get(r)
-                        .is_some_and(|cands| cands.len() > 1)
-                });
+                let source_rank =
+                    (1..=5).find(|r| rank_candidates.get(r).is_some_and(|cands| cands.len() > 1));
                 if let Some(sr) = source_rank {
-                    let allowed_pids: BTreeSet<&str> = rank_candidates[&sr]
-                        .iter()
-                        .map(String::as_str)
-                        .collect();
+                    let allowed_pids: BTreeSet<&str> =
+                        rank_candidates[&sr].iter().map(String::as_str).collect();
                     for (sig, row) in target.signals.iter().zip(signal_rows.iter()) {
                         let Some(ref pid) = row.person else {
                             continue;
@@ -2016,9 +2027,7 @@ pub fn phase1_nhi(ctx: &mut PhaseContext) -> Result<Vec<AtomicMutationV5>, Oracl
             submitted.nhi_action == NHIGovernanceActionV5::FlagSharedException
                 && !has_valid_custody
                 && !vault_rows.is_empty()
-                && vault_rows
-                    .iter()
-                    .all(|row| !row.fresh || !row.custody_live)
+                && vault_rows.iter().all(|row| !row.fresh || !row.custody_live)
         });
 
         let pre = version_tokens(&world, pre_ids.iter().map(String::as_str))?;
@@ -2121,8 +2130,7 @@ fn agent_sod_support_cites(
             if group.effect != ib_v5_schemas::GroupEffectV5::Allow {
                 continue;
             }
-            let mut caps: BTreeSet<&str> =
-                group.capabilities.iter().map(String::as_str).collect();
+            let mut caps: BTreeSet<&str> = group.capabilities.iter().map(String::as_str).collect();
             for role_id in &group.granted_role_ids {
                 caps.extend(
                     world.roles[role_id.as_str()]
@@ -2131,8 +2139,7 @@ fn agent_sod_support_cites(
                         .map(String::as_str),
                 );
             }
-            let mut fp =
-                capability_footprint(ctx.catalog(), caps, [group.scope_path.as_str()])?;
+            let mut fp = capability_footprint(ctx.catalog(), caps, [group.scope_path.as_str()])?;
             fp.retain(|item| !deny_fp.contains(item));
             if !sod_witnesses(&f_auto, &fp, ctx.sod_rules()).is_empty() {
                 result.push(format!("AGENT-REG-V5-01:{}", group.evidence_id));
@@ -2570,8 +2577,7 @@ pub fn phase1_ciem(
                         Some(b) => b.iter().map(String::as_str).collect(),
                         None => raw.clone(),
                     };
-                    let scp: BTreeSet<&str> =
-                        cp.aws_scp_allow.iter().map(String::as_str).collect();
+                    let scp: BTreeSet<&str> = cp.aws_scp_allow.iter().map(String::as_str).collect();
                     let deny: BTreeSet<&str> =
                         cp.aws_explicit_deny.iter().map(String::as_str).collect();
                     let bounded: BTreeSet<String> = raw
@@ -2797,7 +2803,9 @@ fn birthright_partitions(
     let mut tier_bad = BTreeSet::new();
     for rule in &task.birthright_catalog {
         let role = &world.roles[rule.role_id.as_str()];
-        if (rule.allowed_affiliations.contains(&AffiliationKindV5::Vendor)
+        if (rule
+            .allowed_affiliations
+            .contains(&AffiliationKindV5::Vendor)
             && matches!(
                 role.privilege_tier,
                 PrivilegeTierV5::Elevated | PrivilegeTierV5::Admin | PrivilegeTierV5::Critical
@@ -2807,7 +2815,10 @@ fn birthright_partitions(
                 .contains(&AffiliationKindV5::Contractor)
                 && role.privilege_tier == PrivilegeTierV5::Critical)
             || (rule.grant_mode == GrantModeV5::Standing
-                && ctx.overlay().critical_jit_tiers.contains(&role.privilege_tier)
+                && ctx
+                    .overlay()
+                    .critical_jit_tiers
+                    .contains(&role.privilege_tier)
                 && !role.is_jit_capable_target)
         {
             tier_bad.insert(rule.rule_id.as_str());
@@ -2871,7 +2882,10 @@ fn birthright_partitions(
         }
         let role = &world.roles[rule.role_id.as_str()];
         if rule.grant_mode == GrantModeV5::Standing
-            && ctx.overlay().critical_jit_tiers.contains(&role.privilege_tier)
+            && ctx
+                .overlay()
+                .critical_jit_tiers
+                .contains(&role.privilege_tier)
         {
             converted.insert(rule.rule_id.clone());
         } else {
@@ -3095,11 +3109,7 @@ const fn tier_weight(tier: PrivilegeTierV5) -> i64 {
     }
 }
 
-pub(crate) fn for_each_combination<T: Clone>(
-    items: &[T],
-    k: usize,
-    f: &mut impl FnMut(&[T]),
-) {
+pub(crate) fn for_each_combination<T: Clone>(items: &[T], k: usize, f: &mut impl FnMut(&[T])) {
     let mut current = Vec::with_capacity(k);
     combine_rec(items, k, 0, &mut current, f);
 }
@@ -3284,10 +3294,8 @@ pub fn phase1_optimizations(ctx: &mut PhaseContext) -> Result<Vec<AtomicMutation
                     active_people.insert(pid.clone());
                 }
             }
-            let people_to_eval: BTreeSet<String> = active_people
-                .union(&touched_c)
-                .cloned()
-                .collect();
+            let people_to_eval: BTreeSet<String> =
+                active_people.union(&touched_c).cloned().collect();
 
             for person_id in &people_to_eval {
                 let account_ids = active_accts_c
@@ -3297,9 +3305,12 @@ pub fn phase1_optimizations(ctx: &mut PhaseContext) -> Result<Vec<AtomicMutation
                 let mut person_fp = CapabilityFootprint::new();
                 for aid in account_ids {
                     let acct = &world_c.idp_accounts[aid.as_str()];
-                    let Ok((grp, deny)) =
-                        group_footprints(acct, &world_c.groups, &world_c.roles, &world_c.scope_catalog)
-                    else {
+                    let Ok((grp, deny)) = group_footprints(
+                        acct,
+                        &world_c.groups,
+                        &world_c.roles,
+                        &world_c.scope_catalog,
+                    ) else {
                         action_valid = false;
                         continue;
                     };
@@ -3452,7 +3463,8 @@ pub fn phase1_optimizations(ctx: &mut PhaseContext) -> Result<Vec<AtomicMutation
             }
         });
 
-        let candidate_ids: Vec<String> = candidates.iter().map(|c| c.candidate_id.clone()).collect();
+        let candidate_ids: Vec<String> =
+            candidates.iter().map(|c| c.candidate_id.clone()).collect();
         let cand_by_id: HashMap<&str, &OptCandidateActionV5> = candidates
             .iter()
             .map(|c| (c.candidate_id.as_str(), c))
@@ -3473,8 +3485,10 @@ pub fn phase1_optimizations(ctx: &mut PhaseContext) -> Result<Vec<AtomicMutation
                     let cand = cand_by_id[cid.as_str()];
                     objective += cand.action_cost;
                     if cand.action_kind == OptActionKindV5::ConvertGrantToEligible
-                        && let (Some(pid), Some(gid)) =
-                            (cand.target_person_id.as_deref(), cand.target_grant_id.as_deref())
+                        && let (Some(pid), Some(gid)) = (
+                            cand.target_person_id.as_deref(),
+                            cand.target_grant_id.as_deref(),
+                        )
                     {
                         conv_by_person.entry(pid).or_default().insert(gid);
                     } else if cand.action_kind == OptActionKindV5::AssignRoleStanding

@@ -20,9 +20,9 @@ use ib_v5_scoring::{
     ConfirmatoryFamilyKindV5, ConfirmatoryFamilySpecV5, EpisodeExecutionV5, EpisodeScoreV5,
     EpisodeScoringInputV5, PLANNED_REPEATS_MODEL_V5, PhaseSnapshotSetV5, PhaseTrajectoryV5,
     RunScoringContextV5, ScoreExecutionOptionsV5, SnapshotAssessmentV5, TargetKeyV5,
-    TrajectorySnapshotV5, aggregate_run_scores, build_episode_attempt_v5,
-    episode_score_to_mapping, episode_scoring_input_to_mapping, score_episode,
-    score_execution_raw_v5, snapshot_evidence_sha256,
+    TrajectorySnapshotV5, aggregate_run_scores, build_episode_attempt_v5, episode_score_to_mapping,
+    episode_scoring_input_to_mapping, score_episode, score_execution_raw_v5,
+    snapshot_evidence_sha256,
 };
 use serde_json::{Map, Value, json};
 use tempfile::tempdir;
@@ -66,10 +66,7 @@ fn valid_comparator(cost_micros: i64) -> Value {
 }
 
 fn make_assessment(snapshot_digest: String) -> SnapshotAssessmentV5 {
-    let target: TargetKeyV5 = (
-        "ACCOUNT_RECON_MUTATION".to_owned(),
-        "acct_01".to_owned(),
-    );
+    let target: TargetKeyV5 = ("ACCOUNT_RECON_MUTATION".to_owned(), "acct_01".to_owned());
     let mut target_map = BTreeMap::new();
     target_map.insert(target.clone(), true);
     let mut false_map = BTreeMap::new();
@@ -196,7 +193,10 @@ fn phase_trajectory_from_runtime(runtime: &RuntimeV5, phase_index: i64) -> Phase
     }
 }
 
-fn replay_gold_execution(episode: &EpisodeV5, oracle: &SealedEpisodeOracleV5) -> EpisodeExecutionV5 {
+fn replay_gold_execution(
+    episode: &EpisodeV5,
+    oracle: &SealedEpisodeOracleV5,
+) -> EpisodeExecutionV5 {
     let mut runtime =
         RuntimeV5::new(episode.clone(), oracle.omniscient_s1.clone()).expect("runtime");
     let r1 = runtime.query_sources(1, &oracle.req_slices_p1).expect("q1");
@@ -292,7 +292,10 @@ fn replay_gold_execution(episode: &EpisodeV5, oracle: &SealedEpisodeOracleV5) ->
     }
 }
 
-fn write_raw_run(run_dir: &Path, attach_score: bool) -> (EpisodeScoringInputV5, Map<String, Value>) {
+fn write_raw_run(
+    run_dir: &Path,
+    attach_score: bool,
+) -> (EpisodeScoringInputV5, Map<String, Value>) {
     std::fs::create_dir_all(run_dir).expect("create run_dir");
     let dataset = build_v5_dataset(V5Suite::V5Dev, 391).expect("build dataset");
     let dataset_dir = run_dir.join("dataset");
@@ -402,8 +405,7 @@ fn rehash_run_config(manifest: &mut Value) {
         .or_else(|| manifest.get("run_config"))
         .expect("run_config")
         .clone();
-    manifest["run_config_sha256"] =
-        Value::String(sha256_hex(jcs_dumps(&run_config).expect("jcs")));
+    manifest["run_config_sha256"] = Value::String(sha256_hex(jcs_dumps(&run_config).expect("jcs")));
 }
 
 fn completion_trace_row(
@@ -469,8 +471,11 @@ fn add_attested_accounting(run_dir: &Path, row: &mut Map<String, Value>) {
     .expect("usage manifest jcs");
     let usage_manifest_sha = sha256_hex(&usage_manifest_raw);
     std::fs::create_dir_all(run_dir.join("usage_accounting/evidence")).expect("mkdir");
-    std::fs::write(run_dir.join("usage_accounting/manifest.json"), &usage_manifest_raw)
-        .expect("write usage manifest");
+    std::fs::write(
+        run_dir.join("usage_accounting/manifest.json"),
+        &usage_manifest_raw,
+    )
+    .expect("write usage manifest");
     std::fs::write(run_dir.join(&evidence_path), &evidence_raw).expect("write evidence");
 
     row.insert(
@@ -542,9 +547,9 @@ fn add_attested_accounting(run_dir: &Path, row: &mut Map<String, Value>) {
     desc.insert("evidence_path".to_owned(), Value::String(evidence_path));
     run_manifest["usage_accounting_evidence_artifacts"] = Value::Array(vec![Value::Object(desc)]);
 
-    let manifest_str =
-        dumps(&run_manifest, &DumpOptions::default().with_sort_keys(true)).expect("manifest")
-            + "\n";
+    let manifest_str = dumps(&run_manifest, &DumpOptions::default().with_sort_keys(true))
+        .expect("manifest")
+        + "\n";
     std::fs::write(&manifest_path, manifest_str).expect("write manifest");
 }
 
@@ -583,8 +588,8 @@ fn write_core_raw_run(run_dir: &Path, pricing_sha: &str) {
                 "scoring_input": episode_scoring_input_to_mapping(&item),
                 "score": episode_score_to_mapping(&sc),
             });
-            let line = dumps(&row, &DumpOptions::default().with_sort_keys(true)).expect("dumps")
-                + "\n";
+            let line =
+                dumps(&row, &DumpOptions::default().with_sort_keys(true)).expect("dumps") + "\n";
             episodes_raw.extend_from_slice(line.as_bytes());
         }
     }
@@ -692,11 +697,7 @@ fn model_report_artifact(
     }
 }
 
-fn default_model_artifact(
-    model_id: &str,
-    suite_id: &str,
-    family_ids: &[&str],
-) -> V5ReportArtifact {
+fn default_model_artifact(model_id: &str, suite_id: &str, family_ids: &[&str]) -> V5ReportArtifact {
     model_report_artifact(
         model_id,
         suite_id,
@@ -740,12 +741,10 @@ fn comparator_manifest_rejects_duplicate_keys_and_extra_fields() {
 
     let mut extra = valid_comparator(60_000_000);
     extra["unrecognized"] = Value::Bool(true);
-    let err = validate_comparator_manifest(
-        &serde_json::to_vec(&extra).unwrap(),
-        Some(&price_sha()),
-    )
-    .unwrap_err()
-    .to_string();
+    let err =
+        validate_comparator_manifest(&serde_json::to_vec(&extra).unwrap(), Some(&price_sha()))
+            .unwrap_err()
+            .to_string();
     assert!(err.contains("strict schema"), "{err}");
 }
 
@@ -899,7 +898,12 @@ fn report_reprices_complete_trace_from_the_bound_frozen_artifact() {
     assert_eq!(score.cost_usd_micros, Some(21_005));
     assert_eq!(score.budget_exceeded, Some(false));
     assert_eq!(score.g_srr_episode_envelope, score.g_srr_commit);
-    assert!(artifact.provenance.usage_accounting_manifest_sha256.is_some());
+    assert!(
+        artifact
+            .provenance
+            .usage_accounting_manifest_sha256
+            .is_some()
+    );
     assert!(artifact.provenance.usage_accounting_evidence_verified);
 }
 
@@ -1002,7 +1006,10 @@ fn report_rejects_tampered_usage_attestation_bytes() {
     std::fs::write(run_dir.join(rel_path), b"{}").unwrap();
 
     let err = report_from_raw_artifacts(&run_dir).unwrap_err().to_string();
-    assert!(err.contains("usage-accounting evidence digest mismatch"), "{err}");
+    assert!(
+        err.contains("usage-accounting evidence digest mismatch"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -1155,8 +1162,7 @@ fn baseline_report_distinguishes_numeric_result_from_full_gate() {
         expected_episode_grid: None,
         calibration_metadata: None,
     };
-    let summary =
-        aggregate_run_scores(&rows, &context, AggregateRunOptionsV5::default()).unwrap();
+    let summary = aggregate_run_scores(&rows, &context, AggregateRunOptionsV5::default()).unwrap();
     let artifact = V5ReportArtifact {
         summary,
         provenance: ArtifactProvenanceV5::verified(
@@ -1181,7 +1187,9 @@ fn baseline_report_distinguishes_numeric_result_from_full_gate() {
     assert!(report_markdown.contains("| G-BASE-01-NUMERIC | `PASS` |"));
     assert!(report_markdown.contains("| G-BASE-01 | `UNMEASURED` |"));
     assert!(!report_markdown.contains("| G-BASE-01 | `PASS` |"));
-    assert!(report_markdown.contains("counterfactual flip-pair and ID/row-order permutation passes"));
+    assert!(
+        report_markdown.contains("counterfactual flip-pair and ID/row-order permutation passes")
+    );
     assert!(report_markdown.contains("numeric passes alone leave it unmeasured"));
 }
 
@@ -1330,7 +1338,10 @@ fn report_rejects_tampered_manifest_episodes_and_dataset() {
         bytes.extend_from_slice(b"\n");
         std::fs::write(run_dir.join("dataset/episodes.jsonl"), bytes).unwrap();
         let err = report_from_raw_artifacts(&run_dir).unwrap_err().to_string();
-        assert!(err.contains("dataset episodes artifact digest disagrees"), "{err}");
+        assert!(
+            err.contains("dataset episodes artifact digest disagrees"),
+            "{err}"
+        );
     }
     // 3. Duplicate key in manifest.json
     {
@@ -1385,7 +1396,10 @@ fn optional_historical_comparator_manifest_attaches_descriptive_context() {
         },
     )
     .unwrap();
-    assert_eq!(artifact.summary.comparator_status, "HISTORICAL_CONTEXT_MATCHED");
+    assert_eq!(
+        artifact.summary.comparator_status,
+        "HISTORICAL_CONTEXT_MATCHED"
+    );
     assert!(artifact.provenance.comparator_evidence_verified);
     assert_eq!(
         artifact.provenance.comparator_manifest_sha256.as_deref(),
@@ -1404,8 +1418,14 @@ fn report_uses_retained_event_trace_when_stage_attempt_alias_is_absent() {
     let mut row: Map<String, Value> =
         serde_json::from_str(&std::fs::read_to_string(run_dir.join("episodes.jsonl")).unwrap())
             .unwrap();
-    row["phase1"].as_object_mut().unwrap().remove("stage_attempts");
-    row["phase2"].as_object_mut().unwrap().remove("stage_attempts");
+    row["phase1"]
+        .as_object_mut()
+        .unwrap()
+        .remove("stage_attempts");
+    row["phase2"]
+        .as_object_mut()
+        .unwrap()
+        .remove("stage_attempts");
     rewrite_run_episode(&run_dir, &row);
 
     let artifact = report_from_raw_artifacts(&run_dir).unwrap();
@@ -1634,13 +1654,13 @@ fn core_inference_separates_tracks_blocks_incomplete_and_descriptive_contrasts()
             None,
         ),
     );
-    let err = build_v5_core_inference(
-        &incomplete,
-        &[("model-a".to_owned(), "model-b".to_owned())],
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(err.contains("rankings and confirmatory tests are blocked"), "{err}");
+    let err = build_v5_core_inference(&incomplete, &[("model-a".to_owned(), "model-b".to_owned())])
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("rankings and confirmatory tests are blocked"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -1665,20 +1685,19 @@ fn core_inference_requires_a_shared_dataset_seal_but_allows_model_configs() {
             ),
         );
     }
-    let matching = build_v5_core_inference(
-        &artifacts,
-        &[("model-a".to_owned(), "model-b".to_owned())],
-    )
-    .unwrap();
+    let matching =
+        build_v5_core_inference(&artifacts, &[("model-a".to_owned(), "model-b".to_owned())])
+            .unwrap();
     assert_eq!(matching.pairwise_randomization.len(), 1);
 
-    artifacts.get_mut("model-b").unwrap().provenance.dataset_seal_sha256 = Some("f".repeat(64));
-    let err = build_v5_core_inference(
-        &artifacts,
-        &[("model-a".to_owned(), "model-b".to_owned())],
-    )
-    .unwrap_err()
-    .to_string();
+    artifacts
+        .get_mut("model-b")
+        .unwrap()
+        .provenance
+        .dataset_seal_sha256 = Some("f".repeat(64));
+    let err = build_v5_core_inference(&artifacts, &[("model-a".to_owned(), "model-b".to_owned())])
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("same sealed dataset"), "{err}");
 }
 
@@ -1721,11 +1740,8 @@ fn full_tiebreak_requires_one_seal_and_allows_model_config_variants() {
         full_art.provenance.dataset_seal_sha256 = Some("f".repeat(64));
         full.insert(model_id.to_owned(), full_art);
     }
-    let core_inference = build_v5_core_inference(
-        &core,
-        &[("model-a".to_owned(), "model-b".to_owned())],
-    )
-    .unwrap();
+    let core_inference =
+        build_v5_core_inference(&core, &[("model-a".to_owned(), "model-b".to_owned())]).unwrap();
     let matching = build_v5_full_tiebreak_inference(&core_inference, &full).unwrap();
     assert_eq!(matching.pairwise_randomization.len(), 1);
 
@@ -1762,7 +1778,8 @@ fn incomplete_report_gates_metrics_and_keeps_observed_diagnostics() {
     ] {
         s.metrics.insert(key.to_owned(), None);
     }
-    s.metrics.insert("execution_valid_rate".to_owned(), Some(0.75));
+    s.metrics
+        .insert("execution_valid_rate".to_owned(), Some(0.75));
     s.metrics
         .insert("OVERGRANT_observed_commit_count".to_owned(), Some(3.0));
     s.metrics
@@ -1827,11 +1844,8 @@ fn core_inference_renders_strict_bh_lt_and_validates_additional_family_artifacts
             Some(&none_pass),
         ),
     );
-    let core_inference = build_v5_core_inference(
-        &core,
-        &[("model-a".to_owned(), "model-b".to_owned())],
-    )
-    .unwrap();
+    let core_inference =
+        build_v5_core_inference(&core, &[("model-a".to_owned(), "model-b".to_owned())]).unwrap();
     let core_md = render_v5_core_inference_markdown(&core_inference);
     assert!(core_md.contains("difference detected (BH q<0.05)"));
     assert!(!core_md.contains("BH q<=0.05"));
@@ -1888,13 +1902,15 @@ fn core_inference_renders_strict_bh_lt_and_validates_additional_family_artifacts
     )
     .unwrap_err()
     .to_string();
-    assert!(err.contains("does not match the core sealed dataset"), "{err}");
+    assert!(
+        err.contains("does not match the core sealed dataset"),
+        "{err}"
+    );
 }
 
 #[test]
 fn untrusted_report_label_uses_safe_markdown_cell_text() {
-    let rendered =
-        clean_table_text("` <img src=x onerror=alert(1)> | https://bad.example\nnext");
+    let rendered = clean_table_text("` <img src=x onerror=alert(1)> | https://bad.example\nnext");
     assert!(!rendered.contains('\n'));
     assert!(rendered.contains("\\|"));
     assert!(!rendered.contains("https://"));
@@ -1948,10 +1964,7 @@ fn fmt_exact_integer_avoids_float_rounding_and_overflow() {
         "1000000000000000001"
     );
     let huge_310 = format!("1{}", "0".repeat(310));
-    assert_eq!(
-        fmt_value(Some(FmtValue::BigIntStr(&huge_310)), 0),
-        huge_310
-    );
+    assert_eq!(fmt_value(Some(FmtValue::BigIntStr(&huge_310)), 0), huge_310);
     let max_finite_cost_micros = "179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
     assert_eq!(
         fmt_value(Some(FmtValue::BigIntStr(max_finite_cost_micros)), 0),

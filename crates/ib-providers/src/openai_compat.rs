@@ -118,7 +118,9 @@ pub fn provider_routing_problem(value: &Value) -> Option<String> {
         ..DumpOptions::default()
     };
     if dumps(value, &opts).is_err() {
-        return Some("values must be JSON (strings, numbers, booleans, lists, mappings)".to_string());
+        return Some(
+            "values must be JSON (strings, numbers, booleans, lists, mappings)".to_string(),
+        );
     }
     if let Some(order) = map.get("order") {
         let valid_order = order.as_array().is_some_and(|arr| {
@@ -156,7 +158,11 @@ pub fn is_vendor_endpoint(base_url: Option<&str>) -> bool {
     };
     Url::parse(u)
         .ok()
-        .and_then(|parsed| parsed.host_str().map(|h| h.eq_ignore_ascii_case(VENDOR_HOST)))
+        .and_then(|parsed| {
+            parsed
+                .host_str()
+                .map(|h| h.eq_ignore_ascii_case(VENDOR_HOST))
+        })
         .unwrap_or(false)
 }
 
@@ -187,7 +193,9 @@ fn chat_usage(usage_val: Option<&Value>) -> Usage {
     let Some(usage) = usage_val.and_then(Value::as_object) else {
         return Usage::default();
     };
-    let prompt_details = usage.get("prompt_tokens_details").and_then(Value::as_object);
+    let prompt_details = usage
+        .get("prompt_tokens_details")
+        .and_then(Value::as_object);
     let completion_details = usage
         .get("completion_tokens_details")
         .and_then(Value::as_object);
@@ -209,7 +217,9 @@ fn responses_usage(usage_val: Option<&Value>) -> Usage {
         return Usage::default();
     };
     let input_details = usage.get("input_tokens_details").and_then(Value::as_object);
-    let output_details = usage.get("output_tokens_details").and_then(Value::as_object);
+    let output_details = usage
+        .get("output_tokens_details")
+        .and_then(Value::as_object);
     let cached = bounded_token_count(input_details.and_then(|d| d.get("cached_tokens")));
     let cache_write = bounded_token_count(input_details.and_then(|d| d.get("cache_write_tokens")));
     let reasoning = bounded_token_count(output_details.and_then(|d| d.get("reasoning_tokens")));
@@ -356,10 +366,8 @@ impl OpenAICompatProvider {
             .clone()
             .or_else(|| default_api_key_env(config.base_url_env.as_deref()));
 
-        let base_url = resolve_base_url(
-            config.base_url_env.as_deref(),
-            config.env_override.as_ref(),
-        );
+        let base_url =
+            resolve_base_url(config.base_url_env.as_deref(), config.env_override.as_ref());
         let drops_temperature =
             is_vendor_endpoint(base_url.as_deref()) && !accepts_temperature(&config.model);
 
@@ -435,7 +443,10 @@ impl OpenAICompatProvider {
         }
 
         let mut params = Map::new();
-        params.insert("model".to_string(), Value::String(self.config.model.clone()));
+        params.insert(
+            "model".to_string(),
+            Value::String(self.config.model.clone()),
+        );
         params.insert("messages".to_string(), Value::Array(messages));
         params.insert(
             self.config.max_tokens_param.as_str().to_string(),
@@ -444,7 +455,10 @@ impl OpenAICompatProvider {
 
         if let Some(ref schema) = request.output_schema {
             let mut js = Map::new();
-            js.insert("name".to_string(), Value::String(request.schema_name.clone()));
+            js.insert(
+                "name".to_string(),
+                Value::String(request.schema_name.clone()),
+            );
             js.insert("schema".to_string(), Value::Object(schema.clone()));
             js.insert("strict".to_string(), Value::Bool(true));
 
@@ -488,7 +502,10 @@ impl OpenAICompatProvider {
         if let Some(ref effort) = request.params.effort
             && self.config.reasoning_effort_param
         {
-            params.insert("reasoning_effort".to_string(), Value::String(effort.clone()));
+            params.insert(
+                "reasoning_effort".to_string(),
+                Value::String(effort.clone()),
+            );
         }
         if let Some(ref routing) = self.provider_routing {
             params.insert("provider".to_string(), Value::Object(routing.clone()));
@@ -498,7 +515,10 @@ impl OpenAICompatProvider {
 
     fn responses_params(&self, request: &ModelRequest) -> Map<String, Value> {
         let mut params = Map::new();
-        params.insert("model".to_string(), Value::String(self.config.model.clone()));
+        params.insert(
+            "model".to_string(),
+            Value::String(self.config.model.clone()),
+        );
         if !request.system.is_empty() {
             params.insert(
                 "instructions".to_string(),
@@ -521,7 +541,10 @@ impl OpenAICompatProvider {
         if let Some(ref schema) = request.output_schema {
             let mut format = Map::new();
             format.insert("type".to_string(), Value::String("json_schema".to_string()));
-            format.insert("name".to_string(), Value::String(request.schema_name.clone()));
+            format.insert(
+                "name".to_string(),
+                Value::String(request.schema_name.clone()),
+            );
             format.insert("schema".to_string(), Value::Object(schema.clone()));
             format.insert("strict".to_string(), Value::Bool(true));
 
@@ -594,7 +617,10 @@ impl OpenAICompatProvider {
                 if !message.content.is_empty() {
                     let mut m = Map::new();
                     m.insert("role".to_string(), Value::String("assistant".to_string()));
-                    m.insert("content".to_string(), Value::String(message.content.clone()));
+                    m.insert(
+                        "content".to_string(),
+                        Value::String(message.content.clone()),
+                    );
                     items.push(m);
                 }
                 for call in &message.tool_calls {
@@ -621,7 +647,10 @@ impl OpenAICompatProvider {
             Role::User => {
                 let mut m = Map::new();
                 m.insert("role".to_string(), Value::String("user".to_string()));
-                m.insert("content".to_string(), Value::String(message.content.clone()));
+                m.insert(
+                    "content".to_string(),
+                    Value::String(message.content.clone()),
+                );
                 vec![m]
             }
         }
@@ -639,7 +668,10 @@ impl OpenAICompatProvider {
                         .as_ref()
                         .map_or(Value::Null, |id| Value::String(id.clone())),
                 );
-                m.insert("content".to_string(), Value::String(message.content.clone()));
+                m.insert(
+                    "content".to_string(),
+                    Value::String(message.content.clone()),
+                );
                 m
             }
             Role::Assistant => {
@@ -704,7 +736,10 @@ impl OpenAICompatProvider {
             Role::User => {
                 let mut m = Map::new();
                 m.insert("role".to_string(), Value::String("user".to_string()));
-                m.insert("content".to_string(), Value::String(message.content.clone()));
+                m.insert(
+                    "content".to_string(),
+                    Value::String(message.content.clone()),
+                );
                 m
             }
         }
@@ -1268,7 +1303,10 @@ impl Provider for OpenAICompatProvider {
     }
 
     fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.openai_compat", "OpenAICompatProvider")
+        (
+            "identitybench.providers.openai_compat",
+            "OpenAICompatProvider",
+        )
     }
 
     fn local_retry_limit(&self) -> Option<u32> {

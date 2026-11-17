@@ -314,7 +314,10 @@ pub fn apply_phase2(
     let active_snapshot: Vec<String> = active.iter().cloned().collect();
     for aid in active_snapshot {
         let outcome = account_outcomes_by_id[aid.as_str()];
-        let pid = outcome.bound_person_id.as_deref().expect("active bound_person_id");
+        let pid = outcome
+            .bound_person_id
+            .as_deref()
+            .expect("active bound_person_id");
         let eid = outcome
             .bound_engagement_id
             .as_deref()
@@ -550,8 +553,12 @@ pub fn simulate_workflow_dag(
     if let Some(reset) = phase2_reset_state {
         phase2_world = reset.clone();
     }
-    let terminal_state =
-        apply_phase2(&phase2_world, phase2_mutations, phase2_digest, phase1_digest)?;
+    let terminal_state = apply_phase2(
+        &phase2_world,
+        phase2_mutations,
+        phase2_digest,
+        phase1_digest,
+    )?;
     Ok(WorkflowDAGResultV5 {
         phase2_world,
         terminal_state,

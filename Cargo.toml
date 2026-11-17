@@ -22,6 +22,9 @@ ib-v5-generator = { path = "crates/ib-v5-generator" }
 ib-v5-scoring = { path = "crates/ib-v5-scoring" }
 ib-v5-report = { path = "crates/ib-v5-report" }
 ib-providers = { path = "crates/ib-providers" }
+ib-v5-runner = { path = "crates/ib-v5-runner" }
+ib-v5-baselines = { path = "crates/ib-v5-baselines" }
+ib-v5-validation = { path = "crates/ib-v5-validation" }
 
 # Async / HTTP / Process / Files
 tokio = { version = "1", features = ["full"] }

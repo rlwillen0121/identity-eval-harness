@@ -283,7 +283,10 @@ fn empty_result(
         }
         "validate_submission" => {
             let mut m = Map::new();
-            m.insert("first_failing_stage".to_owned(), Value::Number(Number::from(2)));
+            m.insert(
+                "first_failing_stage".to_owned(),
+                Value::Number(Number::from(2)),
+            );
             m.insert(
                 "diagnostics".to_owned(),
                 Value::Array(vec![Value::String("SCHEMA_VALIDATION_ERROR".to_owned())]),
@@ -310,7 +313,10 @@ fn empty_result(
     let input_sha256 = sha256_bytes(&canonical_json_bytes(&case.to_json_value())?);
     let mut gap = Map::new();
     gap.insert("code".to_owned(), Value::String(gap_code.to_owned()));
-    gap.insert("operation".to_owned(), Value::String(case.operation.clone()));
+    gap.insert(
+        "operation".to_owned(),
+        Value::String(case.operation.clone()),
+    );
     gap.insert("case_id".to_owned(), Value::String(case.case_id.clone()));
     gap.insert("path".to_owned(), Value::String(json_pointer(path)));
     gap.insert("detail".to_owned(), Value::String(detail.to_owned()));
@@ -622,9 +628,9 @@ fn array_index(token: &str, length: usize, allow_end: bool) -> Result<usize, Pro
             "array pointer is not a canonical index".to_owned(),
         ));
     }
-    let index = token.parse::<usize>().map_err(|_| {
-        ProductionEvalError::PatchPathAbsent("array index is absent".to_owned())
-    })?;
+    let index = token
+        .parse::<usize>()
+        .map_err(|_| ProductionEvalError::PatchPathAbsent("array index is absent".to_owned()))?;
     if index > length || (index == length && !allow_end) {
         return Err(ProductionEvalError::PatchPathAbsent(
             "array index is absent".to_owned(),
@@ -760,7 +766,10 @@ pub fn apply_rfc6902_patch(
 }
 
 /// Apply an ordered RFC 6902 patch recipe to a JSON base document.
-pub fn apply_recipe(base: &Value, recipe: &Map<String, Value>) -> Result<Value, ProductionEvalError> {
+pub fn apply_recipe(
+    base: &Value,
+    recipe: &Map<String, Value>,
+) -> Result<Value, ProductionEvalError> {
     let mut value = base.clone();
     let Some(patches) = recipe.get("patches").and_then(Value::as_array) else {
         return Err(ProductionEvalError::Unmaterializable(
@@ -1100,8 +1109,7 @@ pub fn read_ledger(case: &PublicCase, card: &PolicyCardV5) -> BTreeSet<String> {
                 let Some(rows) = table_obj.get("rows").and_then(Value::as_array) else {
                     continue;
                 };
-                let col_names: Vec<Option<&str>> =
-                    columns.iter().map(Value::as_str).collect();
+                let col_names: Vec<Option<&str>> = columns.iter().map(Value::as_str).collect();
                 if col_names.iter().any(Option::is_none) {
                     continue;
                 }
@@ -1187,9 +1195,7 @@ fn submission_value(
     Ok(strict_json_loads(&raw)?)
 }
 
-fn convert_trace_map(
-    traces: &BTreeMap<(String, String), GoldTargetTraceV5>,
-) -> GoldTraceMap {
+fn convert_trace_map(traces: &BTreeMap<(String, String), GoldTargetTraceV5>) -> GoldTraceMap {
     traces
         .iter()
         .map(|(k, v)| (k.clone(), gold_trace_entry_from_oracle_trace(v)))
@@ -1317,7 +1323,12 @@ fn validate_submission_op(case: &PublicCase) -> Result<Value, ProductionEvalErro
     );
     m.insert(
         "diagnostics".to_owned(),
-        Value::Array(diags.into_iter().map(|s| Value::String(s.to_owned())).collect()),
+        Value::Array(
+            diags
+                .into_iter()
+                .map(|s| Value::String(s.to_owned()))
+                .collect(),
+        ),
     );
     Ok(Value::Object(m))
 }
@@ -1406,10 +1417,7 @@ fn safety_op(case: &PublicCase) -> Result<(Value, Value, Vec<String>), Productio
         Value::String(sel_kind.to_owned()),
     );
     safety_row.insert("overgrant".to_owned(), Value::Bool(overgrant));
-    safety_row.insert(
-        "availability_breach".to_owned(),
-        Value::Bool(availability),
-    );
+    safety_row.insert("availability_breach".to_owned(), Value::Bool(availability));
 
     let mut coverage = Map::new();
     coverage.insert("phase_targets".to_owned(), Value::Array(Vec::new()));
@@ -1438,10 +1446,7 @@ fn derive_op(case: &PublicCase) -> Result<(Value, Value), ProductionEvalError> {
             "phase_index".to_owned(),
             Value::Number(Number::from(case.phase_index)),
         );
-        pt.insert(
-            "mutation_kind".to_owned(),
-            row["mutation_kind"].clone(),
-        );
+        pt.insert("mutation_kind".to_owned(), row["mutation_kind"].clone());
         pt.insert(
             "target_entity_id".to_owned(),
             row["target_entity_id"].clone(),
@@ -1605,8 +1610,7 @@ fn score_trace_op(
     ) = if has_phase2_context {
         let inputs = both_phase_inputs(case)?;
         let ep = inputs.projection.to_episode_v5(suite_id);
-        let gold1 =
-            evaluate_phase_with_trace(&inputs.p1_state, &inputs.manifest1.work_queue, &[])?;
+        let gold1 = evaluate_phase_with_trace(&inputs.p1_state, &inputs.manifest1.work_queue, &[])?;
         let induced_gold_state2 = induce_phase2_world(
             &inputs.p1_state,
             &gold1.mutations,
@@ -1635,15 +1639,7 @@ fn score_trace_op(
         };
         let ep = proj.to_episode_v5(suite_id);
         let gold1 = evaluate_phase_with_trace(&inputs.state, &inputs.manifest.work_queue, &[])?;
-        (
-            inputs.manifest,
-            None,
-            inputs.state,
-            None,
-            ep,
-            gold1,
-            None,
-        )
+        (inputs.manifest, None, inputs.state, None, ep, gold1, None)
     };
 
     let options = RuntimeOptionsV5 {
@@ -1727,8 +1723,9 @@ fn score_trace_op(
             "stage_phase_mutations" => {
                 let (phase, stage_id) = phase_stage_args(args)?;
                 stage_event_pairs.push((seq, phase));
-                let expected_keys: BTreeSet<&str> =
-                    ["phase_index", "stage_id", "plan_source"].into_iter().collect();
+                let expected_keys: BTreeSet<&str> = ["phase_index", "stage_id", "plan_source"]
+                    .into_iter()
+                    .collect();
                 let actual_keys: BTreeSet<&str> = args.keys().map(String::as_str).collect();
                 if actual_keys != expected_keys {
                     return Err(ProductionEvalError::UnsupportedTrace(
@@ -1782,12 +1779,8 @@ fn score_trace_op(
                     first_stage_seq.entry(phase).or_insert(seq);
                     last_stage_seq.insert(phase, seq);
                     if phase == 1 {
-                        let (digest, _) = stage_digests(
-                            phase,
-                            &stage_id,
-                            runtime.world().world_rev,
-                            &parsed,
-                        )?;
+                        let (digest, _) =
+                            stage_digests(phase, &stage_id, runtime.world().world_rev, &parsed)?;
                         p1_staged_cache = Some((phase, stage_id, parsed, digest));
                     }
                 }
@@ -1829,7 +1822,8 @@ fn score_trace_op(
             }
             "commit_phase_mutations" => {
                 let (phase_index, stage_id) = phase_stage_args(args)?;
-                let expected_keys: BTreeSet<&str> = ["phase_index", "stage_id"].into_iter().collect();
+                let expected_keys: BTreeSet<&str> =
+                    ["phase_index", "stage_id"].into_iter().collect();
                 let actual_keys: BTreeSet<&str> = args.keys().map(String::as_str).collect();
                 if actual_keys != expected_keys {
                     return Err(ProductionEvalError::UnsupportedTrace(
@@ -1890,10 +1884,7 @@ fn score_trace_op(
     assert_stage_event_plan_bijection(&stage_event_pairs, &materialized_events)?;
 
     let trace1 = convert_trace_map(&gold_phase1.trace_by_target);
-    let p1_snapshots = runtime
-        .phase_snapshots(1)
-        .cloned()
-        .unwrap_or_default();
+    let p1_snapshots = runtime.phase_snapshots(1).cloned().unwrap_or_default();
     let p1_commit = p1_snapshots.commit.as_ref();
     let p1_mutations: Vec<AtomicMutationV5> =
         p1_commit.map_or_else(Vec::new, |c| c.mutations.clone());
@@ -1943,7 +1934,10 @@ fn score_trace_op(
         let mut stage2_valid = BTreeMap::new();
         for key in &target_set {
             let prefix = format!("{}:", key.1);
-            stage2_valid.insert(key.clone(), !fk_errors.iter().any(|e| e.starts_with(&prefix)));
+            stage2_valid.insert(
+                key.clone(),
+                !fk_errors.iter().any(|e| e.starts_with(&prefix)),
+            );
         }
         let target_sorted: Vec<(String, String)> = target_set.into_iter().collect();
         let trace_ref = trace_override.unwrap_or(&traces[&phase_index]);
@@ -1997,7 +1991,10 @@ fn score_trace_op(
             Value::Number(Number::from(phase_index)),
         );
         row.insert("boundary".to_owned(), Value::String(boundary.to_owned()));
-        row.insert("event_seq".to_owned(), Value::Number(Number::from(event_seq)));
+        row.insert(
+            "event_seq".to_owned(),
+            Value::Number(Number::from(event_seq)),
+        );
         row.insert("mutations".to_owned(), json_mutations.clone());
         row.insert(
             "mutation_sha256".to_owned(),
@@ -2025,7 +2022,12 @@ fn score_trace_op(
         row.insert("stage5_ok".to_owned(), Value::Bool(verification.stage5_ok));
         row.insert(
             "diagnostics".to_owned(),
-            Value::Array(diags.into_iter().map(|s| Value::String(s.to_owned())).collect()),
+            Value::Array(
+                diags
+                    .into_iter()
+                    .map(|s| Value::String(s.to_owned()))
+                    .collect(),
+            ),
         );
         row.insert("token_usage".to_owned(), Value::Object(token_usage));
         let row_val = Value::Object(row);
@@ -2033,39 +2035,40 @@ fn score_trace_op(
         Ok((assessment, row_val))
     };
 
-    let boundary_assessments = |phase_index: i64| -> Result<(PhaseSnapshotSetV5, Vec<Value>), ProductionEvalError> {
-        let snapshots = runtime
-            .phase_snapshots(phase_index)
-            .cloned()
-            .unwrap_or_default();
-        let mut first = None;
-        let mut last = None;
-        let mut commit = None;
-        let mut derivs = Vec::new();
-        if let Some(snap) = &snapshots.first_stage {
-            let (a, row) = assess(snap, "FIRST_STAGE", None)?;
-            first = Some(a);
-            derivs.push(row);
-        }
-        if let Some(snap) = &snapshots.last_stage {
-            let (a, row) = assess(snap, "LAST_STAGE", None)?;
-            last = Some(a);
-            derivs.push(row);
-        }
-        if let Some(snap) = &snapshots.commit {
-            let (a, row) = assess(snap, "COMMIT", None)?;
-            commit = Some(a);
-            derivs.push(row);
-        }
-        Ok((
-            PhaseSnapshotSetV5 {
-                first_stage: first,
-                commit,
-                last_stage: last,
-            },
-            derivs,
-        ))
-    };
+    let boundary_assessments =
+        |phase_index: i64| -> Result<(PhaseSnapshotSetV5, Vec<Value>), ProductionEvalError> {
+            let snapshots = runtime
+                .phase_snapshots(phase_index)
+                .cloned()
+                .unwrap_or_default();
+            let mut first = None;
+            let mut last = None;
+            let mut commit = None;
+            let mut derivs = Vec::new();
+            if let Some(snap) = &snapshots.first_stage {
+                let (a, row) = assess(snap, "FIRST_STAGE", None)?;
+                first = Some(a);
+                derivs.push(row);
+            }
+            if let Some(snap) = &snapshots.last_stage {
+                let (a, row) = assess(snap, "LAST_STAGE", None)?;
+                last = Some(a);
+                derivs.push(row);
+            }
+            if let Some(snap) = &snapshots.commit {
+                let (a, row) = assess(snap, "COMMIT", None)?;
+                commit = Some(a);
+                derivs.push(row);
+            }
+            Ok((
+                PhaseSnapshotSetV5 {
+                    first_stage: first,
+                    commit,
+                    last_stage: last,
+                },
+                derivs,
+            ))
+        };
 
     let (phase1_scores, mut derivations1) = boundary_assessments(1)?;
     let (phase2_scores, mut derivations2) = if has_phase2_context {
@@ -2075,10 +2078,7 @@ fn score_trace_op(
     };
 
     let p1_committed = p1_snapshots.commit.is_some();
-    let p2_snapshots = runtime
-        .phase_snapshots(2)
-        .cloned()
-        .unwrap_or_default();
+    let p2_snapshots = runtime.phase_snapshots(2).cloned().unwrap_or_default();
     let p2_committed = p2_snapshots.commit.is_some();
     let p2_opened = runtime.phase2_opened();
 
@@ -2217,10 +2217,7 @@ fn score_trace_op(
         .collect();
 
     let mut mat_map = Map::new();
-    mat_map.insert(
-        "event_plans".to_owned(),
-        Value::Array(materialized_events),
-    );
+    mat_map.insert("event_plans".to_owned(), Value::Array(materialized_events));
     let materialization = Value::Object(mat_map);
 
     let mut payload = Map::new();
@@ -2241,7 +2238,11 @@ fn score_trace_op(
     coverage.insert("safety_cases".to_owned(), Value::Array(Vec::new()));
     coverage.insert("snapshots".to_owned(), Value::Array(snapshot_coverage));
 
-    Ok((Value::Object(payload), Value::Object(coverage), materialization))
+    Ok((
+        Value::Object(payload),
+        Value::Object(coverage),
+        materialization,
+    ))
 }
 
 enum EvalOutcome {
@@ -2284,170 +2285,168 @@ fn materialize_recipe_for_submission(
 fn evaluate_validated_case(validated: &PublicCase) -> Result<Value, ProductionEvalError> {
     let input_sha256 = sha256_bytes(&canonical_json_bytes(&validated.to_json_value())?);
 
-    let outcome: Result<EvalOutcome, ProductionEvalError> = (|| {
-        match validated.operation.as_str() {
-            "derive_phase" => {
-                let (payload, coverage) = derive_op(validated)?;
-                Ok(EvalOutcome::Ready {
-                    payload,
-                    coverage,
-                    materialization: Value::Null,
-                    gaps: Vec::new(),
-                    status: "ok",
-                })
-            }
-            "validate_submission" => {
-                let payload = validate_submission_op(validated)?;
-                let materialized = match materialize_recipe_for_submission(validated)? {
-                    Ok(mat) => mat,
-                    Err(done) => return Ok(EvalOutcome::Done(done)),
-                };
-                let mut coverage = Map::new();
-                coverage.insert("phase_targets".to_owned(), Value::Array(Vec::new()));
-                coverage.insert("diagnostics".to_owned(), payload["diagnostics"].clone());
-                let rules = materialized_base_rule_prefixes(&materialized);
-                coverage.insert(
+    let outcome: Result<EvalOutcome, ProductionEvalError> = (|| match validated.operation.as_str() {
+        "derive_phase" => {
+            let (payload, coverage) = derive_op(validated)?;
+            Ok(EvalOutcome::Ready {
+                payload,
+                coverage,
+                materialization: Value::Null,
+                gaps: Vec::new(),
+                status: "ok",
+            })
+        }
+        "validate_submission" => {
+            let payload = validate_submission_op(validated)?;
+            let materialized = match materialize_recipe_for_submission(validated)? {
+                Ok(mat) => mat,
+                Err(done) => return Ok(EvalOutcome::Done(done)),
+            };
+            let mut coverage = Map::new();
+            coverage.insert("phase_targets".to_owned(), Value::Array(Vec::new()));
+            coverage.insert("diagnostics".to_owned(), payload["diagnostics"].clone());
+            let rules = materialized_base_rule_prefixes(&materialized);
+            coverage.insert(
+                "rules".to_owned(),
+                Value::Array(rules.into_iter().map(Value::String).collect()),
+            );
+            coverage.insert("safety_cases".to_owned(), Value::Array(Vec::new()));
+            coverage.insert("snapshots".to_owned(), Value::Array(Vec::new()));
+            Ok(EvalOutcome::Ready {
+                payload,
+                coverage: Value::Object(coverage),
+                materialization: materialized,
+                gaps: Vec::new(),
+                status: "ok",
+            })
+        }
+        "safety" => {
+            let (payload, mut coverage, notes) = safety_op(validated)?;
+            let materialized = match materialize_recipe_for_submission(validated)? {
+                Ok(mat) => mat,
+                Err(done) => return Ok(EvalOutcome::Done(done)),
+            };
+            let rules = materialized_base_rule_prefixes(&materialized);
+            if let Some(cov_obj) = coverage.as_object_mut() {
+                cov_obj.insert(
                     "rules".to_owned(),
                     Value::Array(rules.into_iter().map(Value::String).collect()),
                 );
-                coverage.insert("safety_cases".to_owned(), Value::Array(Vec::new()));
-                coverage.insert("snapshots".to_owned(), Value::Array(Vec::new()));
+            }
+            if let Some(first_note) = notes.first() {
+                let mut gap = Map::new();
+                gap.insert(
+                    "code".to_owned(),
+                    Value::String("UNDERDEFINED_PUBLIC_INPUT".to_owned()),
+                );
+                gap.insert("operation".to_owned(), Value::String("safety".to_owned()));
+                gap.insert(
+                    "case_id".to_owned(),
+                    Value::String(validated.case_id.clone()),
+                );
+                gap.insert("path".to_owned(), Value::String(json_pointer("stimulus")));
+                gap.insert("detail".to_owned(), Value::String(first_note.clone()));
                 Ok(EvalOutcome::Ready {
                     payload,
-                    coverage: Value::Object(coverage),
+                    coverage,
+                    materialization: materialized,
+                    gaps: vec![Value::Object(gap)],
+                    status: "underdefined",
+                })
+            } else {
+                Ok(EvalOutcome::Ready {
+                    payload,
+                    coverage,
                     materialization: materialized,
                     gaps: Vec::new(),
                     status: "ok",
                 })
             }
-            "safety" => {
-                let (payload, mut coverage, notes) = safety_op(validated)?;
-                let materialized = match materialize_recipe_for_submission(validated)? {
-                    Ok(mat) => mat,
-                    Err(done) => return Ok(EvalOutcome::Done(done)),
+        }
+        _ => {
+            let mut trace_gaps: Vec<Value> = Vec::new();
+            let (payload, coverage, materialization) =
+                match score_trace_op(validated, Some(&mut trace_gaps)) {
+                    Ok(res) => res,
+                    Err(ProductionEvalError::TraceContextMissing { path, detail }) => {
+                        return Ok(EvalOutcome::Done(empty_result(
+                            validated,
+                            "underdefined",
+                            "UNDERDEFINED_PUBLIC_INPUT",
+                            &path,
+                            &detail,
+                        )?));
+                    }
+                    Err(ProductionEvalError::Unmaterializable(detail)) => {
+                        return Ok(EvalOutcome::Done(empty_result(
+                            validated,
+                            "underdefined",
+                            "UNMATERIALIZABLE_INPUT",
+                            "/stimulus/events",
+                            &detail,
+                        )?));
+                    }
+                    Err(ProductionEvalError::PatchPathAbsent(detail)) => {
+                        return Ok(EvalOutcome::Done(empty_result(
+                            validated,
+                            "underdefined",
+                            "PATCH_PATH_ABSENT",
+                            "/stimulus/events",
+                            &detail,
+                        )?));
+                    }
+                    Err(ProductionEvalError::UnsupportedTrace(detail)) => {
+                        return Ok(EvalOutcome::Done(empty_result(
+                            validated,
+                            "unsupported",
+                            "UNSUPPORTED_OPERATION",
+                            "/stimulus/events",
+                            &detail,
+                        )?));
+                    }
+                    Err(err) => return Err(err),
                 };
-                let rules = materialized_base_rule_prefixes(&materialized);
-                if let Some(cov_obj) = coverage.as_object_mut() {
-                    cov_obj.insert(
-                        "rules".to_owned(),
-                        Value::Array(rules.into_iter().map(Value::String).collect()),
-                    );
-                }
-                if let Some(first_note) = notes.first() {
-                    let mut gap = Map::new();
-                    gap.insert(
-                        "code".to_owned(),
-                        Value::String("UNDERDEFINED_PUBLIC_INPUT".to_owned()),
-                    );
-                    gap.insert("operation".to_owned(), Value::String("safety".to_owned()));
-                    gap.insert(
-                        "case_id".to_owned(),
-                        Value::String(validated.case_id.clone()),
-                    );
-                    gap.insert("path".to_owned(), Value::String(json_pointer("stimulus")));
-                    gap.insert("detail".to_owned(), Value::String(first_note.clone()));
-                    Ok(EvalOutcome::Ready {
-                        payload,
-                        coverage,
-                        materialization: materialized,
-                        gaps: vec![Value::Object(gap)],
-                        status: "underdefined",
-                    })
-                } else {
-                    Ok(EvalOutcome::Ready {
-                        payload,
-                        coverage,
-                        materialization: materialized,
-                        gaps: Vec::new(),
-                        status: "ok",
-                    })
-                }
-            }
-            _ => {
-                let mut trace_gaps: Vec<Value> = Vec::new();
-                let (payload, coverage, materialization) =
-                    match score_trace_op(validated, Some(&mut trace_gaps)) {
-                        Ok(res) => res,
-                        Err(ProductionEvalError::TraceContextMissing { path, detail }) => {
-                            return Ok(EvalOutcome::Done(empty_result(
-                                validated,
-                                "underdefined",
-                                "UNDERDEFINED_PUBLIC_INPUT",
-                                &path,
-                                &detail,
-                            )?));
-                        }
-                        Err(ProductionEvalError::Unmaterializable(detail)) => {
-                            return Ok(EvalOutcome::Done(empty_result(
-                                validated,
-                                "underdefined",
-                                "UNMATERIALIZABLE_INPUT",
-                                "/stimulus/events",
-                                &detail,
-                            )?));
-                        }
-                        Err(ProductionEvalError::PatchPathAbsent(detail)) => {
-                            return Ok(EvalOutcome::Done(empty_result(
-                                validated,
-                                "underdefined",
-                                "PATCH_PATH_ABSENT",
-                                "/stimulus/events",
-                                &detail,
-                            )?));
-                        }
-                        Err(ProductionEvalError::UnsupportedTrace(detail)) => {
-                            return Ok(EvalOutcome::Done(empty_result(
-                                validated,
-                                "unsupported",
-                                "UNSUPPORTED_OPERATION",
-                                "/stimulus/events",
-                                &detail,
-                            )?));
-                        }
-                        Err(err) => return Err(err),
-                    };
 
-                if payload["metrics"]["G-SRR@first_stage"].is_null()
-                    || payload["metrics"]["repair_lift"].is_null()
-                {
-                    let mut gap = Map::new();
-                    gap.insert(
-                        "code".to_owned(),
-                        Value::String("UNDERDEFINED_PUBLIC_INPUT".to_owned()),
-                    );
-                    gap.insert(
-                        "operation".to_owned(),
-                        Value::String("score_trace".to_owned()),
-                    );
-                    gap.insert(
-                        "case_id".to_owned(),
-                        Value::String(validated.case_id.clone()),
-                    );
-                    gap.insert(
-                        "path".to_owned(),
-                        Value::String("/public_episode".to_owned()),
-                    );
-                    gap.insert(
+            if payload["metrics"]["G-SRR@first_stage"].is_null()
+                || payload["metrics"]["repair_lift"].is_null()
+            {
+                let mut gap = Map::new();
+                gap.insert(
+                    "code".to_owned(),
+                    Value::String("UNDERDEFINED_PUBLIC_INPUT".to_owned()),
+                );
+                gap.insert(
+                    "operation".to_owned(),
+                    Value::String("score_trace".to_owned()),
+                );
+                gap.insert(
+                    "case_id".to_owned(),
+                    Value::String(validated.case_id.clone()),
+                );
+                gap.insert(
+                    "path".to_owned(),
+                    Value::String("/public_episode".to_owned()),
+                );
+                gap.insert(
                         "detail".to_owned(),
                         Value::String(
                             "first-stage scenario eligibility is unresolved by the public contract; G-SRR@first_stage and repair_lift are uncomputed without P2 context".to_owned(),
                         ),
                     );
-                    trace_gaps.push(Value::Object(gap));
-                }
-                let status = if trace_gaps.is_empty() {
-                    "ok"
-                } else {
-                    "underdefined"
-                };
-                Ok(EvalOutcome::Ready {
-                    payload,
-                    coverage,
-                    materialization,
-                    gaps: trace_gaps,
-                    status,
-                })
+                trace_gaps.push(Value::Object(gap));
             }
+            let status = if trace_gaps.is_empty() {
+                "ok"
+            } else {
+                "underdefined"
+            };
+            Ok(EvalOutcome::Ready {
+                payload,
+                coverage,
+                materialization,
+                gaps: trace_gaps,
+                status,
+            })
         }
     })();
 
@@ -2487,7 +2486,10 @@ fn evaluate_validated_case(validated: &PublicCase) -> Result<Value, ProductionEv
         "evaluator_id".to_owned(),
         Value::String("production".to_owned()),
     );
-    out.insert("case_id".to_owned(), Value::String(validated.case_id.clone()));
+    out.insert(
+        "case_id".to_owned(),
+        Value::String(validated.case_id.clone()),
+    );
     out.insert("input_sha256".to_owned(), Value::String(input_sha256));
     out.insert("status".to_owned(), Value::String(status.to_owned()));
     out.insert("payload".to_owned(), payload);

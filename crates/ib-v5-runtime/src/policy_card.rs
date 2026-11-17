@@ -6,7 +6,9 @@ use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use ib_core::pyjson::{DumpOptions, JsonError, dumps_ser};
-use ib_v5_schemas::{PolicyCardV5, PolicyOverlayV5, SchemaValidationError, ScopeCatalogV5, StrictV5Model};
+use ib_v5_schemas::{
+    PolicyCardV5, PolicyOverlayV5, SchemaValidationError, ScopeCatalogV5, StrictV5Model,
+};
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
@@ -65,21 +67,20 @@ pub const BOUNDARY_ALIASES_V5: [(&str, &str); 5] = [
     ("JML", "JML-WF-V5-01"),
 ];
 
-pub static RULE_TO_POLICY_CARD_ANCHORS_V5: LazyLock<
-    IndexMap<String, Vec<String>>,
-> = LazyLock::new(|| {
-    let mut map = IndexMap::new();
-    for rule_id in RULE_IDS_V5 {
-        map.insert(rule_id.to_owned(), vec![rule_id.to_owned()]);
-    }
-    for anchor in BOUNDARY_ANCHORS_V5 {
-        map.insert(format!("BOUNDARY:{anchor}"), vec![anchor.to_owned()]);
-    }
-    for (anchor, section_id) in BOUNDARY_ALIASES_V5 {
-        map.insert(format!("BOUNDARY:{anchor}"), vec![section_id.to_owned()]);
-    }
-    map
-});
+pub static RULE_TO_POLICY_CARD_ANCHORS_V5: LazyLock<IndexMap<String, Vec<String>>> =
+    LazyLock::new(|| {
+        let mut map = IndexMap::new();
+        for rule_id in RULE_IDS_V5 {
+            map.insert(rule_id.to_owned(), vec![rule_id.to_owned()]);
+        }
+        for anchor in BOUNDARY_ANCHORS_V5 {
+            map.insert(format!("BOUNDARY:{anchor}"), vec![anchor.to_owned()]);
+        }
+        for (anchor, section_id) in BOUNDARY_ALIASES_V5 {
+            map.insert(format!("BOUNDARY:{anchor}"), vec![section_id.to_owned()]);
+        }
+        map
+    });
 
 const CANONICAL_RULES_MARKDOWN: &str = include_str!("rules_markdown_v5.md");
 
@@ -147,7 +148,9 @@ pub fn validate_policy_card_coverage(markdown: &str) -> Vec<String> {
     for section_id in required_ids {
         let occurrences = heading_ids.iter().filter(|&&h| h == section_id).count();
         if occurrences > 1 {
-            errors.push(format!("duplicate section {section_id} ({occurrences} copies)"));
+            errors.push(format!(
+                "duplicate section {section_id} ({occurrences} copies)"
+            ));
         }
     }
 
@@ -213,8 +216,8 @@ pub fn validate_policy_card(card: &PolicyCardV5) -> Vec<String> {
         errors.push("policy card scope_catalog.leaf_scopes must be non-empty".to_owned());
     }
     if card.rendered_rules_markdown.trim() != render_rules_markdown().trim() {
-        let msg = "policy card rendered_rules_markdown does not match complete canonical text"
-            .to_owned();
+        let msg =
+            "policy card rendered_rules_markdown does not match complete canonical text".to_owned();
         if !errors.contains(&msg) {
             errors.push(msg);
         }

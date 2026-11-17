@@ -167,7 +167,9 @@ fn case_index_and_bijection_checks() {
     verify_case_index(&[c1.clone(), c2.clone()], &idx, "canonical_case_sha256").unwrap();
 
     let bad_idx = vec![json!({"case_id": "c1", "canonical_case_sha256": "0".repeat(64)})];
-    assert!(verify_case_index(&[c1.clone(), c2.clone()], &bad_idx, "canonical_case_sha256").is_err());
+    assert!(
+        verify_case_index(&[c1.clone(), c2.clone()], &bad_idx, "canonical_case_sha256").is_err()
+    );
 
     let r1 = json!({"case_id": "c1", "evaluator_id": "full_spec_blind"});
     let r2 = json!({"case_id": "c2", "evaluator_id": "full_spec_blind"});
@@ -182,7 +184,10 @@ fn load_family_map_v1_and_v2_validation() {
     let mut expected = BTreeMap::new();
     let mut suites_v1 = Map::new();
     let mut suites_v2 = Map::new();
-    for (idx, suite) in ["v5_dev", "v5_lite", "v5_core", "v5_full"].iter().enumerate() {
+    for (idx, suite) in ["v5_dev", "v5_lite", "v5_core", "v5_full"]
+        .iter()
+        .enumerate()
+    {
         let ep_sha = format!("{:064x}", idx + 1);
         expected.insert((*suite).to_owned(), ep_sha.clone());
         let episodes: Vec<Value> = (1..=12)
@@ -257,8 +262,20 @@ fn blind_pair_materialization_mismatch_and_production_comparison() {
     let mat_a = json!({"base_plan": [mut_row], "submitted_plan": [mut_row]});
     let mat_b = json!({"base_plan": [mut_row], "submitted_plan": []});
     let payload = json!({"first_failing_stage": null, "diagnostics": []});
-    let full = make_ok_result("full_spec_blind", &c_recipe, payload.clone(), mat_a.clone(), cov.clone());
-    let agent = make_ok_result("agent_view_only", &c_recipe, payload.clone(), mat_b, cov.clone());
+    let full = make_ok_result(
+        "full_spec_blind",
+        &c_recipe,
+        payload.clone(),
+        mat_a.clone(),
+        cov.clone(),
+    );
+    let agent = make_ok_result(
+        "agent_view_only",
+        &c_recipe,
+        payload.clone(),
+        mat_b,
+        cov.clone(),
+    );
 
     let mut hashes = BTreeMap::new();
     hashes.insert("full_spec".to_owned(), "a".repeat(64));
@@ -269,7 +286,13 @@ fn blind_pair_materialization_mismatch_and_production_comparison() {
     assert_eq!(cmp.mismatch_paths, vec!["$.materialization"]);
 
     // Matching pair + production comparison
-    let agent_match = make_ok_result("agent_view_only", &c_recipe, payload.clone(), mat_a.clone(), cov.clone());
+    let agent_match = make_ok_result(
+        "agent_view_only",
+        &c_recipe,
+        payload.clone(),
+        mat_a.clone(),
+        cov.clone(),
+    );
     let (l, r, cmp_ok) = compare_result_pair(&c_recipe, &full, &agent_match, &hashes).unwrap();
     assert_eq!(cmp_ok.status, "MATCH");
 
@@ -283,7 +306,11 @@ fn blind_pair_materialization_mismatch_and_production_comparison() {
     );
     let (_, prod_cmp) = compare_production_result(&c_recipe, (&l, &r), &prod_bad, &hashes).unwrap();
     assert_eq!(prod_cmp.status, "MISMATCH");
-    assert!(prod_cmp.mismatch_paths.contains(&"$.payload/first_failing_stage".to_owned()));
+    assert!(
+        prod_cmp
+            .mismatch_paths
+            .contains(&"$.payload/first_failing_stage".to_owned())
+    );
 }
 
 #[test]

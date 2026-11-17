@@ -1,5 +1,10 @@
 # IdentityBench
 
+The native **v5 Rust harness** lives in the Cargo workspace under `crates/`. See
+[Rust build, commands, and verification](docs/RUST.md) for the `identitybench v5`
+executable. The Python tree remains the compatibility reference and the implementation
+of the frozen historical benchmark versions described below.
+
 [![CI](https://github.com/rlwillen0121/identity-eval-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/rlwillen0121/identity-eval-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-077a46.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)

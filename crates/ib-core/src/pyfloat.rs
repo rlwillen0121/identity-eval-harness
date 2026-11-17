@@ -25,7 +25,11 @@ pub fn repr(x: f64) -> String {
         return "nan".to_string();
     }
     if x.is_infinite() {
-        return if x > 0.0 { "inf".to_string() } else { "-inf".to_string() };
+        return if x > 0.0 {
+            "inf".to_string()
+        } else {
+            "-inf".to_string()
+        };
     }
     let sign = if x.is_sign_negative() { "-" } else { "" };
     if x == 0.0 {
@@ -43,7 +47,11 @@ pub fn repr(x: f64) -> String {
         let esign = if exp < 0 { '-' } else { '+' };
         format!("{mant}e{esign}{:02}", exp.abs())
     } else if decpt <= 0 {
-        format!("0.{}{}", "0".repeat(usize::try_from(-decpt).unwrap_or(0)), digits)
+        format!(
+            "0.{}{}",
+            "0".repeat(usize::try_from(-decpt).unwrap_or(0)),
+            digits
+        )
     } else if decpt < n {
         let split = usize::try_from(decpt).unwrap_or(0);
         format!("{}.{}", &digits[..split], &digits[split..])
@@ -73,7 +81,11 @@ pub fn format_fixed(x: f64, precision: usize) -> String {
         return "nan".to_string();
     }
     if x.is_infinite() {
-        return if x > 0.0 { "inf".to_string() } else { "-inf".to_string() };
+        return if x > 0.0 {
+            "inf".to_string()
+        } else {
+            "-inf".to_string()
+        };
     }
     format!("{x:.precision$}")
 }

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use ib_v5_conformance::process::{
     FORBIDDEN_PARTS, SCHEMA_SHA256, SPEC_SHA256, capture_source_closure,
     check_python_worker_hygiene, clean_child_environment, parse_utc_timestamp_ns,
-    remove_readonly_tree, resolve_result_artifact, resolve_source_profile,
-    validate_audit_receipt, validate_case_index_binding, validate_diagnostic_phase_batch_scope,
+    remove_readonly_tree, resolve_result_artifact, resolve_source_profile, validate_audit_receipt,
+    validate_case_index_binding, validate_diagnostic_phase_batch_scope,
     validate_execution_classification, validate_relative_source, validate_v4_normative_contract,
     verify_capture_manifest, verify_evaluator_audits, verify_evaluator_receipts,
 };
@@ -65,7 +65,10 @@ fn source_profiles_and_normative_contract_pins() {
 #[test]
 fn validate_relative_source_rejects_forbidden_and_traversing_paths() {
     for part in FORBIDDEN_PARTS {
-        assert!(validate_relative_source(&format!("src/identitybench/v5/{part}"), Some("full_spec")).is_err());
+        assert!(
+            validate_relative_source(&format!("src/identitybench/v5/{part}"), Some("full_spec"))
+                .is_err()
+        );
     }
     assert!(validate_relative_source("../secret.py", Some("full_spec")).is_err());
     assert!(validate_relative_source("/etc/passwd", Some("full_spec")).is_err());
@@ -130,7 +133,12 @@ fn audit_receipt_and_evaluator_audits_validation() {
         "stderr_sha256": sha256_bytes(b"{}"),
         "stdout_sha256": sha256_bytes(b"{}"),
     });
-    verify_evaluator_audits(std::slice::from_ref(&receipt_row), std::slice::from_ref(&receipt_row), "full_spec").unwrap();
+    verify_evaluator_audits(
+        std::slice::from_ref(&receipt_row),
+        std::slice::from_ref(&receipt_row),
+        "full_spec",
+    )
+    .unwrap();
     let mut tampered = receipt_row.clone();
     tampered["case_id"] = json!("c2");
     assert!(verify_evaluator_audits(&[tampered], &[receipt_row], "full_spec").is_err());
@@ -227,8 +235,7 @@ fn utc_timestamps_case_index_binding_execution_classification_and_env() {
 
     let inv = vec![("c1".to_owned(), "a".repeat(64))];
     let idx_sha = sha256_bytes(
-        &canonical_json_bytes(&json!([{"case_id": "c1", "input_sha256": "a".repeat(64)}]))
-            .unwrap(),
+        &canonical_json_bytes(&json!([{"case_id": "c1", "input_sha256": "a".repeat(64)}])).unwrap(),
     );
     validate_case_index_binding(&json!(1), &json!(idx_sha), &inv, &inv).unwrap();
     assert!(validate_case_index_binding(&json!(true), &json!(idx_sha), &inv, &inv).is_err());
@@ -245,7 +252,10 @@ fn utc_timestamps_case_index_binding_execution_classification_and_env() {
     assert!(validate_diagnostic_phase_batch_scope(&scope, &inv, &inv, &Map::new()).is_err());
 
     let env = clean_child_environment();
-    assert_eq!(env.get("PYTHONDONTWRITEBYTECODE").map(String::as_str), Some("1"));
+    assert_eq!(
+        env.get("PYTHONDONTWRITEBYTECODE").map(String::as_str),
+        Some("1")
+    );
     assert_eq!(env.get("PYTHONNOUSERSITE").map(String::as_str), Some("1"));
     assert_eq!(env.get("PYTHONHASHSEED").map(String::as_str), Some("0"));
 }
@@ -269,7 +279,12 @@ from identitybench.v5.schemas import (
 def evaluate_shared_input(case):
     return {}
 "#;
-    let report = check_python_worker_hygiene(clean_worker, "tests/conformance/v5/fresh_card_only_v2/worker.py", "agent_view").unwrap();
+    let report = check_python_worker_hygiene(
+        clean_worker,
+        "tests/conformance/v5/fresh_card_only_v2/worker.py",
+        "agent_view",
+    )
+    .unwrap();
     assert!(report.imported_modules.contains("identitybench.v5.schemas"));
 
     let multiline_banned = r#"
@@ -278,5 +293,12 @@ from identitybench.v5 import (
     verifier,
 )
 "#;
-    assert!(check_python_worker_hygiene(multiline_banned, "tests/conformance/v5/fresh_card_only_v2/worker.py", "agent_view").is_err());
+    assert!(
+        check_python_worker_hygiene(
+            multiline_banned,
+            "tests/conformance/v5/fresh_card_only_v2/worker.py",
+            "agent_view"
+        )
+        .is_err()
+    );
 }

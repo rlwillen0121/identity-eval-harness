@@ -6,30 +6,31 @@ use std::path::PathBuf;
 use ib_v5_oracle::{
     OracleError, Phase2WorkingState, PhaseContext, campaign_quorum_sets, evaluate_phase_with_trace,
     evaluate_requests, initialize_working_state, interval_union_measure, live_version,
-    phase1_accounts, phase1_connectors, phase22_uar, phase24_optimization, phase2_feasibility,
+    phase1_accounts, phase1_connectors, phase2_feasibility, phase22_uar, phase24_optimization,
     post_uar_live_controls, retro_taint, token_active_interval, verify_post_uar_invariants,
 };
 use ib_v5_schemas::scope_algebra::{engagement_is_live, is_subordinate};
 use ib_v5_schemas::{
     AccountReconActionV5, AffiliationKindV5, AgentDelegationDecisionKindV5,
-    AgentDelegationRequestV5, AgentToolBindingV5, AgentToolModeV5, AtomicMutationV5,
-    CAEIncidentV5, CAETokenBindingKindV5, CAETokenKindV5, CAETokenV5, CAETriggerKindV5,
-    ChangeTicketV5, CompensatingControlV5, ConnectorHaltReasonV5, ConnectorTransportKindV5,
-    EngagementStatusV5, EngagementV5, EpisodeV5, ExternalTicketStatusV5, ExternalTicketSystemV5,
-    GrantModeV5, GrantV5, GroupEffectV5, GroupV5, HistoricalSessionKindV5, HistoricalSessionV5,
-    JITDecisionKindV5, JITExternalSyncStatusV5, JITRequestChannelV5, JITRequestV5,
-    NHIGovernanceActionV5, NHIGovernanceMutationKind, NHIGovernanceMutationV5,
-    NHIOwnerResolutionSourceV5, OptActionKindV5, OptCandidateActionV5, OptimizationPhaseKindV5,
-    OptimizationTaskV5, PhaseWorkQueueV5, PriorAgentP1ActionV5, PrivilegeTierV5, RoleV5,
-    ScopedSoDRuleV5, SealedEpisodeOracleV5, SoDScopeModeV5, StrictV5Model,
-    TelemetrySignalSourceV5, TemporalSoDRuleV5, UARCampaignV5, UARDecisionKindV5, UARItemV5,
+    AgentDelegationRequestV5, AgentToolBindingV5, AgentToolModeV5, AtomicMutationV5, CAEIncidentV5,
+    CAETokenBindingKindV5, CAETokenKindV5, CAETokenV5, CAETriggerKindV5, ChangeTicketV5,
+    CompensatingControlV5, ConnectorHaltReasonV5, ConnectorTransportKindV5, EngagementStatusV5,
+    EngagementV5, EpisodeV5, ExternalTicketStatusV5, ExternalTicketSystemV5, GrantModeV5, GrantV5,
+    GroupEffectV5, GroupV5, HistoricalSessionKindV5, HistoricalSessionV5, JITDecisionKindV5,
+    JITExternalSyncStatusV5, JITRequestChannelV5, JITRequestV5, NHIGovernanceActionV5,
+    NHIGovernanceMutationKind, NHIGovernanceMutationV5, NHIOwnerResolutionSourceV5,
+    OptActionKindV5, OptCandidateActionV5, OptimizationPhaseKindV5, OptimizationTaskV5,
+    PhaseWorkQueueV5, PriorAgentP1ActionV5, PrivilegeTierV5, RoleV5, ScopedSoDRuleV5,
+    SealedEpisodeOracleV5, SoDScopeModeV5, StrictV5Model, TelemetrySignalSourceV5,
+    TemporalSoDRuleV5, UARCampaignV5, UARDecisionKindV5, UARItemV5,
     UARPreserveStandingFloorOverrideV5, WorldStateV5,
 };
 use serde_json::json;
 
 fn load_dev_episodes() -> Vec<(EpisodeV5, SealedEpisodeOracleV5)> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../datasets/v5_draft5/v5_dev");
-    let ep_text = std::fs::read_to_string(dir.join("episodes.jsonl")).expect("read v5_dev episodes");
+    let ep_text =
+        std::fs::read_to_string(dir.join("episodes.jsonl")).expect("read v5_dev episodes");
     let orc_text = std::fs::read_to_string(dir.join("oracles.jsonl")).expect("read v5_dev oracles");
     ep_text
         .lines()
@@ -86,7 +87,10 @@ fn test_phase1_full_dag_emits_all_eight_mutation_kinds_and_causal_citations() {
     assert_eq!(kinds.len(), 8);
     assert_eq!(res.trace_by_target.len(), res.mutations.len());
     for m in &res.mutations {
-        let trace = &res.trace_by_target[&(m.mutation_kind().to_owned(), m.target_entity_id().to_owned())];
+        let trace = &res.trace_by_target[&(
+            m.mutation_kind().to_owned(),
+            m.target_entity_id().to_owned(),
+        )];
         assert_eq!(m.if_match(), trace.preconditions.as_slice());
         assert_eq!(m.cite(), trace.citations.as_slice());
     }
@@ -145,7 +149,8 @@ fn test_deny_group_mask_saving_retained_grant_and_unnecessary_deny_group() {
     for m in &res2.mutations {
         if let AtomicMutationV5::AccountRecon(acct_mut) = m {
             for grp in changed.groups.values() {
-                if grp.effect == GroupEffectV5::Deny && grp.capabilities.iter().any(|c| c == "pay") {
+                if grp.effect == GroupEffectV5::Deny && grp.capabilities.iter().any(|c| c == "pay")
+                {
                     assert!(
                         !acct_mut
                             .cite
@@ -321,10 +326,7 @@ fn test_connector_jdbc_duplicate_join_rows_union_while_rest_overwrites() {
 
     let run_transport = |transport: ConnectorTransportKindV5| -> Vec<String> {
         let mut w = base.clone();
-        w.connector_schemas
-            .get_mut(&cid)
-            .unwrap()
-            .transport_kind = transport;
+        w.connector_schemas.get_mut(&cid).unwrap().transport_kind = transport;
         w.connector_pages = pages.clone();
         let mut q = empty_queue(base.optimization_tasks.keys().next().unwrap());
         q.target_connector_ids = vec![cid.clone()];
@@ -378,7 +380,10 @@ fn test_exact_pinned_inactive_engagement_disables_even_if_person_has_live_engage
         .find_map(|(aid, a)| {
             let pid = a.immutable_person_ref.as_ref()?;
             let p = &w.hr_persons[pid.as_str()];
-            if p.engagements.iter().any(|e| engagement_is_live(e, w.clock_epoch_s)) {
+            if p.engagements
+                .iter()
+                .any(|e| engagement_is_live(e, w.clock_epoch_s))
+            {
                 Some((aid.clone(), pid.clone()))
             } else {
                 None
@@ -405,18 +410,15 @@ fn test_exact_pinned_inactive_engagement_disables_even_if_person_has_live_engage
         .unwrap()
         .engagements
         .push(inactive_eng.clone());
-    w.idp_accounts
-        .get_mut(&aid)
-        .unwrap()
-        .bound_engagement_ref = Some(inactive_eng.eng_id);
+    w.idp_accounts.get_mut(&aid).unwrap().bound_engagement_ref = Some(inactive_eng.eng_id);
 
     let q = PhaseWorkQueueV5 {
         target_connector_ids: Vec::new(),
         target_nhi_ids: Vec::new(),
         ..ep.phase1_manifest.work_queue.clone()
     };
-    let res = evaluate_phase_with_trace(&w, &q, &orc.sealed_jml_adversarial_events)
-        .expect("eval p1");
+    let res =
+        evaluate_phase_with_trace(&w, &q, &orc.sealed_jml_adversarial_events).expect("eval p1");
     let acct_mut = res
         .mutations
         .iter()
@@ -425,7 +427,10 @@ fn test_exact_pinned_inactive_engagement_disables_even_if_person_has_live_engage
             _ => None,
         })
         .expect("acct mut");
-    assert_eq!(acct_mut.account_action, AccountReconActionV5::DisableAccount);
+    assert_eq!(
+        acct_mut.account_action,
+        AccountReconActionV5::DisableAccount
+    );
 }
 
 #[test]
@@ -464,8 +469,8 @@ fn test_nhi_stale_support_context_is_bound_to_each_target() {
         target_nhi_ids: vec![first_id.clone(), second_id.clone()],
         ..ep.phase1_manifest.work_queue.clone()
     };
-    let res = evaluate_phase_with_trace(&w, &q, &orc.sealed_jml_adversarial_events)
-        .expect("eval p1");
+    let res =
+        evaluate_phase_with_trace(&w, &q, &orc.sealed_jml_adversarial_events).expect("eval p1");
     let p1 = res.trace_by_target[&("NHI_GOVERNANCE_MUTATION".to_owned(), first_id)]
         .context
         .nhi_stale_support_predicate
@@ -661,15 +666,33 @@ fn test_cae_refresh_cutoff_push_bearer_and_interval_union() {
     let mut eff_revokes = BTreeMap::new();
 
     assert_eq!(
-        token_active_interval(&incident, &parent, &tokens, &mut idp_cutoffs, &mut eff_revokes),
+        token_active_interval(
+            &incident,
+            &parent,
+            &tokens,
+            &mut idp_cutoffs,
+            &mut eff_revokes
+        ),
         None
     );
     assert_eq!(
-        token_active_interval(&incident, &dpop, &tokens, &mut idp_cutoffs, &mut eff_revokes),
+        token_active_interval(
+            &incident,
+            &dpop,
+            &tokens,
+            &mut idp_cutoffs,
+            &mut eff_revokes
+        ),
         Some((100, 120))
     );
     assert_eq!(
-        token_active_interval(&incident, &bearer, &tokens, &mut idp_cutoffs, &mut eff_revokes),
+        token_active_interval(
+            &incident,
+            &bearer,
+            &tokens,
+            &mut idp_cutoffs,
+            &mut eff_revokes
+        ),
         Some((100, 200))
     );
     assert_eq!(
@@ -719,11 +742,23 @@ fn test_refresh_expiry_alone_does_not_push_and_child_at_cutoff_not_active() {
     let mut eff_revokes = BTreeMap::new();
 
     assert_eq!(
-        token_active_interval(&incident, &child_before, &tokens, &mut idp_cutoffs, &mut eff_revokes),
+        token_active_interval(
+            &incident,
+            &child_before,
+            &tokens,
+            &mut idp_cutoffs,
+            &mut eff_revokes
+        ),
         Some((100, 200))
     );
     assert_eq!(
-        token_active_interval(&incident, &child_at, &tokens, &mut idp_cutoffs, &mut eff_revokes),
+        token_active_interval(
+            &incident,
+            &child_at,
+            &tokens,
+            &mut idp_cutoffs,
+            &mut eff_revokes
+        ),
         None
     );
 }
@@ -818,7 +853,10 @@ fn test_uar_quorum_base_excludes_reviewed_grants_but_final_includes_them() {
     };
     work.ctx.state.roles.insert(role.role_id.clone(), role);
     work.grants.insert(grant.grant_id.clone(), grant.clone());
-    work.standing.insert(subject_acct.clone(), BTreeSet::from([grant.grant_id.clone()]));
+    work.standing.insert(
+        subject_acct.clone(),
+        BTreeSet::from([grant.grant_id.clone()]),
+    );
     work.eligible.clear();
 
     let campaign = UARCampaignV5 {
@@ -878,7 +916,10 @@ fn test_uar_item_without_any_valid_reviewer_is_escalated() {
         evidence_id: "ev_grant_nr".to_owned(),
     };
     work.ctx.state.roles.insert(role.role_id.clone(), role);
-    work.ctx.state.grants.insert(grant.grant_id.clone(), grant.clone());
+    work.ctx
+        .state
+        .grants
+        .insert(grant.grant_id.clone(), grant.clone());
     work.grants.insert(grant.grant_id.clone(), grant.clone());
     work.standing
         .entry(subject_acct.clone())
@@ -970,7 +1011,10 @@ fn test_optimizer_semantic_feasibility_closures_remain_task_local() {
         is_jit_capable_target: true,
         evidence_id: "ev_local_rev".to_owned(),
     };
-    work.ctx.state.roles.insert(rev_role.role_id.clone(), rev_role.clone());
+    work.ctx
+        .state
+        .roles
+        .insert(rev_role.role_id.clone(), rev_role.clone());
     work.ctx.state.historical_sessions.clear();
     work.provisional_sessions.clear();
 
@@ -1016,8 +1060,14 @@ fn test_optimizer_semantic_feasibility_closures_remain_task_local() {
         etag: "2".repeat(16),
         evidence_id: "ev_opt_two".to_owned(),
     };
-    work.ctx.state.optimization_tasks.insert("opt_one".to_owned(), t1);
-    work.ctx.state.optimization_tasks.insert("opt_two".to_owned(), t2);
+    work.ctx
+        .state
+        .optimization_tasks
+        .insert("opt_one".to_owned(), t1);
+    work.ctx
+        .state
+        .optimization_tasks
+        .insert("opt_two".to_owned(), t2);
     work.ctx.queue.target_opt_task_ids = vec!["opt_one".to_owned(), "opt_two".to_owned()];
 
     let muts = phase24_optimization(&mut work).expect("p24 opt");
@@ -1128,7 +1178,13 @@ fn test_post_uar_live_cc_requires_fresh_nonhalted_monitoring_connector() {
         cap_b: "cap_cc_pay".to_owned(),
         scope_mode: SoDScopeModeV5::SameLeafScope,
     }];
-    let conn_id = work.state().connector_schemas.keys().next().unwrap().clone();
+    let conn_id = work
+        .state()
+        .connector_schemas
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
     work.ctx
         .state
         .connector_schemas
@@ -1193,7 +1249,8 @@ fn independent_accounts(work: &Phase2WorkingState) -> (String, String) {
         let req_p = &work.bound_person_by_account[req.as_str()];
         for app in &work.active_account_ids {
             let app_p = &work.bound_person_by_account[app.as_str()];
-            if req_p != app_p && !is_subordinate(app_p, req_p, work.clock(), &work.state().hr_persons)
+            if req_p != app_p
+                && !is_subordinate(app_p, req_p, work.clock(), &work.state().hr_persons)
             {
                 return (req.clone(), app.clone());
             }
@@ -1263,7 +1320,8 @@ fn set_jit_setup(
         .state
         .grants
         .insert(admin.grant_id.clone(), admin.clone());
-    work.grants.insert(eligible.grant_id.clone(), eligible.clone());
+    work.grants
+        .insert(eligible.grant_id.clone(), eligible.clone());
     work.grants.insert(admin.grant_id.clone(), admin.clone());
     work.ctx
         .state
@@ -1367,7 +1425,11 @@ fn agent_setup(
         .state()
         .hr_persons
         .iter()
-        .find(|(_, p)| p.engagements.iter().any(|e| engagement_is_live(e, work.clock())))
+        .find(|(_, p)| {
+            p.engagements
+                .iter()
+                .any(|e| engagement_is_live(e, work.clock()))
+        })
         .map(|(pid, _)| pid.clone())
         .unwrap();
     let department = work.bound_engagement_by_account[actor_account.as_str()]
@@ -1484,8 +1546,18 @@ fn test_jit_ticket_is_consumed_once_and_ttl_is_ticket_bounded() {
     let (_, _, role_id, scope, _) = set_jit_setup(
         &mut work,
         &[
-            ("req_test_first", 1, Some("tkt_test_single"), "ev_req_test_first"),
-            ("req_test_second", 2, Some("tkt_test_single"), "ev_req_test_second"),
+            (
+                "req_test_first",
+                1,
+                Some("tkt_test_single"),
+                "ev_req_test_first",
+            ),
+            (
+                "req_test_second",
+                2,
+                Some("tkt_test_single"),
+                "ev_req_test_second",
+            ),
         ],
         &["cap_request_test"],
         "role_test_jit",
@@ -1500,23 +1572,40 @@ fn test_jit_ticket_is_consumed_once_and_ttl_is_ticket_bounded() {
     };
     assert_eq!(first.jit_decision, JITDecisionKindV5::ApproveJit);
     assert_eq!(first.approved_ttl_s, 300);
-    assert_eq!(first.external_sync_status, JITExternalSyncStatusV5::SyncGranted);
+    assert_eq!(
+        first.external_sync_status,
+        JITExternalSyncStatusV5::SyncGranted
+    );
     assert_eq!(second.jit_decision, JITDecisionKindV5::Deny);
     assert_eq!(
-        work.ctx.trace[&("JIT_DECISION_MUTATION".to_owned(), "req_test_second".to_owned())]
+        work.ctx.trace[&(
+            "JIT_DECISION_MUTATION".to_owned(),
+            "req_test_second".to_owned()
+        )]
             .context
             .failing_predicate
             .as_deref(),
         Some("P2")
     );
-    assert!(second.cite.contains(&"JIT-V5-01.P2:ev_req_test_first".to_owned()));
-    assert!(second.cite.contains(&"JIT-V5-01.P2:ev_tkt_test_single".to_owned()));
+    assert!(
+        second
+            .cite
+            .contains(&"JIT-V5-01.P2:ev_req_test_first".to_owned())
+    );
+    assert!(
+        second
+            .cite
+            .contains(&"JIT-V5-01.P2:ev_tkt_test_single".to_owned())
+    );
     assert_eq!(
         work.consumed_ticket_ids,
         BTreeSet::from(["tkt_test_single".to_owned()])
     );
     assert_eq!(work.provisional_sessions.len(), 1);
-    assert_eq!(work.provisional_sessions[0].session_id, "sess_prov_req_test_first");
+    assert_eq!(
+        work.provisional_sessions[0].session_id,
+        "sess_prov_req_test_first"
+    );
     assert_eq!(work.provisional_sessions[0].role_id, role_id);
     assert_eq!(work.provisional_sessions[0].scope_path, scope);
 }
@@ -1527,8 +1616,18 @@ fn test_emergency_jit_requires_exact_ticket_binding_and_consumes_single_use() {
     set_jit_setup(
         &mut work,
         &[
-            ("req_emergency_first", 1, Some("tkt_emergency"), "ev_req_emergency_first"),
-            ("req_emergency_replay", 2, Some("tkt_emergency"), "ev_req_emergency_replay"),
+            (
+                "req_emergency_first",
+                1,
+                Some("tkt_emergency"),
+                "ev_req_emergency_first",
+            ),
+            (
+                "req_emergency_replay",
+                2,
+                Some("tkt_emergency"),
+                "ev_req_emergency_replay",
+            ),
         ],
         &["cap_request_test"],
         "role_test_jit",
@@ -1545,7 +1644,10 @@ fn test_emergency_jit_requires_exact_ticket_binding_and_consumes_single_use() {
     assert!(first.approved_ttl_s <= 1800);
     assert_eq!(replay.jit_decision, JITDecisionKindV5::Deny);
     assert_eq!(
-        work.ctx.trace[&("JIT_DECISION_MUTATION".to_owned(), "req_emergency_replay".to_owned())]
+        work.ctx.trace[&(
+            "JIT_DECISION_MUTATION".to_owned(),
+            "req_emergency_replay".to_owned()
+        )]
             .context
             .failing_predicate
             .as_deref(),
@@ -1555,7 +1657,12 @@ fn test_emergency_jit_requires_exact_ticket_binding_and_consumes_single_use() {
     let mut wrong = phase2_work_f06();
     set_jit_setup(
         &mut wrong,
-        &[("req_emergency_wrong_ticket", 1, Some("tkt_wrong_binding"), "ev_req_wrong_ticket")],
+        &[(
+            "req_emergency_wrong_ticket",
+            1,
+            Some("tkt_wrong_binding"),
+            "ev_req_wrong_ticket",
+        )],
         &["cap_request_test"],
         "role_test_jit",
         JITRequestChannelV5::EmergencyBreakGlass,
@@ -1611,7 +1718,10 @@ fn test_jit_static_sod_includes_ongoing_session_and_temporal_cooldowns() {
         panic!("jit");
     };
     assert_eq!(m.jit_decision, JITDecisionKindV5::Deny);
-    assert!(m.cite.contains(&"JIT-V5-01.P3:ev_active_conflict_session".to_owned()));
+    assert!(
+        m.cite
+            .contains(&"JIT-V5-01.P3:ev_active_conflict_session".to_owned())
+    );
 
     // Temporal SoD cooldown
     let mut work_t = phase2_work_f06();
@@ -1661,8 +1771,14 @@ fn test_jit_static_sod_includes_ongoing_session_and_temporal_cooldowns() {
         panic!("jit");
     };
     assert_eq!(mt.jit_decision, JITDecisionKindV5::Deny);
-    assert!(mt.cite.contains(&"JIT-V5-01.P3:ev_test_temporal_session".to_owned()));
-    assert!(mt.cite.contains(&"JIT-V5-01.P3:ev_test_request_cooldown".to_owned()));
+    assert!(
+        mt.cite
+            .contains(&"JIT-V5-01.P3:ev_test_temporal_session".to_owned())
+    );
+    assert!(
+        mt.cite
+            .contains(&"JIT-V5-01.P3:ev_test_request_cooldown".to_owned())
+    );
 
     // Break-glass cooldown
     let mut work_bg = phase2_work_f06();
@@ -1692,11 +1808,14 @@ fn test_jit_static_sod_includes_ongoing_session_and_temporal_cooldowns() {
         panic!("jit");
     };
     assert_eq!(mbg.jit_decision, JITDecisionKindV5::Deny);
-    assert!(mbg.cite.contains(&"JIT-V5-01.P3:ev_test_bg_session".to_owned()));
     assert!(
         mbg.cite
-            .contains(&format!("JIT-V5-01.P3:{}", work_bg.state().roles[role_bg.as_str()].evidence_id))
+            .contains(&"JIT-V5-01.P3:ev_test_bg_session".to_owned())
     );
+    assert!(mbg.cite.contains(&format!(
+        "JIT-V5-01.P3:{}",
+        work_bg.state().roles[role_bg.as_str()].evidence_id
+    )));
     let _ = (role_id, scope);
 }
 
@@ -1704,12 +1823,21 @@ fn test_jit_static_sod_includes_ongoing_session_and_temporal_cooldowns() {
 fn test_obo_d2_d3_approval_child_attenuation_and_hitl_self_cosign() {
     // D2 never borrows from JIT session
     let mut w_d2 = phase2_work_f06();
-    let (_, _, _, req_d2) = agent_setup(&mut w_d2, "role_test_obo_only", &["cap_request_test"], &[], true);
+    let (_, _, _, req_d2) = agent_setup(
+        &mut w_d2,
+        "role_test_obo_only",
+        &["cap_request_test"],
+        &[],
+        true,
+    );
     let m_d2 = evaluate_requests(&mut w_d2).expect("d2");
     let AtomicMutationV5::AgentDelegation(ref dm_d2) = m_d2[0] else {
         panic!("obo");
     };
-    assert_eq!(dm_d2.delegation_decision, AgentDelegationDecisionKindV5::DenyDelegation);
+    assert_eq!(
+        dm_d2.delegation_decision,
+        AgentDelegationDecisionKindV5::DenyDelegation
+    );
     assert_eq!(
         w_d2.ctx.trace[&("AGENT_DELEGATION_MUTATION".to_owned(), req_d2)]
             .context
@@ -1739,7 +1867,10 @@ fn test_obo_d2_d3_approval_child_attenuation_and_hitl_self_cosign() {
     let AtomicMutationV5::AgentDelegation(ref dm_d3) = m_d3[0] else {
         panic!("obo");
     };
-    assert_eq!(dm_d3.delegation_decision, AgentDelegationDecisionKindV5::DenyDelegation);
+    assert_eq!(
+        dm_d3.delegation_decision,
+        AgentDelegationDecisionKindV5::DenyDelegation
+    );
     assert_eq!(
         w_d3.ctx.trace[&("AGENT_DELEGATION_MUTATION".to_owned(), req_d3)]
             .context
@@ -1747,7 +1878,11 @@ fn test_obo_d2_d3_approval_child_attenuation_and_hitl_self_cosign() {
             .as_deref(),
         Some("D3")
     );
-    assert!(dm_d3.cite.contains(&"AGENT-DEL-V5-01.D3:ev_grant_test_obo_1".to_owned()));
+    assert!(
+        dm_d3
+            .cite
+            .contains(&"AGENT-DEL-V5-01.D3:ev_grant_test_obo_1".to_owned())
+    );
 
     // Approval updates workflow & provisional session
     let mut w_ok = phase2_work_f06();
@@ -1762,7 +1897,10 @@ fn test_obo_d2_d3_approval_child_attenuation_and_hitl_self_cosign() {
     let AtomicMutationV5::AgentDelegation(ref dm_ok) = m_ok[0] else {
         panic!("obo");
     };
-    assert_eq!(dm_ok.delegation_decision, AgentDelegationDecisionKindV5::ApproveDelegation);
+    assert_eq!(
+        dm_ok.delegation_decision,
+        AgentDelegationDecisionKindV5::ApproveDelegation
+    );
     assert!(w_ok.approved_delegations.contains_key(&req_ok));
     assert!(!w_ok.workflow_footprints["wfl_test_01"].is_empty());
     assert_eq!(w_ok.provisional_sessions[0].account_id, actor_acct);
@@ -1818,8 +1956,14 @@ fn test_obo_d2_d3_approval_child_attenuation_and_hitl_self_cosign() {
     let AtomicMutationV5::AgentDelegation(ref cm) = muts_child[1] else {
         panic!("obo");
     };
-    assert_eq!(pm.delegation_decision, AgentDelegationDecisionKindV5::ApproveDelegation);
-    assert_eq!(cm.delegation_decision, AgentDelegationDecisionKindV5::DenyDelegation);
+    assert_eq!(
+        pm.delegation_decision,
+        AgentDelegationDecisionKindV5::ApproveDelegation
+    );
+    assert_eq!(
+        cm.delegation_decision,
+        AgentDelegationDecisionKindV5::DenyDelegation
+    );
     assert_eq!(
         w_child.ctx.trace[&("AGENT_DELEGATION_MUTATION".to_owned(), child_req.request_id)]
             .context
@@ -1891,7 +2035,10 @@ fn test_obo_d2_d3_approval_child_attenuation_and_hitl_self_cosign() {
     let AtomicMutationV5::AgentDelegation(ref hm) = muts_hitl[0] else {
         panic!("obo");
     };
-    assert_eq!(hm.delegation_decision, AgentDelegationDecisionKindV5::DenyDelegation);
+    assert_eq!(
+        hm.delegation_decision,
+        AgentDelegationDecisionKindV5::DenyDelegation
+    );
     assert_eq!(
         w_hitl.ctx.trace[&("AGENT_DELEGATION_MUTATION".to_owned(), h_req)]
             .context
@@ -1939,10 +2086,15 @@ fn test_inactive_bound_person_remains_in_jit_preconditions() {
     };
     let person = &work.state().hr_persons[pid.as_str()];
     assert_eq!(m.jit_decision, JITDecisionKindV5::Deny);
-    assert!(m.if_match.contains(&format!(
-        "{}@{} :{}",
-        person.person_id, person.etag, person.lifecycle_gen
-    ).replace(" :", ":")));
+    assert!(
+        m.if_match.contains(
+            &format!(
+                "{}@{} :{}",
+                person.person_id, person.etag, person.lifecycle_gen
+            )
+            .replace(" :", ":")
+        )
+    );
     assert!(
         m.cite
             .contains(&format!("JIT-V5-01.P1:{}", person.evidence_id))

@@ -154,8 +154,9 @@ pub fn validate_comparator_manifest(
             "HistoricalComparatorManifestV5 must be a JSON object",
         ));
     }
-    let text = std::str::from_utf8(raw_json)
-        .map_err(|_| ReportError::value("HistoricalComparatorManifestV5 is not valid UTF-8 JSON"))?;
+    let text = std::str::from_utf8(raw_json).map_err(|_| {
+        ReportError::value("HistoricalComparatorManifestV5 is not valid UTF-8 JSON")
+    })?;
     let manifest = HistoricalComparatorManifestV5::from_strict_json_str(text).map_err(|_| {
         ReportError::value("HistoricalComparatorManifestV5 failed strict schema validation")
     })?;
@@ -214,11 +215,13 @@ fn strict_pricing_rates(
     }
     let mut parsed = [0_i64; 4];
     for (idx, key) in PRICING_RATE_KEYS.iter().enumerate() {
-        let val = as_strict_i64(&obj[*key]).filter(|&n| n >= 0).ok_or_else(|| {
-            ReportError::value(format!(
-                "frozen pricing rate {key} must be a nonnegative integer"
-            ))
-        })?;
+        let val = as_strict_i64(&obj[*key])
+            .filter(|&n| n >= 0)
+            .ok_or_else(|| {
+                ReportError::value(format!(
+                    "frozen pricing rate {key} must be a nonnegative integer"
+                ))
+            })?;
         parsed[idx] = val;
     }
     let rates = PricingRatesV5 {
@@ -370,8 +373,11 @@ fn manifest_context(
     };
 
     let model_id = config_obj.get("model_id").and_then(Value::as_str);
-    let effort = first_present(config_obj, &["reasoning_effort", "reasoning_effort_label", "effort"])
-        .and_then(Value::as_str);
+    let effort = first_present(
+        config_obj,
+        &["reasoning_effort", "reasoning_effort_label", "effort"],
+    )
+    .and_then(Value::as_str);
     let topology = first_present(config_obj, &["topology", "topology_id"]).and_then(Value::as_str);
     let steering =
         first_present(config_obj, &["steering_mode", "steering"]).and_then(Value::as_str);
@@ -505,9 +511,9 @@ fn manifest_context(
     {
         None => "PRIMARY_HIGHEST".to_owned(),
         Some(v) => {
-            let s = v.as_str().ok_or_else(|| {
-                ReportError::value(format!("unsupported comparison_track: {v}"))
-            })?;
+            let s = v
+                .as_str()
+                .ok_or_else(|| ReportError::value(format!("unsupported comparison_track: {v}")))?;
             if !COMPARISON_TRACKS_V5.contains(&s) {
                 return Err(ReportError::value(format!(
                     "unsupported comparison_track: {s:?}"
@@ -553,9 +559,9 @@ fn manifest_context(
     {
         None => None,
         Some(v) => {
-            let n = as_strict_i64(v).filter(|n| matches!(*n, 50 | 100)).ok_or_else(|| {
-                ReportError::value("max_generations must be 50, 100, or None")
-            })?;
+            let n = as_strict_i64(v)
+                .filter(|n| matches!(*n, 50 | 100))
+                .ok_or_else(|| ReportError::value("max_generations must be 50, 100, or None"))?;
             Some(n)
         }
     };
@@ -604,13 +610,13 @@ fn validate_run_config_hash(
     let declared = raw_manifest
         .get("run_config_sha256")
         .filter(|v| !v.is_null());
-    let nested_declared = run_config
-        .get("run_config_sha256")
-        .filter(|v| !v.is_null());
+    let nested_declared = run_config.get("run_config_sha256").filter(|v| !v.is_null());
     let effective = match (declared, nested_declared) {
         (None, Some(n)) => Some(n),
         (Some(d), Some(n)) if d != n => {
-            return Err(ReportError::value("run-config digest declarations disagree"));
+            return Err(ReportError::value(
+                "run-config digest declarations disagree",
+            ));
         }
         (Some(d), _) => Some(d),
         (None, None) => None,
@@ -655,9 +661,12 @@ fn validate_episode_run_context(
     if record.get("effort").and_then(Value::as_str) != Some(context.reasoning_effort.as_str()) {
         return Err(reject("effort"));
     }
-    if canonical_topology(record.get("topology_id")) != Some(
-        canonical_topology(Some(&Value::String(context.topology.clone()))).unwrap_or(&context.topology),
-    ) {
+    if canonical_topology(record.get("topology_id"))
+        != Some(
+            canonical_topology(Some(&Value::String(context.topology.clone())))
+                .unwrap_or(&context.topology),
+        )
+    {
         return Err(reject("topology"));
     }
     if record.get("steering_mode").and_then(Value::as_str) != Some(context.steering_mode.as_str()) {
@@ -848,7 +857,10 @@ fn verified_usage_accounting_artifacts(
                 "usage-accounting evidence artifact descriptor is malformed",
             ));
         }
-        let role = descriptor.get("role").and_then(Value::as_str).filter(|s| !s.is_empty());
+        let role = descriptor
+            .get("role")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
         let evidence_sha = descriptor
             .get("evidence_sha256")
             .and_then(Value::as_str)
@@ -953,18 +965,29 @@ fn load_run_dataset(
     run_dir: &Path,
     suite_id: &str,
 ) -> Result<Option<LoadedV5Dataset>, ReportError> {
-    let Some(paths_val) = manifest.get("dataset_artifact_paths").filter(|v| !v.is_null()) else {
+    let Some(paths_val) = manifest
+        .get("dataset_artifact_paths")
+        .filter(|v| !v.is_null())
+    else {
         return Ok(None);
     };
-    let expected_episodes = manifest.get("dataset_episodes_sha256").filter(|v| !v.is_null());
-    let expected_oracles = manifest.get("dataset_oracles_sha256").filter(|v| !v.is_null());
+    let expected_episodes = manifest
+        .get("dataset_episodes_sha256")
+        .filter(|v| !v.is_null());
+    let expected_oracles = manifest
+        .get("dataset_oracles_sha256")
+        .filter(|v| !v.is_null());
     let expected_seal = manifest.get("dataset_seal_sha256").filter(|v| !v.is_null());
     let (Some(exp_ep), Some(exp_or), Some(exp_seal)) =
         (expected_episodes, expected_oracles, expected_seal)
     else {
         return Ok(None);
     };
-    let expected_hashes = [("episodes", exp_ep), ("oracles", exp_or), ("seal", exp_seal)];
+    let expected_hashes = [
+        ("episodes", exp_ep),
+        ("oracles", exp_or),
+        ("seal", exp_seal),
+    ];
 
     let expected_keys: BTreeSet<&str> = ["episodes", "oracles", "seal"].into_iter().collect();
     let Some(paths) = paths_val.as_object() else {
@@ -1007,10 +1030,7 @@ fn load_run_dataset(
         }
     }
 
-    let dataset_dirs: BTreeSet<&Path> = resolved
-        .values()
-        .filter_map(|p| p.parent())
-        .collect();
+    let dataset_dirs: BTreeSet<&Path> = resolved.values().filter_map(|p| p.parent()).collect();
     if dataset_dirs.len() != 1 {
         return Err(ReportError::value(
             "dataset episodes, oracles, and seal must share one directory",
@@ -1024,7 +1044,9 @@ fn load_run_dataset(
         let expected_sha = expected_val
             .as_str()
             .filter(|s| is_sha256_str(s))
-            .ok_or_else(|| ReportError::value(format!("dataset_{name}_sha256 must be lowercase SHA-256")))?;
+            .ok_or_else(|| {
+                ReportError::value(format!("dataset_{name}_sha256 must be lowercase SHA-256"))
+            })?;
         let raw = std::fs::read(&resolved[name])?;
         if sha256_hex(&raw) != expected_sha {
             return Err(ReportError::value(format!(
@@ -1184,8 +1206,8 @@ fn extract_episode_attempt(
     line_number: usize,
 ) -> Result<Option<EpisodeAttemptV5>, ReportError> {
     if let Some(raw_attempt) = record.get("attempt").filter(|v| !v.is_null()) {
-        let mut attempt: EpisodeAttemptV5 = serde_json::from_value(raw_attempt.clone())
-            .map_err(|err| {
+        let mut attempt: EpisodeAttemptV5 =
+            serde_json::from_value(raw_attempt.clone()).map_err(|err| {
                 ReportError::value(format!(
                     "episode line {line_number} attempt failed schema validation: {err}"
                 ))
@@ -1292,8 +1314,13 @@ fn extract_episode_attempt(
             .filter(|v| !v.is_null())
         {
             None => None,
-            Some(v) => Some(serde_json::from_value::<(i64, i64, i64, String, i64)>(v.clone())
-                .map_err(|err| ReportError::value(format!("invalid terminal_reservation_ordinal: {err}")))?),
+            Some(v) => Some(
+                serde_json::from_value::<(i64, i64, i64, String, i64)>(v.clone()).map_err(
+                    |err| {
+                        ReportError::value(format!("invalid terminal_reservation_ordinal: {err}"))
+                    },
+                )?,
+            ),
         };
         let terminal_cause = record
             .get("terminal_cause")
@@ -1301,8 +1328,11 @@ fn extract_episode_attempt(
             .map(str::to_owned);
         let context_limit_cause = match record.get("context_limit_cause").filter(|v| !v.is_null()) {
             None => None,
-            Some(v) => Some(serde_json::from_value::<ContextLimitCauseV5>(v.clone())
-                .map_err(|err| ReportError::value(format!("invalid context_limit_cause: {err}")))?),
+            Some(v) => Some(
+                serde_json::from_value::<ContextLimitCauseV5>(v.clone()).map_err(|err| {
+                    ReportError::value(format!("invalid context_limit_cause: {err}"))
+                })?,
+            ),
         };
         let attempt = build_episode_attempt_v5(
             recomputed,
@@ -1428,7 +1458,10 @@ pub fn report_from_raw_artifacts_with_options(
     };
 
     let mut context = manifest_context(manifest, suite_id)?;
-    let run_config_value = match manifest.get("config").or_else(|| manifest.get("run_config")) {
+    let run_config_value = match manifest
+        .get("config")
+        .or_else(|| manifest.get("run_config"))
+    {
         Some(v) => v
             .as_object()
             .ok_or_else(|| ReportError::value("run manifest execution config must be an object"))?,
@@ -1456,11 +1489,9 @@ pub fn report_from_raw_artifacts_with_options(
         .filter(|v| !v.is_null())
     {
         None => None,
-        Some(raw_rc) => Some(
-            RunConfigurationV5::from_strict_json_value(raw_rc).map_err(|err| {
-                ReportError::value(format!("run_configuration failed schema validation: {err}"))
-            })?,
-        ),
+        Some(raw_rc) => Some(RunConfigurationV5::from_strict_json_value(raw_rc).map_err(
+            |err| ReportError::value(format!("run_configuration failed schema validation: {err}")),
+        )?),
     };
 
     let pricing_path = match options.pricing_manifest_path {
@@ -1544,12 +1575,13 @@ pub fn report_from_raw_artifacts_with_options(
             )));
         };
 
-        validate_episode_run_context(record, &context, run_config_value, line_number)
-            .map_err(|err| {
+        validate_episode_run_context(record, &context, run_config_value, line_number).map_err(
+            |err| {
                 ReportError::value(format!(
                     "raw episode line {line_number} cannot be regraded: {err}"
                 ))
-            })?;
+            },
+        )?;
 
         let record_val = Value::Object(record.clone());
         let (recomputed_input, recomputed) = score_execution_raw_v5(
@@ -1585,7 +1617,8 @@ pub fn report_from_raw_artifacts_with_options(
         }
 
         if record.get("suite_id").and_then(Value::as_str) != Some(recomputed.suite_id.as_str())
-            || record.get("family_id").and_then(Value::as_str) != Some(recomputed.family_id.as_str())
+            || record.get("family_id").and_then(Value::as_str)
+                != Some(recomputed.family_id.as_str())
         {
             return Err(ReportError::value(format!(
                 "episode line {line_number} identity disagrees with its sealed source"
@@ -1605,8 +1638,7 @@ pub fn report_from_raw_artifacts_with_options(
             }
         }
 
-        if let Some(attempt) =
-            extract_episode_attempt(record, &recomputed, &context, line_number)?
+        if let Some(attempt) = extract_episode_attempt(record, &recomputed, &context, line_number)?
         {
             parsed_attempts.push(attempt);
         } else {
@@ -1652,9 +1684,12 @@ pub fn report_from_raw_artifacts_with_options(
             .get("comparator_manifest_sha256")
             .filter(|v| !v.is_null())
         {
-            let expected_str = expected_val.as_str().filter(|s| is_sha256_str(s)).ok_or_else(|| {
-                ReportError::value("run manifest comparator digest must be lowercase SHA-256")
-            })?;
+            let expected_str = expected_val
+                .as_str()
+                .filter(|s| is_sha256_str(s))
+                .ok_or_else(|| {
+                    ReportError::value("run manifest comparator digest must be lowercase SHA-256")
+                })?;
             if expected_str != actual_digest {
                 return Err(ReportError::value(
                     "comparator manifest file digest disagrees with run manifest",
@@ -1696,9 +1731,12 @@ pub fn report_from_raw_artifacts_with_options(
         .or_else(|| manifest.get("seal_sha256"))
         .filter(|v| !v.is_null())
     {
-        let s = raw_seal.as_str().filter(|s| is_sha256_str(s)).ok_or_else(|| {
-            ReportError::value("run manifest dataset seal digest must be lowercase SHA-256")
-        })?;
+        let s = raw_seal
+            .as_str()
+            .filter(|s| is_sha256_str(s))
+            .ok_or_else(|| {
+                ReportError::value("run manifest dataset seal digest must be lowercase SHA-256")
+            })?;
         seal_digest = Some(s.to_owned());
     }
 

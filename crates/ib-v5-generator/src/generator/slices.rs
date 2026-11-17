@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use ib_v5_runtime::{obs_strategy_q1, obs_strategy_q2};
 use ib_v5_schemas::{
-    AuthorityTierV5, ChangeTicketV5, CompactTableV5, ConnectorPageV5, DeliveredSliceV5,
-    EpisodeV5, ExternalTicketStatusV5, ExternalTicketSystemV5, PhaseManifestV5, PhaseWorkQueueV5,
+    AuthorityTierV5, ChangeTicketV5, CompactTableV5, ConnectorPageV5, DeliveredSliceV5, EpisodeV5,
+    ExternalTicketStatusV5, ExternalTicketSystemV5, PhaseManifestV5, PhaseWorkQueueV5,
     PrivilegeTierV5, RoleV5, SliceDescriptorV5, StrictV5Model, TableRowV5, UARCampaignV5,
-    UARItemV5, UARPreserveStandingFloorOverrideV5, decode_compact_table_v5, encode_compact_table_v5,
+    UARItemV5, UARPreserveStandingFloorOverrideV5, decode_compact_table_v5,
+    encode_compact_table_v5,
 };
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -59,8 +60,7 @@ pub(crate) fn phase2_queue(
     ];
     target_jit_request_ids.sort();
 
-    let mut target_agent_delegation_ids =
-        vec![ids.delegation("root"), ids.delegation("child")];
+    let mut target_agent_delegation_ids = vec![ids.delegation("root"), ids.delegation("child")];
     target_agent_delegation_ids.sort();
 
     Ok(PhaseWorkQueueV5 {
@@ -107,7 +107,13 @@ fn slice_pair(
     rows: BTreeMap<&'static str, Vec<TableRowV5>>,
     watermark_s: i64,
 ) -> Result<(SliceDescriptorV5, DeliveredSliceV5), GeneratorError> {
-    let payload = delivered_slice(cell, label, rows, AuthorityTierV5::SecondaryReplica, watermark_s)?;
+    let payload = delivered_slice(
+        cell,
+        label,
+        rows,
+        AuthorityTierV5::SecondaryReplica,
+        watermark_s,
+    )?;
     let row_count: usize = payload.tables.iter().map(|t| t.rows.len()).sum();
     if row_count == 0 {
         return Err(GeneratorError::InvalidInput(format!(
@@ -189,7 +195,10 @@ pub(crate) fn make_phase1_slices(
     pages.sort_by(|a, b| a.page_id.cmp(&b.page_id));
 
     let mut primary_rows: BTreeMap<&'static str, Vec<TableRowV5>> = BTreeMap::new();
-    primary_rows.insert("hr_persons", sorted_map_rows(&world.hr_persons, TableRowV5::HrPerson));
+    primary_rows.insert(
+        "hr_persons",
+        sorted_map_rows(&world.hr_persons, TableRowV5::HrPerson),
+    );
     primary_rows.insert("roles", sorted_map_rows(&world.roles, TableRowV5::Role));
     primary_rows.insert("grants", sorted_map_rows(&world.grants, TableRowV5::Grant));
     primary_rows.insert("groups", sorted_map_rows(&world.groups, TableRowV5::Group));
@@ -203,7 +212,10 @@ pub(crate) fn make_phase1_slices(
     );
     primary_rows.insert(
         "compensating_controls",
-        sorted_map_rows(&world.compensating_controls, TableRowV5::CompensatingControl),
+        sorted_map_rows(
+            &world.compensating_controls,
+            TableRowV5::CompensatingControl,
+        ),
     );
     primary_rows.insert(
         "connector_schemas",
@@ -331,13 +343,7 @@ pub(crate) fn make_phase1_slices(
             "p1:app-finance",
         )?)],
     );
-    let (desc, payload) = slice_pair(
-        cell,
-        "p1-app-finance",
-        "app_id=fin",
-        fin_rows,
-        clock - 140,
-    )?;
+    let (desc, payload) = slice_pair(cell, "p1-app-finance", "app_id=fin", fin_rows, clock - 140)?;
     q2_count += 1;
     descriptors.push(desc);
     payloads.insert(payload.slice_id.clone(), payload);
@@ -488,8 +494,7 @@ pub(crate) fn make_phase2_slices(
             admin_role_id: ids.role("review"),
             m_standing: 1,
             m_eligible: 0,
-            preserve_standing_floor_override:
-                UARPreserveStandingFloorOverrideV5::UseOverlayDefault,
+            preserve_standing_floor_override: UARPreserveStandingFloorOverrideV5::UseOverlayDefault,
             backup_reviewer_account_ids: vec![ids.account("manager")],
             candidate_custodian_account_ids: Vec::new(),
             items: vec![decoy_item],
@@ -527,7 +532,10 @@ pub(crate) fn make_phase2_slices(
     let primary_ticket_id = ids.ticket("primary");
     let primary_ticket = world.change_tickets[&primary_ticket_id].clone();
     let mut ticket_rows = BTreeMap::new();
-    ticket_rows.insert("change_tickets", vec![TableRowV5::ChangeTicket(primary_ticket.clone())]);
+    ticket_rows.insert(
+        "change_tickets",
+        vec![TableRowV5::ChangeTicket(primary_ticket.clone())],
+    );
     let (desc, payload) = slice_pair(
         cell,
         "p2-ticket-primary",
@@ -607,7 +615,9 @@ pub(crate) fn compact_observation_source_rows(
         .iter()
         .find(|item| item.scope_filter == connector_scope && !item.is_complete_for_scope)
         .ok_or_else(|| {
-            GeneratorError::InvalidInput("missing connector descriptor in phase1_manifest".to_owned())
+            GeneratorError::InvalidInput(
+                "missing connector descriptor in phase1_manifest".to_owned(),
+            )
         })?
         .clone();
 
@@ -643,7 +653,8 @@ pub(crate) fn compact_observation_source_rows(
             "connector {connector_id} has no complete-Q1 page observation"
         )));
     }
-    connector_pages.sort_by(|a, b| (a.attempt_index, &a.page_id).cmp(&(b.attempt_index, &b.page_id)));
+    connector_pages
+        .sort_by(|a, b| (a.attempt_index, &a.page_id).cmp(&(b.attempt_index, &b.page_id)));
 
     let q1_core_descriptor = phase1_manifest
         .source_directory
@@ -681,7 +692,8 @@ pub(crate) fn compact_observation_source_rows(
         .map(TableRowV5::ConnectorPage)
         .collect();
     let connector_table = encode_compact_table_v5("connector_pages", &connector_rows)?;
-    let mut compact_connector_payload = episode.phase1_slices[&connector_descriptor.slice_id].clone();
+    let mut compact_connector_payload =
+        episode.phase1_slices[&connector_descriptor.slice_id].clone();
     compact_connector_payload.tables = vec![connector_table];
     compact_connector_payload.authority_tier = AuthorityTierV5::AuthoritativePrimary;
     compact_connector_payload.watermark_s = q1_core_descriptor.watermark_s;
@@ -700,7 +712,9 @@ pub(crate) fn compact_observation_source_rows(
         .find(|item| {
             item.scope_filter == "dept_prefix=/d/p" && phase1_q2_ids.contains(&item.slice_id)
         })
-        .ok_or_else(|| GeneratorError::InvalidInput("missing dept_prefix=/d/p descriptor".to_owned()))?
+        .ok_or_else(|| {
+            GeneratorError::InvalidInput("missing dept_prefix=/d/p descriptor".to_owned())
+        })?
         .clone();
 
     let mut controls = Vec::new();
@@ -749,7 +763,9 @@ pub(crate) fn compact_observation_source_rows(
         .find(|item| {
             item.scope_filter == "dept_prefix=/d" && phase1_q2_ids.contains(&item.slice_id)
         })
-        .ok_or_else(|| GeneratorError::InvalidInput("missing dept_prefix=/d descriptor".to_owned()))?
+        .ok_or_else(|| {
+            GeneratorError::InvalidInput("missing dept_prefix=/d descriptor".to_owned())
+        })?
         .clone();
 
     let parent_grant_replica = replica(cell, parent_grant, "p1:dept-finance-control")?;
@@ -788,7 +804,12 @@ pub(crate) fn compact_observation_source_rows(
     next_phase1_manifest.source_directory = phase1_manifest
         .source_directory
         .iter()
-        .map(|item| replacements.get(&item.slice_id).cloned().unwrap_or_else(|| item.clone()))
+        .map(|item| {
+            replacements
+                .get(&item.slice_id)
+                .cloned()
+                .unwrap_or_else(|| item.clone())
+        })
         .collect();
 
     let mut next_phase1_slices = episode.phase1_slices.clone();
@@ -814,7 +835,9 @@ pub(crate) fn compact_observation_source_rows(
         .source_directory
         .iter()
         .find(|item| item.scope_filter == "app_id=fin" && selected_q2_p2.contains(&item.slice_id))
-        .ok_or_else(|| GeneratorError::InvalidInput("missing phase2 app_id=fin descriptor".to_owned()))?
+        .ok_or_else(|| {
+            GeneratorError::InvalidInput("missing phase2 app_id=fin descriptor".to_owned())
+        })?
         .clone();
     let app_payload = &episode.phase2_slices[&app_descriptor.slice_id];
     let retained_tables: Vec<CompactTableV5> = app_payload
@@ -1068,9 +1091,9 @@ pub(crate) fn rewrite_slices_evidence(
                     TableRowV5::UarCampaign(_) => {
                         TableRowV5::UarCampaign(StrictV5Model::from_strict_json_value(&rewritten)?)
                     }
-                    TableRowV5::ChangeTicket(_) => TableRowV5::ChangeTicket(
-                        StrictV5Model::from_strict_json_value(&rewritten)?,
-                    ),
+                    TableRowV5::ChangeTicket(_) => {
+                        TableRowV5::ChangeTicket(StrictV5Model::from_strict_json_value(&rewritten)?)
+                    }
                     TableRowV5::HistoricalSession(_) => TableRowV5::HistoricalSession(
                         StrictV5Model::from_strict_json_value(&rewritten)?,
                     ),

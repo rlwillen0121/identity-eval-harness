@@ -142,8 +142,12 @@ impl Usage {
     pub fn add(&mut self, other: &Self) {
         self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
-        self.cache_read_tokens = self.cache_read_tokens.saturating_add(other.cache_read_tokens);
-        self.cache_write_tokens = self.cache_write_tokens.saturating_add(other.cache_write_tokens);
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(other.cache_read_tokens);
+        self.cache_write_tokens = self
+            .cache_write_tokens
+            .saturating_add(other.cache_write_tokens);
         self.reasoning_tokens = self.reasoning_tokens.saturating_add(other.reasoning_tokens);
     }
 }
@@ -295,12 +299,34 @@ pub trait Provider: Send + Sync {
         None
     }
 
+    /// Whether this adapter explicitly guarantees aggregate usage includes its upstream retries.
+    /// This is false unless an adapter or injected test double makes the declaration itself.
+    fn usage_includes_retries(&self) -> bool {
+        false
+    }
+
     /// Non-secret identity of where requests go (SPEC §11.4). Never includes keys or raw private URLs.
     fn endpoint_identity(&self) -> String;
 
     fn capabilities(&self) -> ProviderCapabilities;
 
     async fn complete(&self, request: &ModelRequest) -> ModelResponse;
+
+    /// Recover a known physical response without starting a second decode. Adapters that
+    /// cannot retrieve a response leave the partial-decode safeguard in force.
+    async fn retrieve_response(&self, _request_id: &str) -> Option<ModelResponse> {
+        None
+    }
+
+    /// Optional documented context-count reconciliation. A missing result leaves a provider
+    /// context rejection unexplained; the runner must not infer a confirmed model limit.
+    fn reconcile_context_count(
+        &self,
+        _request: &ModelRequest,
+        _response: &ModelResponse,
+    ) -> Option<Map<String, Value>> {
+        None
+    }
 
     /// Optional hook for stateful providers (e.g., Anthropic thinking block replay cache).
     fn remember_response(&self, _response: &ModelResponse) {}

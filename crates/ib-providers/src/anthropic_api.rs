@@ -46,14 +46,15 @@ fn parse_usage(usage_val: Option<&Value>) -> Usage {
     let Some(usage) = usage_val.and_then(Value::as_object) else {
         return Usage::default();
     };
-    let details = usage.get("output_tokens_details").and_then(Value::as_object);
+    let details = usage
+        .get("output_tokens_details")
+        .and_then(Value::as_object);
     Usage {
         input_tokens: bounded_token_count(usage.get("input_tokens")),
         output_tokens: bounded_token_count(usage.get("output_tokens")),
         cache_read_tokens: bounded_token_count(usage.get("cache_read_input_tokens")),
         cache_write_tokens: bounded_token_count(usage.get("cache_creation_input_tokens")),
-        reasoning_tokens: details
-            .map_or(0, |d| bounded_token_count(d.get("thinking_tokens"))),
+        reasoning_tokens: details.map_or(0, |d| bounded_token_count(d.get("thinking_tokens"))),
     }
 }
 
@@ -140,10 +141,8 @@ impl AnthropicProvider {
         } else {
             None
         };
-        let base_url = resolve_base_url(
-            config.base_url_env.as_deref(),
-            config.env_override.as_ref(),
-        );
+        let base_url =
+            resolve_base_url(config.base_url_env.as_deref(), config.env_override.as_ref());
         Self {
             config,
             kind,
@@ -186,7 +185,10 @@ impl AnthropicProvider {
     #[must_use]
     pub fn request_params(&self, request: &ModelRequest) -> Map<String, Value> {
         let mut params = Map::new();
-        params.insert("model".to_string(), Value::String(self.config.model.clone()));
+        params.insert(
+            "model".to_string(),
+            Value::String(self.config.model.clone()),
+        );
         params.insert(
             "max_tokens".to_string(),
             Value::from(request.params.max_output_tokens),
@@ -203,7 +205,10 @@ impl AnthropicProvider {
             block.insert("type".to_string(), Value::String("text".to_string()));
             block.insert("text".to_string(), Value::String(request.system.clone()));
             block.insert("cache_control".to_string(), Value::Object(cc));
-            params.insert("system".to_string(), Value::Array(vec![Value::Object(block)]));
+            params.insert(
+                "system".to_string(),
+                Value::Array(vec![Value::Object(block)]),
+            );
         }
 
         let mut output_config = Map::new();
@@ -273,7 +278,10 @@ impl AnthropicProvider {
                         .as_ref()
                         .map_or(Value::Null, |id| Value::String(id.clone())),
                 );
-                b.insert("content".to_string(), Value::String(message.content.clone()));
+                b.insert(
+                    "content".to_string(),
+                    Value::String(message.content.clone()),
+                );
                 Value::Object(b)
             } else {
                 let mut b = Map::new();
@@ -355,7 +363,9 @@ impl AnthropicProvider {
                         .map_err(|e| format!("invalid auth token header: {e}"))?;
                     headers.insert(AUTHORIZATION, hv);
                 } else {
-                    return Err(format!("environment variable {DEFAULT_API_KEY_ENV} is not set"));
+                    return Err(format!(
+                        "environment variable {DEFAULT_API_KEY_ENV} is not set"
+                    ));
                 }
 
                 reqwest::Client::builder()
@@ -372,7 +382,11 @@ impl AnthropicProvider {
         let env_ref = self.config.env_override.as_ref();
         let names = self.redaction_env_names();
         ModelResponse {
-            error: Some(redact(&format!("{}: {message}", self.kind), env_ref, &names)),
+            error: Some(redact(
+                &format!("{}: {message}", self.kind),
+                env_ref,
+                &names,
+            )),
             raw: raw.map(|r| redact_diagnostics_map(&r, env_ref, &names)),
             ..ModelResponse::default()
         }
@@ -464,12 +478,12 @@ impl AnthropicProvider {
                             let val: Value = match serde_json::from_str(&text_body) {
                                 Ok(v) => v,
                                 Err(err) => {
-                                    let label = if err.to_string().contains("recursion limit exceeded")
-                                    {
-                                        "RecursionError"
-                                    } else {
-                                        "JSONDecodeError"
-                                    };
+                                    let label =
+                                        if err.to_string().contains("recursion limit exceeded") {
+                                            "RecursionError"
+                                        } else {
+                                            "JSONDecodeError"
+                                        };
                                     return self.fail(
                                         &format!("unparseable response body ({label}: {err})"),
                                         None,
@@ -479,17 +493,17 @@ impl AnthropicProvider {
                             match val {
                                 Value::Object(m) => m,
                                 _ => {
-                                    return self.fail(
-                                        "malformed response (expected JSON object)",
-                                        None,
-                                    );
+                                    return self
+                                        .fail("malformed response (expected JSON object)", None);
                                 }
                             }
                         };
 
                         return match self.to_response(&msg_map, request, req_id.as_deref()) {
                             Ok(r) => r,
-                            Err(problem) => self.fail(&format!("malformed response ({problem})"), None),
+                            Err(problem) => {
+                                self.fail(&format!("malformed response ({problem})"), None)
+                            }
                         };
                     }
                 }
@@ -711,11 +725,7 @@ impl Provider for AnthropicProvider {
         else {
             return;
         };
-        let valid: Vec<Value> = blocks
-            .iter()
-            .filter(|b| b.is_object())
-            .cloned()
-            .collect();
+        let valid: Vec<Value> = blocks.iter().filter(|b| b.is_object()).cloned().collect();
         if !valid.is_empty()
             && let Ok(mut guard) = self.tool_turns.lock()
         {
@@ -765,7 +775,8 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
                                     .and_then(Value::as_str)
                                     .unwrap_or("")
                                     .to_string();
-                                block.insert("text".to_string(), Value::String(format!("{cur}{t}")));
+                                block
+                                    .insert("text".to_string(), Value::String(format!("{cur}{t}")));
                             }
                         }
                         Some("thinking_delta") => {
@@ -804,7 +815,10 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
                 }
             }
             Some("content_block_stop") => {
-                if let Some(idx) = event.get("index").and_then(Value::as_u64).map(|u| u as usize)
+                if let Some(idx) = event
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .map(|u| u as usize)
                     && let Some(json_str) = partial_json.remove(&idx)
                     && let Some(block) = blocks.get_mut(idx)
                     && let Some(parsed) = load_object(&json_str)

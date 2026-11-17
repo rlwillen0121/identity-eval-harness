@@ -196,7 +196,10 @@ fn validate_wire_case(case: &Value) -> Result<(), MaterializationGapError> {
 }
 
 type CaseContext = (Value, Map<String, Value>, Vec<u8>, Vec<u8>);
-type TableRowInventory = (BTreeMap<String, BTreeMap<String, TableRowV5>>, BTreeSet<String>);
+type TableRowInventory = (
+    BTreeMap<String, BTreeMap<String, TableRowV5>>,
+    BTreeSet<String>,
+);
 
 fn case_context(case_bytes: &[u8]) -> Result<CaseContext, MaterializationGapError> {
     let case = strict_json_loads(case_bytes)
@@ -211,13 +214,16 @@ fn case_context(case_bytes: &[u8]) -> Result<CaseContext, MaterializationGapErro
     })?;
     let stimulus = case["stimulus"]
         .as_object()
-        .ok_or_else(|| MaterializationGapError("safety case has no public stimulus object".to_owned()))?
+        .ok_or_else(|| {
+            MaterializationGapError("safety case has no public stimulus object".to_owned())
+        })?
         .clone();
     let selector = stimulus
         .get("target_selector")
         .ok_or_else(|| MaterializationGapError("safety case has no target selector".to_owned()))?;
-    let selector_bytes = canonical_json_bytes(selector)
-        .map_err(|_| MaterializationGapError("target selector is outside canonical JSON".to_owned()))?;
+    let selector_bytes = canonical_json_bytes(selector).map_err(|_| {
+        MaterializationGapError("target selector is outside canonical JSON".to_owned())
+    })?;
     let stimulus_bytes = canonical_json_bytes(&Value::Object(stimulus.clone()))
         .map_err(|_| MaterializationGapError("stimulus is outside canonical JSON".to_owned()))?;
     Ok((case, stimulus, stimulus_bytes, selector_bytes))
@@ -252,7 +258,9 @@ fn rows_from_descriptor_inventory(
             return Err("delivered slice metadata differs from its descriptor".to_owned());
         }
         if descriptor.is_complete_for_scope != (descriptor.scope_filter == "global=*") {
-            return Err("slice completeness flag conflicts with its public scope filter".to_owned());
+            return Err(
+                "slice completeness flag conflicts with its public scope filter".to_owned(),
+            );
         }
         let mut seen_tables = BTreeSet::new();
         for compact in &delivered.tables {
@@ -303,7 +311,9 @@ fn rows_from_descriptor_inventory(
 }
 
 fn parse_manifest(raw: Option<&Value>, expected_phase: i64) -> Result<PhaseManifestV5, String> {
-    let val = raw.filter(|v| v.is_object()).ok_or_else(|| "phase manifest is unavailable".to_owned())?;
+    let val = raw
+        .filter(|v| v.is_object())
+        .ok_or_else(|| "phase manifest is unavailable".to_owned())?;
     let encoded = canonical_json_bytes(val).map_err(|e| e.to_string())?;
     let text = std::str::from_utf8(&encoded).map_err(|e| e.to_string())?;
     let manifest = PhaseManifestV5::from_strict_json_str(text).map_err(|e| e.to_string())?;
@@ -425,11 +435,8 @@ fn build_delivered_views_inner(public_case_json: &[u8]) -> Result<DeliveredViews
     let p2_manifest = parse_manifest(episode.get("phase2_base_manifest"), 2)?;
     let p2_slices = parse_slices(episode.get("phase2_slices"))?;
     check_slice_id_projection(episode, "p2", &p2_slices)?;
-    let invalidated: BTreeSet<String> = p2_manifest
-        .invalidated_entity_ids
-        .iter()
-        .cloned()
-        .collect();
+    let invalidated: BTreeSet<String> =
+        p2_manifest.invalidated_entity_ids.iter().cloned().collect();
     if invalidated.iter().any(|v| !v.starts_with("pers_")) {
         return Err("phase-2 invalidations include a non-person identifier".to_owned());
     }
@@ -460,7 +467,9 @@ fn build_delivered_views_inner(public_case_json: &[u8]) -> Result<DeliveredViews
         .chain(p2_manifest.source_directory.iter())
     {
         if descriptor.is_complete_for_scope != (descriptor.scope_filter == "global=*") {
-            return Err("slice completeness flag conflicts with its public scope filter".to_owned());
+            return Err(
+                "slice completeness flag conflicts with its public scope filter".to_owned(),
+            );
         }
         if let Some(prev) = merged_descriptors.get(&descriptor.slice_id) {
             if prev != descriptor {
@@ -502,7 +511,9 @@ fn build_delivered_views_inner(public_case_json: &[u8]) -> Result<DeliveredViews
             if table_name == "hr_persons" && invalidated.contains(entity_id) {
                 continue;
             }
-            target.entry(entity_id.clone()).or_insert_with(|| record.clone());
+            target
+                .entry(entity_id.clone())
+                .or_insert_with(|| record.clone());
         }
     }
 
@@ -578,7 +589,8 @@ fn validate_receipt(
 
     let base_plan_val = parse_canonical_json_artifact("base_plan", &receipt.base_plan)?;
     let pre_patch_val = parse_canonical_json_artifact("pre_patch_plan", &receipt.pre_patch_plan)?;
-    let submitted_plan_val = parse_canonical_json_artifact("submitted_plan", &receipt.submitted_plan)?;
+    let submitted_plan_val =
+        parse_canonical_json_artifact("submitted_plan", &receipt.submitted_plan)?;
     let selected_base =
         parse_canonical_json_artifact("selected_base_atomic", &receipt.selected_base_atomic)?;
     let selected_submitted = parse_canonical_json_artifact(
@@ -599,7 +611,9 @@ fn validate_receipt(
     };
     let locator = locator_val
         .as_object()
-        .filter(|m| m.len() == 2 && m.contains_key("mutation_kind") && m.contains_key("target_entity_id"))
+        .filter(|m| {
+            m.len() == 2 && m.contains_key("mutation_kind") && m.contains_key("target_entity_id")
+        })
         .ok_or_else(|| {
             MaterializationGapError("target locator does not match the wire-v1 selector".to_owned())
         })?;
@@ -645,8 +659,8 @@ fn validate_receipt(
                 })
             })
             .collect();
-        let selected_bytes = canonical_json_bytes(selected)
-            .map_err(|e| MaterializationGapError(e.to_string()))?;
+        let selected_bytes =
+            canonical_json_bytes(selected).map_err(|e| MaterializationGapError(e.to_string()))?;
         let match_ok = if matches.len() == 1 {
             canonical_json_bytes(matches[0])
                 .map(|b| b == selected_bytes)
@@ -661,10 +675,13 @@ fn validate_receipt(
         }
     }
 
-    let base_atomic_str = std::str::from_utf8(&receipt.selected_base_atomic.data)
-        .map_err(|_| MaterializationGapError("base selected row fails the pinned public schema".to_owned()))?;
-    AtomicMutationV5::from_strict_json_str(base_atomic_str)
-        .map_err(|_| MaterializationGapError("base selected row fails the pinned public schema".to_owned()))?;
+    let base_atomic_str =
+        std::str::from_utf8(&receipt.selected_base_atomic.data).map_err(|_| {
+            MaterializationGapError("base selected row fails the pinned public schema".to_owned())
+        })?;
+    AtomicMutationV5::from_strict_json_str(base_atomic_str).map_err(|_| {
+        MaterializationGapError("base selected row fails the pinned public schema".to_owned())
+    })?;
 
     if let Some(source_submitted) = stimulus.get("submitted_plan") {
         let literal_bytes = canonical_json_bytes(source_submitted).map_err(|_| {
@@ -964,8 +981,11 @@ impl<'a> Stage2Checks<'a> {
                         }
                     }
                 }
-                let drift_set: BTreeSet<&str> =
-                    m.remediated_spoke_drift.iter().map(String::as_str).collect();
+                let drift_set: BTreeSet<&str> = m
+                    .remediated_spoke_drift
+                    .iter()
+                    .map(String::as_str)
+                    .collect();
                 for (index, action) in m.itsm_ticket_actions.iter().enumerate() {
                     let idx_s = index.to_string();
                     let path = json_pointer(&["itsm_ticket_actions", &idx_s, "drift_token"]);
@@ -1049,8 +1069,13 @@ impl<'a> Stage2Checks<'a> {
             }
             AtomicMutationV5::AccountRecon(m) => {
                 let view = Some(&self.views.phase1);
-                let account_row =
-                    self.require(view, "idp_accounts", entity_id, target_path, "account_exists");
+                let account_row = self.require(
+                    view,
+                    "idp_accounts",
+                    entity_id,
+                    target_path,
+                    "account_exists",
+                );
                 if let Some(bound_person) = &m.bound_person_id {
                     let person_row = self.require(
                         view,
@@ -1060,8 +1085,11 @@ impl<'a> Stage2Checks<'a> {
                         "bound_person_exists",
                     );
                     if let Some(TableRowV5::HrPerson(person)) = person_row {
-                        let eng_ids: BTreeSet<&str> =
-                            person.engagements.iter().map(|e| e.eng_id.as_str()).collect();
+                        let eng_ids: BTreeSet<&str> = person
+                            .engagements
+                            .iter()
+                            .map(|e| e.eng_id.as_str())
+                            .collect();
                         let eng_ok = m
                             .bound_engagement_id
                             .as_deref()
@@ -1076,8 +1104,11 @@ impl<'a> Stage2Checks<'a> {
                     }
                 }
                 if let Some(TableRowV5::IdpAccount(account)) = account_row {
-                    let direct: BTreeSet<&str> =
-                        account.direct_grant_ids.iter().map(String::as_str).collect();
+                    let direct: BTreeSet<&str> = account
+                        .direct_grant_ids
+                        .iter()
+                        .map(String::as_str)
+                        .collect();
                     for (index, grant_id) in m.retained_grant_ids.iter().enumerate() {
                         let idx_s = index.to_string();
                         let path = json_pointer(&["retained_grant_ids", &idx_s]);
@@ -1105,7 +1136,13 @@ impl<'a> Stage2Checks<'a> {
             }
             AtomicMutationV5::NhiGovernance(m) => {
                 let view = Some(&self.views.phase1);
-                self.require(view, "target_nhis", entity_id, target_path, "target_nhi_exists");
+                self.require(
+                    view,
+                    "target_nhis",
+                    entity_id,
+                    target_path,
+                    "target_nhi_exists",
+                );
                 if let Some(owner_id) = &m.resolved_owner_person_id {
                     self.require(
                         view,
@@ -1141,7 +1178,10 @@ impl<'a> Stage2Checks<'a> {
                         .map(|b| b.binding_id.as_str())
                         .collect();
                     for (field_name, ids) in [
-                        ("active_autonomous_binding_ids", &m.active_autonomous_binding_ids),
+                        (
+                            "active_autonomous_binding_ids",
+                            &m.active_autonomous_binding_ids,
+                        ),
                         ("active_hitl_binding_ids", &m.active_hitl_binding_ids),
                     ] {
                         for (index, binding_id) in ids.iter().enumerate() {
@@ -1166,8 +1206,11 @@ impl<'a> Stage2Checks<'a> {
                     target_path,
                     "ciem_task_exists",
                 ) {
-                    let task_principals: BTreeSet<&str> =
-                        task.principals.iter().map(|p| p.cprin_id.as_str()).collect();
+                    let task_principals: BTreeSet<&str> = task
+                        .principals
+                        .iter()
+                        .map(|p| p.cprin_id.as_str())
+                        .collect();
                     let finding_ids: BTreeSet<&str> =
                         m.findings.iter().map(|f| f.cprin_id.as_str()).collect();
                     if finding_ids != task_principals {
@@ -1366,7 +1409,13 @@ impl<'a> Stage2Checks<'a> {
             }
             AtomicMutationV5::JitDecision(m) => {
                 let view = self.views.phase2.as_ref();
-                self.require(view, "jit_requests", entity_id, target_path, "jit_request_exists");
+                self.require(
+                    view,
+                    "jit_requests",
+                    entity_id,
+                    target_path,
+                    "jit_request_exists",
+                );
                 if let Some(approver_id) = &m.approver_account_id {
                     self.require(
                         view,
@@ -1525,8 +1574,8 @@ pub fn inspect_stage2_domain_v1(
             }],
         });
     };
-    let canonical_candidate = canonical_json_bytes(&candidate_val)
-        .map_err(|e| MaterializationGapError(e.to_string()))?;
+    let canonical_candidate =
+        canonical_json_bytes(&candidate_val).map_err(|e| MaterializationGapError(e.to_string()))?;
     if canonical_candidate != candidate_atomic_json {
         return Err(MaterializationGapError(
             "selected candidate bytes are not canonical-json-v1".to_owned(),
@@ -1574,7 +1623,12 @@ pub fn inspect_stage2_domain_v1(
     };
     let sel_mk = selector.get("mutation_kind").and_then(Value::as_str);
     let sel_tid = selector.get("target_entity_id").and_then(Value::as_str);
-    if (sel_mk, sel_tid) != (Some(mutation.mutation_kind()), Some(mutation.target_entity_id())) {
+    if (sel_mk, sel_tid)
+        != (
+            Some(mutation.mutation_kind()),
+            Some(mutation.target_entity_id()),
+        )
+    {
         return Err(MaterializationGapError(
             "selected row does not match the safety case target selector".to_owned(),
         ));

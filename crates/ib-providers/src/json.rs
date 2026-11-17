@@ -90,10 +90,7 @@ struct SafeBudget {
 
 fn marker_obj(marker: &str) -> Value {
     let mut m = Map::new();
-    m.insert(
-        USAGE_MARKER.to_string(),
-        Value::String(marker.to_string()),
-    );
+    m.insert(USAGE_MARKER.to_string(), Value::String(marker.to_string()));
     Value::Object(m)
 }
 
@@ -350,10 +347,8 @@ fn provider_usage_problems(value: &Value, path: &str) -> BTreeMap<String, String
                             }
                             _ => {
                                 if let Some(problem) = usage_count_problem(child) {
-                                    problems.insert(
-                                        truncate_path(&child_path),
-                                        problem.to_string(),
-                                    );
+                                    problems
+                                        .insert(truncate_path(&child_path), problem.to_string());
                                 }
                             }
                         }

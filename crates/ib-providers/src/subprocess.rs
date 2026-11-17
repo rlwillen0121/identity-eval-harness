@@ -75,8 +75,9 @@ static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
 static QUERY_VALUE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"([?&][^=&\s?#]+=)[^&\s#"']*"#).expect("valid query regex"));
 
-static HOME_USER_PATH_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(/(?:Users|home)/)[^/\s"'<>:,)]+"#).expect("valid user path regex"));
+static HOME_USER_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(/(?:Users|home)/)[^/\s"'<>:,)]+"#).expect("valid user path regex")
+});
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Command {
@@ -130,10 +131,7 @@ pub fn unregister_group(pgid: i32) {
 
 #[must_use]
 pub fn live_groups() -> BTreeSet<i32> {
-    LIVE_GROUPS
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_default()
+    LIVE_GROUPS.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
 pub fn kill_all_live() -> usize {

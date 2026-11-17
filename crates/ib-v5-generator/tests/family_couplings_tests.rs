@@ -32,9 +32,8 @@ fn test_f07_retro_shock_taints_ticket_and_strips_exact_bridge() {
         .expect("CAE mutation");
     assert_eq!(cae.retro_invalidated_ids.len(), 2);
 
-    let working =
-        initialize_working_state(PhaseContext::new(world.clone(), queue.clone(), 2))
-            .expect("init working");
+    let working = initialize_working_state(PhaseContext::new(world.clone(), queue.clone(), 2))
+        .expect("init working");
     assert!(!working.postshock_stripped_ids.is_empty());
 
     let mut no_shock_world = world.clone();
@@ -216,13 +215,15 @@ fn test_f11_shared_break_glass_cooldown_isolated_from_static_sod() {
         .expect("baseline replay");
     assert_eq!(baseline.jit_decision, JITDecisionKindV5::Deny);
 
-    let AtomicMutationV5::JitDecision(no_hist_mut) = &no_history.trace_by_target
-        [&("JIT_DECISION_MUTATION".to_owned(), replay_req_id)]
-    .mutation
+    let AtomicMutationV5::JitDecision(no_hist_mut) =
+        &no_history.trace_by_target[&("JIT_DECISION_MUTATION".to_owned(), replay_req_id)].mutation
     else {
         panic!("expected JitDecision");
     };
-    assert_eq!(no_hist_mut.jit_decision, JITDecisionKindV5::ApproveJitCosign);
+    assert_eq!(
+        no_hist_mut.jit_decision,
+        JITDecisionKindV5::ApproveJitCosign
+    );
 }
 
 #[test]
@@ -256,9 +257,8 @@ fn test_f12_registered_root_then_d3_and_d2_hop_gates() {
         .expect("child");
 
     let normal = evaluate_phase_with_trace(world, queue, &[]).expect("normal");
-    let AtomicMutationV5::AgentDelegation(root_mut) = &normal.trace_by_target
-        [&("AGENT_DELEGATION_MUTATION".to_owned(), root_id)]
-    .mutation
+    let AtomicMutationV5::AgentDelegation(root_mut) =
+        &normal.trace_by_target[&("AGENT_DELEGATION_MUTATION".to_owned(), root_id)].mutation
     else {
         panic!("expected AgentDelegation");
     };
@@ -283,7 +283,7 @@ fn test_f12_registered_root_then_d3_and_d2_hop_gates() {
     let valid_res = evaluate_phase_with_trace(&no_temporal, queue, &[]).expect("valid child");
     let AtomicMutationV5::AgentDelegation(valid_child) = &valid_res.trace_by_target
         [&("AGENT_DELEGATION_MUTATION".to_owned(), child_id.clone())]
-    .mutation
+        .mutation
     else {
         panic!("expected AgentDelegation");
     };

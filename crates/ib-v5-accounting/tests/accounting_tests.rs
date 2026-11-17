@@ -145,8 +145,16 @@ fn make_attempt(
         terminal_outcome_elapsed_ms: Some(900),
         active_elapsed_ms: Some(700),
         provider_requests,
-        g_srr: if is_incomplete { None } else { Some(!is_within) },
-        sem_srr_commit: if is_incomplete { None } else { Some(!is_within) },
+        g_srr: if is_incomplete {
+            None
+        } else {
+            Some(!is_within)
+        },
+        sem_srr_commit: if is_incomplete {
+            None
+        } else {
+            Some(!is_within)
+        },
         overgrant_count: if is_incomplete { None } else { Some(0) },
         avail_breach_count: if is_incomplete { None } else { Some(0) },
     }
@@ -281,11 +289,8 @@ fn sdk_retry_contract_checks_adapter_and_client_without_creation() {
     assert!(effective_local_retry_contract_v5(&mismatched_client).is_none());
 
     // CLI adapter checks out cleanly
-    let agy_cli = ProviderIdentityInfo::builtin_lazy(
-        "identitybench.providers.agy_cli",
-        "AgyCliProvider",
-        0,
-    );
+    let agy_cli =
+        ProviderIdentityInfo::builtin_lazy("identitybench.providers.agy_cli", "AgyCliProvider", 0);
     let cli_contract = effective_local_retry_contract_v5(&agy_cli).unwrap();
     assert_eq!(cli_contract.control_source, "cli_adapter_max_retries");
     assert_eq!(
@@ -653,7 +658,9 @@ fn usage_scope_prevents_cumulative_double_counting_and_supports_derivation() {
     };
 
     let mut seg0 = ReqBuilder::new("req_seg0");
-    seg0.raw_usage = Some(json_obj(json!({"input_tokens": 1000, "output_tokens": 400})));
+    seg0.raw_usage = Some(json_obj(
+        json!({"input_tokens": 1000, "output_tokens": 400}),
+    ));
     seg0.pricing_rate = Some(rate.clone());
     let seg0 = seg0.build();
 
@@ -662,7 +669,9 @@ fn usage_scope_prevents_cumulative_double_counting_and_supports_derivation() {
     seg1.retry_index = None;
     seg1.segment_continuation_index = Some(1);
     seg1.decode_segment_index = 1;
-    seg1.raw_usage = Some(json_obj(json!({"input_tokens": 1400, "output_tokens": 600})));
+    seg1.raw_usage = Some(json_obj(
+        json!({"input_tokens": 1400, "output_tokens": 600}),
+    ));
     seg1.pricing_rate = Some(rate.clone());
     let seg1 = seg1.build();
 
@@ -671,7 +680,9 @@ fn usage_scope_prevents_cumulative_double_counting_and_supports_derivation() {
     redundant_cum.retry_index = None;
     redundant_cum.segment_continuation_index = Some(1);
     redundant_cum.decode_segment_index = 1;
-    redundant_cum.raw_usage = Some(json_obj(json!({"input_tokens": 2400, "output_tokens": 1000})));
+    redundant_cum.raw_usage = Some(json_obj(
+        json!({"input_tokens": 2400, "output_tokens": 1000}),
+    ));
     redundant_cum.usage_scope_override = Some(UsageScopeV5::LogicalResponseCumulative);
     redundant_cum.pricing_rate = Some(rate);
     let redundant_cum = redundant_cum.build();
@@ -701,7 +712,9 @@ fn usage_scope_prevents_cumulative_double_counting_and_supports_derivation() {
     // Cumulative-to-segment derivation
     let mut cum0 = ReqBuilder::new("cum_0");
     cum0.logical_request_id = "lreq_2".to_owned();
-    cum0.raw_usage = Some(json_obj(json!({"input_tokens": 1000, "output_tokens": 300})));
+    cum0.raw_usage = Some(json_obj(
+        json!({"input_tokens": 1000, "output_tokens": 300}),
+    ));
     cum0.usage_scope_override = Some(UsageScopeV5::LogicalResponseCumulative);
     let cum0 = cum0.build();
 
@@ -711,20 +724,28 @@ fn usage_scope_prevents_cumulative_double_counting_and_supports_derivation() {
     cum1.retry_index = None;
     cum1.segment_continuation_index = Some(1);
     cum1.decode_segment_index = 1;
-    cum1.raw_usage = Some(json_obj(json!({"input_tokens": 2500, "output_tokens": 900})));
+    cum1.raw_usage = Some(json_obj(
+        json!({"input_tokens": 2500, "output_tokens": 900}),
+    ));
     cum1.usage_scope_override = Some(UsageScopeV5::LogicalResponseCumulative);
     let cum1 = cum1.build();
 
-    let derived = derive_physical_segment_usage_from_cumulative_v5(&[cum0.clone(), cum1.clone()])
-        .unwrap();
+    let derived =
+        derive_physical_segment_usage_from_cumulative_v5(&[cum0.clone(), cum1.clone()]).unwrap();
     assert_eq!(derived[0].usage_scope, UsageScopeV5::PhysicalRequest);
     assert_eq!(derived[1].usage_scope, UsageScopeV5::PhysicalRequest);
     assert_eq!(
-        (derived[0].input_tokens_total, derived[0].output_tokens_total),
+        (
+            derived[0].input_tokens_total,
+            derived[0].output_tokens_total
+        ),
         (Some(1000), Some(300))
     );
     assert_eq!(
-        (derived[1].input_tokens_total, derived[1].output_tokens_total),
+        (
+            derived[1].input_tokens_total,
+            derived[1].output_tokens_total
+        ),
         (Some(1500), Some(600))
     );
 
@@ -786,7 +807,9 @@ fn billed_vs_estimated_cost_and_currency_mismatch_guard() {
 
     let mut billed_eur_req = ReqBuilder::new("req_billed_eur");
     billed_eur_req.attempt_id = "att_2".to_owned();
-    billed_eur_req.raw_usage = Some(json_obj(json!({"input_tokens": 1000, "output_tokens": 500})));
+    billed_eur_req.raw_usage = Some(json_obj(
+        json!({"input_tokens": 1000, "output_tokens": 500}),
+    ));
     billed_eur_req.provider_reported_cost_micros = Some(2_000);
     billed_eur_req.currency_code = Some("EUR".to_owned());
     let billed_eur_req = billed_eur_req.build();
@@ -888,7 +911,9 @@ fn summarize_descriptive_usage_sc03_and_coverage_levels() {
     };
 
     let mut req_ok = ReqBuilder::new("req_1");
-    req_ok.raw_usage = Some(json_obj(json!({"input_tokens": 1000, "output_tokens": 500})));
+    req_ok.raw_usage = Some(json_obj(
+        json!({"input_tokens": 1000, "output_tokens": 500}),
+    ));
     req_ok.pricing_rate = Some(rate);
     let req_ok = req_ok.build();
 
@@ -1003,7 +1028,9 @@ fn unavailable_retry_and_segment_usage_preserve_known_billed_costs() {
     retry.logical_request_id = "lreq_retry_billed".to_owned();
     retry.request_kind = ProviderRequestKindV5::TransientRetry;
     retry.retry_index = Some(1);
-    retry.raw_usage = Some(json_obj(json!({"input_tokens": 1.5, "output_tokens": false})));
+    retry.raw_usage = Some(json_obj(
+        json!({"input_tokens": 1.5, "output_tokens": false}),
+    ));
     retry.usage_scope_override = Some(UsageScopeV5::Unavailable);
     retry.provider_reported_cost_micros = Some(1_200);
     retry.currency_code = Some("USD".to_owned());
@@ -1305,7 +1332,8 @@ fn round_half_up_and_saturating_micros_overflow_guards() {
     assert_eq!(sat_summary.provider_billed_cost_micros, Some(i64::MAX));
     assert_eq!(sat_summary.elapsed_wall_time_ms, Some(i64::MAX));
     assert_eq!(sat_summary.active_elapsed_ms, Some(i64::MAX));
-    let sat_eval = evaluate_g_econ_01_v5(&[a1, a2], &sat_summary, EvaluateGEcon01Options::default());
+    let sat_eval =
+        evaluate_g_econ_01_v5(&[a1, a2], &sat_summary, EvaluateGEcon01Options::default());
     assert!(sat_eval.passed, "sat_eval errors: {:?}", sat_eval.errors);
 }
 
@@ -1323,10 +1351,9 @@ fn read_only_pilot_manifest_descriptive_usage_parity() {
 
     let manifest_file = File::open(&manifest_path).unwrap();
     let manifest: Value = serde_json::from_reader(manifest_file).unwrap();
-    let recorded_summary = DescriptiveUsageSummaryV5::from_strict_json_value(
-        &manifest["descriptive_usage_summary"],
-    )
-    .unwrap();
+    let recorded_summary =
+        DescriptiveUsageSummaryV5::from_strict_json_value(&manifest["descriptive_usage_summary"])
+            .unwrap();
 
     let ep_file = File::open(&episodes_path).unwrap();
     let reader = BufReader::new(ep_file);

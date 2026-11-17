@@ -1,8 +1,7 @@
 use ib_providers::base::{ModelResponse, ToolCall, Usage};
 use ib_providers::json::{
-    MAX_JSON_TEXT, MAX_RESPONSE_DEPTH, MAX_TOKEN_COUNT, extract_json_object,
-    json_safe_usage_value, load_object, raw_usage_payload, safe_nonnegative_float_add,
-    sanitize_response, strip_reasoning,
+    MAX_JSON_TEXT, MAX_RESPONSE_DEPTH, MAX_TOKEN_COUNT, extract_json_object, json_safe_usage_value,
+    load_object, raw_usage_payload, safe_nonnegative_float_add, sanitize_response, strip_reasoning,
 };
 use ib_providers::replay::{response_from_dict, response_to_dict};
 use serde_json::{Map, Value, json};
@@ -15,11 +14,23 @@ fn obj(v: Value) -> Map<String, Value> {
 fn extracts_objects_and_final_answer_wins() {
     let cases = [
         (r#"{"decision": "DENY"}"#, json!({"decision": "DENY"})),
-        ("  \n{\"decision\": \"DENY\"}\n\n", json!({"decision": "DENY"})),
+        (
+            "  \n{\"decision\": \"DENY\"}\n\n",
+            json!({"decision": "DENY"}),
+        ),
         ("\u{feff}{\"a\": 1}", json!({"a": 1})),
-        ("```json\n{\"decision\": \"APPROVE\"}\n```", json!({"decision": "APPROVE"})),
-        ("```JSON\n{\"decision\": \"APPROVE\"}\n```", json!({"decision": "APPROVE"})),
-        ("```\n{\"decision\": \"ESCALATE\"}\n```", json!({"decision": "ESCALATE"})),
+        (
+            "```json\n{\"decision\": \"APPROVE\"}\n```",
+            json!({"decision": "APPROVE"}),
+        ),
+        (
+            "```JSON\n{\"decision\": \"APPROVE\"}\n```",
+            json!({"decision": "APPROVE"}),
+        ),
+        (
+            "```\n{\"decision\": \"ESCALATE\"}\n```",
+            json!({"decision": "ESCALATE"}),
+        ),
         (
             "Here you go:\n```json\n{\"x\": [1, 2]}\n```\nThanks!",
             json!({"x": [1, 2]}),
@@ -28,7 +39,10 @@ fn extracts_objects_and_final_answer_wins() {
             r#"My answer is {"decision": "DENY", "rules": ["SOD-001"]} as required."#,
             json!({"decision": "DENY", "rules": ["SOD-001"]}),
         ),
-        (r#"Use the {name} placeholder... {"ok": true}"#, json!({"ok": true})),
+        (
+            r#"Use the {name} placeholder... {"ok": true}"#,
+            json!({"ok": true}),
+        ),
         (
             r#"{"outer": {"inner": {"deep": 1}}} trailing"#,
             json!({"outer": {"inner": {"deep": 1}}}),
@@ -37,7 +51,10 @@ fn extracts_objects_and_final_answer_wins() {
             r#"{"s": "a } brace and a { brace"}"#,
             json!({"s": "a } brace and a { brace"}),
         ),
-        (r#"{"first": 1} and then {"second": 2}"#, json!({"second": 2})),
+        (
+            r#"{"first": 1} and then {"second": 2}"#,
+            json!({"second": 2}),
+        ),
         (
             r#"{"s": "<think>not reasoning</think>"}"#,
             json!({"s": "<think>not reasoning</think>"}),
@@ -67,7 +84,11 @@ fn reasoning_and_code_blocks_and_required_and_schema_keys() {
     }
 
     assert_eq!(
-        extract_json_object(Some(r#"<think>{"decision": "APPROVE"}</think>"#), None, None),
+        extract_json_object(
+            Some(r#"<think>{"decision": "APPROVE"}</think>"#),
+            None,
+            None
+        ),
         None
     );
     assert_eq!(
@@ -105,7 +126,8 @@ fn reasoning_and_code_blocks_and_required_and_schema_keys() {
     );
 
     // Schema keys pick an incomplete answer-like object over an earlier complete draft
-    let incomplete_after_draft = r#"Draft {"decision":"APPROVE","rules":[]} Final {"decision":"DENY"} Note {"rule":"X"}"#;
+    let incomplete_after_draft =
+        r#"Draft {"decision":"APPROVE","rules":[]} Final {"decision":"DENY"} Note {"rule":"X"}"#;
     assert_eq!(
         extract_json_object(
             Some(incomplete_after_draft),
@@ -156,10 +178,7 @@ fn response_boundary_clamps_usage_and_rejects_excessive_values() {
     let resp = response_from_dict(&resp_dict).unwrap();
     assert_eq!(resp.usage.output_tokens, MAX_TOKEN_COUNT);
     let raw = resp.raw.as_ref().unwrap();
-    assert_eq!(
-        raw["usage_anomaly"],
-        json!({"output_tokens": "clamped"})
-    );
+    assert_eq!(raw["usage_anomaly"], json!({"output_tokens": "clamped"}));
     assert_eq!(
         raw["usage_original"]["output_tokens"],
         json!({"type": "integer", "value": format!("1{}", "0".repeat(400))})
@@ -186,7 +205,8 @@ fn response_boundary_clamps_usage_and_rejects_excessive_values() {
     assert!(oversized_resp.tool_calls.is_empty());
 
     // Oversized integer in raw fails closed
-    let big_raw_val: Value = serde_json::from_str(&format!("{{\"value\": 1{}}}", "0".repeat(400))).unwrap();
+    let big_raw_val: Value =
+        serde_json::from_str(&format!("{{\"value\": 1{}}}", "0".repeat(400))).unwrap();
     let big_raw_resp = sanitize_response(
         ModelResponse {
             raw: Some(obj(big_raw_val)),
@@ -242,7 +262,9 @@ fn response_boundary_clamps_usage_and_rejects_excessive_values() {
                 output_tokens: 2,
                 ..Usage::default()
             },
-            raw: Some(obj(json!({"raw_usage": [{"input_tokens": 3, "output_tokens": 2}]}))),
+            raw: Some(obj(
+                json!({"raw_usage": [{"input_tokens": 3, "output_tokens": 2}]}),
+            )),
             ..ModelResponse::default()
         },
         "codex",
@@ -254,8 +276,12 @@ fn response_boundary_clamps_usage_and_rejects_excessive_values() {
     );
 
     // json_safe_usage_value & raw_usage_payload
-    let payload = raw_usage_payload(&json!({"input_tokens": 1, "big": "x".repeat(20_000)})).unwrap();
-    assert_eq!(payload["big"]["__identitybench_usage_marker__"], "string_limit");
+    let payload =
+        raw_usage_payload(&json!({"input_tokens": 1, "big": "x".repeat(20_000)})).unwrap();
+    assert_eq!(
+        payload["big"]["__identitybench_usage_marker__"],
+        "string_limit"
+    );
     assert_eq!(json_safe_usage_value(&json!(1), &[]), json!(1));
     let serialized = response_to_dict(&normal);
     assert_eq!(serialized["usage"]["input_tokens"], json!(3));

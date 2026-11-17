@@ -30,10 +30,7 @@ enum RequestKind {
     Obo,
 }
 
-fn ttl_cap_for_tier(
-    work: &Phase2WorkingState,
-    tier: PrivilegeTierV5,
-) -> Result<i64, OracleError> {
+fn ttl_cap_for_tier(work: &Phase2WorkingState, tier: PrivilegeTierV5) -> Result<i64, OracleError> {
     work.ctx
         .overlay()
         .jit_ttl_cap_by_tier
@@ -84,8 +81,7 @@ pub fn evaluate_requests(
                             .map(|t| t.ticket_id.clone())
                     {
                         work.consumed_ticket_ids.insert(tkt_id.clone());
-                        consumed_ticket_evidence
-                            .insert(tkt_id, jit_request.evidence_id.clone());
+                        consumed_ticket_evidence.insert(tkt_id, jit_request.evidence_id.clone());
                     }
                     let clock = work.clock();
                     let approved_ttl = jit_mutation.approved_ttl_s;
@@ -115,7 +111,8 @@ pub fn evaluate_requests(
                 let del_request =
                     work.state().agent_delegation_requests[request_id.as_str()].clone();
                 let del_mutation = evaluate_delegation(work, &del_request)?;
-                if del_mutation.delegation_decision != AgentDelegationDecisionKindV5::DenyDelegation {
+                if del_mutation.delegation_decision != AgentDelegationDecisionKindV5::DenyDelegation
+                {
                     work.approved_delegations.insert(
                         del_request.request_id.clone(),
                         (del_request.clone(), del_mutation.clone()),
@@ -453,9 +450,7 @@ fn ticket_p2_failure(
 
     let mut support = BTreeSet::new();
     support.insert(ticket.evidence_id.clone());
-    if failed_single_use
-        && let Some(ev) = consumed_ticket_evidence.get(&ticket.ticket_id)
-    {
+    if failed_single_use && let Some(ev) = consumed_ticket_evidence.get(&ticket.ticket_id) {
         support.insert(ev.clone());
     }
     if work.retro_tainted_ids.contains(&ticket.ticket_id)
@@ -485,18 +480,15 @@ fn evaluate_jit(
     let deny = account_deny(work, requester)?;
     let req_leaves = resolve_scope(work.ctx.catalog(), &request.requested_scope_path)?;
 
-    let eligible = work
-        .eligible
-        .get(requester)
-        .is_some_and(|elig_ids| {
-            elig_ids.iter().any(|gid| {
-                work.grants.get(gid.as_str()).is_some_and(|g| {
-                    g.role_id == role.role_id
-                        && resolve_scope(work.ctx.catalog(), &g.scope_path)
-                            .is_ok_and(|g_leaves| req_leaves.is_subset(&g_leaves))
-                })
+    let eligible = work.eligible.get(requester).is_some_and(|elig_ids| {
+        elig_ids.iter().any(|gid| {
+            work.grants.get(gid.as_str()).is_some_and(|g| {
+                g.role_id == role.role_id
+                    && resolve_scope(work.ctx.catalog(), &g.scope_path)
+                        .is_ok_and(|g_leaves| req_leaves.is_subset(&g_leaves))
             })
-        });
+        })
+    });
 
     let p1_ok = requester_person.is_some()
         && role.app_id == request.target_resource
@@ -615,7 +607,11 @@ fn evaluate_jit(
             Some(t) => t.expires_at_s - work.clock(),
             None => 1_000_000_000,
         };
-        let ttl = request.requested_ttl_s.min(tier_cap).min(bg_cap).min(tkt_cap);
+        let ttl = request
+            .requested_ttl_s
+            .min(tier_cap)
+            .min(bg_cap)
+            .min(tkt_cap);
 
         let decision = if needs_cosign {
             JITDecisionKindV5::ApproveJitCosign
@@ -705,12 +701,7 @@ fn evaluate_jit(
             if !p3a_witnesses.is_empty()
                 && let Some(ref rp) = requester_person
             {
-                citations.extend(static_sod_citations(
-                    work,
-                    rp,
-                    &requested,
-                    "JIT-V5-01.P3",
-                )?);
+                citations.extend(static_sod_citations(work, rp, &requested, "JIT-V5-01.P3")?);
             } else {
                 for item in &p3b_sessions {
                     citations.insert(evidence("JIT-V5-01.P3", item));
@@ -935,8 +926,13 @@ fn evaluate_delegation(
     };
     let (d3b_sessions, d3b_rules) = match &actor {
         Some(act) => {
-            let b =
-                temporal_blocks(work, act, &role.role_id, &request.requested_scope_path, false)?;
+            let b = temporal_blocks(
+                work,
+                act,
+                &role.role_id,
+                &request.requested_scope_path,
+                false,
+            )?;
             (b.session_evidence, b.rule_evidence)
         }
         None => (BTreeSet::new(), BTreeSet::new()),
@@ -959,11 +955,7 @@ fn evaluate_delegation(
                     && hp != sp
                     && !is_subordinate(hp, act, work.clock(), &work.state().hr_persons)
                     && !is_subordinate(hp, sp, work.clock(), &work.state().hr_persons)
-                    && req_leaves.is_subset(&admin_leaf_scopes(
-                        work,
-                        h,
-                        &request.target_resource,
-                    )?)
+                    && req_leaves.is_subset(&admin_leaf_scopes(work, h, &request.target_resource)?)
             }
             _ => false,
         };

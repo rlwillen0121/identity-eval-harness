@@ -78,12 +78,8 @@ fn map_agent_action(action: AgentRegistryActionV5) -> PriorAgentP1ActionV5 {
         AgentRegistryActionV5::SuspendUnattestedOrStale => {
             PriorAgentP1ActionV5::SuspendUnattestedOrStale
         }
-        AgentRegistryActionV5::SuspendSponsorInvalid => {
-            PriorAgentP1ActionV5::SuspendSponsorInvalid
-        }
-        AgentRegistryActionV5::SuspendNoActiveTools => {
-            PriorAgentP1ActionV5::SuspendNoActiveTools
-        }
+        AgentRegistryActionV5::SuspendSponsorInvalid => PriorAgentP1ActionV5::SuspendSponsorInvalid,
+        AgentRegistryActionV5::SuspendNoActiveTools => PriorAgentP1ActionV5::SuspendNoActiveTools,
         AgentRegistryActionV5::QuarantineSodViolation => {
             PriorAgentP1ActionV5::QuarantineSodViolation
         }
@@ -181,7 +177,8 @@ fn prior_account(
         obj.insert("phase".to_owned(), Value::Number(1.into()));
         obj.insert(
             "p1_action".to_owned(),
-            serde_json::to_value(mutation.account_action).map_err(ib_v5_schemas::SchemaValidationError::from)?,
+            serde_json::to_value(mutation.account_action)
+                .map_err(ib_v5_schemas::SchemaValidationError::from)?,
         );
         obj.insert(
             "bound_person_id".to_owned(),
@@ -236,7 +233,8 @@ fn selected_ids<V>(
 }
 
 fn ser_val<T: serde::Serialize + ?Sized>(val: &T) -> Result<Value, RuntimeError> {
-    serde_json::to_value(val).map_err(|e| RuntimeError::Schema(ib_v5_schemas::SchemaValidationError::from(e)))
+    serde_json::to_value(val)
+        .map_err(|e| RuntimeError::Schema(ib_v5_schemas::SchemaValidationError::from(e)))
 }
 
 /// Project Phase-1 outcomes into a [`PriorPhaseLedgerV5`].
@@ -293,14 +291,8 @@ pub fn ledger_from_projection(
                     "owner_resolution_source".to_owned(),
                     ser_val(&m.owner_resolution_source)?,
                 );
-                let etag = etag_for_outcome(
-                    &entity_id,
-                    "nhi_id",
-                    "nhi_gen",
-                    generation,
-                    1,
-                    fields,
-                )?;
+                let etag =
+                    etag_for_outcome(&entity_id, "nhi_id", "nhi_gen", generation, 1, fields)?;
                 nhis.push(PriorNHIOutcomeV5 {
                     nhi_id: entity_id,
                     p1_nhi_action: map_nhi_action(m.nhi_action),
@@ -319,11 +311,10 @@ pub fn ledger_from_projection(
         include_ungoverned,
     ) {
         let agent_record = records.enterprise_agents[entity_id.as_str()];
-        let mut_ref =
-            match by_key.get(&("AGENT_REGISTRY_MUTATION".to_owned(), entity_id.clone())) {
-                Some(AtomicMutationV5::AgentRegistry(m)) => Some(m),
-                _ => None,
-            };
+        let mut_ref = match by_key.get(&("AGENT_REGISTRY_MUTATION".to_owned(), entity_id.clone())) {
+            Some(AtomicMutationV5::AgentRegistry(m)) => Some(m),
+            _ => None,
+        };
         match mut_ref {
             None => agents.push(PriorAgentOutcomeV5 {
                 agent_id: entity_id,
@@ -350,14 +341,8 @@ pub fn ledger_from_projection(
                     "active_hitl_binding_ids".to_owned(),
                     ser_val(&m.active_hitl_binding_ids)?,
                 );
-                let etag = etag_for_outcome(
-                    &entity_id,
-                    "agent_id",
-                    "agent_gen",
-                    generation,
-                    1,
-                    fields,
-                )?;
+                let etag =
+                    etag_for_outcome(&entity_id, "agent_id", "agent_gen", generation, 1, fields)?;
                 agents.push(PriorAgentOutcomeV5 {
                     agent_id: entity_id,
                     p1_agent_action: map_agent_action(m.agent_action),
@@ -378,11 +363,10 @@ pub fn ledger_from_projection(
         include_ungoverned,
     ) {
         let conn_record = records.connector_schemas[entity_id.as_str()];
-        let mut_ref =
-            match by_key.get(&("CONNECTOR_SYNC_MUTATION".to_owned(), entity_id.clone())) {
-                Some(AtomicMutationV5::ConnectorSync(m)) => Some(m),
-                _ => None,
-            };
+        let mut_ref = match by_key.get(&("CONNECTOR_SYNC_MUTATION".to_owned(), entity_id.clone())) {
+            Some(AtomicMutationV5::ConnectorSync(m)) => Some(m),
+            _ => None,
+        };
         match mut_ref {
             None => connectors.push(PriorConnectorOutcomeV5 {
                 connector_id: entity_id,
@@ -453,13 +437,11 @@ pub fn ledger_from_projection(
         include_ungoverned,
     ) {
         let mapping_record = records.hr_source_mappings[entity_id.as_str()];
-        let mut_ref = match by_key.get(&(
-            "HR_SOURCE_MAPPING_MUTATION".to_owned(),
-            entity_id.clone(),
-        )) {
-            Some(AtomicMutationV5::HrSourceMapping(m)) => Some(m),
-            _ => None,
-        };
+        let mut_ref =
+            match by_key.get(&("HR_SOURCE_MAPPING_MUTATION".to_owned(), entity_id.clone())) {
+                Some(AtomicMutationV5::HrSourceMapping(m)) => Some(m),
+                _ => None,
+            };
         match mut_ref {
             None => hr_mappings.push(PriorHRMappingOutcomeV5 {
                 mapping_task_id: entity_id,

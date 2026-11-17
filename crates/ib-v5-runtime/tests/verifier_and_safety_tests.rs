@@ -20,10 +20,10 @@ use ib_v5_schemas::{
     JoinerContractorSponsorPolicyV5, JoinerStepV5, LeaverStepV5, LegalHoldDispositionV5,
     MoverStepV5, NHIGovernanceActionV5, NHIGovernanceMutationKind, NHIGovernanceMutationV5,
     NHIOwnerResolutionSourceV5, NHISubkindV5, NoShowDispositionV5, OptimizationMutationKind,
-    OptimizationMutationV5, OrphanHandoffPolicyV5, PhaseManifestV5, PhaseWorkQueueV5,
-    PolicyCardV5, PolicyOverlayV5, PrivilegeTierV5, ScopeCatalogV5, ScopedSoDRuleV5,
-    SliceDescriptorV5, SoDScopeModeV5, SpokeErrorPolicyV5, UARCampaignMutationKind,
-    UARCampaignMutationV5, UARDecisionKindV5, ViolationCategoryV5,
+    OptimizationMutationV5, OrphanHandoffPolicyV5, PhaseManifestV5, PhaseWorkQueueV5, PolicyCardV5,
+    PolicyOverlayV5, PrivilegeTierV5, ScopeCatalogV5, ScopedSoDRuleV5, SliceDescriptorV5,
+    SoDScopeModeV5, SpokeErrorPolicyV5, UARCampaignMutationKind, UARCampaignMutationV5,
+    UARDecisionKindV5, ViolationCategoryV5,
 };
 
 fn base_if_match() -> Vec<String> {
@@ -529,7 +529,8 @@ fn stage5_case_matrix_reaches_all_39_semantic_categories() {
     {
         let mut m = hr_gold.clone();
         if let AtomicMutationV5::HrSourceMapping(ref mut x) = m {
-            x.resolved_person_statuses = vec![("pers_a".to_owned(), EngagementStatusV5::Terminated)];
+            x.resolved_person_statuses =
+                vec![("pers_a".to_owned(), EngagementStatusV5::Terminated)];
             x.quarantined_assertion_keys.clear();
         }
         check(
@@ -745,8 +746,7 @@ fn stage5_case_matrix_reaches_all_39_semantic_categories() {
     {
         let mut m = ciem_gold.clone();
         if let AtomicMutationV5::CloudCiem(ref mut x) = m {
-            x.findings[0].remediation_action =
-                CIEMRemediationActionV5::RevokeOrphanCloudPrincipal;
+            x.findings[0].remediation_action = CIEMRemediationActionV5::RevokeOrphanCloudPrincipal;
         }
         check(
             ViolationCategoryV5::CiemOrphanPrincipalMismatch,
@@ -1167,7 +1167,10 @@ fn safety_partition_covers_all_12_mutation_kinds_and_equal_gold_is_zero() {
                 mutation_kind: HRSourceMappingMutationKind::HRSourceMappingMutation,
                 accepted_feed_ids: vec!["hfeed_a".to_owned()],
                 rejected_feed_ids: vec!["hfeed_b".to_owned()],
-                resolved_person_statuses: vec![("pers_a".to_owned(), EngagementStatusV5::Terminated)],
+                resolved_person_statuses: vec![(
+                    "pers_a".to_owned(),
+                    EngagementStatusV5::Terminated,
+                )],
                 quarantined_assertion_keys: vec!["hfeed_a:pers_a".to_owned()],
             }),
             Stage5Context::default(),
@@ -1178,7 +1181,10 @@ fn safety_partition_covers_all_12_mutation_kinds_and_equal_gold_is_zero() {
                 mutation_kind: HRSourceMappingMutationKind::HRSourceMappingMutation,
                 accepted_feed_ids: Vec::new(),
                 rejected_feed_ids: vec!["hfeed_a".to_owned()],
-                resolved_person_statuses: vec![("pers_a".to_owned(), EngagementStatusV5::Terminated)],
+                resolved_person_statuses: vec![(
+                    "pers_a".to_owned(),
+                    EngagementStatusV5::Terminated,
+                )],
                 quarantined_assertion_keys: vec!["hfeed_a:pers_a".to_owned()],
             }),
             AtomicMutationV5::HrSourceMapping(HRSourceMappingMutationV5 {
@@ -1659,13 +1665,22 @@ fn safety_partition_covers_all_12_mutation_kinds_and_equal_gold_is_zero() {
 
     assert_eq!(cases.len(), 12);
     for (og, g_og, og_ctx, av, g_av, av_ctx) in cases {
-        assert_eq!(safety_partition(&og, &g_og, &og_ctx).unwrap(), (true, false));
-        assert_eq!(safety_partition(&av, &g_av, &av_ctx).unwrap(), (false, true));
+        assert_eq!(
+            safety_partition(&og, &g_og, &og_ctx).unwrap(),
+            (true, false)
+        );
+        assert_eq!(
+            safety_partition(&av, &g_av, &av_ctx).unwrap(),
+            (false, true)
+        );
         let eq_ctx = if matches!(g_av, AtomicMutationV5::Optimization(_)) {
             opt_ctx(true, true)
         } else {
             av_ctx
         };
-        assert_eq!(safety_partition(&g_av, &g_av, &eq_ctx).unwrap(), (false, false));
+        assert_eq!(
+            safety_partition(&g_av, &g_av, &eq_ctx).unwrap(),
+            (false, false)
+        );
     }
 }

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 
+use ib_providers::anthropic_api::{AnthropicConfig, AnthropicProvider};
 use ib_providers::base::{
     GenerationParams, ModelRequest, ModelResponse, Provider, ToolCall, Usage,
 };
@@ -11,7 +12,6 @@ use ib_providers::cli::codex::{CodexAdapter, CodexCliProvider};
 use ib_providers::cli::cursor::{CursorAdapter, CursorCliProvider};
 use ib_providers::cli::grok::{GrokAdapter, GrokCliProvider};
 use ib_providers::cli::muse::{MuseAdapter, MuseCliProvider};
-use ib_providers::anthropic_api::{AnthropicConfig, AnthropicProvider};
 use ib_providers::factory::{ModelSpec, PROVIDER_KINDS, ProviderKind, make_provider_with_env};
 use ib_providers::openai_compat::{OpenAICompatConfig, OpenAICompatProvider};
 use ib_providers::replay::{
@@ -64,8 +64,17 @@ async fn replay_round_trip_jsonl_costs_and_has() {
     assert_eq!(response_from_dict(dict.as_object().unwrap()).unwrap(), rec);
 
     // Rejects unknown fields and non-object usage
-    assert!(response_from_dict(json!({"text": "x", "confidence": 1}).as_object().unwrap()).is_err());
-    assert!(response_from_dict(json!({"text": "x", "usage": {"tokens": 1}}).as_object().unwrap()).is_err());
+    assert!(
+        response_from_dict(json!({"text": "x", "confidence": 1}).as_object().unwrap()).is_err()
+    );
+    assert!(
+        response_from_dict(
+            json!({"text": "x", "usage": {"tokens": 1}})
+                .as_object()
+                .unwrap()
+        )
+        .is_err()
+    );
     for bad_usage in [json!([]), json!(false), json!(0), json!("")] {
         let mut m = Map::new();
         m.insert("usage".to_string(), bad_usage);
@@ -135,9 +144,30 @@ async fn replay_round_trip_jsonl_costs_and_has() {
 
     // Malformed cost fails loudly
     assert!(recorded_cost_from(json!({"cost_usd": 0.1}).as_object().unwrap()).is_err());
-    assert!(recorded_cost_from(json!({"cost_usd": -1, "cost_source": "metered"}).as_object().unwrap()).is_err());
-    assert!(recorded_cost_from(json!({"cost_usd": true, "cost_source": "metered"}).as_object().unwrap()).is_err());
-    assert!(recorded_cost_from(json!({"cost_usd": 0.1, "cost_source": "free"}).as_object().unwrap()).is_err());
+    assert!(
+        recorded_cost_from(
+            json!({"cost_usd": -1, "cost_source": "metered"})
+                .as_object()
+                .unwrap()
+        )
+        .is_err()
+    );
+    assert!(
+        recorded_cost_from(
+            json!({"cost_usd": true, "cost_source": "metered"})
+                .as_object()
+                .unwrap()
+        )
+        .is_err()
+    );
+    assert!(
+        recorded_cost_from(
+            json!({"cost_usd": 0.1, "cost_source": "free"})
+                .as_object()
+                .unwrap()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -167,7 +197,10 @@ fn factory_validation_yaml_and_make_provider() {
 
     let codex_spec = ModelSpec::new(ProviderKind::CodexCli, "gpt-x");
     assert_eq!(codex_spec.effective_effort(), Some("medium"));
-    assert_eq!(codex_spec.generation_params().effort.as_deref(), Some("medium"));
+    assert_eq!(
+        codex_spec.generation_params().effort.as_deref(),
+        Some("medium")
+    );
 
     // Rejections matching test_factory.py
     let bad_yamls = [
@@ -197,7 +230,10 @@ fn factory_validation_yaml_and_make_provider() {
     // Build all providers via factory
     let env = BTreeMap::from([
         ("LOCAL_URL".to_string(), "http://127.0.0.1:8000".to_string()),
-        ("LOCAL_LLM_BASE_URL".to_string(), "http://127.0.0.1:8001/v1".to_string()),
+        (
+            "LOCAL_LLM_BASE_URL".to_string(),
+            "http://127.0.0.1:8001/v1".to_string(),
+        ),
     ]);
     let ant = make_provider_with_env(
         &ModelSpec::from_yaml_str("provider: anthropic_compatible\nmodel: local\nbase_url_env: LOCAL_URL\nextra:\n  max_retries: 1\n").unwrap(),
@@ -220,7 +256,8 @@ fn python_type_identities_and_retry_limits_match_v5_provider_accounting() {
     let codex = CodexCliProvider::new(CodexAdapter, CliConfig::new("m", "codex", 900.0));
     let grok = GrokCliProvider::new(GrokAdapter, CliConfig::new("m", "grok", 600.0));
     let agy = AgyCliProvider::new(AgyAdapter, CliConfig::new("m", "agy", 900.0));
-    let cursor = CursorCliProvider::new(CursorAdapter, CliConfig::new("auto", "cursor-agent", 600.0));
+    let cursor =
+        CursorCliProvider::new(CursorAdapter, CliConfig::new("auto", "cursor-agent", 600.0));
     let muse = MuseCliProvider::new(MuseAdapter::default(), {
         let mut c = CliConfig::new("m", "muse", 900.0);
         c.max_retries = 0;
@@ -230,7 +267,10 @@ fn python_type_identities_and_retry_limits_match_v5_provider_accounting() {
 
     assert_eq!(
         oai.python_type_identity(),
-        ("identitybench.providers.openai_compat", "OpenAICompatProvider")
+        (
+            "identitybench.providers.openai_compat",
+            "OpenAICompatProvider"
+        )
     );
     assert_eq!(
         ant.python_type_identity(),

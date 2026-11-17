@@ -26,10 +26,8 @@ struct TempDirGuard(PathBuf);
 
 impl TempDirGuard {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "ib_v5_conformance_{name}_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("ib_v5_conformance_{name}_{}", std::process::id()));
         remove_readonly_tree(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir temp");
         Self(dir)
@@ -182,7 +180,9 @@ fn all_4_draft5_receipts_match_python_verify_blind_freeze_and_bind_disk_sources(
             .expect_err("bound-reference receipt is outside shared_results root");
         assert_eq!(
             err,
-            SharedRuntimeError("artifact path is outside a versioned shared-results root".to_owned())
+            SharedRuntimeError(
+                "artifact path is outside a versioned shared-results root".to_owned()
+            )
         );
 
         // 2. Verify strict JSON parsing and every bound reference + source_sha256 in the receipt!
@@ -346,7 +346,11 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
         public_raw.push(b'\n');
     }
     let result_root = "reports/v5/conformance/shared_results/approved_addendum_v1";
-    let (_, pub_sha) = write_readonly(root, &format!("{result_root}/public-inputs.jsonl"), &public_raw);
+    let (_, pub_sha) = write_readonly(
+        root,
+        &format!("{result_root}/public-inputs.jsonl"),
+        &public_raw,
+    );
 
     let mut phase_raw = Vec::new();
     for c in &all_cases[..2] {
@@ -415,7 +419,11 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
     let (_, cp_sha) = write_readonly(
         root,
         "reports/v5/conformance/shared_inputs/v3/phase_checkpoint.json",
-        &(canonical_json_bytes(&checkpoint_json).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+        &(canonical_json_bytes(&checkpoint_json)
+            .unwrap()
+            .into_iter()
+            .chain(Some(b'\n'))
+            .collect::<Vec<_>>()),
     );
     let (_, fam_sha) = write_readonly(
         root,
@@ -495,7 +503,11 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
     let (_, manifest_sha) = write_readonly(
         root,
         "reports/v5/conformance/shared_inputs/v3/manifest.json",
-        &(canonical_json_bytes(&manifest_json).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+        &(canonical_json_bytes(&manifest_json)
+            .unwrap()
+            .into_iter()
+            .chain(Some(b'\n'))
+            .collect::<Vec<_>>()),
     );
 
     let case_inventory: Vec<(String, String)> = all_cases
@@ -522,7 +534,11 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
     let (_, sidecar_sha) = write_readonly(
         root,
         &format!("{result_root}/sidecar.json"),
-        &(canonical_json_bytes(&sidecar_val).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+        &(canonical_json_bytes(&sidecar_val)
+            .unwrap()
+            .into_iter()
+            .chain(Some(b'\n'))
+            .collect::<Vec<_>>()),
     );
 
     let normative_contract = ib_v5_schemas::normative_contract::approved_v5_normative_contract();
@@ -537,7 +553,8 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
         for src_rel in &prof.source_files {
             let src_bytes = std::fs::read(real_root.join(src_rel)).expect("read real source");
             let (_, sha) = write_readonly(root, &format!("{cap_dir}/{src_rel}"), &src_bytes);
-            source_rows.push(json!({"path": src_rel, "sha256": sha, "size_bytes": src_bytes.len()}));
+            source_rows
+                .push(json!({"path": src_rel, "sha256": sha, "size_bytes": src_bytes.len()}));
         }
         let mut cap_manifest = json!({
             "format": "identitybench.v5.shared-conformance-source-checkpoint.v1",
@@ -558,14 +575,22 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
         let (_, cap_sha) = write_readonly(
             root,
             &format!("{cap_dir}/capture-manifest.json"),
-            &(canonical_json_bytes(&cap_manifest).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+            &(canonical_json_bytes(&cap_manifest)
+                .unwrap()
+                .into_iter()
+                .chain(Some(b'\n'))
+                .collect::<Vec<_>>()),
         );
 
         let dep_bytes = b"pass\n";
         let dep_rel_dir = format!("{result_root}/deps/{ev_id}");
-        let (_, dep_file_sha) =
-            write_readonly(root, &format!("{dep_rel_dir}/frozen-dependencies/dep.py"), dep_bytes);
-        let dep_files = vec![json!({"path": "dep.py", "sha256": dep_file_sha, "size_bytes": dep_bytes.len()})];
+        let (_, dep_file_sha) = write_readonly(
+            root,
+            &format!("{dep_rel_dir}/frozen-dependencies/dep.py"),
+            dep_bytes,
+        );
+        let dep_files =
+            vec![json!({"path": "dep.py", "sha256": dep_file_sha, "size_bytes": dep_bytes.len()})];
         let dep_snap = json!({
             "file_count": 1,
             "files_sha256": sha256_bytes(&canonical_json_bytes(&Value::Array(dep_files.clone())).unwrap()),
@@ -614,13 +639,20 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
         let closure_sha = sha256_bytes(&canonical_json_bytes(&closure_payload).unwrap());
 
         let mut rt_manifest = closure_payload.as_object().unwrap().clone();
-        rt_manifest.insert("source_closure_sha256".to_owned(), Value::String(closure_sha.clone()));
+        rt_manifest.insert(
+            "source_closure_sha256".to_owned(),
+            Value::String(closure_sha.clone()),
+        );
         rt_manifest.insert("case_count".to_owned(), Value::Number(5.into()));
         rt_manifest.insert("dependency_snapshot".to_owned(), dep_snap.clone());
         let (_, rt_sha) = write_readonly(
             root,
             &format!("{result_root}/{ev_id}-runtime.json"),
-            &(canonical_json_bytes(&Value::Object(rt_manifest)).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+            &(canonical_json_bytes(&Value::Object(rt_manifest))
+                .unwrap()
+                .into_iter()
+                .chain(Some(b'\n'))
+                .collect::<Vec<_>>()),
         );
 
         let mut arch_manifest = json!({
@@ -636,14 +668,18 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
             "runtime_inventory": inv_rows,
         });
         let arch_sha_val = sha256_bytes(&canonical_json_bytes(&arch_manifest).unwrap());
-        arch_manifest
-            .as_object_mut()
-            .unwrap()
-            .insert("archive_manifest_sha256".to_owned(), Value::String(arch_sha_val));
+        arch_manifest.as_object_mut().unwrap().insert(
+            "archive_manifest_sha256".to_owned(),
+            Value::String(arch_sha_val),
+        );
         let (_, rt_arch_sha) = write_readonly(
             root,
             &format!("{arch_dir}/source-manifest.json"),
-            &(canonical_json_bytes(&arch_manifest).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+            &(canonical_json_bytes(&arch_manifest)
+                .unwrap()
+                .into_iter()
+                .chain(Some(b'\n'))
+                .collect::<Vec<_>>()),
         );
 
         let mut dep_manifest = json!({
@@ -663,7 +699,11 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
         let (_, dep_sha) = write_readonly(
             root,
             &format!("{dep_rel_dir}/dep-manifest.json"),
-            &(canonical_json_bytes(&dep_manifest).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+            &(canonical_json_bytes(&dep_manifest)
+                .unwrap()
+                .into_iter()
+                .chain(Some(b'\n'))
+                .collect::<Vec<_>>()),
         );
 
         let mut raw_rows = Vec::new();
@@ -740,8 +780,16 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
             audit_rows.extend_from_slice(&canonical_json_bytes(&a_row).unwrap());
             audit_rows.push(b'\n');
         }
-        let (_, raw_sha) = write_readonly(root, &format!("{result_root}/{ev_id}-receipts.jsonl"), &raw_rows);
-        let (_, aud_sha) = write_readonly(root, &format!("{result_root}/{ev_id}-audits.jsonl"), &audit_rows);
+        let (_, raw_sha) = write_readonly(
+            root,
+            &format!("{result_root}/{ev_id}-receipts.jsonl"),
+            &raw_rows,
+        );
+        let (_, aud_sha) = write_readonly(
+            root,
+            &format!("{result_root}/{ev_id}-audits.jsonl"),
+            &audit_rows,
+        );
 
         let raw_ref = json!({"path": format!("{result_root}/{ev_id}-receipts.jsonl"), "sha256": raw_sha, "row_count": 5});
         let aud_ref = json!({"path": format!("{result_root}/{ev_id}-audits.jsonl"), "sha256": aud_sha, "row_count": 5});
@@ -754,7 +802,11 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
         let (_, run_sha) = write_readonly(
             root,
             &format!("{result_root}/{ev_id}-run.json"),
-            &(canonical_json_bytes(&run_man).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+            &(canonical_json_bytes(&run_man)
+                .unwrap()
+                .into_iter()
+                .chain(Some(b'\n'))
+                .collect::<Vec<_>>()),
         );
         let (_, qual_sha) = write_readonly(
             root,
@@ -815,7 +867,11 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
     let (_, receipt_sha) = write_readonly(
         root,
         &receipt_rel,
-        &(canonical_json_bytes(&receipt).unwrap().into_iter().chain(Some(b'\n')).collect::<Vec<_>>()),
+        &(canonical_json_bytes(&receipt)
+            .unwrap()
+            .into_iter()
+            .chain(Some(b'\n'))
+            .collect::<Vec<_>>()),
     );
 
     // Full v4 blind freeze verifies cleanly!
@@ -869,7 +925,10 @@ fn tamper_rejection_and_synthetic_v4_blind_freeze_verification() {
         "full_spec",
     )
     .unwrap_err();
-    assert!(err2.to_string().contains("forbidden benchmark path literal"));
+    assert!(
+        err2.to_string()
+            .contains("forbidden benchmark path literal")
+    );
 
     let err3 = check_python_worker_hygiene(
         "SPEC = 'SPEC-v5-ADDENDUM-01.md'\n",

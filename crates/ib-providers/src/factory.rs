@@ -17,7 +17,7 @@ use crate::cli::cursor::{CursorAdapter, CursorCliProvider, resolve_cursor_binary
 use crate::cli::grok::{GrokAdapter, GrokCliProvider};
 use crate::cli::muse::{DEFAULT_EFFORT as MUSE_DEFAULT_EFFORT, MuseAdapter, MuseCliProvider};
 use crate::openai_compat::{
-    MaxTokensParam, OpenAiApi, OpenAICompatConfig, OpenAICompatProvider, headers_problem,
+    MaxTokensParam, OpenAICompatConfig, OpenAICompatProvider, OpenAiApi, headers_problem,
     provider_routing_problem,
 };
 use crate::replay::{ReplayError, ReplayProvider};
@@ -176,8 +176,8 @@ impl ModelSpec {
     }
 
     pub fn from_json_value(value: Value) -> Result<Self, FactoryError> {
-        let spec: Self = serde_json::from_value(value)
-            .map_err(|e| FactoryError::Validation(e.to_string()))?;
+        let spec: Self =
+            serde_json::from_value(value).map_err(|e| FactoryError::Validation(e.to_string()))?;
         spec.validate()?;
         Ok(spec)
     }
@@ -200,8 +200,7 @@ impl ModelSpec {
             )));
         }
         if let Some(ref eff) = self.effort
-            && (eff.starts_with('-')
-                || eff.chars().any(|c| (c as u32) < 32 || (c as u32) == 127))
+            && (eff.starts_with('-') || eff.chars().any(|c| (c as u32) < 32 || (c as u32) == 127))
         {
             return Err(FactoryError::Validation(format!(
                 "invalid effort value {eff:?}"
@@ -335,10 +334,7 @@ fn extra_problem(name: &str, value: &Value) -> Option<String> {
             }
         }
         "max_tokens_param" => {
-            if matches!(
-                value.as_str(),
-                Some("max_completion_tokens" | "max_tokens")
-            ) {
+            if matches!(value.as_str(), Some("max_completion_tokens" | "max_tokens")) {
                 None
             } else {
                 Some("must be one of ['max_completion_tokens', 'max_tokens']".to_string())
@@ -439,8 +435,7 @@ pub fn make_provider_with_env(
                     OpenAiApi::ChatCompletions
                 };
             }
-            let provider =
-                OpenAICompatProvider::new(cfg).map_err(FactoryError::Provider)?;
+            let provider = OpenAICompatProvider::new(cfg).map_err(FactoryError::Provider)?;
             Ok(Arc::new(provider))
         }
         ProviderKind::ClaudeCli => {
@@ -453,6 +448,7 @@ pub fn make_provider_with_env(
             if let Some(r) = retries_opt {
                 cfg.max_retries = r;
             }
+            cfg.environment = env_override;
             Ok(Arc::new(ClaudeCliProvider::new(ClaudeAdapter, cfg)))
         }
         ProviderKind::CodexCli => {
@@ -465,6 +461,7 @@ pub fn make_provider_with_env(
             if let Some(r) = retries_opt {
                 cfg.max_retries = r;
             }
+            cfg.environment = env_override;
             Ok(Arc::new(CodexCliProvider::new(CodexAdapter, cfg)))
         }
         ProviderKind::GrokCli => {
@@ -477,6 +474,7 @@ pub fn make_provider_with_env(
             if let Some(r) = retries_opt {
                 cfg.max_retries = r;
             }
+            cfg.environment = env_override;
             Ok(Arc::new(GrokCliProvider::new(GrokAdapter, cfg)))
         }
         ProviderKind::AgyCli => {
@@ -489,6 +487,7 @@ pub fn make_provider_with_env(
             if let Some(r) = retries_opt {
                 cfg.max_retries = r;
             }
+            cfg.environment = env_override;
             Ok(Arc::new(AgyCliProvider::new(AgyAdapter, cfg)))
         }
         ProviderKind::MuseCli => {
@@ -499,6 +498,7 @@ pub fn make_provider_with_env(
             );
             cfg.effort = spec.effective_effort().map(str::to_string);
             cfg.max_retries = retries_opt.unwrap_or(0);
+            cfg.environment = env_override;
             Ok(Arc::new(MuseCliProvider::new(MuseAdapter::default(), cfg)))
         }
         ProviderKind::CursorCli => {
@@ -510,6 +510,7 @@ pub fn make_provider_with_env(
             if let Some(r) = retries_opt {
                 cfg.max_retries = r;
             }
+            cfg.environment = env_override;
             Ok(Arc::new(CursorCliProvider::new(CursorAdapter, cfg)))
         }
         ProviderKind::Replay => {

@@ -1,19 +1,18 @@
 #![recursion_limit = "256"]
 
 use ib_v5_schemas::{
-    AccountReconMutationV5, AttemptStatusV5, CANONICAL_ATTEMPT_STATUSES_V5,
+    AccountReconMutationV5, AffiliationKindV5, AttemptStatusV5, CANONICAL_ATTEMPT_STATUSES_V5,
     COMPACT_TABLE_COLUMNS_V5, CoSignReceiptStatusV5, CoSignReceiptV5, CoSignScopeKindV5,
-    CompactTableV5, ConnectorPageV5, DescriptiveUsageSummaryV5, EngagementStatusV5,
+    CompactTableV5, ConnectorPageV5, DescriptiveUsageSummaryV5, ETAG_HEX_RE, EngagementStatusV5,
     EngagementV5, EpisodeAttemptV5, EpisodeV5, GrantModeV5, GrantV5, HRPersonV5,
     HistoricalComparatorEntryV5, HistoricalComparatorManifestV5, ProviderRequestUsageV5,
-    RunConfigurationV5, ScopeCatalogV5, StageReceiptStatusV5, StageReceiptV5, StrictV5Model,
-    TABLE_PRIMARY_KEY_V5, TableRowV5, TerminalWorldStateV5, UARCampaignMutationV5,
+    RunConfigurationV5, STAGE_ID_RE, ScopeCatalogV5, StageReceiptStatusV5, StageReceiptV5,
+    StrictV5Model, TABLE_PRIMARY_KEY_V5, TableRowV5, TerminalWorldStateV5, UARCampaignMutationV5,
     V5_APPROVED_ADDENDUM_PATH, V5_APPROVED_ADDENDUM_SHA256, V5_APPROVED_CONFORMANCE_CONTRACT_ID,
     V5_APPROVED_DIRECTIVE_PATH, V5_APPROVED_DIRECTIVE_SHA256, V5_BASE_SPEC_PATH,
     V5_BASE_SPEC_SHA256, V5_DRAFT5_SPEC_PATH, V5_DRAFT5_SPEC_SHA256,
     V5_PROMOTED_DRAFT5_CONTRACT_ID, approved_v5_normative_contract, compact_table_columns,
     decode_compact_table_v5, encode_compact_table_v5, promoted_v5_normative_contract,
-    AffiliationKindV5, ETAG_HEX_RE, STAGE_ID_RE,
 };
 use serde_json::{Value, json};
 
@@ -95,9 +94,7 @@ fn strict_models_reject_extra_fields_and_wrong_json_types() {
         }))
         .is_err()
     );
-    assert!(
-        EpisodeV5::from_strict_json_value(&json!({"gold_p1_mutations": []})).is_err()
-    );
+    assert!(EpisodeV5::from_strict_json_value(&json!({"gold_p1_mutations": []})).is_err());
 }
 
 #[test]
@@ -129,7 +126,9 @@ fn identifier_and_stage_patterns_use_fullmatch() {
         target_entity_id: "invalid-target".to_owned(),
         actor_account_id: "invalid-actor".to_owned(),
     };
-    rejected_cosign.validate().expect("cosign preserves invalid handles");
+    rejected_cosign
+        .validate()
+        .expect("cosign preserves invalid handles");
 }
 
 #[test]
@@ -224,7 +223,8 @@ fn mutation_tokens_and_nested_tuple_ids_validated() {
 
 #[test]
 fn wire_cells_reject_non_finite_numbers() {
-    let overflow_num: Value = serde_json::from_str("1e400").expect("overflow float parses as Number");
+    let overflow_num: Value =
+        serde_json::from_str("1e400").expect("overflow float parses as Number");
     let page = ConnectorPageV5 {
         page_id: "page_001".to_owned(),
         connector_id: "conn_erp".to_owned(),
@@ -494,22 +494,23 @@ fn provider_request_usage_and_episode_attempt_and_summary_validators() {
 
 #[test]
 fn historical_comparator_and_normative_contract_bindings() {
-    let entry: HistoricalComparatorEntryV5 = HistoricalComparatorEntryV5::from_strict_json_value(&json!({
-        "model_id": "model-a",
-        "provider_id": "provider-a",
-        "reasoning_effort_label": "high",
-        "topology": "T0_SINGLE_MONOLITH",
-        "v41_completed_scenarios": 180,
-        "execution_valid_rate_bps": 10000,
-        "v41_run_manifest_sha256": "e".repeat(64),
-        "input_tokens_total": 1000,
-        "cached_input_tokens": 200,
-        "output_tokens_total": 500,
-        "reasoning_tokens_subset": 150,
-        "historical_cost_micros": 4500,
-        "historical_cost_basis": "FROZEN_RATE_ESTIMATE"
-    }))
-    .unwrap();
+    let entry: HistoricalComparatorEntryV5 =
+        HistoricalComparatorEntryV5::from_strict_json_value(&json!({
+            "model_id": "model-a",
+            "provider_id": "provider-a",
+            "reasoning_effort_label": "high",
+            "topology": "T0_SINGLE_MONOLITH",
+            "v41_completed_scenarios": 180,
+            "execution_valid_rate_bps": 10000,
+            "v41_run_manifest_sha256": "e".repeat(64),
+            "input_tokens_total": 1000,
+            "cached_input_tokens": 200,
+            "output_tokens_total": 500,
+            "reasoning_tokens_subset": 150,
+            "historical_cost_micros": 4500,
+            "historical_cost_basis": "FROZEN_RATE_ESTIMATE"
+        }))
+        .unwrap();
     let manifest = HistoricalComparatorManifestV5 {
         source_spec_sha256: "f".repeat(64),
         pricing_manifest_sha256: None,

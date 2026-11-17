@@ -126,7 +126,8 @@ pub fn live_version(entity_id: &str, world: &WorldStateV5) -> Option<String> {
         prefix,
         "conn" | "hrmap" | "acct" | "nhi" | "agt" | "ciem" | "wfl"
     );
-    if is_p1_ledger_kind && world.phase_index == 2
+    if is_p1_ledger_kind
+        && world.phase_index == 2
         && let Some(ledger) = &world.prior_phase_ledger
     {
         match prefix {
@@ -635,11 +636,8 @@ pub fn obs_strategy(
 
     let mut refs: BTreeSet<(String, String)> = BTreeSet::new();
     let q = &manifest.work_queue;
-    let target_connectors: BTreeSet<&str> = q
-        .target_connector_ids
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let target_connectors: BTreeSet<&str> =
+        q.target_connector_ids.iter().map(String::as_str).collect();
     for cid in connector_ids_in_q1 {
         if target_connectors.contains(cid.as_str()) {
             refs.insert(("connector_id".to_owned(), cid));
@@ -814,15 +812,12 @@ pub fn obs_strategy(
             !desc.is_complete_for_scope
                 && is_q2_tier(desc.authority_tier)
                 && (0..=overlay.freshness_sla_s).contains(&(clock - desc.watermark_s))
-                && desc
-                    .scope_filter
-                    .split_once('=')
-                    .is_some_and(|(k, _)| {
-                        matches!(
-                            k,
-                            "connector_id" | "dept_prefix" | "app_id" | "ticket_partition"
-                        )
-                    })
+                && desc.scope_filter.split_once('=').is_some_and(|(k, _)| {
+                    matches!(
+                        k,
+                        "connector_id" | "dept_prefix" | "app_id" | "ticket_partition"
+                    )
+                })
         })
         .map(|desc| desc.slice_id.clone())
         .collect();

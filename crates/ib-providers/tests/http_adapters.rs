@@ -8,8 +8,8 @@ use ib_providers::anthropic_api::{
 use ib_providers::base::{Message, ModelRequest, Provider, ToolCall, ToolSpec};
 use ib_providers::openai_compat::{
     DEFAULT_BASE_URL, MaxTokensParam, OpenAICompatConfig, OpenAICompatProvider, OpenAiApi,
-    UNPARSED_ARGUMENTS_KEY, accepts_temperature as openai_accepts_temperature,
-    default_api_key_env, headers_problem, is_vendor_endpoint, provider_routing_problem,
+    UNPARSED_ARGUMENTS_KEY, accepts_temperature as openai_accepts_temperature, default_api_key_env,
+    headers_problem, is_vendor_endpoint, provider_routing_problem,
 };
 use serde_json::{Map, Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -102,7 +102,11 @@ async fn spawn_mock_server(
                 let he = header_end.unwrap_or(buf.len());
                 let hdr_str = String::from_utf8_lossy(&buf[..he]);
                 let first_line = hdr_str.lines().next().unwrap_or("");
-                let path = first_line.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let path = first_line
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .to_string();
                 let mut hdrs = BTreeMap::new();
                 for line in hdr_str.lines().skip(1) {
                     if let Some((k, v)) = line.split_once(':') {
@@ -117,11 +121,9 @@ async fn spawn_mock_server(
                     body: body_val,
                 });
 
-                let reply = q
-                    .lock()
-                    .unwrap()
-                    .pop_front()
-                    .unwrap_or_else(|| MockReply::json(500, json!({"error": {"message": "exhausted"}})));
+                let reply = q.lock().unwrap().pop_front().unwrap_or_else(|| {
+                    MockReply::json(500, json!({"error": {"message": "exhausted"}}))
+                });
 
                 let mut resp_text = format!(
                     "HTTP/1.1 {} OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
@@ -170,10 +172,7 @@ fn endpoint_helpers_and_temperature_tables() {
     assert!(openai_accepts_temperature("gpt-50"));
     assert!(openai_accepts_temperature("o1x"));
 
-    assert_eq!(
-        default_api_key_env(None).as_deref(),
-        Some("OPENAI_API_KEY")
-    );
+    assert_eq!(default_api_key_env(None).as_deref(), Some("OPENAI_API_KEY"));
     assert_eq!(
         default_api_key_env(Some("OPENROUTER_BASE_URL")).as_deref(),
         Some("OPENROUTER_API_KEY")
@@ -181,13 +180,17 @@ fn endpoint_helpers_and_temperature_tables() {
     assert_eq!(default_api_key_env(Some("ANTHROPIC_BASE_URL")), None);
 
     assert!(!anthropic_accepts_temperature("claude-opus-5-5"));
-    assert!(!anthropic_accepts_temperature("us.anthropic.claude-opus-4-8-v1"));
+    assert!(!anthropic_accepts_temperature(
+        "us.anthropic.claude-opus-4-8-v1"
+    ));
     assert!(anthropic_accepts_temperature("claude-haiku-4-5"));
 
     assert!(headers_problem(&json!({"Authorization": "Bearer k"})).is_some());
     assert!(headers_problem(&json!({"x-opencode-session": "id"})).is_none());
     assert!(provider_routing_problem(&json!({"allow_fallbacks": "false"})).is_some());
-    assert!(provider_routing_problem(&json!({"order": ["Baidu"], "allow_fallbacks": false})).is_none());
+    assert!(
+        provider_routing_problem(&json!({"order": ["Baidu"], "allow_fallbacks": false})).is_none()
+    );
 }
 
 #[tokio::test]
@@ -233,8 +236,14 @@ async fn openai_chat_completions_byok_cost_routing_headers_and_retries() {
     let (base, recorded) = spawn_mock_server(vec![err_reply, ok_reply]).await;
     let env = BTreeMap::from([
         ("OPENROUTER_BASE_URL".to_string(), format!("{base}/v1")),
-        ("OPENROUTER_API_KEY".to_string(), "or-secret-key-9999".to_string()),
-        ("OPENAI_API_KEY".to_string(), "sk-should-never-be-sent".to_string()),
+        (
+            "OPENROUTER_API_KEY".to_string(),
+            "or-secret-key-9999".to_string(),
+        ),
+        (
+            "OPENAI_API_KEY".to_string(),
+            "sk-should-never-be-sent".to_string(),
+        ),
     ]);
     let mut cfg = OpenAICompatConfig::new("deepseek/deepseek-v4");
     cfg.base_url_env = Some("OPENROUTER_BASE_URL".to_string());
@@ -282,7 +291,10 @@ async fn openai_chat_completions_byok_cost_routing_headers_and_retries() {
     let reqs = recorded.lock().unwrap();
     assert_eq!(reqs.len(), 2);
     assert_eq!(reqs[0].path, "/v1/chat/completions");
-    assert_eq!(reqs[0].headers["authorization"], "Bearer or-secret-key-9999");
+    assert_eq!(
+        reqs[0].headers["authorization"],
+        "Bearer or-secret-key-9999"
+    );
     assert_eq!(reqs[0].headers["x-opencode-session"], "ib");
     assert_eq!(reqs[0].body["provider"]["order"], json!(["Baidu"]));
     assert_eq!(reqs[0].body["max_tokens"], json!(4096));
@@ -356,10 +368,12 @@ async fn openai_responses_api_malformed_body_and_redacted_errors() {
     assert!(!err3.contains("my-secret-token-123"));
     assert_eq!(r3.raw.as_ref().unwrap()["http_status"], json!(400));
     assert_eq!(r3.raw.as_ref().unwrap()["error_code"], json!("BadCode"));
-    assert!(!r3.raw.as_ref().unwrap()["request_id"]
-        .as_str()
-        .unwrap()
-        .contains("my-secret-token-123"));
+    assert!(
+        !r3.raw.as_ref().unwrap()["request_id"]
+            .as_str()
+            .unwrap()
+            .contains("my-secret-token-123")
+    );
 }
 
 #[tokio::test]
@@ -395,7 +409,10 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     let (base, recorded) = spawn_mock_server(vec![first_msg, sse_stream]).await;
     let env = BTreeMap::from([
         ("LOCAL_ANTHROPIC_URL".to_string(), base),
-        ("ANTHROPIC_API_KEY".to_string(), "sk-ant-real-never-sent".to_string()),
+        (
+            "ANTHROPIC_API_KEY".to_string(),
+            "sk-ant-real-never-sent".to_string(),
+        ),
     ]);
     let mut cfg = AnthropicConfig::new("claude-opus-5-5");
     cfg.base_url_env = Some("LOCAL_ANTHROPIC_URL".to_string());
@@ -410,11 +427,14 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
 
     let r1 = p.complete(&req1).await;
     assert!(r1.ok());
-    assert_eq!(r1.tool_calls, vec![ToolCall {
-        id: "toolu_9".to_string(),
-        name: "get_identity".to_string(),
-        arguments: json!({"id": "U9"}).as_object().unwrap().clone(),
-    }]);
+    assert_eq!(
+        r1.tool_calls,
+        vec![ToolCall {
+            id: "toolu_9".to_string(),
+            name: "get_identity".to_string(),
+            arguments: json!({"id": "U9"}).as_object().unwrap().clone(),
+        }]
+    );
     assert_eq!(
         r1.raw.as_ref().unwrap()["ignored_params"],
         json!(["temperature"])
@@ -444,6 +464,9 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     assert_eq!(reqs[0].path, "/v1/messages");
     assert!(reqs[0].body.get("temperature").is_none());
     // Follow-up replayed the thinking block unchanged!
-    assert_eq!(reqs[1].body["messages"][1]["content"][0]["signature"], json!("sig-abc"));
+    assert_eq!(
+        reqs[1].body["messages"][1]["content"][0]["signature"],
+        json!("sig-abc")
+    );
     assert_eq!(reqs[1].body["stream"], json!(true));
 }

@@ -17,8 +17,7 @@ use super::SharedRuntimeError;
 use crate::shared::is_sha256;
 
 pub const PROTOCOL: &str = "identitybench.v5.shared-conformance.v1";
-pub const SCHEMA_SHA256: &str =
-    "83d0eece8060ca0a906071b979c8ed0db7c56efe031eb6a459f6b853dfb0b424";
+pub const SCHEMA_SHA256: &str = "83d0eece8060ca0a906071b979c8ed0db7c56efe031eb6a459f6b853dfb0b424";
 pub const SPEC_SHA256: &str = V5_BASE_SPEC_SHA256;
 pub const APPROVED_RESULT_ROOT: &str = "reports/v5/conformance/shared_results/approved_addendum_v1";
 pub const V1_RESULT_ROOT: &str = "reports/v5/conformance/shared_results/v1";
@@ -132,7 +131,9 @@ pub const PHASE_ONLY_360_V2_BINDING: DiagnosticPhaseBatchScopeBinding =
     };
 
 #[must_use]
-pub fn diagnostic_phase_batch_scope(scope_id: &str) -> Option<&'static DiagnosticPhaseBatchScopeBinding> {
+pub fn diagnostic_phase_batch_scope(
+    scope_id: &str,
+) -> Option<&'static DiagnosticPhaseBatchScopeBinding> {
     if scope_id == PHASE_ONLY_360_V2_BINDING.scope_id {
         Some(&PHASE_ONLY_360_V2_BINDING)
     } else {
@@ -236,9 +237,7 @@ pub fn resolve_source_profile(
                 ],
             ]),
             entrypoint: "tests/conformance/v5/promoted_draft5_full_spec_v1/reference.py",
-            entrypoint_module: Some(
-                "tests.conformance.v5.promoted_draft5_full_spec_v1.reference",
-            ),
+            entrypoint_module: Some("tests.conformance.v5.promoted_draft5_full_spec_v1.reference"),
             normative_contract_id: Some(V5_PROMOTED_DRAFT5_CONTRACT_ID),
             pinned_source_sha256: Vec::new(),
         },
@@ -511,7 +510,10 @@ pub fn profile_pinned_source_hashes(
 ) -> Result<BTreeMap<String, String>, SharedRuntimeError> {
     let mut pinned = BTreeMap::new();
     for (path, digest) in &profile.pinned_source_sha256 {
-        if pinned.insert((*path).to_owned(), (*digest).to_owned()).is_some() {
+        if pinned
+            .insert((*path).to_owned(), (*digest).to_owned())
+            .is_some()
+        {
             return Err(SharedRuntimeError(
                 "source profile has duplicate pinned source paths".to_owned(),
             ));

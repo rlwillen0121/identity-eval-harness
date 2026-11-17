@@ -110,7 +110,9 @@ fn score_metric_field(row: &EpisodeScoreV5, field_name: &str) -> Result<Option<i
         "sem_srr_commit" => Ok(row.sem_srr_commit),
         "action_srr_last_stage" => Ok(row.action_srr_last_stage),
         "g_prop" => Ok(row.g_prop),
-        other => Err(ReportError::value(format!("unexpected metric field {other:?}"))),
+        other => Err(ReportError::value(format!(
+            "unexpected metric field {other:?}"
+        ))),
     }
 }
 
@@ -345,7 +347,10 @@ pub fn build_v5_core_inference_with_options(
         let mut bs_input: BTreeMap<String, FamilyMetricInputV5> = BTreeMap::new();
         for (model, artifact) in model_artifacts {
             let means = family_means_from_artifact(artifact, field_name)?;
-            bs_input.insert(model.clone(), FamilyMetricInputV5::FamilyMeans(means.clone()));
+            bs_input.insert(
+                model.clone(),
+                FamilyMetricInputV5::FamilyMeans(means.clone()),
+            );
             values.insert(model.clone(), means);
         }
         bootstrap_results.insert(
@@ -564,7 +569,12 @@ pub fn build_v5_full_tiebreak_inference(
 
     let full_dataset_seals: BTreeSet<Option<&str>> = values_by_model
         .keys()
-        .map(|m| full_model_artifacts[m].provenance.dataset_seal_sha256.as_deref())
+        .map(|m| {
+            full_model_artifacts[m]
+                .provenance
+                .dataset_seal_sha256
+                .as_deref()
+        })
         .collect();
     if full_dataset_seals.contains(&None) || full_dataset_seals.len() != 1 {
         return Err(ReportError::value(
@@ -623,13 +633,27 @@ fn render_track_tables_markdown(
         let mut complete_items: Vec<(&String, &V5ReportArtifact)> =
             runs.iter().filter(|(_, v)| v.summary.is_complete).collect();
         complete_items.sort_by(|a, b| {
-            let ga = a.1.summary.metrics.get("G-SRR").copied().flatten().unwrap_or(0.0);
-            let gb = b.1.summary.metrics.get("G-SRR").copied().flatten().unwrap_or(0.0);
+            let ga =
+                a.1.summary
+                    .metrics
+                    .get("G-SRR")
+                    .copied()
+                    .flatten()
+                    .unwrap_or(0.0);
+            let gb =
+                b.1.summary
+                    .metrics
+                    .get("G-SRR")
+                    .copied()
+                    .flatten()
+                    .unwrap_or(0.0);
             (-ga).total_cmp(&(-gb)).then_with(|| a.0.cmp(b.0))
         });
 
-        let mut incomplete_items: Vec<(&String, &V5ReportArtifact)> =
-            runs.iter().filter(|(_, v)| !v.summary.is_complete).collect();
+        let mut incomplete_items: Vec<(&String, &V5ReportArtifact)> = runs
+            .iter()
+            .filter(|(_, v)| !v.summary.is_complete)
+            .collect();
         incomplete_items.sort_by(|a, b| a.0.cmp(b.0));
 
         for (idx, (run_key, run_artifact)) in complete_items.into_iter().enumerate() {
@@ -640,7 +664,11 @@ fn render_track_tables_markdown(
                 3,
             );
             let bounds = fmt_interval(
-                run_artifact.summary.provisional_bounds.get("G-SRR").copied(),
+                run_artifact
+                    .summary
+                    .provisional_bounds
+                    .get("G-SRR")
+                    .copied(),
                 3,
             );
             let slot_ratio = format!(
@@ -658,7 +686,11 @@ fn render_track_tables_markdown(
         for (run_key, run_artifact) in incomplete_items {
             let ctx = &run_artifact.summary.context;
             let bounds = fmt_interval(
-                run_artifact.summary.provisional_bounds.get("G-SRR").copied(),
+                run_artifact
+                    .summary
+                    .provisional_bounds
+                    .get("G-SRR")
+                    .copied(),
                 3,
             );
             let slot_ratio = format!(
@@ -750,7 +782,11 @@ pub fn render_v5_core_inference_markdown(artifact: &V5CoreInferenceArtifact) -> 
             format_fixed(ci_high, 3),
             fmt_f64(pair_result.p_exact, 6),
             fmt_f64(pair_result.q_bh, 6),
-            if escalated { "required" } else { "not required" },
+            if escalated {
+                "required"
+            } else {
+                "not required"
+            },
         ));
     }
 
@@ -841,8 +877,7 @@ pub fn render_v5_core_inference_markdown(artifact: &V5CoreInferenceArtifact) -> 
         String::new(),
         "## Source artifacts".to_owned(),
         String::new(),
-        "| Model | Run manifest SHA-256 | Episodes SHA-256 | Dataset seal SHA-256 |"
-            .to_owned(),
+        "| Model | Run manifest SHA-256 | Episodes SHA-256 | Dataset seal SHA-256 |".to_owned(),
         "| --- | --- | --- | --- |".to_owned(),
     ]);
     for (model_id, model_artifact) in &artifact.model_artifacts {
@@ -895,7 +930,11 @@ pub fn render_v5_full_tiebreak_markdown(artifact: &V5FullTieBreakArtifact) -> St
     if artifact.pairwise_randomization.is_empty() {
         lines.push("| _No escalated pairs_ |  |  |  |  |  |  |".to_owned());
     }
-    lines.extend([String::new(), "## Methodological caveats".to_owned(), String::new()]);
+    lines.extend([
+        String::new(),
+        "## Methodological caveats".to_owned(),
+        String::new(),
+    ]);
     for caveat in &artifact.methodology_caveats {
         lines.push(format!("- {caveat}"));
     }
@@ -903,8 +942,7 @@ pub fn render_v5_full_tiebreak_markdown(artifact: &V5FullTieBreakArtifact) -> St
         String::new(),
         "## Source artifacts".to_owned(),
         String::new(),
-        "| Model | Run manifest SHA-256 | Episodes SHA-256 | Dataset seal SHA-256 |"
-            .to_owned(),
+        "| Model | Run manifest SHA-256 | Episodes SHA-256 | Dataset seal SHA-256 |".to_owned(),
         "| --- | --- | --- | --- |".to_owned(),
     ]);
     for (model_id, model_artifact) in &artifact.model_artifacts {
@@ -928,7 +966,10 @@ pub fn write_v5_core_inference_report(
 ) -> Result<PathBuf, ReportError> {
     std::fs::create_dir_all(out_dir)?;
     let path = out_dir.join("v5_core_inference.md");
-    std::fs::write(&path, render_v5_core_inference_markdown(artifact).as_bytes())?;
+    std::fs::write(
+        &path,
+        render_v5_core_inference_markdown(artifact).as_bytes(),
+    )?;
     Ok(path)
 }
 

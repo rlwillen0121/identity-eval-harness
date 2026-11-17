@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
-    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict,
-    as_int, link_credentials, parse_jsonl, prepend_system, render_transcript,
+    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int,
+    link_credentials, parse_jsonl, prepend_system, render_transcript,
 };
 use crate::json::load_object;
 use crate::subprocess::{ProcessResult, user_home_dir};
@@ -185,9 +185,8 @@ impl CliAdapter for CodexAdapter {
         if let Some(schema) = &request.output_schema {
             if request.schema_name != ACTION_SCHEMA_NAME {
                 let schema_path = io_dir.join(SCHEMA_FILE);
-                let schema_json =
-                    dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                        .unwrap_or_else(|_| "{}".to_string());
+                let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
+                    .unwrap_or_else(|_| "{}".to_string());
                 let _ = fs::write(&schema_path, schema_json);
                 argv.push("--output-schema".to_string());
                 argv.push(schema_path.to_string_lossy().into_owned());
@@ -258,16 +257,17 @@ impl CliAdapter for CodexAdapter {
             }
         }
 
-        let mut text: Option<String> = fs::read_to_string(io_dir.join(OUTPUT_FILE))
-            .ok()
-            .and_then(|s| {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
-            });
+        let mut text: Option<String> =
+            fs::read_to_string(io_dir.join(OUTPUT_FILE))
+                .ok()
+                .and_then(|s| {
+                    let t = s.trim();
+                    if t.is_empty() {
+                        None
+                    } else {
+                        Some(t.to_string())
+                    }
+                });
         if text.is_none()
             && let Some(ref st) = streamed_text
         {

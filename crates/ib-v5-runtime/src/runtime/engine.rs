@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use ib_v5_schemas::{
     AtomicMutationV5, CheckerReceiptStatusV5, CheckerReceiptV5, CoSignReceiptStatusV5,
-    CoSignReceiptV5, CoSignScopeKindV5, CommitReceiptStatusV5, CommitReceiptV5,
-    DeliveredSliceV5, EpisodeV5, PhaseManifestV5, QuerySourcesResponseV5, QuerySourcesStatusV5,
-    STAGE_ID_RE, StageReceiptStatusV5, StageReceiptV5, SteerProcessDirectiveV5, SteerReceiptStatusV5,
+    CoSignReceiptV5, CoSignScopeKindV5, CommitReceiptStatusV5, CommitReceiptV5, DeliveredSliceV5,
+    EpisodeV5, PhaseManifestV5, QuerySourcesResponseV5, QuerySourcesStatusV5, STAGE_ID_RE,
+    StageReceiptStatusV5, StageReceiptV5, SteerProcessDirectiveV5, SteerReceiptStatusV5,
     SteerReceiptV5, SteerTriggerReasonV5, TerminalWorldStateV5, ViolationCategoryV5, WorldStateV5,
 };
 use indexmap::IndexMap;
@@ -165,10 +165,10 @@ pub fn stage_digests(
     sorted_muts.sort_by_key(|m| mutation_key(m));
     let mut sorted_values = Vec::with_capacity(sorted_muts.len());
     for m in sorted_muts {
-        sorted_values.push(
-            serde_json::to_value(m)
-                .map_err(|e| RuntimeError::Schema(ib_v5_schemas::SchemaValidationError::from(e)))?,
-        );
+        sorted_values
+            .push(serde_json::to_value(m).map_err(|e| {
+                RuntimeError::Schema(ib_v5_schemas::SchemaValidationError::from(e))
+            })?);
     }
 
     let union_if_match: BTreeSet<&str> = mutations
@@ -428,9 +428,7 @@ impl RuntimeV5 {
 
     #[must_use]
     pub fn active_stage_digest(&self) -> &str {
-        self.staged
-            .as_ref()
-            .map_or("", |s| s.stage_digest.as_str())
+        self.staged.as_ref().map_or("", |s| s.stage_digest.as_str())
     }
 
     #[must_use]
@@ -521,7 +519,11 @@ impl RuntimeV5 {
             .iter()
             .map(|d| (d.slice_id.as_str(), d))
             .collect();
-        if requested.is_empty() || requested.iter().any(|id| !directory.contains_key(id.as_str())) {
+        if requested.is_empty()
+            || requested
+                .iter()
+                .any(|id| !directory.contains_key(id.as_str()))
+        {
             return Ok(QuerySourcesResponseV5 {
                 status: QuerySourcesStatusV5::RejectedUnknownSlice,
                 phase_index,
@@ -559,12 +561,9 @@ impl RuntimeV5 {
         let new_slices: Vec<DeliveredSliceV5> = new_ids
             .iter()
             .map(|id| {
-                self.phase_slice_payloads
-                    .get(id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        RuntimeError::InvalidArgument(format!("missing slice payload for {id:?}"))
-                    })
+                self.phase_slice_payloads.get(id).cloned().ok_or_else(|| {
+                    RuntimeError::InvalidArgument(format!("missing slice payload for {id:?}"))
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -626,7 +625,12 @@ impl RuntimeV5 {
                 "phase_handle_or_completeness",
             ));
         }
-        let errors = structural_errors(&self.view, phase_index, mutations, &self.manifest.work_queue);
+        let errors = structural_errors(
+            &self.view,
+            phase_index,
+            mutations,
+            &self.manifest.work_queue,
+        );
         if let Some(first_err) = errors.first() {
             return Ok(self.stage_rejected(phase_index, stage_id, mutations, first_err));
         }
@@ -930,11 +934,8 @@ impl RuntimeV5 {
             phase2_manifest.invalidated_entity_ids = invalidated.clone();
             phase2_manifest.prior_phase_ledger = Some(visible_ledger);
 
-            let p1_world = apply_phase1_with_queue(
-                &self.world,
-                &staged.mutations,
-                &self.manifest.work_queue,
-            )?;
+            let p1_world =
+                apply_phase1_with_queue(&self.world, &staged.mutations, &self.manifest.work_queue)?;
             self.world = apply_phase2_environment_delta(
                 &p1_world,
                 &self.episode,

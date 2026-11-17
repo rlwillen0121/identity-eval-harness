@@ -27,7 +27,9 @@ use crate::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall,
     hash_endpoint,
 };
-use crate::json::{bounded_token_count, load_object, safe_nonnegative_float_add, sanitize_response};
+use crate::json::{
+    bounded_token_count, load_object, safe_nonnegative_float_add, sanitize_response,
+};
 use crate::subprocess::{
     Command, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BASE_DELAY_S, ProcessResult, ProcessRunner,
     SystemProcessRunner, is_transient_error, redact, retry_transient, tail,
@@ -323,12 +325,8 @@ pub fn env_items(env: &BTreeMap<String, String>) -> EnvItems {
 pub fn always_dropped(name: &str) -> bool {
     let upper = name.to_uppercase();
     COMMON_ENV_DROP.contains(&name)
-        || COMMON_ENV_DROP_PREFIXES
-            .iter()
-            .any(|p| name.starts_with(p))
-        || COMMON_ENV_DROP_SUFFIXES
-            .iter()
-            .any(|s| upper.ends_with(s))
+        || COMMON_ENV_DROP_PREFIXES.iter().any(|p| name.starts_with(p))
+        || COMMON_ENV_DROP_SUFFIXES.iter().any(|s| upper.ends_with(s))
 }
 
 #[must_use]
@@ -345,9 +343,7 @@ pub fn base_child_env(base: Option<&BTreeMap<String, String>>) -> BTreeMap<Strin
         .iter()
         .filter(|(name, _)| {
             (COMMON_ENV_KEEP.contains(&name.as_str())
-                || COMMON_ENV_KEEP_PREFIXES
-                    .iter()
-                    .any(|p| name.starts_with(p)))
+                || COMMON_ENV_KEEP_PREFIXES.iter().any(|p| name.starts_with(p)))
                 && !always_dropped(name)
         })
         .map(|(k, v)| (k.clone(), v.clone()))
@@ -500,10 +496,7 @@ pub fn scrub_stderr(stderr: &str, request: Option<&ModelRequest>, limit: usize) 
         })
     };
 
-    let kept: Vec<&str> = stderr
-        .lines()
-        .filter(|line| !echoes_prompt(line))
-        .collect();
+    let kept: Vec<&str> = stderr.lines().filter(|line| !echoes_prompt(line)).collect();
     tail(&kept.join("\n"), limit)
 }
 
@@ -526,10 +519,7 @@ pub fn unregister_call_dir(path: &Path) {
 
 #[must_use]
 pub fn live_call_dirs() -> BTreeSet<PathBuf> {
-    LIVE_CALL_DIRS
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_default()
+    LIVE_CALL_DIRS.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
 pub fn remove_live_call_dirs() -> usize {
@@ -831,6 +821,9 @@ pub struct CliConfig {
     pub version: Option<String>,
     pub max_retries: u32,
     pub retry_base_delay_s: f64,
+    /// Effective process environment supplied by the caller. Never included in Debug or
+    /// persisted provider identity; the adapter's existing allowlist still filters it.
+    pub environment: Option<BTreeMap<String, String>>,
 }
 
 impl std::fmt::Debug for CliConfig {
@@ -859,6 +852,7 @@ impl CliConfig {
             version: None,
             max_retries: DEFAULT_MAX_RETRIES,
             retry_base_delay_s: DEFAULT_RETRY_BASE_DELAY_S,
+            environment: None,
         }
     }
 }
@@ -967,12 +961,8 @@ impl<A: CliAdapter> CliProvider<A> {
     pub fn keeps(&self, name: &str) -> bool {
         let upper = name.to_uppercase();
         if self.adapter.env_drop().contains(&name)
-            || COMMON_ENV_DROP_PREFIXES
-                .iter()
-                .any(|p| name.starts_with(p))
-            || COMMON_ENV_DROP_SUFFIXES
-                .iter()
-                .any(|s| upper.ends_with(s))
+            || COMMON_ENV_DROP_PREFIXES.iter().any(|p| name.starts_with(p))
+            || COMMON_ENV_DROP_SUFFIXES.iter().any(|s| upper.ends_with(s))
         {
             return false;
         }
@@ -994,15 +984,13 @@ impl<A: CliAdapter> CliProvider<A> {
             return false;
         }
         COMMON_ENV_KEEP.contains(&name)
-            || COMMON_ENV_KEEP_PREFIXES
-                .iter()
-                .any(|p| name.starts_with(p))
+            || COMMON_ENV_KEEP_PREFIXES.iter().any(|p| name.starts_with(p))
     }
 
     #[must_use]
     pub fn child_env(&self, base: Option<&BTreeMap<String, String>>) -> BTreeMap<String, String> {
         let owned: BTreeMap<String, String>;
-        let source = match base {
+        let source = match base.or(self.config.environment.as_ref()) {
             Some(m) => m,
             None => {
                 owned = std::env::vars().collect();
@@ -1206,7 +1194,7 @@ impl<A: CliAdapter> CliProvider<A> {
             }
             text.push_str(&format!(" ({})", details.join("; ")));
         }
-        redact(&text, None, &[])
+        redact(&text, self.config.environment.as_ref(), &[])
     }
 
     pub fn fail(
@@ -1253,7 +1241,11 @@ impl<A: CliAdapter> CliProvider<A> {
         if let Some(ref eff) = effort
             && !valid_effort(eff)
         {
-            return self.fail(&format!("invalid effort value {eff:?}"), None, Some(request));
+            return self.fail(
+                &format!("invalid effort value {eff:?}"),
+                None,
+                Some(request),
+            );
         }
 
         let dir = match CallDirGuard::new(&format!("identitybench-{}-", self.adapter.kind())) {
@@ -1280,13 +1272,9 @@ impl<A: CliAdapter> CliProvider<A> {
             }
         }
 
-        let built = self.adapter.build(
-            &self.config,
-            request,
-            effort.as_deref(),
-            &io_dir,
-            &work_dir,
-        );
+        let built =
+            self.adapter
+                .build(&self.config, request, effort.as_deref(), &io_dir, &work_dir);
         let max_arg = self.adapter.max_arg_bytes();
         if let Some(too_long) = built.argv.iter().find(|arg| arg.len() > max_arg) {
             return self.fail(
@@ -1313,9 +1301,7 @@ impl<A: CliAdapter> CliProvider<A> {
         for (relative, text) in &built.home_files {
             let candidate = resolved_home.join(relative);
             if Path::new(relative).is_absolute()
-                || relative
-                    .split(['/', '\\'])
-                    .any(|seg| seg == "..")
+                || relative.split(['/', '\\']).any(|seg| seg == "..")
             {
                 return self.fail(
                     &format!("could not set up a private CLI home: home_files path escapes private home: {relative:?}"),
@@ -1464,9 +1450,12 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
     }
 
     fn endpoint_identity(&self) -> String {
-        let ver = self
-            .resolved_version
-            .get_or_init(|| probe_version(&self.config.binary, Some(&base_child_env(None))));
+        let ver = self.resolved_version.get_or_init(|| {
+            probe_version(
+                &self.config.binary,
+                Some(&base_child_env(self.config.environment.as_ref())),
+            )
+        });
         let setup_rev = self.setup_revision();
         hash_endpoint(&[
             Some(self.adapter.kind()),
@@ -1482,7 +1471,8 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
     }
 
     async fn complete(&self, request: &ModelRequest) -> ModelResponse {
-        let mut response = sanitize_response(self.complete_inner(request).await, self.adapter.kind());
+        let mut response =
+            sanitize_response(self.complete_inner(request).await, self.adapter.kind());
         let ignored = self.ignored_params(request);
         if !ignored.is_empty() {
             let mut raw = response.raw.take().unwrap_or_default();

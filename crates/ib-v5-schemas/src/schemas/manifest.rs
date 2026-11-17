@@ -5,25 +5,25 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use super::common::EngagementStatusV5;
 use super::common::{
     ACCT_ID_RE, AGT_ID_RE, ATG_ID_RE, BRULE_ID_RE, CAMP_ID_RE, CIEM_ID_RE, CONN_ID_RE,
-    CUSTODIAN_GRANT_ID_RE, DLREQ_ID_RE, ENG_ID_RE, ETAG_HEX_RE, FAMILY_ID_RE,
+    CUSTODIAN_GRANT_ID_RE, CoSignScopeKindV5, DLREQ_ID_RE, ENG_ID_RE, ETAG_HEX_RE, FAMILY_ID_RE,
     GRANT_ID_RE, HFEED_ID_RE, HRMAP_ID_RE, INC_ID_RE, NHI_ID_RE, OPT_ID_RE, OPT_STAGE_DIGEST_RE,
-    PERS_ID_RE, PolicyOverlayV5, RegimeIdV5, REQ_ID_RE, SESS_ID_RE, SHA256_HEX_RE, SL_ID_RE,
+    PERS_ID_RE, PolicyOverlayV5, REQ_ID_RE, RegimeIdV5, SESS_ID_RE, SHA256_HEX_RE, SL_ID_RE,
     SchemaValidationError, ScopeCatalogV5, StrictV5Model, SuiteIdV5, TKT_ID_RE,
-    ViolationCategoryV5, WFL_ID_RE, CoSignScopeKindV5, check_opt_re, check_re, check_slice_re,
-    check_slice_re_any, check_sorted_unique,
+    ViolationCategoryV5, WFL_ID_RE, check_opt_re, check_re, check_slice_re, check_slice_re_any,
+    check_sorted_unique,
 };
 use super::compact::DeliveredSliceV5;
 use super::entities::{
-    AgentDelegationRequestV5, BaselineAgentV5, BaselineNHIV5, CAEIncidentV5, CIEMPrincipalFindingV5,
-    CIEMTaskV5, ChangeTicketV5, CompensatingControlV5, ConnectorPageV5, ConnectorSchemaV5,
-    EnterpriseAgentV5, GrantV5, GroupV5, HRPersonV5, HRSourceMappingTaskV5, HistoricalSessionV5,
-    ITSMTicketActionV5, IdPAccountV5, JITRequestV5, JMLTraceEventV5, JMLWorkflowTaskV5,
-    OptimizationTaskV5, RoleV5, TargetNHIV5, TransferBridgeV5, UARCampaignV5,
+    AgentDelegationRequestV5, BaselineAgentV5, BaselineNHIV5, CAEIncidentV5,
+    CIEMPrincipalFindingV5, CIEMTaskV5, ChangeTicketV5, CompensatingControlV5, ConnectorPageV5,
+    ConnectorSchemaV5, EnterpriseAgentV5, GrantV5, GroupV5, HRPersonV5, HRSourceMappingTaskV5,
+    HistoricalSessionV5, ITSMTicketActionV5, IdPAccountV5, JITRequestV5, JMLTraceEventV5,
+    JMLWorkflowTaskV5, OptimizationTaskV5, RoleV5, TargetNHIV5, TransferBridgeV5, UARCampaignV5,
 };
 use super::mutations::{AtomicMutationV5, ConnectorHaltReasonV5};
-use super::common::EngagementStatusV5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -330,7 +330,12 @@ pub struct PriorAgentOutcomeV5 {
 
 impl StrictV5Model for PriorAgentOutcomeV5 {
     fn validate(&self) -> Result<(), SchemaValidationError> {
-        check_re(&self.agent_id, &AGT_ID_RE, "agent_id", "PriorAgentOutcomeV5")?;
+        check_re(
+            &self.agent_id,
+            &AGT_ID_RE,
+            "agent_id",
+            "PriorAgentOutcomeV5",
+        )?;
         check_opt_re(
             self.resolved_sponsor_person_id.as_deref(),
             &PERS_ID_RE,

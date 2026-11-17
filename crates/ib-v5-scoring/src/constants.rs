@@ -69,9 +69,14 @@ pub const G_BASELINE_IDS_V5: [&str; 6] = [
 
 /// Return the `(phase_index, mutation_kinds)` mapping for one of the 7 v5 categories.
 #[must_use]
-pub fn category_phase_kinds_v5(category: &str) -> Option<&'static [(i64, &'static [&'static str])]> {
+pub fn category_phase_kinds_v5(
+    category: &str,
+) -> Option<&'static [(i64, &'static [&'static str])]> {
     match category {
-        "connectors" => Some(&[(1, &["CONNECTOR_SYNC_MUTATION", "HR_SOURCE_MAPPING_MUTATION"])]),
+        "connectors" => Some(&[(
+            1,
+            &["CONNECTOR_SYNC_MUTATION", "HR_SOURCE_MAPPING_MUTATION"],
+        )]),
         "classification" => Some(&[(1, &["NHI_GOVERNANCE_MUTATION"])]),
         "zsp_policy" => Some(&[
             (1, &["CLOUD_CIEM_MUTATION", "OPTIMIZATION_MUTATION"]),

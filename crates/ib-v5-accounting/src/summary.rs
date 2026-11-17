@@ -600,9 +600,8 @@ fn compute_status_counts(
             "planned_attempt_slots must be non-negative".to_owned(),
         ));
     }
-    let observed = i64::try_from(attempts.len()).map_err(|_| {
-        AccountingError::Validation("attempts count exceeds i64 range".to_owned())
-    })?;
+    let observed = i64::try_from(attempts.len())
+        .map_err(|_| AccountingError::Validation("attempts count exceeds i64 range".to_owned()))?;
     if observed > planned_attempt_slots {
         return Err(AccountingError::Validation(format!(
             "received {observed} attempts for only {planned_attempt_slots} planned slots"
@@ -684,11 +683,8 @@ pub fn summarize_descriptive_usage_v5(
         }
     }
 
-    let (status_counts, has_missing_slots) = compute_status_counts(
-        planned_attempt_slots,
-        attempts,
-        options.missing_slot_status,
-    )?;
+    let (status_counts, has_missing_slots) =
+        compute_status_counts(planned_attempt_slots, attempts, options.missing_slot_status)?;
     let aggregated = aggregate_attempts_usage(
         attempts,
         has_missing_slots,
@@ -826,7 +822,8 @@ fn check_attempt_completeness_errors(attempts: &[EpisodeAttemptV5]) -> Vec<Strin
                 attempt.attempt_id
             ));
         }
-        if let (Some(wall), Some(active)) = (attempt.elapsed_wall_time_ms, attempt.active_elapsed_ms)
+        if let (Some(wall), Some(active)) =
+            (attempt.elapsed_wall_time_ms, attempt.active_elapsed_ms)
             && active > wall
         {
             errors.push(format!(
@@ -854,7 +851,10 @@ fn check_attempt_completeness_errors(attempts: &[EpisodeAttemptV5]) -> Vec<Strin
                 ));
             }
             if !seen_request_ids.insert(req.request_id.as_str()) {
-                errors.push(format!("duplicate physical request_id: {:?}", req.request_id));
+                errors.push(format!(
+                    "duplicate physical request_id: {:?}",
+                    req.request_id
+                ));
             }
             by_logical
                 .entry(req.logical_request_id.as_str())

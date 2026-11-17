@@ -190,7 +190,10 @@ pub fn safe_artifact_file(
     }
 
     let resolved_root = std::fs::canonicalize(root).map_err(|e| {
-        ReportError::value(format!("cannot resolve artifact root {}: {e}", root.display()))
+        ReportError::value(format!(
+            "cannot resolve artifact root {}: {e}",
+            root.display()
+        ))
     })?;
 
     let mut candidate = resolved_root.clone();
@@ -201,9 +204,8 @@ pub fn safe_artifact_file(
     }
 
     if std::fs::symlink_metadata(&candidate).is_ok() {
-        let resolved = std::fs::canonicalize(&candidate).map_err(|e| {
-            ReportError::value(format!("cannot resolve {label}: {e}"))
-        })?;
+        let resolved = std::fs::canonicalize(&candidate)
+            .map_err(|e| ReportError::value(format!("cannot resolve {label}: {e}")))?;
         if !resolved.starts_with(&resolved_root) {
             return Err(ReportError::value(format!(
                 "{label} escapes its artifact root"
@@ -216,9 +218,8 @@ pub fn safe_artifact_file(
     let mut ancestor = candidate.as_path();
     while let Some(parent) = ancestor.parent() {
         if std::fs::symlink_metadata(parent).is_ok() {
-            let resolved_parent = std::fs::canonicalize(parent).map_err(|e| {
-                ReportError::value(format!("cannot resolve {label}: {e}"))
-            })?;
+            let resolved_parent = std::fs::canonicalize(parent)
+                .map_err(|e| ReportError::value(format!("cannot resolve {label}: {e}")))?;
             if !resolved_parent.starts_with(&resolved_root) {
                 return Err(ReportError::value(format!(
                     "{label} escapes its artifact root"

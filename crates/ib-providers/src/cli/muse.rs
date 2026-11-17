@@ -211,9 +211,8 @@ impl CliAdapter for MuseAdapter {
         ];
         if let Some(schema) = &request.output_schema {
             let schema_path = io_dir.join("schema.json");
-            let schema_json =
-                dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                    .unwrap_or_else(|_| "{}".to_string());
+            let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
+                .unwrap_or_else(|_| "{}".to_string());
             let _ = fs::write(&schema_path, schema_json);
             argv.push("--output-schema".to_string());
             argv.push(schema_path.to_string_lossy().into_owned());
@@ -241,9 +240,11 @@ impl CliAdapter for MuseAdapter {
         }
 
         let mut home_files = BTreeMap::new();
-        let settings_json =
-            dumps(&Value::Object(settings(&request.system)), &DumpOptions::default())
-                .unwrap_or_else(|_| "{}".to_string());
+        let settings_json = dumps(
+            &Value::Object(settings(&request.system)),
+            &DumpOptions::default(),
+        )
+        .unwrap_or_else(|_| "{}".to_string());
         home_files.insert(SETTINGS.to_string(), settings_json);
 
         Invocation {
@@ -290,7 +291,9 @@ impl CliAdapter for MuseAdapter {
         let cached = as_int(as_dict(usage.get("input_tokens_details")).get("cached_tokens"));
         let subscription: Vec<Map<String, Value>> = events
             .iter()
-            .filter(|e| e.get("type").and_then(Value::as_str) == Some("response.subscription_usage"))
+            .filter(|e| {
+                e.get("type").and_then(Value::as_str) == Some("response.subscription_usage")
+            })
             .map(|e| as_dict(e.get("subscription")))
             .collect();
 

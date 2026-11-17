@@ -79,7 +79,10 @@ fn policy_card_matches_authored_anchors_for_every_rule_and_boundary() {
             .any(|e| e.contains("AGENT-DEL-V5-01.D4"))
     );
 
-    let duplicated = format!("{}\n### CAE-V5-01\nduplicate\n", card.rendered_rules_markdown);
+    let duplicated = format!(
+        "{}\n### CAE-V5-01\nduplicate\n",
+        card.rendered_rules_markdown
+    );
     assert!(
         validate_policy_card_coverage(&duplicated)
             .iter()
@@ -136,11 +139,8 @@ fn policy_card_validator_allows_large_cards_and_rejects_truncation() {
     assert!(validate_policy_card(&large_card).is_empty());
 
     let mut mutated = card.clone();
-    mutated.rendered_rules_markdown = format!(
-        "{}{}",
-        card.rendered_rules_markdown,
-        " x".repeat(4_000)
-    );
+    mutated.rendered_rules_markdown =
+        format!("{}{}", card.rendered_rules_markdown, " x".repeat(4_000));
     let errors = validate_policy_card(&mutated);
     assert!(
         errors
@@ -195,7 +195,11 @@ fn logical_input_counter_has_no_9600_cap_and_validates_parts() {
         .is_empty()
     );
 
-    assert!(!validate_logical_episode_tokens(&[], None).unwrap().is_empty());
+    assert!(
+        !validate_logical_episode_tokens(&[], None)
+            .unwrap()
+            .is_empty()
+    );
     assert!(
         !validate_logical_episode_tokens(&[LogicalInput::Str("")], None)
             .unwrap()
@@ -310,6 +314,9 @@ fn rules_markdown_contains_all_literal_rule_ids_and_no_obsolete_ceilings() {
     .into_iter()
     .collect();
     for cat in all_categories {
-        assert!(stage5.contains(&format!("`{cat}`")), "missing {cat} in STAGE5");
+        assert!(
+            stage5.contains(&format!("`{cat}`")),
+            "missing {cat} in STAGE5"
+        );
     }
 }

@@ -12,13 +12,12 @@ use ib_v5_schemas::scope_algebra::{
 };
 use ib_v5_schemas::{
     AgentDelegationMutationV5, AgentDelegationRequestV5, AtomicMutationV5,
-    CAEContainmentMutationKind, CAEContainmentMutationV5, CAEIncidentV5,
-    CAETokenBindingKindV5, CAETokenKindV5, CAETokenV5, CAETriggerKindV5,
-    CompensatingControlV5, EngagementV5, GrantModeV5, GrantV5, GroupEffectV5,
-    HistoricalSessionV5, OptCandidateActionV5, OptimizationMutationKind, OptimizationMutationV5,
-    OptimizationPhaseKindV5, PhaseWorkQueueV5, PriorAccountP1ActionV5, PriorAgentP1ActionV5,
-    PriorNHIP1ActionV5, PriorPhaseLedgerV5, PrivilegeTierV5, UARCampaignMutationKind,
-    UARCampaignMutationV5, UARCampaignV5, UARDecisionKindV5, UARItemV5,
+    CAEContainmentMutationKind, CAEContainmentMutationV5, CAEIncidentV5, CAETokenBindingKindV5,
+    CAETokenKindV5, CAETokenV5, CAETriggerKindV5, CompensatingControlV5, EngagementV5, GrantModeV5,
+    GrantV5, GroupEffectV5, HistoricalSessionV5, OptCandidateActionV5, OptimizationMutationKind,
+    OptimizationMutationV5, OptimizationPhaseKindV5, PhaseWorkQueueV5, PriorAccountP1ActionV5,
+    PriorAgentP1ActionV5, PriorNHIP1ActionV5, PriorPhaseLedgerV5, PrivilegeTierV5,
+    UARCampaignMutationKind, UARCampaignMutationV5, UARCampaignV5, UARDecisionKindV5, UARItemV5,
     UARPreserveStandingFloorOverrideV5, WorldStateV5,
 };
 
@@ -46,7 +45,8 @@ pub struct Phase2WorkingState {
     pub postshock_stripped_ids: BTreeSet<String>,
     pub provisional_sessions: Vec<HistoricalSessionV5>,
     pub consumed_ticket_ids: BTreeSet<String>,
-    pub approved_delegations: BTreeMap<String, (AgentDelegationRequestV5, AgentDelegationMutationV5)>,
+    pub approved_delegations:
+        BTreeMap<String, (AgentDelegationRequestV5, AgentDelegationMutationV5)>,
     pub workflow_footprints: BTreeMap<String, CapabilityFootprint>,
 }
 
@@ -280,8 +280,7 @@ pub fn initialize_working_state(ctx: PhaseContext) -> Result<Phase2WorkingState,
                 !work.retro_tainted_ids.contains(&bridge.bridge_id)
                     && bridge.account_id == account_id
                     && bridge.grant_id == grant_id
-                    && engagement.prior_dept_path.as_deref()
-                        == Some(bridge.from_dept_path.as_str())
+                    && engagement.prior_dept_path.as_deref() == Some(bridge.from_dept_path.as_str())
                     && bridge.to_dept_path == department
                     && bridge.target_resource == role.app_id
                     && bridge.approved_at_s <= clock
@@ -364,7 +363,8 @@ pub fn token_active_interval(
             return None;
         }
     }
-    let stop_at = if token.cae_capable_spoke && token.binding_kind == CAETokenBindingKindV5::BoundDpop
+    let stop_at = if token.cae_capable_spoke
+        && token.binding_kind == CAETokenBindingKindV5::BoundDpop
     {
         let push_revoke = effective_revoke(token, tokens_by_id, effective_revokes);
         let base = token.token_exp_s.min(token.next_spoke_poll_sync_at_s);
@@ -372,8 +372,7 @@ pub fn token_active_interval(
             Some(r) => base.min(r),
             None => base,
         }
-    } else if token.cae_capable_spoke
-        && token.binding_kind == CAETokenBindingKindV5::BearerUnbound
+    } else if token.cae_capable_spoke && token.binding_kind == CAETokenBindingKindV5::BearerUnbound
     {
         let base = token.token_exp_s.min(token.next_spoke_poll_sync_at_s);
         match token.revoke_ack_at_s {
@@ -466,8 +465,7 @@ pub fn phase21_cae(work: &mut Phase2WorkingState) -> Result<Vec<AtomicMutationV5
                         .is_some_and(|a| {
                             a.bound_person_id.as_deref() == Some(incident.person_id.as_str())
                         })
-                } else if let Some(bridge) =
-                    work.state().transfer_bridges.get(approval_id.as_str())
+                } else if let Some(bridge) = work.state().transfer_bridges.get(approval_id.as_str())
                 {
                     acct_by_id
                         .get(bridge.approved_by_account_id.as_str())
@@ -818,7 +816,10 @@ pub fn post_uar_live_controls(
             [control.required_monitor_capability.as_str()],
             [control.covered_scope_path.as_str()],
         )?;
-        if needed.is_subset(&account_standing_footprint(work, &control.monitor_account_id)?) {
+        if needed.is_subset(&account_standing_footprint(
+            work,
+            &control.monitor_account_id,
+        )?) {
             controls.push(control.clone());
         }
     }
@@ -831,8 +832,7 @@ pub fn verify_post_uar_invariants(
     campaigns: &[UARCampaignV5],
 ) -> Result<(), OracleError> {
     for campaign in campaigns {
-        let (standing_people, eligible_people) =
-            campaign_quorum_sets(work, campaign, false)?;
+        let (standing_people, eligible_people) = campaign_quorum_sets(work, campaign, false)?;
         if (standing_people.len() as i64) < campaign_standing_floor(work, campaign) {
             return Err(OracleError::Phase2Infeasibility(format!(
                 "P2 UAR standing quorum is infeasible for {}",
@@ -1013,10 +1013,7 @@ pub fn phase22_uar(work: &mut Phase2WorkingState) -> Result<Vec<AtomicMutationV5
             decisions.insert(item_id.clone(), UARDecisionKindV5::Escalate);
         }
 
-        let actionable: Vec<String> = reviewed
-            .difference(&locked_item_ids)
-            .cloned()
-            .collect();
+        let actionable: Vec<String> = reviewed.difference(&locked_item_ids).cloned().collect();
         let standing_items: Vec<&UARItemV5> = actionable
             .iter()
             .map(|iid| item_by_id[iid.as_str()])
@@ -1040,7 +1037,8 @@ pub fn phase22_uar(work: &mut Phase2WorkingState) -> Result<Vec<AtomicMutationV5
                         .insert(work.bound_person_by_account[item.account_id.as_str()].clone());
                 }
             } else {
-                let role = &work.state().roles[work.grants[item.grant_id.as_str()].role_id.as_str()];
+                let role =
+                    &work.state().roles[work.grants[item.grant_id.as_str()].role_id.as_str()];
                 decisions.insert(
                     item.item_id.clone(),
                     if role.is_jit_capable_target {
@@ -1073,8 +1071,7 @@ pub fn phase22_uar(work: &mut Phase2WorkingState) -> Result<Vec<AtomicMutationV5
         let mut emergency_custodian: Option<String> = None;
         if (standing_people.len() as i64) < standing_floor {
             let required = campaign_required_footprint(work, &campaign)?;
-            let mut candidates: Vec<String> =
-                campaign.candidate_custodian_account_ids.clone();
+            let mut candidates: Vec<String> = campaign.candidate_custodian_account_ids.clone();
             candidates.sort();
             candidates.dedup();
             let empty_fp = CapabilityFootprint::new();
@@ -1241,8 +1238,7 @@ pub fn phase22_uar(work: &mut Phase2WorkingState) -> Result<Vec<AtomicMutationV5
                 continue;
             };
             let person = work.state().hr_persons.get(pid);
-            let engagement =
-                person.and_then(|p| p.engagements_by_id().get(eid).copied());
+            let engagement = person.and_then(|p| p.engagements_by_id().get(eid).copied());
             if let Some(eng) = engagement
                 && !engagement_is_live(eng, work.clock())
             {
@@ -1259,8 +1255,9 @@ pub fn phase22_uar(work: &mut Phase2WorkingState) -> Result<Vec<AtomicMutationV5
             for bridge in work.state().transfer_bridges.values() {
                 if bridge.account_id == item.account_id
                     && bridge.grant_id == item.grant_id
-                    && let Some(approver) =
-                        acct_by_id.get(bridge.approved_by_account_id.as_str()).copied()
+                    && let Some(approver) = acct_by_id
+                        .get(bridge.approved_by_account_id.as_str())
+                        .copied()
                     && let Some(ref bound_pid) = approver.bound_person_id
                 {
                     pre_ids.push(bridge.bridge_id.clone());
@@ -1380,8 +1377,11 @@ pub fn reviewer_assignment_feasibility(
         }
     }
     let mut action_valid = selected.len() == selected_ids.len();
-    let required_scopes: BTreeSet<&str> =
-        task.required_review_scopes.iter().map(String::as_str).collect();
+    let required_scopes: BTreeSet<&str> = task
+        .required_review_scopes
+        .iter()
+        .map(String::as_str)
+        .collect();
     let covered_scopes: BTreeSet<&str> = selected
         .iter()
         .flat_map(|c| c.covered_scopes.iter().map(String::as_str))
@@ -1414,9 +1414,11 @@ pub fn reviewer_assignment_feasibility(
         if excluded.contains(person_id.as_str()) {
             policy_ok = false;
         }
-        if task.excluded_conflict_person_ids.iter().any(|ex| {
-            is_subordinate(&person_id, ex, work.clock(), &work.state().hr_persons)
-        }) {
+        if task
+            .excluded_conflict_person_ids
+            .iter()
+            .any(|ex| is_subordinate(&person_id, ex, work.clock(), &work.state().hr_persons))
+        {
             policy_ok = false;
         }
         assignments_by_person

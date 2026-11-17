@@ -10,7 +10,10 @@ use ib_v5_schemas::{
 #[test]
 fn t0_unified_profile_invariants_and_python_sha256_parity() {
     let profile = &*T0_UNIFIED_PROFILE_V5;
-    assert_eq!(profile.canonical_topology, CanonicalTopologyV5::T0SingleMonolith);
+    assert_eq!(
+        profile.canonical_topology,
+        CanonicalTopologyV5::T0SingleMonolith
+    );
     assert_eq!(
         profile.legacy_plumbing_alias.as_deref(),
         Some("SINGLE_AGENT_UNIFIED")
@@ -43,13 +46,17 @@ fn t0_unified_profile_invariants_and_python_sha256_parity() {
 
     let ordinary_set: BTreeSet<String> = expected_tools.into_iter().collect();
     assert_eq!(
-        profile.permitted_tools_for_role("monolith", "UNSTEERED").unwrap(),
+        profile
+            .permitted_tools_for_role("monolith", "UNSTEERED")
+            .unwrap(),
         ordinary_set
     );
     let mut steered_set = ordinary_set;
     steered_set.insert("request_team_steer".to_owned());
     assert_eq!(
-        profile.permitted_tools_for_role("monolith", "STEERED").unwrap(),
+        profile
+            .permitted_tools_for_role("monolith", "STEERED")
+            .unwrap(),
         steered_set
     );
 }
@@ -84,7 +91,8 @@ fn t5_planner_executor_auditor_profile_invariants_and_python_sha256_parity() {
         r#"{"roles":{"auditor":2,"executor":1,"planner":0},"topology_priority":1}"#
     );
 
-    let ordinary_set: BTreeSet<String> = V5_ORDINARY_TOOLS.iter().map(|s| (*s).to_owned()).collect();
+    let ordinary_set: BTreeSet<String> =
+        V5_ORDINARY_TOOLS.iter().map(|s| (*s).to_owned()).collect();
     for steering in ["UNSTEERED", "CHECKPOINT_STEERED", "FULL_LIVE_STEERED"] {
         assert!(
             profile
@@ -93,11 +101,15 @@ fn t5_planner_executor_auditor_profile_invariants_and_python_sha256_parity() {
                 .is_empty()
         );
         assert_eq!(
-            profile.permitted_tools_for_role("executor", steering).unwrap(),
+            profile
+                .permitted_tools_for_role("executor", steering)
+                .unwrap(),
             ordinary_set
         );
         assert_eq!(
-            profile.permitted_tools_for_role("auditor", steering).unwrap(),
+            profile
+                .permitted_tools_for_role("auditor", steering)
+                .unwrap(),
             BTreeSet::from(["run_phase_checker".to_owned()])
         );
     }
@@ -130,7 +142,10 @@ fn rejects_tampered_sha_and_invalid_roles() {
 
 #[test]
 fn resolve_topology_profile_handles_aliases_t3_and_unsupported() {
-    assert_eq!(canonical_topology_id_v5("SINGLE_AGENT_UNIFIED"), "T0_SINGLE_MONOLITH");
+    assert_eq!(
+        canonical_topology_id_v5("SINGLE_AGENT_UNIFIED"),
+        "T0_SINGLE_MONOLITH"
+    );
     assert_eq!(
         canonical_topology_id_v5("MULTI_AGENT_SPECIALIZED"),
         "T5_HIERARCHICAL_PIPELINE"

@@ -86,7 +86,10 @@ pub fn recover_completed_agent_text(events: &[Map<String, Value>]) -> Option<Str
         }
         last_step_index = Some(step_index);
         if let Some(delta) = su.get("text_delta").and_then(Value::as_str) {
-            chunks_by_step.entry(step_index).or_default().push_str(delta);
+            chunks_by_step
+                .entry(step_index)
+                .or_default()
+                .push_str(delta);
         }
         if su.get("state").and_then(Value::as_str) == Some("DONE") {
             done_steps.insert(step_index);
@@ -221,11 +224,8 @@ impl CliAdapter for AgyAdapter {
         ];
         if structured && let Some(schema) = &request.output_schema {
             let schema_path = io_dir.join(SCHEMA_FILE);
-            let schema_json = dumps(
-                &Value::Object(schema.clone()),
-                &DumpOptions::default(),
-            )
-            .unwrap_or_else(|_| "{}".to_string());
+            let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
+                .unwrap_or_else(|_| "{}".to_string());
             let _ = fs::write(&schema_path, schema_json);
             argv.push("--json-schema".to_string());
             argv.push(schema_path.to_string_lossy().into_owned());
@@ -334,10 +334,7 @@ impl CliAdapter for AgyAdapter {
             .unwrap_or("None");
 
         if status != "SUCCESS" {
-            let err_str = payload
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let err_str = payload.get("error").and_then(Value::as_str).unwrap_or("");
             if !structured
                 && result.returncode == 0
                 && err_str

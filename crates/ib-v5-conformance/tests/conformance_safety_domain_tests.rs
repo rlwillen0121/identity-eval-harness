@@ -97,8 +97,8 @@ fn make_receipt(
     let sel_sub = canonical_json_bytes(submitted_row).unwrap();
     let stim_bytes = canonical_json_bytes(stimulus).unwrap();
     let loc_bytes = canonical_json_bytes(selector).unwrap();
-    let schemas_bytes =
-        std::fs::read(repo_root().join("src/identitybench/v5/schemas.py")).expect("read schemas.py");
+    let schemas_bytes = std::fs::read(repo_root().join("src/identitybench/v5/schemas.py"))
+        .expect("read schemas.py");
     ReferenceMaterializationReceiptV1 {
         evaluator_id: evaluator_id.to_owned(),
         case: bound(case_bytes.to_vec()),
@@ -118,14 +118,8 @@ fn make_receipt(
 #[test]
 fn delivered_views_v1_reconstructs_phase1_and_phase2_from_real_draft5_episode() {
     let (ep, card) = load_real_episode(0);
-    let case_bytes = build_safety_case_bytes(
-        &ep,
-        &card,
-        2,
-        "JIT_DECISION_MUTATION",
-        "req_01",
-        json!([]),
-    );
+    let case_bytes =
+        build_safety_case_bytes(&ep, &card, 2, "JIT_DECISION_MUTATION", "req_01", json!([]));
     let views = build_delivered_views_v1(&case_bytes).expect("build_delivered_views_v1");
     assert!(!views.phase1.rows.is_empty());
     let p2 = views.phase2.expect("phase2 view");
@@ -256,8 +250,8 @@ fn receipt_agreement_and_stage2_domain_eligibility_and_fk_missing_checks() {
     // Disagreement between references is rejected before Stage 2 runs
     let mut r_agent_tampered = r_agent;
     r_agent_tampered.submitted_plan = bound(b"[]".to_vec());
-    let err = agree_reference_materializations_v1(&case_bytes, &[r_full, r_agent_tampered])
-        .unwrap_err();
+    let err =
+        agree_reference_materializations_v1(&case_bytes, &[r_full, r_agent_tampered]).unwrap_err();
     assert!(matches!(err, MaterializationGapError(_)));
 }
 
@@ -272,7 +266,8 @@ fn raw_atomic_json_rejects_duplicate_keys_and_non_canonical_bytes() {
         "nhi_01",
         json!([]),
     );
-    let dup_json = br#"{"mutation_kind":"NHI_GOVERNANCE_MUTATION","mutation_kind":"NHI_GOVERNANCE_MUTATION"}"#;
+    let dup_json =
+        br#"{"mutation_kind":"NHI_GOVERNANCE_MUTATION","mutation_kind":"NHI_GOVERNANCE_MUTATION"}"#;
     let obs = inspect_stage2_domain_v1(&case_bytes, dup_json, &"b".repeat(64)).unwrap();
     assert_eq!(obs.stage2_status, "INELIGIBLE");
     assert_eq!(obs.criterion_gaps[0].code, "SCHEMA_VALIDATION_ERROR");

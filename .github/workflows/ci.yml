@@ -19,6 +19,32 @@ env:
   UV_FROZEN: "1"
 
 jobs:
+  rust:
+    name: Rust v5 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy
+
+      - name: Rust format
+        run: cargo fmt --all -- --check
+
+      - name: Rust static checks
+        run: cargo clippy --workspace --all-targets --locked
+
+      # Uses deterministic fixtures, mock endpoints and offline replay. No credentials.
+      - name: Rust tests and executable workflows
+        run: cargo test --workspace --locked
+
   test:
     name: ruff, pyright, pytest
     runs-on: ubuntu-latest

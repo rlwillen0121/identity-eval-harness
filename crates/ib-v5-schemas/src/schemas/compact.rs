@@ -621,10 +621,7 @@ fn row_to_object(columns: &[&str], row: &[Value]) -> Result<Value, SchemaValidat
     Ok(Value::Object(map))
 }
 
-fn decode_row_by_table(
-    table_name: &str,
-    obj: &Value,
-) -> Result<TableRowV5, SchemaValidationError> {
+fn decode_row_by_table(table_name: &str, obj: &Value) -> Result<TableRowV5, SchemaValidationError> {
     Ok(match table_name {
         "hr_persons" => TableRowV5::HrPerson(HRPersonV5::from_strict_json_value(obj)?),
         "roles" => TableRowV5::Role(RoleV5::from_strict_json_value(obj)?),
@@ -668,9 +665,9 @@ fn decode_row_by_table(
             TableRowV5::HistoricalSession(HistoricalSessionV5::from_strict_json_value(obj)?)
         }
         "jit_requests" => TableRowV5::JitRequest(JITRequestV5::from_strict_json_value(obj)?),
-        "agent_delegation_requests" => {
-            TableRowV5::AgentDelegationRequest(AgentDelegationRequestV5::from_strict_json_value(obj)?)
-        }
+        "agent_delegation_requests" => TableRowV5::AgentDelegationRequest(
+            AgentDelegationRequestV5::from_strict_json_value(obj)?,
+        ),
         _ => {
             return Err(SchemaValidationError::validation(format!(
                 "unknown compact table: {table_name:?}"
@@ -713,9 +710,7 @@ pub fn decode_table_rows<T: StrictV5Model>(
         )));
     }
     let expected = compact_table_columns(expected_table_name).ok_or_else(|| {
-        SchemaValidationError::validation(format!(
-            "unknown compact table: {expected_table_name:?}"
-        ))
+        SchemaValidationError::validation(format!("unknown compact table: {expected_table_name:?}"))
     })?;
     let col_strs: Vec<&str> = table.columns.iter().map(String::as_str).collect();
     if col_strs.as_slice() != expected {

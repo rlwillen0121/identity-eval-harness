@@ -40,7 +40,8 @@ fn load_dataset_maps(
         if line.trim().is_empty() {
             continue;
         }
-        let orc = SealedEpisodeOracleV5::from_strict_json_str(&line).expect("parse SealedEpisodeOracleV5");
+        let orc = SealedEpisodeOracleV5::from_strict_json_str(&line)
+            .expect("parse SealedEpisodeOracleV5");
         oracles.insert(orc.episode_id.clone(), orc);
     }
 
@@ -68,26 +69,29 @@ fn real_pilot_run_artifacts_parity() {
 
         let (episodes, oracles) = load_dataset_maps(&run_dir.join("dataset"));
 
-        let exec_file = File::open(run_dir.join("episodes.jsonl")).expect("open run episodes.jsonl");
+        let exec_file =
+            File::open(run_dir.join("episodes.jsonl")).expect("open run episodes.jsonl");
         for (idx, line) in BufReader::new(exec_file).lines().enumerate() {
             let line = line.expect("read episodes.jsonl line");
             if line.trim().is_empty() {
                 continue;
             }
             let raw: Value = serde_json::from_str(&line).expect("parse raw json row");
-            let execution = EpisodeExecutionV5::from_json_str(&line)
-                .unwrap_or_else(|e| panic!("{run_dir_str} row {idx} EpisodeExecutionV5 decode failed: {e}"));
+            let execution = EpisodeExecutionV5::from_json_str(&line).unwrap_or_else(|e| {
+                panic!("{run_dir_str} row {idx} EpisodeExecutionV5 decode failed: {e}")
+            });
 
             let episode = &episodes[&execution.episode_id];
             let oracle = &oracles[&execution.episode_id];
 
-            let (raw_input, raw_score) = score_execution_raw_v5(
-                &raw,
-                episode,
-                oracle,
-                ScoreExecutionOptionsV5::default(),
-            )
-            .unwrap_or_else(|e| panic!("{run_dir_str} {} score_execution_raw_v5 failed: {e}", execution.episode_id));
+            let (raw_input, raw_score) =
+                score_execution_raw_v5(&raw, episode, oracle, ScoreExecutionOptionsV5::default())
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "{run_dir_str} {} score_execution_raw_v5 failed: {e}",
+                            execution.episode_id
+                        )
+                    });
 
             let (typed_input, typed_score) = score_execution_v5(
                 &execution,
@@ -95,7 +99,12 @@ fn real_pilot_run_artifacts_parity() {
                 oracle,
                 ScoreExecutionOptionsV5::default(),
             )
-            .unwrap_or_else(|e| panic!("{run_dir_str} {} score_execution_v5 failed: {e}", execution.episode_id));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "{run_dir_str} {} score_execution_v5 failed: {e}",
+                    execution.episode_id
+                )
+            });
 
             assert_eq!(
                 typed_input, raw_input,

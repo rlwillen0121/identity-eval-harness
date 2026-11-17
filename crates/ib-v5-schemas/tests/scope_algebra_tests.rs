@@ -163,8 +163,7 @@ fn cycle_safe_group_closure_and_deny_masks_group_and_grant_allow() {
         group_closure(&account, &groups),
         BTreeSet::from(["grp_allow".to_owned(), "grp_deny".to_owned()])
     );
-    let (group_allow, group_deny) =
-        group_footprints(&account, &groups, &roles, &catalog).unwrap();
+    let (group_allow, group_deny) = group_footprints(&account, &groups, &roles, &catalog).unwrap();
     assert!(group_allow.contains(&("read".to_owned(), "/org/eng/platform".to_owned())));
     assert!(!group_allow.contains(&("read".to_owned(), "/org/eng/security".to_owned())));
     assert!(group_allow.contains(&("write".to_owned(), "/org/eng/security".to_owned())));
@@ -246,9 +245,16 @@ fn sod_witnesses_are_symmetric_and_global_control_needs_full_catalog() {
     full_control.cc_id = "cc_full".to_owned();
     full_control.covered_scope_path = "/*".to_owned();
 
-    assert!(!syntactically_mitigates(&partial_control, "pers_a", witness, &global_rule, &catalog).unwrap());
-    assert!(syntactically_mitigates(&full_control, "pers_a", witness, &global_rule, &catalog).unwrap());
-    assert!(!syntactically_mitigates(&full_control, "pers_b", witness, &global_rule, &catalog).unwrap());
+    assert!(
+        !syntactically_mitigates(&partial_control, "pers_a", witness, &global_rule, &catalog)
+            .unwrap()
+    );
+    assert!(
+        syntactically_mitigates(&full_control, "pers_a", witness, &global_rule, &catalog).unwrap()
+    );
+    assert!(
+        !syntactically_mitigates(&full_control, "pers_b", witness, &global_rule, &catalog).unwrap()
+    );
     assert!(
         unmitigated_witnesses(
             &first,

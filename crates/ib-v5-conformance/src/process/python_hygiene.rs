@@ -37,13 +37,8 @@ const NORMATIVE_SPEC_FILES: [&str; 4] = [
     "SPEC-v5.0-draft.5.md",
 ];
 
-const BANNED_SIDE_EFFECT_MODULES_FOR_BLIND: [&str; 5] = [
-    "subprocess",
-    "socket",
-    "urllib",
-    "requests",
-    "http.client",
-];
+const BANNED_SIDE_EFFECT_MODULES_FOR_BLIND: [&str; 5] =
+    ["subprocess", "socket", "urllib", "requests", "http.client"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PythonScanReport {
@@ -119,7 +114,8 @@ fn tokenize_python(source: &str) -> Vec<Token> {
         if let Some((prefix_len, is_raw)) = string_prefix(bytes, i) {
             let q_start = i + prefix_len;
             let quote = bytes[q_start];
-            let triple = q_start + 2 < len && bytes[q_start + 1] == quote && bytes[q_start + 2] == quote;
+            let triple =
+                q_start + 2 < len && bytes[q_start + 1] == quote && bytes[q_start + 2] == quote;
             let content_start = q_start + if triple { 3 } else { 1 };
             let mut j = content_start;
             let mut lit = String::new();
@@ -143,7 +139,11 @@ fn tokenize_python(source: &str) -> Vec<Token> {
                     continue;
                 }
                 if triple {
-                    if j + 2 < len && bytes[j] == quote && bytes[j + 1] == quote && bytes[j + 2] == quote {
+                    if j + 2 < len
+                        && bytes[j] == quote
+                        && bytes[j + 1] == quote
+                        && bytes[j + 2] == quote
+                    {
                         j += 3;
                         break;
                     }
@@ -156,7 +156,10 @@ fn tokenize_python(source: &str) -> Vec<Token> {
                 if ch < 0x80 {
                     lit.push(ch as char);
                     j += 1;
-                } else if let Some(s) = std::str::from_utf8(&bytes[j..]).ok().and_then(|s| s.chars().next()) {
+                } else if let Some(s) = std::str::from_utf8(&bytes[j..])
+                    .ok()
+                    .and_then(|s| s.chars().next())
+                {
                     lit.push(s);
                     j += s.len_utf8();
                 } else {
@@ -231,7 +234,10 @@ fn tokenize_python(source: &str) -> Vec<Token> {
                 if b < 0x80 {
                     tokens.push(Token::Other(b as char));
                     i += 1;
-                } else if let Some(ch) = std::str::from_utf8(&bytes[i..]).ok().and_then(|s| s.chars().next()) {
+                } else if let Some(ch) = std::str::from_utf8(&bytes[i..])
+                    .ok()
+                    .and_then(|s| s.chars().next())
+                {
                     tokens.push(Token::Other(ch));
                     i += ch.len_utf8();
                 } else {
@@ -275,12 +281,9 @@ pub fn scan_python_source(source: &str) -> PythonScanReport {
         if let Token::Str(s) = tok {
             string_literals.push(s.clone());
         } else if let Token::Ident(name) = tok {
-            if name == "__import__"
-                && matches!(tokens.get(idx + 1), Some(Token::LParen))
-            {
+            if name == "__import__" && matches!(tokens.get(idx + 1), Some(Token::LParen)) {
                 dynamic_import_calls.push("__import__".to_owned());
-            } else if name == "import_module"
-                && matches!(tokens.get(idx + 1), Some(Token::LParen))
+            } else if name == "import_module" && matches!(tokens.get(idx + 1), Some(Token::LParen))
             {
                 dynamic_import_calls.push("import_module".to_owned());
             }
@@ -500,9 +503,8 @@ pub fn audit_profile_python_hygiene(
             continue;
         }
         let path = repository_root.join(relative);
-        let source = std::fs::read_to_string(&path).map_err(|exc| {
-            SharedRuntimeError(format!("failed reading {relative}: {exc}"))
-        })?;
+        let source = std::fs::read_to_string(&path)
+            .map_err(|exc| SharedRuntimeError(format!("failed reading {relative}: {exc}")))?;
         check_python_worker_hygiene(&source, relative, profile.evaluator_id)?;
     }
     Ok(())

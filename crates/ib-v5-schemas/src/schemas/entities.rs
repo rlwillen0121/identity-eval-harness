@@ -12,8 +12,8 @@ use super::common::{
     EngagementStatusV5, GRANT_ID_RE, GRP_ID_RE, HFEED_ID_RE, HRMAP_ID_RE, HumanSubkindV5,
     INC_ID_RE, ITEM_ID_RE, ITKT_ID_RE, JEV_ID_RE, NHI_ID_RE, NHISubkindV5, OPT_ID_RE, PAGE_ID_RE,
     PERS_ID_RE, PrivilegeTierV5, REQ_ID_RE, ROLE_ID_RE, SESS_ID_RE, SIG_ID_RE,
-    SchemaValidationError, StrictV5Model, TKT_ID_RE, TOK_ID_RE, WFL_ID_RE, check_opt_re,
-    check_re, check_re_any, check_slice_re, has_all_unique, validate_finite_json_tree,
+    SchemaValidationError, StrictV5Model, TKT_ID_RE, TOK_ID_RE, WFL_ID_RE, check_opt_re, check_re,
+    check_re_any, check_slice_re, has_all_unique, validate_finite_json_tree,
 };
 
 fn default_true() -> bool {
@@ -301,12 +301,7 @@ impl StrictV5Model for IdPAccountV5 {
             ));
         }
         check_re(&self.etag, &ETAG_HEX_RE, "etag", "IdPAccountV5")?;
-        check_re(
-            &self.evidence_id,
-            &EV_ID_RE,
-            "evidence_id",
-            "IdPAccountV5",
-        )?;
+        check_re(&self.evidence_id, &EV_ID_RE, "evidence_id", "IdPAccountV5")?;
         Ok(())
     }
 }
@@ -636,7 +631,11 @@ impl StrictV5Model for ConnectorSchemaV5 {
                 "open_itsm_tickets must have unique itkt_id per connector",
             ));
         }
-        if !has_all_unique(self.open_itsm_tickets.iter().map(|t| t.drift_token.as_str())) {
+        if !has_all_unique(
+            self.open_itsm_tickets
+                .iter()
+                .map(|t| t.drift_token.as_str()),
+        ) {
             return Err(SchemaValidationError::validation(
                 "open_itsm_tickets must have unique drift_token per connector",
             ));
@@ -917,12 +916,7 @@ impl StrictV5Model for BaselineNHIV5 {
             ));
         }
         check_re(&self.etag, &ETAG_HEX_RE, "etag", "BaselineNHIV5")?;
-        check_re(
-            &self.evidence_id,
-            &EV_ID_RE,
-            "evidence_id",
-            "BaselineNHIV5",
-        )?;
+        check_re(&self.evidence_id, &EV_ID_RE, "evidence_id", "BaselineNHIV5")?;
         Ok(())
     }
 }
@@ -955,7 +949,12 @@ pub struct TelemetrySignalV5 {
 
 impl StrictV5Model for TelemetrySignalV5 {
     fn validate(&self) -> Result<(), SchemaValidationError> {
-        check_re(&self.signal_id, &SIG_ID_RE, "signal_id", "TelemetrySignalV5")?;
+        check_re(
+            &self.signal_id,
+            &SIG_ID_RE,
+            "signal_id",
+            "TelemetrySignalV5",
+        )?;
         check_opt_re(
             self.candidate_person_id.as_deref(),
             &PERS_ID_RE,
@@ -1273,7 +1272,12 @@ pub struct CIEMTaskV5 {
 
 impl StrictV5Model for CIEMTaskV5 {
     fn validate(&self) -> Result<(), SchemaValidationError> {
-        check_re(&self.ciem_task_id, &CIEM_ID_RE, "ciem_task_id", "CIEMTaskV5")?;
+        check_re(
+            &self.ciem_task_id,
+            &CIEM_ID_RE,
+            "ciem_task_id",
+            "CIEMTaskV5",
+        )?;
         if self.forbidden_standing_cloud_actions.is_empty() {
             return Err(SchemaValidationError::validation(
                 "CIEMTaskV5.forbidden_standing_cloud_actions must have length >= 1",
@@ -1923,7 +1927,12 @@ impl StrictV5Model for CAETokenV5 {
             "parent_token_id",
             "CAETokenV5",
         )?;
-        check_opt_re(self.agent_id.as_deref(), &AGT_ID_RE, "agent_id", "CAETokenV5")?;
+        check_opt_re(
+            self.agent_id.as_deref(),
+            &AGT_ID_RE,
+            "agent_id",
+            "CAETokenV5",
+        )?;
         check_re(&self.evidence_id, &EV_ID_RE, "evidence_id", "CAETokenV5")?;
         Ok(())
     }
@@ -1951,7 +1960,12 @@ pub struct CAEIncidentV5 {
 
 impl StrictV5Model for CAEIncidentV5 {
     fn validate(&self) -> Result<(), SchemaValidationError> {
-        check_re(&self.incident_id, &INC_ID_RE, "incident_id", "CAEIncidentV5")?;
+        check_re(
+            &self.incident_id,
+            &INC_ID_RE,
+            "incident_id",
+            "CAEIncidentV5",
+        )?;
         check_re(&self.person_id, &PERS_ID_RE, "person_id", "CAEIncidentV5")?;
         if self.tokens.is_empty() {
             return Err(SchemaValidationError::validation(
@@ -2033,7 +2047,12 @@ pub struct UARCampaignV5 {
 
 impl StrictV5Model for UARCampaignV5 {
     fn validate(&self) -> Result<(), SchemaValidationError> {
-        check_re(&self.campaign_id, &CAMP_ID_RE, "campaign_id", "UARCampaignV5")?;
+        check_re(
+            &self.campaign_id,
+            &CAMP_ID_RE,
+            "campaign_id",
+            "UARCampaignV5",
+        )?;
         check_re(
             &self.admin_role_id,
             &ROLE_ID_RE,
@@ -2375,12 +2394,7 @@ impl StrictV5Model for AgentDelegationRequestV5 {
                 "AgentDelegationRequestV5.requested_ttl_s must be >= 60",
             ));
         }
-        check_re(
-            &self.etag,
-            &ETAG_HEX_RE,
-            "etag",
-            "AgentDelegationRequestV5",
-        )?;
+        check_re(&self.etag, &ETAG_HEX_RE, "etag", "AgentDelegationRequestV5")?;
         check_re(
             &self.evidence_id,
             &EV_ID_RE,

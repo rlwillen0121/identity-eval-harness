@@ -6,10 +6,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ib_v5_schemas::{
-    AuthorityTierV5, CompensatingControlV5, ConnectorSchemaV5, DeliveredSliceV5, EngagementV5,
-    HRPersonV5, IdPAccountV5, JITRequestV5, PhaseManifestV5, PhaseWorkQueueV5, PolicyCardV5,
-    SchemaValidationError, TableRowV5, TransferBridgeV5, UARCampaignV5,
-    AgentDelegationRequestV5, decode_compact_table_v5, engagement_is_live,
+    AgentDelegationRequestV5, AuthorityTierV5, CompensatingControlV5, ConnectorSchemaV5,
+    DeliveredSliceV5, EngagementV5, HRPersonV5, IdPAccountV5, JITRequestV5, PhaseManifestV5,
+    PhaseWorkQueueV5, PolicyCardV5, SchemaValidationError, TableRowV5, TransferBridgeV5,
+    UARCampaignV5, decode_compact_table_v5, engagement_is_live,
 };
 use thiserror::Error;
 
@@ -178,11 +178,7 @@ pub fn observable_q2_references(
             return engagement_is_live(candidate, clock).then_some(candidate);
         }
         let live = live_engagements(person_id);
-        if live.len() == 1 {
-            Some(live[0])
-        } else {
-            None
-        }
+        if live.len() == 1 { Some(live[0]) } else { None }
     };
 
     let target_accounts: BTreeSet<&str> = work_queue

@@ -6,8 +6,8 @@ use ib_core::PyRandom;
 use ib_v5_schemas::{
     ActiveDisabledStatusV5, AffiliationKindV5, AgentDelegationRequestV5, AgentToolBindingV5,
     AgentToolModeV5, BaselineAgentStatusV5, BaselineAgentV5, BaselineNHIV5, BirthrightRuleV5,
-    CAEIncidentV5, CAETokenBindingKindV5, CAETokenKindV5, CAETokenV5, CAETriggerKindV5,
-    CIEMTaskV5, ChangeTicketV5, CloudPrincipalBindingV5, CloudProviderV5, CompensatingControlV5,
+    CAEIncidentV5, CAETokenBindingKindV5, CAETokenKindV5, CAETokenV5, CAETriggerKindV5, CIEMTaskV5,
+    ChangeTicketV5, CloudPrincipalBindingV5, CloudProviderV5, CompensatingControlV5,
     ConnectorAuthStateV5, ConnectorPageV5, ConnectorProvisioningModeV5, ConnectorSchemaV5,
     ConnectorSyncModeV5, ConnectorTransportKindV5, ConnectorUnmappedPolicyDefaultV5,
     ContractorSponsorCheckModeV5, DisconnectedTargetPolicyV5, EngagementStatusV5, EngagementV5,
@@ -16,14 +16,14 @@ use ib_v5_schemas::{
     HRSourceFeedSpecV5, HRSourceKindV5, HRSourceMappingTaskV5, HistoricalSessionKindV5,
     HistoricalSessionV5, HumanSubkindV5, ITSMTicketRecordV5, ITSMTicketStatusV5, IdPAccountV5,
     JITRequestChannelV5, JITRequestV5, JMLTraceEventKindV5, JMLTraceEventV5, JMLWorkflowSpecV5,
-    JMLWorkflowTaskV5, JoinerContractorSponsorPolicyV5, JoinerStepV5, LegalHoldDispositionV5,
-    LegalHoldScopeModeV5, LeaverStepV5, MoverStepV5, NHISubkindV5, NoShowDispositionV5,
+    JMLWorkflowTaskV5, JoinerContractorSponsorPolicyV5, JoinerStepV5, LeaverStepV5,
+    LegalHoldDispositionV5, LegalHoldScopeModeV5, MoverStepV5, NHISubkindV5, NoShowDispositionV5,
     OptActionKindV5, OptCandidateActionV5, OptimizationPhaseKindV5, OptimizationTaskV5,
     OrphanCustodyModeV5, OrphanHandoffPolicyV5, PolicyOverlayV5, PrivilegeTierV5,
     RawHRFeedAssertionV5, RegimeIdV5, RoleV5, ScopeCatalogV5, ScopedSoDRuleV5, SoDScopeModeV5,
-    SpokeErrorPolicyV5, TargetNHIV5, TelemetrySignalSourceV5, TelemetrySignalV5,
-    TemporalSoDRuleV5, TransferBridgeV5, UARCampaignV5, UARItemV5,
-    UARPreserveStandingFloorOverrideV5, UnmappedPolicyOverrideV5, WorldStateV5,
+    SpokeErrorPolicyV5, TargetNHIV5, TelemetrySignalSourceV5, TelemetrySignalV5, TemporalSoDRuleV5,
+    TransferBridgeV5, UARCampaignV5, UARItemV5, UARPreserveStandingFloorOverrideV5,
+    UnmappedPolicyOverrideV5, WorldStateV5,
 };
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -523,11 +523,21 @@ pub(crate) fn build_world(
     }
 
     let mut ids = IdBook {
-        person: id_map(cell, "pers", &["alice", "boomerang", "reviewer", "approver"]),
+        person: id_map(
+            cell,
+            "pers",
+            &["alice", "boomerang", "reviewer", "approver"],
+        ),
         eng: id_map(
             cell,
             "eng",
-            &["alice", "boomerang_old", "boomerang_new", "reviewer", "approver"],
+            &[
+                "alice",
+                "boomerang_old",
+                "boomerang_new",
+                "reviewer",
+                "approver",
+            ],
         ),
         account: id_map(cell, "acct", &["primary", "mover", "reviewer", "manager"]),
         role: id_map(cell, "role", &ROLE_NAMES),
@@ -554,7 +564,11 @@ pub(crate) fn build_world(
             &["p1_admin", "p1_read", "p2_reviewer_a", "p2_reviewer_b"],
         ),
         workflow: id_map(cell, "wfl", &["task"]),
-        birthright: id_map(cell, "brule", &["base", "vendor_admin", "contractor_critical"]),
+        birthright: id_map(
+            cell,
+            "brule",
+            &["base", "vendor_admin", "contractor_critical"],
+        ),
         jml_event: {
             let names: Vec<String> = (1..=4)
                 .map(|i| format!("visible_{i:02}"))
@@ -863,12 +877,8 @@ pub(crate) fn build_world(
             baseline_reconciled_account_ids: account_ids,
             audit_watermark_s: audit_wm,
             itsm_bridge_healthy: true,
-            itsm_primary_fulfiller_account_id: profile
-                .disconnected
-                .then(|| acct_primary.clone()),
-            itsm_backup_fulfiller_account_id: profile
-                .disconnected
-                .then(|| acct_manager.clone()),
+            itsm_primary_fulfiller_account_id: profile.disconnected.then(|| acct_primary.clone()),
+            itsm_backup_fulfiller_account_id: profile.disconnected.then(|| acct_manager.clone()),
             open_itsm_tickets: if profile.disconnected {
                 vec![itsm_ticket]
             } else {
@@ -1486,9 +1496,7 @@ pub(crate) fn build_world(
             "Microsoft.Authorization/roleAssignments/write".to_owned(),
         ],
         az_abac_delegation_constrained: false,
-        az_entra_app_cred_target_actions: vec![
-            "Microsoft.Graph/appCredentials/write".to_owned(),
-        ],
+        az_entra_app_cred_target_actions: vec!["Microsoft.Graph/appCredentials/write".to_owned()],
         gcp_resource_env_tag: "prod".to_owned(),
         gcp_allow_bindings: Vec::new(),
         gcp_v2_deny_actions: Vec::new(),
@@ -1762,7 +1770,9 @@ pub(crate) fn build_phase2_world(
 
     let mut people = phase1_world.hr_persons.clone();
     {
-        let entry = people.get_mut(&incident_person).expect("incident person exists");
+        let entry = people
+            .get_mut(&incident_person)
+            .expect("incident person exists");
         entry.lifecycle_gen += 1;
         entry.etag = etag(cell, &format!("person:{incident_person}:p2-refresh"));
         entry.evidence_id = ev(&format!("person:{incident_person_name}:p2-refresh"))?;
@@ -2019,36 +2029,65 @@ pub(crate) fn build_phase2_world(
     let manager_review_grant = ids.grant("manager_review");
     type ItemSpec<'a> = (&'static str, &'a String, &'a String, bool, &'static str);
     type CampaignSpec<'a> = (&'static str, Vec<ItemSpec<'a>>, bool);
-    let campaign_specs: Vec<CampaignSpec<'_>> =
-        if profile.sequential_uar {
+    let campaign_specs: Vec<CampaignSpec<'_>> = if profile.sequential_uar {
+        vec![
+            (
+                "first",
+                vec![(
+                    "first",
+                    &acct_reviewer,
+                    &reviewer_review_grant,
+                    true,
+                    "reviewer",
+                )],
+                false,
+            ),
+            (
+                "second",
+                vec![(
+                    "second",
+                    &acct_manager,
+                    &manager_review_grant,
+                    true,
+                    "manager",
+                )],
+                false,
+            ),
+        ]
+    } else if profile.inherited_group_lock {
+        vec![(
+            "first",
             vec![
                 (
                     "first",
-                    vec![("first", &acct_reviewer, &reviewer_review_grant, true, "reviewer")],
+                    &acct_reviewer,
+                    &reviewer_review_grant,
                     false,
+                    "reviewer",
                 ),
                 (
                     "second",
-                    vec![("second", &acct_manager, &manager_review_grant, true, "manager")],
+                    &acct_manager,
+                    &manager_review_grant,
                     false,
+                    "manager",
                 ),
-            ]
-        } else if profile.inherited_group_lock {
+            ],
+            true,
+        )]
+    } else {
+        vec![(
+            "first",
             vec![(
                 "first",
-                vec![
-                    ("first", &acct_reviewer, &reviewer_review_grant, false, "reviewer"),
-                    ("second", &acct_manager, &manager_review_grant, false, "manager"),
-                ],
+                &acct_reviewer,
+                &reviewer_review_grant,
                 true,
-            )]
-        } else {
-            vec![(
-                "first",
-                vec![("first", &acct_reviewer, &reviewer_review_grant, true, "manager")],
-                false,
-            )]
-        };
+                "manager",
+            )],
+            false,
+        )]
+    };
 
     let mut campaigns = IndexMap::new();
     for (campaign_name, item_specs, inherited_lock_case) in campaign_specs {

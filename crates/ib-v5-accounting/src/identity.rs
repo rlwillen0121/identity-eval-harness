@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 pub const V5_USAGE_ACCOUNTING_POLICY_ID: &str = "identitybench-v5-all-attempt-usage-v1";
-pub const V5_USAGE_ACCOUNTING_MANIFEST_SCHEMA: &str = "identitybench-v5-usage-accounting-manifest-v1";
+pub const V5_USAGE_ACCOUNTING_MANIFEST_SCHEMA: &str =
+    "identitybench-v5-usage-accounting-manifest-v1";
 pub const V5_USAGE_ACCOUNTING_ATTESTATION_SCHEMA: &str =
     "identitybench-v5-provider-usage-attestation-v1";
 pub const V5_PROVIDER_FINGERPRINT_SCHEMA: &str = "identitybench-v5-provider-fingerprint-v1";
@@ -143,7 +144,13 @@ impl StrictV5Model for UsageAccountingEvidenceV5 {
             "provider_kind",
             "UsageAccountingEvidenceV5",
         )?;
-        check_len_bounds(&self.model_id, 1, 200, "model_id", "UsageAccountingEvidenceV5")?;
+        check_len_bounds(
+            &self.model_id,
+            1,
+            200,
+            "model_id",
+            "UsageAccountingEvidenceV5",
+        )?;
         check_sha256_hex(
             &self.provider_fingerprint_sha256,
             "provider_fingerprint_sha256",
@@ -387,10 +394,7 @@ pub fn safe_contract_label_v5(value: &str) -> bool {
 
 /// Look up the built-in adapter retry kind (`"sdk_max_retries"` or `"cli_max_retries"`).
 #[must_use]
-pub fn builtin_retry_adapter_kind_v5(
-    module_name: &str,
-    class_name: &str,
-) -> Option<&'static str> {
+pub fn builtin_retry_adapter_kind_v5(module_name: &str, class_name: &str) -> Option<&'static str> {
     BUILTIN_RETRY_ADAPTERS_V5
         .iter()
         .find(|(m, c, _)| *m == module_name && *c == class_name)

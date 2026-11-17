@@ -102,14 +102,12 @@ fn escape_special_chars(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len() + 8);
     for (idx, &ch) in chars.iter().enumerate() {
-        let is_special = matches!(
-            ch,
-            '\\' | '`' | '*' | '[' | ']' | '<' | '>' | '|' | '~'
-        ) || (ch == '_'
-            && (idx == 0
-                || !is_py_word(chars[idx - 1])
-                || idx + 1 >= chars.len()
-                || !is_py_word(chars[idx + 1])));
+        let is_special = matches!(ch, '\\' | '`' | '*' | '[' | ']' | '<' | '>' | '|' | '~')
+            || (ch == '_'
+                && (idx == 0
+                    || !is_py_word(chars[idx - 1])
+                    || idx + 1 >= chars.len()
+                    || !is_py_word(chars[idx + 1])));
         if is_special {
             out.push('\\');
         }

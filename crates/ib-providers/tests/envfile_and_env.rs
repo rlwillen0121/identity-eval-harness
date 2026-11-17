@@ -87,7 +87,12 @@ fn problems_name_lines_and_keys_never_values() {
     assert!(parsed.problems[0].starts_with("line 2:"));
     assert!(parsed.problems[2].contains("OPEN") && parsed.problems[2].contains("unterminated"));
     assert!(parsed.problems[4].contains("text after the closing quote"));
-    assert!(parsed.problems.iter().all(|p| p.ends_with("; line skipped")));
+    assert!(
+        parsed
+            .problems
+            .iter()
+            .all(|p| p.ends_with("; line skipped"))
+    );
     assert!(parsed.problems.iter().all(|p| !p.contains(secret)));
 }
 

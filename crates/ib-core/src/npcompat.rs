@@ -28,7 +28,11 @@ pub enum NpError {
     #[error("invalid integer range [{low}, {high}): high must be > low")]
     InvalidRange { low: i64, high: i64 },
     #[error("matrix length {len} does not match {rows}x{cols}")]
-    ShapeMismatch { len: usize, rows: usize, cols: usize },
+    ShapeMismatch {
+        len: usize,
+        rows: usize,
+        cols: usize,
+    },
 }
 
 /// Port of `numpy.random.SeedSequence` (without `spawn_key`).
@@ -45,7 +49,9 @@ fn hashmix(value: u32, hash_const: &mut u32) -> u32 {
 }
 
 fn mix(x: u32, y: u32) -> u32 {
-    let result = MIX_MULT_L.wrapping_mul(x).wrapping_sub(MIX_MULT_R.wrapping_mul(y));
+    let result = MIX_MULT_L
+        .wrapping_mul(x)
+        .wrapping_sub(MIX_MULT_R.wrapping_mul(y));
     result ^ (result >> XSHIFT)
 }
 
@@ -78,11 +84,12 @@ impl SeedSequence {
     /// `[0] -> []` convention), and `pool_size` defaults to 4 when 0 is passed.
     #[must_use]
     pub fn from_u32_words(words: &[u32], pool_size: usize) -> Self {
-        let pool_size = if pool_size == 0 { DEFAULT_POOL_SIZE } else { pool_size };
-        let trimmed_len = words
-            .iter()
-            .rposition(|&w| w != 0)
-            .map_or(0, |idx| idx + 1);
+        let pool_size = if pool_size == 0 {
+            DEFAULT_POOL_SIZE
+        } else {
+            pool_size
+        };
+        let trimmed_len = words.iter().rposition(|&w| w != 0).map_or(0, |idx| idx + 1);
         let entropy = &words[..trimmed_len];
 
         let mut pool = vec![0u32; pool_size];
@@ -261,7 +268,9 @@ impl Generator {
     /// Construct `Generator(PCG64(seed))`.
     #[must_use]
     pub fn new(seed: u64) -> Self {
-        Self { pcg: Pcg64::new(seed) }
+        Self {
+            pcg: Pcg64::new(seed),
+        }
     }
 
     /// Construct a `Generator` from an existing [`Pcg64`].
@@ -376,9 +385,11 @@ impl Generator {
         if low < 0 || high <= low {
             return Err(NpError::InvalidRange { low, high });
         }
-        let count = rows
-            .checked_mul(cols)
-            .ok_or(NpError::ShapeMismatch { len: usize::MAX, rows, cols })?;
+        let count = rows.checked_mul(cols).ok_or(NpError::ShapeMismatch {
+            len: usize::MAX,
+            rows,
+            cols,
+        })?;
         let raw = self.integers_i64(low, high, count)?;
         Ok(raw
             .into_iter()
@@ -520,7 +531,13 @@ pub fn percentiles_linear(values: &[f64], qs_percent: &[f64]) -> Result<Vec<f64>
 /// Panics if `a.len() != b.len()`.
 #[must_use]
 pub fn dot(a: &[f64], b: &[f64]) -> f64 {
-    assert_eq!(a.len(), b.len(), "dot product length mismatch: {} vs {}", a.len(), b.len());
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "dot product length mismatch: {} vs {}",
+        a.len(),
+        b.len()
+    );
     let mut acc = 0.0_f64;
     for (&x, &y) in a.iter().zip(b.iter()) {
         acc += x * y;

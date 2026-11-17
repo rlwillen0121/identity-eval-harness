@@ -78,7 +78,11 @@ pub struct SerializedViewV5 {
     pub world_rev: i64,
     #[serde(default)]
     pub invalidated_entity_ids: Vec<String>,
-    #[serde(rename = "_candidates", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "_candidates",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub candidates: Option<Value>,
     #[serde(
         rename = "_inherited_slice_payloads",
@@ -100,15 +104,18 @@ impl SerializedViewV5 {
     /// Build a [`SerializedViewV5`] from a live [`ViewV5`].
     #[must_use]
     pub fn from_view(view: &ViewV5) -> Self {
+        let private = view
+            .snapshot_serialization_v5()
+            .expect("validated runtime views have serializable snapshot data");
         Self {
             manifest: view.manifest.clone(),
             policy_card: view.policy_card.clone(),
             world_rev: view.world_rev,
             invalidated_entity_ids: view.invalidated_entity_ids.clone(),
-            candidates: None,
-            inherited_slice_payloads: None,
-            phase_slice_payloads: None,
-            resolved: None,
+            candidates: Some(private.candidates),
+            inherited_slice_payloads: Some(private.inherited_slice_payloads),
+            phase_slice_payloads: Some(private.phase_slice_payloads),
+            resolved: Some(private.resolved),
         }
     }
 

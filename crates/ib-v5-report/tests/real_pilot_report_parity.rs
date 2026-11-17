@@ -3,10 +3,8 @@ use std::path::Path;
 use ib_v5_report::{render_v5_markdown_report, report_from_raw_artifacts, write_v5_report};
 use tempfile::tempdir;
 
-const PILOT_T0_DIR: &str =
-    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_draft5_pilot_v3_gemini_hydrogen_t0";
-const PILOT_T5_DIR: &str =
-    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_draft5_pilot_v3_gemini_hydrogen_t5";
+const PILOT_T0_DIR: &str = "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_draft5_pilot_v3_gemini_hydrogen_t0";
+const PILOT_T5_DIR: &str = "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_draft5_pilot_v3_gemini_hydrogen_t5";
 
 fn assert_pilot_byte_exact(run_dir_str: &str, ref_report: &[u8], ref_summary: &[u8]) {
     let run_dir = Path::new(run_dir_str);

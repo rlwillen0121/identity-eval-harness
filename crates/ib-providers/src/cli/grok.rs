@@ -129,9 +129,8 @@ impl CliAdapter for GrokAdapter {
 
         if let Some(schema) = &request.output_schema {
             if request.schema_name != ACTION_SCHEMA_NAME {
-                let schema_json =
-                    dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                        .unwrap_or_else(|_| "{}".to_string());
+                let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
+                    .unwrap_or_else(|_| "{}".to_string());
                 argv.push(format!("--json-schema={schema_json}"));
             } else {
                 notes.insert(

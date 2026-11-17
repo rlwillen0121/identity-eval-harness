@@ -8,7 +8,10 @@ use ib_core::npcompat::{
 use serde_json::Value;
 
 fn vectors() -> Value {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/npcompat_vectors.json");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/npcompat_vectors.json"
+    );
     serde_json::from_slice(&std::fs::read(path).expect("fixture")).expect("json")
 }
 
@@ -21,7 +24,11 @@ fn bits_slice(arr: &[Value]) -> Vec<f64> {
 fn assert_f64_bits(got: f64, want_bits: u64, ctx: &str) {
     let want = f64::from_bits(want_bits);
     if want.is_nan() {
-        assert!(got.is_nan(), "{ctx}: expected NaN, got {got:?} ({:#018x})", got.to_bits());
+        assert!(
+            got.is_nan(),
+            "{ctx}: expected NaN, got {got:?} ({:#018x})",
+            got.to_bits()
+        );
     } else {
         assert_eq!(
             got.to_bits(),
@@ -64,7 +71,11 @@ fn seed_sequence_matches_numpy() {
             .iter()
             .map(|x| u32::try_from(x.as_u64().unwrap()).unwrap())
             .collect();
-        assert_eq!(ss.generate_state_u32(8), want_u32, "u32_8 {kind}:{seed_str}");
+        assert_eq!(
+            ss.generate_state_u32(8),
+            want_u32,
+            "u32_8 {kind}:{seed_str}"
+        );
 
         let want_u64: Vec<u64> = case["u64_4"]
             .as_array()
@@ -72,7 +83,11 @@ fn seed_sequence_matches_numpy() {
             .iter()
             .map(|x| x.as_str().unwrap().parse::<u64>().unwrap())
             .collect();
-        assert_eq!(ss.generate_state_u64(4), want_u64, "u64_4 {kind}:{seed_str}");
+        assert_eq!(
+            ss.generate_state_u64(4),
+            want_u64,
+            "u64_4 {kind}:{seed_str}"
+        );
     }
 }
 
@@ -83,8 +98,18 @@ fn pcg64_streams_match_numpy() {
         let seed = case["seed"].as_str().unwrap().parse::<u64>().unwrap();
         let mut pcg = Pcg64::new(seed);
         let (st, inc, has_u32, u_val) = pcg.state_tuple();
-        assert_eq!(st, case["init_state"].as_str().unwrap().parse::<u128>().unwrap());
-        assert_eq!(inc, case["init_inc"].as_str().unwrap().parse::<u128>().unwrap());
+        assert_eq!(
+            st,
+            case["init_state"]
+                .as_str()
+                .unwrap()
+                .parse::<u128>()
+                .unwrap()
+        );
+        assert_eq!(
+            inc,
+            case["init_inc"].as_str().unwrap().parse::<u128>().unwrap()
+        );
         assert!(!has_u32);
         assert_eq!(u_val, 0);
 
@@ -109,14 +134,25 @@ fn pcg64_streams_match_numpy() {
         let (st32, _, has32, val32) = pcg_u32.state_tuple();
         assert_eq!(
             st32,
-            case["after_u32_state"].as_str().unwrap().parse::<u128>().unwrap()
+            case["after_u32_state"]
+                .as_str()
+                .unwrap()
+                .parse::<u128>()
+                .unwrap()
         );
         assert_eq!(has32, case["after_u32_has"].as_bool().unwrap());
-        assert_eq!(val32, u32::try_from(case["after_u32_val"].as_u64().unwrap()).unwrap());
+        assert_eq!(
+            val32,
+            u32::try_from(case["after_u32_val"].as_u64().unwrap()).unwrap()
+        );
 
         let mut pcg_f64 = Pcg64::new(seed);
         for (idx, want) in case["f64_6_bits"].as_array().unwrap().iter().enumerate() {
-            assert_f64_bits(pcg_f64.next_f64(), want.as_u64().unwrap(), &format!("f64 seed={seed}[{idx}]"));
+            assert_f64_bits(
+                pcg_f64.next_f64(),
+                want.as_u64().unwrap(),
+                &format!("f64 seed={seed}[{idx}]"),
+            );
         }
     }
 }
@@ -152,7 +188,11 @@ fn generator_integers_match_numpy() {
         })
         .collect();
     for (r, want_row) in head3.iter().enumerate() {
-        assert_eq!(&mat[r * 12..(r + 1) * 12], want_row.as_slice(), "head row {r}");
+        assert_eq!(
+            &mat[r * 12..(r + 1) * 12],
+            want_row.as_slice(),
+            "head row {r}"
+        );
     }
 
     let tail3: Vec<Vec<usize>> = ints["tail3"]
@@ -169,7 +209,11 @@ fn generator_integers_match_numpy() {
         .collect();
     for (offset, want_row) in tail3.iter().enumerate() {
         let r = 10_000 - 3 + offset;
-        assert_eq!(&mat[r * 12..(r + 1) * 12], want_row.as_slice(), "tail row {r}");
+        assert_eq!(
+            &mat[r * 12..(r + 1) * 12],
+            want_row.as_slice(),
+            "tail row {r}"
+        );
     }
 
     for case in ints["wide"].as_array().unwrap() {
@@ -193,7 +237,12 @@ fn mean_pairwise_and_axis1_match_numpy_bits() {
     let v = vectors();
     let m = &v["mean"];
     let src_300 = bits_slice(m["src_300_bits"].as_array().unwrap());
-    for (idx, want) in m["means_1_to_300_bits"].as_array().unwrap().iter().enumerate() {
+    for (idx, want) in m["means_1_to_300_bits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
         let n = idx + 1;
         assert_f64_bits(
             mean_pairwise(&src_300[..n]),
@@ -226,7 +275,11 @@ fn mean_pairwise_and_axis1_match_numpy_bits() {
         .zip(m["means_100_129_bits"].as_array().unwrap())
         .enumerate()
     {
-        assert_f64_bits(*got, want.as_u64().unwrap(), &format!("(100,129) row {row}"));
+        assert_f64_bits(
+            *got,
+            want.as_u64().unwrap(),
+            &format!("(100,129) row {row}"),
+        );
     }
 
     let fam_12 = bits_slice(m["fam_12_bits"].as_array().unwrap());
@@ -247,7 +300,11 @@ fn mean_pairwise_and_axis1_match_numpy_bits() {
         assert_f64_bits(draws[i], want.as_u64().unwrap(), &format!("draws head {i}"));
     }
     for (i, want) in m["draws_tail5_bits"].as_array().unwrap().iter().enumerate() {
-        assert_f64_bits(draws[10_000 - 5 + i], want.as_u64().unwrap(), &format!("draws tail {i}"));
+        assert_f64_bits(
+            draws[10_000 - 5 + i],
+            want.as_u64().unwrap(),
+            &format!("draws tail {i}"),
+        );
     }
 }
 
@@ -269,7 +326,11 @@ fn percentile_linear_matches_numpy_bits() {
             .zip(case["multi_bits"].as_array().unwrap())
             .enumerate()
         {
-            assert_f64_bits(*got, want.as_u64().unwrap(), &format!("{name} multi[{idx}]"));
+            assert_f64_bits(
+                *got,
+                want.as_u64().unwrap(),
+                &format!("{name} multi[{idx}]"),
+            );
         }
         for (idx, (&q, want)) in qs
             .iter()
@@ -277,7 +338,11 @@ fn percentile_linear_matches_numpy_bits() {
             .enumerate()
         {
             let got = percentile_linear(&values, q).unwrap();
-            assert_f64_bits(got, want.as_u64().unwrap(), &format!("{name} single[{idx}] q={q}"));
+            assert_f64_bits(
+                got,
+                want.as_u64().unwrap(),
+                &format!("{name} single[{idx}] q={q}"),
+            );
         }
     }
 }
@@ -289,7 +354,11 @@ fn dot_matches_numpy_bits() {
         let a = bits_slice(case["a_bits"].as_array().unwrap());
         let b = bits_slice(case["b_bits"].as_array().unwrap());
         let got = dot(&a, &b);
-        assert_f64_bits(got, case["dot_bits"].as_u64().unwrap(), &format!("dot[{idx}]"));
+        assert_f64_bits(
+            got,
+            case["dot_bits"].as_u64().unwrap(),
+            &format!("dot[{idx}]"),
+        );
     }
 }
 
@@ -316,9 +385,21 @@ fn synthetic_family_cluster_bootstrap_matches_numpy_bits() {
         let ci = percentiles_linear(&draws, &[2.5, 97.5]).unwrap();
 
         let want = &boot["intervals"][name];
-        assert_f64_bits(mean, want["mean_bits"].as_u64().unwrap(), &format!("{name}.mean"));
-        assert_f64_bits(ci[0], want["low_bits"].as_u64().unwrap(), &format!("{name}.low"));
-        assert_f64_bits(ci[1], want["high_bits"].as_u64().unwrap(), &format!("{name}.high"));
+        assert_f64_bits(
+            mean,
+            want["mean_bits"].as_u64().unwrap(),
+            &format!("{name}.mean"),
+        );
+        assert_f64_bits(
+            ci[0],
+            want["low_bits"].as_u64().unwrap(),
+            &format!("{name}.low"),
+        );
+        assert_f64_bits(
+            ci[1],
+            want["high_bits"].as_u64().unwrap(),
+            &format!("{name}.high"),
+        );
 
         means.push(mean);
         draws_by_model.push(draws);
@@ -340,9 +421,21 @@ fn synthetic_family_cluster_bootstrap_matches_numpy_bits() {
             let ci = percentiles_linear(&diff_draws, &[2.5, 97.5]).unwrap();
 
             let label = format!("{}-{}", model_names[i], model_names[j]);
-            assert_f64_bits(diff, want["diff_bits"].as_u64().unwrap(), &format!("{label}.diff"));
-            assert_f64_bits(ci[0], want["low_bits"].as_u64().unwrap(), &format!("{label}.low"));
-            assert_f64_bits(ci[1], want["high_bits"].as_u64().unwrap(), &format!("{label}.high"));
+            assert_f64_bits(
+                diff,
+                want["diff_bits"].as_u64().unwrap(),
+                &format!("{label}.diff"),
+            );
+            assert_f64_bits(
+                ci[0],
+                want["low_bits"].as_u64().unwrap(),
+                &format!("{label}.low"),
+            );
+            assert_f64_bits(
+                ci[1],
+                want["high_bits"].as_u64().unwrap(),
+                &format!("{label}.high"),
+            );
             pair_idx += 1;
         }
     }
@@ -353,8 +446,14 @@ fn synthetic_family_cluster_bootstrap_matches_numpy_bits() {
 fn error_cases() {
     assert_eq!(percentile_linear(&[], 50.0), Err(NpError::EmptyInput));
     assert_eq!(percentiles_linear(&[], &[50.0]), Err(NpError::EmptyInput));
-    assert_eq!(percentile_linear(&[1.0], -0.0001), Err(NpError::InvalidPercentile(-0.0001)));
-    assert_eq!(percentile_linear(&[1.0], 100.0001), Err(NpError::InvalidPercentile(100.0001)));
+    assert_eq!(
+        percentile_linear(&[1.0], -0.0001),
+        Err(NpError::InvalidPercentile(-0.0001))
+    );
+    assert_eq!(
+        percentile_linear(&[1.0], 100.0001),
+        Err(NpError::InvalidPercentile(100.0001))
+    );
     assert!(matches!(
         percentile_linear(&[1.0], f64::NAN),
         Err(NpError::InvalidPercentile(q)) if q.is_nan()

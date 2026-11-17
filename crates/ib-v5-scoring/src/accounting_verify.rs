@@ -6,8 +6,7 @@ use std::fmt;
 use ib_core::hashing::sha256_hex;
 use ib_core::jcs_dumps;
 use ib_v5_accounting::{
-    USAGE_SCOPE_ALL_COMPLETIONS_RETRIES_V5, UsageAccountingAttestationV5,
-    UsageAccountingManifestV5,
+    USAGE_SCOPE_ALL_COMPLETIONS_RETRIES_V5, UsageAccountingAttestationV5, UsageAccountingManifestV5,
 };
 use ib_v5_schemas::{SHA256_HEX_RE, StrictV5Model};
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
@@ -174,9 +173,7 @@ pub(crate) fn parse_json_without_duplicate_keys(
 }
 
 fn is_unsafe_posix_evidence_path(path: &str) -> bool {
-    path.starts_with('/')
-        || path.contains('\\')
-        || path.split('/').any(|part| part == "..")
+    path.starts_with('/') || path.contains('\\') || path.split('/').any(|part| part == "..")
 }
 
 /// Verify exact usage-accounting manifest and attestation bytes by role.
@@ -197,7 +194,8 @@ pub fn verify_usage_accounting_artifacts_v5(
         ));
     }
 
-    let manifest_json = parse_json_without_duplicate_keys(manifest_raw, "usage-accounting manifest")?;
+    let manifest_json =
+        parse_json_without_duplicate_keys(manifest_raw, "usage-accounting manifest")?;
     if !manifest_json.is_object() || jcs_dumps(&manifest_json)?.as_slice() != manifest_raw {
         return Err(ScoringError::value(
             "usage-accounting manifest must use canonical JCS bytes",

@@ -186,7 +186,13 @@ pub struct DumpOptions {
 
 impl Default for DumpOptions {
     fn default() -> Self {
-        Self { ensure_ascii: true, sort_keys: false, indent: None, separators: None, allow_nan: true }
+        Self {
+            ensure_ascii: true,
+            sort_keys: false,
+            indent: None,
+            separators: None,
+            allow_nan: true,
+        }
     }
 }
 
@@ -350,7 +356,11 @@ pub fn dumps(v: &Value, opts: &DumpOptions) -> Result<String, JsonError> {
         None if opts.indent.is_some() => (",", ": "),
         None => (", ", ": "),
     };
-    let enc = Encoder { opts, item_sep, key_sep };
+    let enc = Encoder {
+        opts,
+        item_sep,
+        key_sep,
+    };
     let mut out = String::new();
     enc.write(&mut out, v, 0)?;
     Ok(out)
@@ -381,7 +391,10 @@ pub fn float_value(f: f64) -> Value {
 pub fn sorted_map(map: &Map<String, Value>) -> Map<String, Value> {
     let mut entries: Vec<(&String, &Value)> = map.iter().collect();
     entries.sort_by(|a, b| a.0.cmp(b.0));
-    entries.into_iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    entries
+        .into_iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -391,16 +404,22 @@ mod tests {
 
     #[test]
     fn jcs_basics() {
-        let v: Value = serde_json::from_str(r#"{"b":1.0,"a":[0.0,-0.0,1e-05,"é\n"],"c":null}"#)
-            .unwrap();
-        assert_eq!(jcs_string(&v).unwrap(), r#"{"a":[0,0,1e-05,"é\n"],"b":1.0,"c":null}"#);
+        let v: Value =
+            serde_json::from_str(r#"{"b":1.0,"a":[0.0,-0.0,1e-05,"é\n"],"c":null}"#).unwrap();
+        assert_eq!(
+            jcs_string(&v).unwrap(),
+            r#"{"a":[0,0,1e-05,"é\n"],"b":1.0,"c":null}"#
+        );
     }
 
     #[test]
     fn jcs_big_ints() {
-        let v: Value = serde_json::from_str("[17565442252895372630, 123456789012345678901234567890]")
-            .unwrap();
-        assert_eq!(jcs_string(&v).unwrap(), "[17565442252895372630,123456789012345678901234567890]");
+        let v: Value =
+            serde_json::from_str("[17565442252895372630, 123456789012345678901234567890]").unwrap();
+        assert_eq!(
+            jcs_string(&v).unwrap(),
+            "[17565442252895372630,123456789012345678901234567890]"
+        );
     }
 
     #[test]

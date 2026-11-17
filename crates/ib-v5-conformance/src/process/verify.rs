@@ -16,11 +16,11 @@ use super::paths::{
     verify_artifact_chronology, verify_readonly_digest,
 };
 use super::profiles::{
-    APPROVED_RESULT_ROOT, FULL_SHARED_CONFORMANCE_OPERATIONS, PROTOCOL, SCHEMA_SHA256,
-    SPEC_SHA256, SourceProfile, V1_RESULT_ROOT, V3_SHARED_MANIFEST_FIELDS,
-    diagnostic_phase_batch_scope, namespace_packages_for_profile, profile_normative_contract,
-    profile_pinned_source_hashes, resolve_source_profile, runtime_inventory_for_profile,
-    validate_execution_classification, validate_relative_source, validate_v4_normative_contract,
+    APPROVED_RESULT_ROOT, FULL_SHARED_CONFORMANCE_OPERATIONS, PROTOCOL, SCHEMA_SHA256, SPEC_SHA256,
+    SourceProfile, V1_RESULT_ROOT, V3_SHARED_MANIFEST_FIELDS, diagnostic_phase_batch_scope,
+    namespace_packages_for_profile, profile_normative_contract, profile_pinned_source_hashes,
+    resolve_source_profile, runtime_inventory_for_profile, validate_execution_classification,
+    validate_relative_source, validate_v4_normative_contract,
 };
 use crate::shared::{
     MATERIALIZATION_CONTRACT_ID, SCORE_METRIC_NULLABILITY_CONTRACT_ID, base64_decode_strict,
@@ -150,10 +150,15 @@ pub fn validate_case_inventory(value: &Value) -> Result<Vec<(String, String)>, S
         let obj = item
             .as_object()
             .filter(|m| m.len() == 2 && m.contains_key("case_id") && m.contains_key("input_sha256"))
-            .ok_or_else(|| SharedRuntimeError("case_inventory row fields are invalid".to_owned()))?;
-        let case_id = obj["case_id"].as_str().filter(|s| !s.is_empty()).ok_or_else(|| {
-            SharedRuntimeError("case_inventory IDs must be nonempty and unique".to_owned())
-        })?;
+            .ok_or_else(|| {
+                SharedRuntimeError("case_inventory row fields are invalid".to_owned())
+            })?;
+        let case_id = obj["case_id"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                SharedRuntimeError("case_inventory IDs must be nonempty and unique".to_owned())
+            })?;
         if !seen.insert(case_id.to_owned()) {
             return Err(SharedRuntimeError(
                 "case_inventory IDs must be nonempty and unique".to_owned(),
@@ -253,9 +258,8 @@ pub fn validate_diagnostic_phase_batch_scope(
     let scope_id = obj["scope_id"].as_str().ok_or_else(|| {
         SharedRuntimeError("diagnostic phase batch scope ID must be a string".to_owned())
     })?;
-    let binding = diagnostic_phase_batch_scope(scope_id).ok_or_else(|| {
-        SharedRuntimeError("unknown diagnostic phase batch scope".to_owned())
-    })?;
+    let binding = diagnostic_phase_batch_scope(scope_id)
+        .ok_or_else(|| SharedRuntimeError("unknown diagnostic phase batch scope".to_owned()))?;
     validate_case_index_binding(
         &obj["case_count"],
         &obj["case_index_sha256"],
@@ -273,8 +277,7 @@ pub fn validate_diagnostic_phase_batch_scope(
             "diagnostic batch operation or phase scope is invalid".to_owned(),
         ));
     }
-    if obj["turn_context"].as_str() != Some("T0") || obj["steering"].as_str() != Some("UNSTEERED")
-    {
+    if obj["turn_context"].as_str() != Some("T0") || obj["steering"].as_str() != Some("UNSTEERED") {
         return Err(SharedRuntimeError(
             "diagnostic batch context or steering scope is invalid".to_owned(),
         ));
@@ -329,7 +332,8 @@ pub fn validate_audit_receipt(audit: &Map<String, Value>) -> Result<(), SharedRu
         Value::Bool(b) => *b,
         _ => true,
     };
-    if non_zero_bytes(&audit["author_stdout_bytes"]) || non_zero_bytes(&audit["author_stderr_bytes"])
+    if non_zero_bytes(&audit["author_stdout_bytes"])
+        || non_zero_bytes(&audit["author_stderr_bytes"])
     {
         return Err(SharedRuntimeError(
             "worker emitted non-result stdout/stderr".to_owned(),
@@ -390,9 +394,9 @@ fn decode_raw_output(
     stream: &str,
     evaluator_id: &str,
 ) -> Result<Vec<u8>, SharedRuntimeError> {
-    let text = value.and_then(Value::as_str).ok_or_else(|| {
-        SharedRuntimeError(format!("raw {stream} is missing for {evaluator_id}"))
-    })?;
+    let text = value
+        .and_then(Value::as_str)
+        .ok_or_else(|| SharedRuntimeError(format!("raw {stream} is missing for {evaluator_id}")))?;
     base64_decode_strict(text).map_err(|_| {
         SharedRuntimeError(format!(
             "raw {stream} is not valid base64 for {evaluator_id}"
@@ -444,7 +448,11 @@ pub fn verify_evaluator_receipts(
             )));
         }
         if require_ordered_inventory
-            && (cid, isha) != (case_inventory[index].0.as_str(), case_inventory[index].1.as_str())
+            && (cid, isha)
+                != (
+                    case_inventory[index].0.as_str(),
+                    case_inventory[index].1.as_str(),
+                )
         {
             return Err(SharedRuntimeError(format!(
                 "raw receipt order differs from the full frozen inventory for {evaluator_id}"
@@ -493,7 +501,10 @@ pub fn verify_evaluator_receipts(
                 "raw stderr digest differs for {evaluator_id}"
             )));
         }
-        let status = row.get("execution_status").and_then(Value::as_str).unwrap_or("");
+        let status = row
+            .get("execution_status")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         if status != "ok" && status != "failed" {
             return Err(SharedRuntimeError(format!(
                 "raw receipt execution status is invalid for {evaluator_id}"
@@ -570,8 +581,9 @@ pub fn verify_capture_manifest(
     profile: Option<&SourceProfile>,
 ) -> Result<(), SharedRuntimeError> {
     let manifest_path = snapshot_root.join("capture-manifest.json");
-    let meta = std::fs::symlink_metadata(&manifest_path)
-        .map_err(|_| SharedRuntimeError("source snapshot has no capture-manifest.json".to_owned()))?;
+    let meta = std::fs::symlink_metadata(&manifest_path).map_err(|_| {
+        SharedRuntimeError("source snapshot has no capture-manifest.json".to_owned())
+    })?;
     if meta.file_type().is_symlink() || !meta.file_type().is_file() {
         return Err(SharedRuntimeError(
             "source snapshot has no capture-manifest.json".to_owned(),
@@ -628,7 +640,9 @@ pub fn verify_capture_manifest(
         .get("source_files")
         .and_then(Value::as_array)
         .ok_or_else(|| {
-            SharedRuntimeError("source capture path list differs from the exact allowlist".to_owned())
+            SharedRuntimeError(
+                "source capture path list differs from the exact allowlist".to_owned(),
+            )
         })?;
     let row_paths: Vec<&str> = rows
         .iter()
@@ -776,7 +790,9 @@ pub fn verify_capture_reference(
                     && m.contains_key("sha256")
                     && m.contains_key("size_bytes")
             })
-            .ok_or_else(|| SharedRuntimeError("source capture file record is invalid".to_owned()))?;
+            .ok_or_else(|| {
+                SharedRuntimeError("source capture file record is invalid".to_owned())
+            })?;
         let rel = row["path"].as_str().ok_or_else(|| {
             SharedRuntimeError("source capture file record is invalid".to_owned())
         })?;
@@ -824,11 +840,14 @@ pub fn verify_runtime_reference(
         }
         (wrapper, wrapper.get("case_count").and_then(exact_int))
     } else {
-        let inner = wrapper.get("freeze").and_then(Value::as_object).ok_or_else(|| {
-            SharedRuntimeError(format!(
-                "runtime manifest wrapper is invalid for {evaluator_id}"
-            ))
-        })?;
+        let inner = wrapper
+            .get("freeze")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                SharedRuntimeError(format!(
+                    "runtime manifest wrapper is invalid for {evaluator_id}"
+                ))
+            })?;
         (inner, wrapper.get("case_count").and_then(exact_int))
     };
 
@@ -855,7 +874,11 @@ pub fn verify_runtime_reference(
         .collect();
     let mut allowed_sets: Vec<BTreeSet<&str>> = vec![
         required.clone(),
-        required.iter().copied().chain(["namespace_packages"]).collect(),
+        required
+            .iter()
+            .copied()
+            .chain(["namespace_packages"])
+            .collect(),
         required.union(&profile_keys).copied().collect(),
         required
             .union(&profile_keys)
@@ -958,9 +981,8 @@ pub fn verify_runtime_reference(
         .and_then(Value::as_str)
         .unwrap_or("");
     let capture_path = resolve_result_artifact(root, cap_path_str)?;
-    let cap_raw = std::fs::read(&capture_path).map_err(|exc| {
-        SharedRuntimeError(format!("failed reading capture manifest: {exc}"))
-    })?;
+    let cap_raw = std::fs::read(&capture_path)
+        .map_err(|exc| SharedRuntimeError(format!("failed reading capture manifest: {exc}")))?;
     let cap_val = strict_json_loads(&cap_raw)?;
     let cap_manifest = cap_val.as_object().ok_or_else(|| {
         SharedRuntimeError(format!(
@@ -987,9 +1009,7 @@ pub fn verify_runtime_reference(
         )));
     }
     let inventory = freeze["runtime_inventory"].as_array().ok_or_else(|| {
-        SharedRuntimeError(format!(
-            "runtime inventory list differs for {evaluator_id}"
-        ))
+        SharedRuntimeError(format!("runtime inventory list differs for {evaluator_id}"))
     })?;
     let inv_paths: Vec<&str> = inventory
         .iter()
@@ -1010,7 +1030,11 @@ pub fn verify_runtime_reference(
                 "runtime dependency manifest is empty for {evaluator_id}"
             ))
         })?;
-    for record_val in approved.iter().chain(inventory.iter()).chain(dependencies.iter()) {
+    for record_val in approved
+        .iter()
+        .chain(inventory.iter())
+        .chain(dependencies.iter())
+    {
         let rec = record_val
             .as_object()
             .filter(|m| {
@@ -1081,9 +1105,9 @@ pub fn verify_archive_records(
         .as_array()
         .filter(|a| !a.is_empty())
         .ok_or_else(|| SharedRuntimeError(format!("{label} archive file list is empty")))?;
-    let base = archive_root.canonicalize().map_err(|exc| {
-        SharedRuntimeError(format!("{label} archive root unavailable: {exc}"))
-    })?;
+    let base = archive_root
+        .canonicalize()
+        .map_err(|exc| SharedRuntimeError(format!("{label} archive root unavailable: {exc}")))?;
     let archive_parent = archive_root.parent();
     let mut artifacts = Vec::with_capacity(rows.len());
     let mut seen = BTreeSet::new();
@@ -1109,11 +1133,11 @@ pub fn verify_archive_records(
             .ok_or_else(|| SharedRuntimeError(format!("{label} archive file record is invalid")))?;
         if rel_path.is_empty()
             || rel_path.starts_with('/')
-            || rel_path
-                .split('/')
-                .any(|p| matches!(p, "" | "." | ".."))
+            || rel_path.split('/').any(|p| matches!(p, "" | "." | ".."))
         {
-            return Err(SharedRuntimeError(format!("{label} archive path is unsafe")));
+            return Err(SharedRuntimeError(format!(
+                "{label} archive path is unsafe"
+            )));
         }
         if !seen.insert(rel_path.to_owned()) {
             return Err(SharedRuntimeError(format!(
@@ -1124,9 +1148,9 @@ pub fn verify_archive_records(
         for part in rel_path.split('/') {
             candidate.push(part);
         }
-        let resolved = candidate.canonicalize().map_err(|exc| {
-            SharedRuntimeError(format!("{label} archive path missing: {exc}"))
-        })?;
+        let resolved = candidate
+            .canonicalize()
+            .map_err(|exc| SharedRuntimeError(format!("{label} archive path missing: {exc}")))?;
         if !resolved.starts_with(&base) {
             return Err(SharedRuntimeError(format!(
                 "{label} archive path escaped its root"
@@ -1148,9 +1172,8 @@ pub fn verify_archive_records(
             cur = parent.parent();
         }
         verify_readonly_digest(&candidate, sha)?;
-        let meta = std::fs::metadata(&candidate).map_err(|exc| {
-            SharedRuntimeError(format!("{label} archive stat failed: {exc}"))
-        })?;
+        let meta = std::fs::metadata(&candidate)
+            .map_err(|exc| SharedRuntimeError(format!("{label} archive stat failed: {exc}")))?;
         if i64::try_from(meta.len()).ok() != Some(size) {
             return Err(SharedRuntimeError(format!(
                 "{label} archive file size differs"
@@ -1184,9 +1207,7 @@ pub fn verify_runtime_archive_reference(
     let mut archive = archive_val
         .as_object()
         .ok_or_else(|| {
-            SharedRuntimeError(format!(
-                "runtime archive fields differ for {evaluator_id}"
-            ))
+            SharedRuntimeError(format!("runtime archive fields differ for {evaluator_id}"))
         })?
         .clone();
     let fields: BTreeSet<&str> = [
@@ -1233,12 +1254,14 @@ pub fn verify_runtime_archive_reference(
         )));
     }
     let parent = path.parent().ok_or_else(|| {
-        SharedRuntimeError(format!(
-            "runtime archive parent missing for {evaluator_id}"
-        ))
+        SharedRuntimeError(format!("runtime archive parent missing for {evaluator_id}"))
     })?;
     let mut artifacts = vec![(path.clone(), exp_sha.to_owned())];
-    artifacts.extend(verify_archive_records(parent, &archive["source_files"], "source")?);
+    artifacts.extend(verify_archive_records(
+        parent,
+        &archive["source_files"],
+        "source",
+    )?);
 
     let mut expected_records: BTreeMap<&str, &Value> = BTreeMap::new();
     for list_key in ["approved_source_files", "runtime_inventory"] {
@@ -1326,8 +1349,7 @@ pub fn verify_dependency_archive_reference(
             "dependency archive manifest digest differs for {evaluator_id}"
         )));
     }
-    if manifest["format"].as_str()
-        != Some("identitybench.v5.phase-only-frozen-dependencies.v1")
+    if manifest["format"].as_str() != Some("identitybench.v5.phase-only-frozen-dependencies.v1")
         || manifest["evaluator_slot"].as_str() != Some(evaluator_id)
         || manifest["source_profile"].as_str() != Some(profile.profile_id)
         || manifest["author_origin"].as_str() != Some(profile.author_origin)
@@ -1444,10 +1466,8 @@ pub fn verify_full_shared_v3_run_manifest(
         || run["case_manifest_sha256"].as_str() != Some(case_manifest_sha256)
         || run["raw_receipts"].as_object() != Some(raw_receipts_ref)
         || run["raw_audits"].as_object() != Some(raw_audits_ref)
-        || raw_receipts_ref.get("row_count").and_then(exact_int)
-            != i64::try_from(case_count).ok()
-        || raw_audits_ref.get("row_count").and_then(exact_int)
-            != i64::try_from(case_count).ok()
+        || raw_receipts_ref.get("row_count").and_then(exact_int) != i64::try_from(case_count).ok()
+        || raw_audits_ref.get("row_count").and_then(exact_int) != i64::try_from(case_count).ok()
     {
         return Err(SharedRuntimeError(format!(
             "run manifest inventory or stream binding differs for {evaluator_id}"
@@ -1564,7 +1584,9 @@ pub fn verify_full_shared_v3_inputs(
     .into_iter()
     .collect();
     let input_artifacts = input_artifacts_val.as_object().ok_or_else(|| {
-        SharedRuntimeError("full conformance input_artifacts differ from the v3 contract".to_owned())
+        SharedRuntimeError(
+            "full conformance input_artifacts differ from the v3 contract".to_owned(),
+        )
     })?;
     let act_arts: BTreeSet<&str> = input_artifacts.keys().map(String::as_str).collect();
     if act_arts != required_artifacts {
@@ -1593,7 +1615,9 @@ pub fn verify_full_shared_v3_inputs(
     let manifest_raw = verify_readonly_digest(&manifest_path, manifest_sha)?;
     let manifest_val = strict_json_loads(&manifest_raw)?;
     let manifest_value = manifest_val.as_object().ok_or_else(|| {
-        SharedRuntimeError("full shared corpus manifest fields differ from the v3 contract".to_owned())
+        SharedRuntimeError(
+            "full shared corpus manifest fields differ from the v3 contract".to_owned(),
+        )
     })?;
     let exp_mfields: BTreeSet<&str> = V3_SHARED_MANIFEST_FIELDS.into_iter().collect();
     let act_mfields: BTreeSet<&str> = manifest_value.keys().map(String::as_str).collect();
@@ -1612,10 +1636,13 @@ pub fn verify_full_shared_v3_inputs(
     let normative = manifest_value
         .get("normative_inputs")
         .and_then(Value::as_object)
-        .ok_or_else(|| SharedRuntimeError("v3 normative input bindings are incomplete".to_owned()))?;
-    let exp_norm_keys: BTreeSet<&str> = ["schemas_path", "schemas_sha256", "spec_path", "spec_sha256"]
-        .into_iter()
-        .collect();
+        .ok_or_else(|| {
+            SharedRuntimeError("v3 normative input bindings are incomplete".to_owned())
+        })?;
+    let exp_norm_keys: BTreeSet<&str> =
+        ["schemas_path", "schemas_sha256", "spec_path", "spec_sha256"]
+            .into_iter()
+            .collect();
     let act_norm_keys: BTreeSet<&str> = normative.keys().map(String::as_str).collect();
     if act_norm_keys != exp_norm_keys {
         return Err(SharedRuntimeError(
@@ -1633,26 +1660,29 @@ pub fn verify_full_shared_v3_inputs(
     }
 
     let mut bound: Vec<(PathBuf, String)> = vec![(manifest_path.clone(), manifest_sha.to_owned())];
-    let mut bind_declared_artifact = |name: &str, relative_path: &str, digest: &str| -> Result<Vec<u8>, SharedRuntimeError> {
-        let expected_path = v3_relative_input_path(root, &manifest_path, relative_path)?;
-        let reference = input_artifacts[name].as_object().expect("checked");
-        if reference["path"].as_str() != Some(expected_path.as_str())
-            || reference["sha256"].as_str() != Some(digest)
-        {
-            return Err(SharedRuntimeError(format!(
-                "v3 input artifact differs from manifest: {name}"
-            )));
-        }
-        let path = resolve_shared_input_artifact(root, &expected_path)?;
-        let raw = verify_readonly_digest(&path, digest)?;
-        bound.push((path, digest.to_owned()));
-        Ok(raw)
-    };
+    let mut bind_declared_artifact =
+        |name: &str, relative_path: &str, digest: &str| -> Result<Vec<u8>, SharedRuntimeError> {
+            let expected_path = v3_relative_input_path(root, &manifest_path, relative_path)?;
+            let reference = input_artifacts[name].as_object().expect("checked");
+            if reference["path"].as_str() != Some(expected_path.as_str())
+                || reference["sha256"].as_str() != Some(digest)
+            {
+                return Err(SharedRuntimeError(format!(
+                    "v3 input artifact differs from manifest: {name}"
+                )));
+            }
+            let path = resolve_shared_input_artifact(root, &expected_path)?;
+            let raw = verify_readonly_digest(&path, digest)?;
+            bound.push((path, digest.to_owned()));
+            Ok(raw)
+        };
 
     let phase_meta = manifest_value
         .get("phase_checkpoint")
         .and_then(Value::as_object)
-        .ok_or_else(|| SharedRuntimeError("v3 phase checkpoint descriptor is incomplete".to_owned()))?;
+        .ok_or_else(|| {
+            SharedRuntimeError("v3 phase checkpoint descriptor is incomplete".to_owned())
+        })?;
     let exp_pmeta: BTreeSet<&str> = [
         "path",
         "phase_case_count",
@@ -1663,7 +1693,12 @@ pub fn verify_full_shared_v3_inputs(
     ]
     .into_iter()
     .collect();
-    if phase_meta.keys().map(String::as_str).collect::<BTreeSet<_>>() != exp_pmeta {
+    if phase_meta
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != exp_pmeta
+    {
         return Err(SharedRuntimeError(
             "v3 phase checkpoint descriptor is incomplete".to_owned(),
         ));
@@ -1673,7 +1708,9 @@ pub fn verify_full_shared_v3_inputs(
         || phase_case_count.is_none_or(|c| c <= 0)
         || phase_meta["preserved_checkpoint_bytes"].as_bool() != Some(true)
         || !phase_meta["sha256"].as_str().is_some_and(is_sha256)
-        || !phase_meta["phase_inputs_sha256"].as_str().is_some_and(is_sha256)
+        || !phase_meta["phase_inputs_sha256"]
+            .as_str()
+            .is_some_and(is_sha256)
     {
         return Err(SharedRuntimeError(
             "v3 phase checkpoint descriptor is malformed".to_owned(),
@@ -1712,7 +1749,10 @@ pub fn verify_full_shared_v3_inputs(
                 "v3 stimulus source descriptor fields are invalid".to_owned(),
             ));
         }
-        if desc["copied_byte_exact_from"].as_str().is_none_or(str::is_empty) {
+        if desc["copied_byte_exact_from"]
+            .as_str()
+            .is_none_or(str::is_empty)
+        {
             return Err(SharedRuntimeError(
                 "v3 stimulus provenance descriptor is invalid".to_owned(),
             ));
@@ -1752,13 +1792,21 @@ pub fn verify_full_shared_v3_inputs(
     }
     let recipes_raw = bind_declared_artifact(
         "recipes",
-        stimulus_descriptors["recipes"]["path"].as_str().unwrap_or(""),
-        stimulus_descriptors["recipes"]["sha256"].as_str().unwrap_or(""),
+        stimulus_descriptors["recipes"]["path"]
+            .as_str()
+            .unwrap_or(""),
+        stimulus_descriptors["recipes"]["sha256"]
+            .as_str()
+            .unwrap_or(""),
     )?;
     let traces_raw = bind_declared_artifact(
         "traces",
-        stimulus_descriptors["traces"]["path"].as_str().unwrap_or(""),
-        stimulus_descriptors["traces"]["sha256"].as_str().unwrap_or(""),
+        stimulus_descriptors["traces"]["path"]
+            .as_str()
+            .unwrap_or(""),
+        stimulus_descriptors["traces"]["sha256"]
+            .as_str()
+            .unwrap_or(""),
     )?;
 
     let family_meta = manifest_value
@@ -1767,7 +1815,9 @@ pub fn verify_full_shared_v3_inputs(
         .filter(|m| m.contains_key("path") && m.contains_key("sha256"))
         .ok_or_else(|| SharedRuntimeError("v3 family map descriptor is incomplete".to_owned()))?;
     if !family_meta["sha256"].as_str().is_some_and(is_sha256) {
-        return Err(SharedRuntimeError("v3 family map digest is invalid".to_owned()));
+        return Err(SharedRuntimeError(
+            "v3 family map digest is invalid".to_owned(),
+        ));
     }
     let family_raw = bind_declared_artifact(
         "family_map",
@@ -1845,9 +1895,14 @@ pub fn verify_full_shared_v3_inputs(
 
     for (index, meta_val) in manifest_index.iter().enumerate() {
         let metadata = meta_val.as_object().ok_or_else(|| {
-            SharedRuntimeError(format!("v3 manifest case_index row {index} is not an object"))
+            SharedRuntimeError(format!(
+                "v3 manifest case_index row {index} is not an object"
+            ))
         })?;
-        let operation = metadata.get("operation").and_then(Value::as_str).unwrap_or("");
+        let operation = metadata
+            .get("operation")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let mut expected_keys = common_fields.clone();
         if operation == "derive_phase" {
             expected_keys.insert("source_file");
@@ -1865,9 +1920,18 @@ pub fn verify_full_shared_v3_inputs(
                 "v3 manifest case_index row {index} has invalid fields"
             )));
         }
-        let case_id = metadata.get("case_id").and_then(Value::as_str).unwrap_or("");
-        let episode_id = metadata.get("episode_id").and_then(Value::as_str).unwrap_or("");
-        let suite_id = metadata.get("suite_id").and_then(Value::as_str).unwrap_or("");
+        let case_id = metadata
+            .get("case_id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let episode_id = metadata
+            .get("episode_id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let suite_id = metadata
+            .get("suite_id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let phase_index = metadata.get("phase_index").and_then(exact_int);
         let digest = metadata
             .get("canonical_case_sha256")
@@ -2017,9 +2081,8 @@ pub fn verify_full_shared_v3_inputs(
             "full public input order or digest differs from the v3 manifest".to_owned(),
         ));
     }
-    let public_raw = std::fs::read(public_path).map_err(|exc| {
-        SharedRuntimeError(format!("failed reading public inputs: {exc}"))
-    })?;
+    let public_raw = std::fs::read(public_path)
+        .map_err(|exc| SharedRuntimeError(format!("failed reading public inputs: {exc}")))?;
     let mut expected_public_raw = Vec::new();
     for c in &cases {
         expected_public_raw.extend_from_slice(&c.canonical_bytes);
@@ -2059,7 +2122,12 @@ pub fn verify_full_shared_v3_inputs(
     ]
     .into_iter()
     .collect();
-    if phase_descriptor.keys().map(String::as_str).collect::<BTreeSet<_>>() != exp_pdesc {
+    if phase_descriptor
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != exp_pdesc
+    {
         return Err(SharedRuntimeError(
             "v3 phase checkpoint input descriptor is invalid".to_owned(),
         ));
@@ -2123,7 +2191,8 @@ pub fn verify_full_shared_v3_inputs(
     let declared_ops = counts["operations"].as_object().ok_or_else(|| {
         SharedRuntimeError("v3 manifest counts differ from the reconstructed sources".to_owned())
     })?;
-    let expected_ops_keys: BTreeSet<&str> = FULL_SHARED_CONFORMANCE_OPERATIONS.into_iter().collect();
+    let expected_ops_keys: BTreeSet<&str> =
+        FULL_SHARED_CONFORMANCE_OPERATIONS.into_iter().collect();
     let act_ops_keys: BTreeSet<&str> = declared_ops.keys().map(String::as_str).collect();
     let ops_match = act_ops_keys == expected_ops_keys
         && FULL_SHARED_CONFORMANCE_OPERATIONS.iter().all(|name| {
@@ -2160,8 +2229,9 @@ pub fn verify_full_shared_v3_inputs(
     .collect();
     if i64::try_from(phase_targets.len()).ok() != exact_int(&counts["phase_target_tuples"])
         || phase_targets.iter().any(|r| {
-            r.as_object()
-                .is_none_or(|m| m.keys().map(String::as_str).collect::<BTreeSet<_>>() != target_keys)
+            r.as_object().is_none_or(|m| {
+                m.keys().map(String::as_str).collect::<BTreeSet<_>>() != target_keys
+            })
         })
     {
         return Err(SharedRuntimeError(
@@ -2169,7 +2239,9 @@ pub fn verify_full_shared_v3_inputs(
         ));
     }
     if cases.len() != case_inventory.len() || !is_sha256(case_manifest_sha256) {
-        return Err(SharedRuntimeError("full v3 corpus is incomplete".to_owned()));
+        return Err(SharedRuntimeError(
+            "full v3 corpus is incomplete".to_owned(),
+        ));
     }
     if case_index_sha256 != self::case_index_sha256(&derived_inventory)? {
         return Err(SharedRuntimeError(
@@ -2204,9 +2276,8 @@ pub fn verify_diagnostic_phase_sidecar(
             SharedRuntimeError("protocol sidecar reference differs from the v2 contract".to_owned())
         })?;
     let scope_id = scope["scope_id"].as_str().unwrap_or("");
-    let binding = diagnostic_phase_batch_scope(scope_id).ok_or_else(|| {
-        SharedRuntimeError("unknown diagnostic phase batch scope".to_owned())
-    })?;
+    let binding = diagnostic_phase_batch_scope(scope_id)
+        .ok_or_else(|| SharedRuntimeError("unknown diagnostic phase batch scope".to_owned()))?;
     if ref_obj["path"].as_str() != Some(binding.protocol_sidecar_path)
         || ref_obj["sha256"].as_str() != Some(binding.protocol_sidecar_sha256)
     {
@@ -2237,8 +2308,7 @@ pub fn verify_diagnostic_phase_sidecar(
             "protocol sidecar fields differ from the pinned contract".to_owned(),
         ));
     }
-    if sidecar["format"].as_str()
-        != Some("identitybench.v5.phase-only-neutral-protocol-sidecar.v1")
+    if sidecar["format"].as_str() != Some("identitybench.v5.phase-only-neutral-protocol-sidecar.v1")
         || sidecar["materialization_contract_id"].as_str()
             != Some("identitybench.v5.materialization-contract.v2")
         || sidecar["protocol"].as_str() != Some(PROTOCOL)
@@ -2247,9 +2317,9 @@ pub fn verify_diagnostic_phase_sidecar(
             "protocol sidecar identity differs".to_owned(),
         ));
     }
-    let inputs = sidecar["inputs"].as_object().ok_or_else(|| {
-        SharedRuntimeError("protocol sidecar input binding differs".to_owned())
-    })?;
+    let inputs = sidecar["inputs"]
+        .as_object()
+        .ok_or_else(|| SharedRuntimeError("protocol sidecar input binding differs".to_owned()))?;
     let input_fields: BTreeSet<&str> = [
         "case_inventory",
         "case_manifest_sha256",
@@ -2329,7 +2399,12 @@ pub fn verify_diagnostic_phase_sidecar(
     ]
     .into_iter()
     .collect();
-    if exec_scope.keys().map(String::as_str).collect::<BTreeSet<_>>() != exec_fields {
+    if exec_scope
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != exec_fields
+    {
         return Err(SharedRuntimeError(
             "protocol sidecar execution scope fields differ".to_owned(),
         ));
@@ -2413,16 +2488,20 @@ pub fn verify_diagnostic_phase_sidecar(
         || review["adapter_test_path"].as_str() != Some("tests/v5/test_conformance_shared.py")
         || review["status"].as_str() != Some("accepted")
         || exact_int(&review["focused_test_count"]).is_none_or(|c| c <= 0)
-        || !review["adapter_source_sha256"].as_str().is_some_and(is_sha256)
-        || !review["adapter_test_sha256"].as_str().is_some_and(is_sha256)
+        || !review["adapter_source_sha256"]
+            .as_str()
+            .is_some_and(is_sha256)
+        || !review["adapter_test_sha256"]
+            .as_str()
+            .is_some_and(is_sha256)
     {
         return Err(SharedRuntimeError(
             "protocol review sidecar is not an accepted derive review".to_owned(),
         ));
     }
-    let runtime_binding = sidecar["runtime_binding"].as_object().ok_or_else(|| {
-        SharedRuntimeError("protocol runtime binding fields differ".to_owned())
-    })?;
+    let runtime_binding = sidecar["runtime_binding"]
+        .as_object()
+        .ok_or_else(|| SharedRuntimeError("protocol runtime binding fields differ".to_owned()))?;
     let rt_fields: BTreeSet<&str> = [
         "public_schema_path",
         "public_schema_sha256",
@@ -2449,15 +2528,17 @@ pub fn verify_diagnostic_phase_sidecar(
         || !runtime_binding["runtime_source_sha256"]
             .as_str()
             .is_some_and(is_sha256)
-        || !runtime_binding["spec_sha256"].as_str().is_some_and(is_sha256)
+        || !runtime_binding["spec_sha256"]
+            .as_str()
+            .is_some_and(is_sha256)
     {
         return Err(SharedRuntimeError(
             "protocol runtime binding contains an invalid digest".to_owned(),
         ));
     }
-    let captures = sidecar["evaluator_captures"].as_object().ok_or_else(|| {
-        SharedRuntimeError("protocol sidecar capture set differs".to_owned())
-    })?;
+    let captures = sidecar["evaluator_captures"]
+        .as_object()
+        .ok_or_else(|| SharedRuntimeError("protocol sidecar capture set differs".to_owned()))?;
     if captures.keys().map(String::as_str).collect::<BTreeSet<_>>()
         != BTreeSet::from(["full_spec", "agent_view"])
     {
@@ -2527,7 +2608,9 @@ pub fn verify_sidecar_runtime_binding(
     profile: &SourceProfile,
 ) -> Result<(), SharedRuntimeError> {
     let binding = sidecar["runtime_binding"].as_object().ok_or_else(|| {
-        SharedRuntimeError(format!("sidecar runtime binding differs for {evaluator_id}"))
+        SharedRuntimeError(format!(
+            "sidecar runtime binding differs for {evaluator_id}"
+        ))
     })?;
     let mut files: BTreeMap<&str, &str> = BTreeMap::new();
     for key in ["approved_source_files", "runtime_inventory"] {
@@ -2579,7 +2662,9 @@ pub fn verify_sidecar_runtime_binding(
         ));
     }
     let review = sidecar["protocol_review"].as_object().ok_or_else(|| {
-        SharedRuntimeError(format!("sidecar adapter binding differs for {evaluator_id}"))
+        SharedRuntimeError(format!(
+            "sidecar adapter binding differs for {evaluator_id}"
+        ))
     })?;
     let adapter_path = "src/identitybench/v5/conformance_shared.py";
     if review["adapter_source_path"].as_str() != Some(adapter_path)
@@ -2597,17 +2682,16 @@ pub fn verify_blind_freeze_receipt(
     expected_sha256: &str,
     repository_root: &Path,
 ) -> Result<VerifiedBlindFreeze, SharedRuntimeError> {
-    let root = repository_root.canonicalize().map_err(|exc| {
-        SharedRuntimeError(format!("repository root invalid: {exc}"))
-    })?;
+    let root = repository_root
+        .canonicalize()
+        .map_err(|exc| SharedRuntimeError(format!("repository root invalid: {exc}")))?;
     let rel_str = receipt_path
         .to_str()
         .ok_or_else(|| SharedRuntimeError("unsafe artifact path".to_owned()))?;
     let receipt_file = resolve_result_artifact(&root, rel_str)?;
     require_readonly_file(&receipt_file)?;
-    let receipt_raw = std::fs::read(&receipt_file).map_err(|exc| {
-        SharedRuntimeError(format!("failed reading receipt: {exc}"))
-    })?;
+    let receipt_raw = std::fs::read(&receipt_file)
+        .map_err(|exc| SharedRuntimeError(format!("failed reading receipt: {exc}")))?;
     let receipt_sha = sha256_bytes(&receipt_raw);
     if receipt_sha != expected_sha256 {
         return Err(SharedRuntimeError(
@@ -2694,9 +2778,14 @@ pub fn verify_blind_freeze_receipt(
     } else {
         V1_RESULT_ROOT
     };
-    let expected_root_path = root.join(expected_result_root).canonicalize().map_err(|_| {
-        SharedRuntimeError("blind freeze receipt is stored under the wrong versioned root".to_owned())
-    })?;
+    let expected_root_path = root
+        .join(expected_result_root)
+        .canonicalize()
+        .map_err(|_| {
+            SharedRuntimeError(
+                "blind freeze receipt is stored under the wrong versioned root".to_owned(),
+            )
+        })?;
     if !receipt_file.starts_with(&expected_root_path) {
         return Err(SharedRuntimeError(
             "blind freeze receipt is stored under the wrong versioned root".to_owned(),
@@ -2860,15 +2949,16 @@ pub fn verify_blind_freeze_receipt(
         ));
     }
 
-    let mut bound_artifacts: Vec<(PathBuf, String)> =
-        vec![(public_path, public_sha.to_owned())];
+    let mut bound_artifacts: Vec<(PathBuf, String)> = vec![(public_path, public_sha.to_owned())];
     bound_artifacts.extend(v3_input_artifacts);
 
     let mut sidecar_value: Option<Map<String, Value>> = None;
     if is_v2 {
         let input_artifacts = receipt_value["input_artifacts"]
             .as_object()
-            .filter(|m| m.len() == 2 && m.contains_key("manifest") && m.contains_key("phase_checkpoint"))
+            .filter(|m| {
+                m.len() == 2 && m.contains_key("manifest") && m.contains_key("phase_checkpoint")
+            })
             .ok_or_else(|| {
                 SharedRuntimeError("input_artifacts fields differ from the v2 contract".to_owned())
             })?;
@@ -2884,7 +2974,10 @@ pub fn verify_blind_freeze_receipt(
             let (exp_path, exp_sha) = if name == "manifest" {
                 (binding.input_manifest_path, binding.input_manifest_sha256)
             } else {
-                (binding.phase_checkpoint_path, binding.phase_checkpoint_sha256)
+                (
+                    binding.phase_checkpoint_path,
+                    binding.phase_checkpoint_sha256,
+                )
             };
             if r["path"].as_str() != Some(exp_path) || r["sha256"].as_str() != Some(exp_sha) {
                 return Err(SharedRuntimeError(format!(
@@ -2914,9 +3007,7 @@ pub fn verify_blind_freeze_receipt(
                 "diagnostic batch runtime attestation must remain unaccepted".to_owned(),
             ));
         }
-        if receipt_value["author_independence"].as_str()
-            != Some("pending_qualified_adjudication")
-        {
+        if receipt_value["author_independence"].as_str() != Some("pending_qualified_adjudication") {
             return Err(SharedRuntimeError(
                 "diagnostic batch cannot claim author qualification".to_owned(),
             ));
@@ -2935,9 +3026,7 @@ pub fn verify_blind_freeze_receipt(
                 "full conformance freeze runtime is not accepted".to_owned(),
             ));
         }
-        if receipt_value["author_independence"].as_str()
-            != Some("pending_qualified_adjudication")
-        {
+        if receipt_value["author_independence"].as_str() != Some("pending_qualified_adjudication") {
             return Err(SharedRuntimeError(
                 "full conformance freeze cannot claim author qualification".to_owned(),
             ));
@@ -2947,7 +3036,10 @@ pub fn verify_blind_freeze_receipt(
     let evaluator_values = receipt_value["evaluators"].as_object().ok_or_else(|| {
         SharedRuntimeError("blind freeze must bind both independent evaluators".to_owned())
     })?;
-    if evaluator_values.keys().map(String::as_str).collect::<BTreeSet<_>>()
+    if evaluator_values
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
         != BTreeSet::from(["full_spec", "agent_view"])
     {
         return Err(SharedRuntimeError(
@@ -2956,9 +3048,10 @@ pub fn verify_blind_freeze_receipt(
     }
 
     let mut closure_hashes: Vec<(String, String)> = Vec::new();
-    for (evaluator_id, expected_wire_id) in
-        [("full_spec", "full_spec_blind"), ("agent_view", "agent_view_only")]
-    {
+    for (evaluator_id, expected_wire_id) in [
+        ("full_spec", "full_spec_blind"),
+        ("agent_view", "agent_view_only"),
+    ] {
         let item = evaluator_values[evaluator_id].as_object().ok_or_else(|| {
             SharedRuntimeError(format!(
                 "blind freeze record fields differ for {evaluator_id}"
@@ -3014,17 +3107,17 @@ pub fn verify_blind_freeze_receipt(
             .and_then(Value::as_str)
             .unwrap_or("legacy_diagnostic");
         let profile = resolve_source_profile(evaluator_id, Some(source_profile))?;
-        if is_v4 && evaluator_id == "full_spec" && source_profile != V5_APPROVED_FULL_SPEC_PROFILE
-        {
+        if is_v4 && evaluator_id == "full_spec" && source_profile != V5_APPROVED_FULL_SPEC_PROFILE {
             return Err(SharedRuntimeError(
                 "v4 freeze requires the approved addendum full-spec profile".to_owned(),
             ));
         }
         if is_v4
             && evaluator_id == "agent_view"
-            && profile.source_files.iter().any(|p| {
-                p == V5_APPROVED_ADDENDUM_PATH || p == V5_APPROVED_DIRECTIVE_PATH
-            })
+            && profile
+                .source_files
+                .iter()
+                .any(|p| p == V5_APPROVED_ADDENDUM_PATH || p == V5_APPROVED_DIRECTIVE_PATH)
         {
             return Err(SharedRuntimeError(
                 "agent-view source closure includes normative-only files".to_owned(),
@@ -3075,7 +3168,9 @@ pub fn verify_blind_freeze_receipt(
             let sc = sidecar_value.as_ref().ok_or_else(|| {
                 SharedRuntimeError("diagnostic protocol sidecar was not verified".to_owned())
             })?;
-            let cap_ref = item["source_capture_manifest"].as_object().expect("verified");
+            let cap_ref = item["source_capture_manifest"]
+                .as_object()
+                .expect("verified");
             let cap_path = resolve_result_artifact(&root, cap_ref["path"].as_str().unwrap_or(""))?;
             let cap_manifest_val = strict_json_loads(
                 &std::fs::read(&cap_path).map_err(|e| SharedRuntimeError(e.to_string()))?,
@@ -3178,9 +3273,7 @@ pub fn verify_blind_freeze_receipt(
                         && m.contains_key("row_count")
                 })
                 .ok_or_else(|| {
-                    SharedRuntimeError(format!(
-                        "raw audit reference is invalid for {evaluator_id}"
-                    ))
+                    SharedRuntimeError(format!("raw audit reference is invalid for {evaluator_id}"))
                 })?;
             let audit_count = exact_int(&audit_ref["row_count"]);
             if (is_v3 || is_v4) && audit_count.is_none() {

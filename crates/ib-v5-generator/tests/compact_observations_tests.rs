@@ -5,7 +5,9 @@ use ib_v5_generator::{
     build_v5_compact_candidate, build_v5_episode, plan_v5_cells,
 };
 use ib_v5_runtime::{obs_strategy_q1, obs_strategy_q2};
-use ib_v5_schemas::{AuthorityTierV5, EpisodeV5, StrictV5Model, TableRowV5, decode_compact_table_v5};
+use ib_v5_schemas::{
+    AuthorityTierV5, EpisodeV5, StrictV5Model, TableRowV5, decode_compact_table_v5,
+};
 use serde_json::Value;
 
 fn collect_ev(val: &Value, out: &mut BTreeSet<String>) {
@@ -48,7 +50,11 @@ fn q2_cited_evidence_by_slice(
     phase_index: i64,
 ) -> BTreeMap<String, BTreeSet<String>> {
     let (manifest, payloads, phase_mutations) = if phase_index == 1 {
-        (&ep.phase1_manifest, &ep.phase1_slices, &oracle.gold_p1_mutations)
+        (
+            &ep.phase1_manifest,
+            &ep.phase1_slices,
+            &oracle.gold_p1_mutations,
+        )
     } else {
         (
             &ep.phase2_base_manifest,
@@ -119,9 +125,13 @@ fn test_compact_observation_candidate_preserves_semantics_and_obs_witness() {
             .expect("conn desc");
         let conn_slice = &cand_ep.phase1_slices[&conn_desc.slice_id];
         assert_eq!(conn_slice.tables[0].table_name, "connector_pages");
-        assert_eq!(conn_desc.authority_tier, AuthorityTierV5::AuthoritativePrimary);
+        assert_eq!(
+            conn_desc.authority_tier,
+            AuthorityTierV5::AuthoritativePrimary
+        );
 
-        let cand_q1 = obs_strategy_q1(&cand_ep.phase1_manifest, &cand_ep.policy_card, 1).expect("q1");
+        let cand_q1 =
+            obs_strategy_q1(&cand_ep.phase1_manifest, &cand_ep.policy_card, 1).expect("q1");
         for sid in &cand_q1 {
             assert!(
                 cand_ep.phase1_slices[sid]
@@ -135,7 +145,10 @@ fn test_compact_observation_candidate_preserves_semantics_and_obs_witness() {
             let (base_m, base_p) = if phase_index == 1 {
                 (&baseline_ep.phase1_manifest, &baseline_ep.phase1_slices)
             } else {
-                (&baseline_ep.phase2_base_manifest, &baseline_ep.phase2_slices)
+                (
+                    &baseline_ep.phase2_base_manifest,
+                    &baseline_ep.phase2_slices,
+                )
             };
             let (cand_m, cand_p) = if phase_index == 1 {
                 (&cand_ep.phase1_manifest, &cand_ep.phase1_slices)
@@ -174,11 +187,9 @@ fn test_compact_observation_candidate_preserves_semantics_and_obs_witness() {
         }
 
         let cand_evs = source_evidence_ids(&cand_ep);
-        assert!(
-            cand_evs
-                .iter()
-                .all(|ev| ev.starts_with("ev_") && ev.len() == 6 && ev[3..].bytes().all(|b| b.is_ascii_digit()))
-        );
+        assert!(cand_evs.iter().all(|ev| ev.starts_with("ev_")
+            && ev.len() == 6
+            && ev[3..].bytes().all(|b| b.is_ascii_digit())));
         let mut policy_evs = BTreeSet::new();
         collect_ev(
             &cand_ep.policy_card.to_strict_json_value().expect("pc"),

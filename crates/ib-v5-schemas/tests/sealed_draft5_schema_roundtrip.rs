@@ -35,7 +35,10 @@ fn sealed_draft5_all_episodes_and_oracles_roundtrip_byte_for_byte() {
         for (line_idx, line_res) in ep_reader.lines().enumerate() {
             let line = line_res.expect("read line");
             let ep = EpisodeV5::from_strict_json_str(&line).unwrap_or_else(|e| {
-                panic!("{suite}/episodes.jsonl line {}: strict parse/validate failed: {e}", line_idx + 1)
+                panic!(
+                    "{suite}/episodes.jsonl line {}: strict parse/validate failed: {e}",
+                    line_idx + 1
+                )
             });
             let val = ep.to_strict_json_value().expect("to_strict_json_value");
             let jcs = ib_core::jcs_dumps(&val).expect("jcs_dumps");
@@ -50,11 +53,18 @@ fn sealed_draft5_all_episodes_and_oracles_roundtrip_byte_for_byte() {
             for slice in ep.phase1_slices.values().chain(ep.phase2_slices.values()) {
                 for table in &slice.tables {
                     let rows = decode_compact_table_v5(table).unwrap_or_else(|e| {
-                        panic!("{suite} {} decode_compact_table_v5({}) failed: {e}", ep.episode_id, table.table_name)
+                        panic!(
+                            "{suite} {} decode_compact_table_v5({}) failed: {e}",
+                            ep.episode_id, table.table_name
+                        )
                     });
-                    let reencoded = encode_compact_table_v5(&table.table_name, &rows).unwrap_or_else(|e| {
-                        panic!("{suite} {} encode_compact_table_v5({}) failed: {e}", ep.episode_id, table.table_name)
-                    });
+                    let reencoded = encode_compact_table_v5(&table.table_name, &rows)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "{suite} {} encode_compact_table_v5({}) failed: {e}",
+                                ep.episode_id, table.table_name
+                            )
+                        });
                     assert_eq!(
                         reencoded.to_jcs_bytes().expect("reencoded jcs"),
                         table.to_jcs_bytes().expect("orig jcs"),
@@ -78,11 +88,12 @@ fn sealed_draft5_all_episodes_and_oracles_roundtrip_byte_for_byte() {
         for (line_idx, line_res) in or_reader.lines().enumerate() {
             let line = line_res.expect("read line");
             let oracle = SealedEpisodeOracleV5::from_strict_json_str(&line).unwrap_or_else(|e| {
-                panic!("{suite}/oracles.jsonl line {}: strict parse/validate failed: {e}", line_idx + 1)
+                panic!(
+                    "{suite}/oracles.jsonl line {}: strict parse/validate failed: {e}",
+                    line_idx + 1
+                )
             });
-            let val = oracle
-                .to_strict_json_value()
-                .expect("to_strict_json_value");
+            let val = oracle.to_strict_json_value().expect("to_strict_json_value");
             let jcs = ib_core::jcs_dumps(&val).expect("jcs_dumps");
             assert_eq!(
                 jcs,

@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use ib_providers::base::{Message, ModelRequest, Provider, ToolSpec};
-use ib_providers::cli::agy::{AGENT_FILE, AgyAdapter, AgyCliProvider, agent_definition, served_model};
+use ib_providers::cli::agy::{
+    AGENT_FILE, AgyAdapter, AgyCliProvider, agent_definition, served_model,
+};
 use ib_providers::cli::claude::{ClaudeAdapter, ClaudeCliProvider};
 use ib_providers::cli::codex::{
     CONFIG_OVERRIDES, CodexAdapter, CodexCliProvider, DEFAULT_EFFORT as CODEX_DEFAULT_EFFORT,
@@ -51,7 +53,12 @@ impl FakeRunner {
 impl ProcessRunner for FakeRunner {
     async fn run(&self, command: &Command) -> ProcessResult {
         self.commands.lock().unwrap().push(command.clone());
-        let mut h = self.handlers.lock().unwrap().pop_front().expect("unexpected call");
+        let mut h = self
+            .handlers
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("unexpected call");
         h(command)
     }
 }
@@ -82,6 +89,33 @@ fn make_request(prompt: &str, system: &str, schema: Option<Map<String, Value>>) 
         output_schema: schema,
         ..ModelRequest::default()
     }
+}
+
+#[test]
+fn caller_environment_reaches_cli_allowlist_without_global_mutation_or_debug_leak() {
+    let mut config = CliConfig::new("offline-test", "never-executed", 1.0);
+    config.environment = Some(BTreeMap::from([
+        ("LANG".into(), "fixture-language".into()),
+        ("OPENAI_API_KEY".into(), "synthetic-secret-canary".into()),
+    ]));
+    assert!(!format!("{config:?}").contains("synthetic-secret-canary"));
+    let provider = ClaudeCliProvider::new(ClaudeAdapter, config);
+    let child = provider.child_env(None);
+    assert_eq!(
+        child.get("LANG").map(String::as_str),
+        Some("fixture-language")
+    );
+    assert!(!child.contains_key("OPENAI_API_KEY"));
+    assert!(
+        !provider
+            .error_text("synthetic-secret-canary", None, None)
+            .contains("synthetic-secret-canary")
+    );
+    let explicit = BTreeMap::from([("LANG".into(), "explicit-override".into())]);
+    assert_eq!(
+        provider.child_env(Some(&explicit))["LANG"],
+        "explicit-override"
+    );
 }
 
 // --------------------------------------------------------------------------- agy_cli
@@ -135,7 +169,11 @@ async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
     let p = AgyCliProvider::new(AgyAdapter, cfg.clone());
 
     let resp = p
-        .complete(&make_request("Decide REQ-1.", "SYS", Some(decision_schema())))
+        .complete(&make_request(
+            "Decide REQ-1.",
+            "SYS",
+            Some(decision_schema()),
+        ))
         .await;
     assert!(resp.ok());
     assert_eq!(resp.served_model.as_deref(), Some("gemini-4-argon-medium"));
@@ -165,7 +203,11 @@ async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
     action_req.schema_name = ACTION_SCHEMA_NAME.to_string();
     let r2 = p2.complete(&action_req).await;
     assert!(r2.ok());
-    assert!(!runner2.commands()[0].argv.contains(&"--json-schema".to_string()));
+    assert!(
+        !runner2.commands()[0]
+            .argv
+            .contains(&"--json-schema".to_string())
+    );
     assert!(seen_agent.lock().unwrap().contains("tools: []"));
     assert_eq!(
         r2.raw.as_ref().unwrap()["substituted_system"],
@@ -222,7 +264,10 @@ async fn agy_recovers_completed_action_response_on_empty_function_call_only_on_d
     assert_eq!(resp.text.as_deref(), Some(second_json));
     assert_eq!(resp.usage.input_tokens, 1000);
     assert_eq!(resp.usage.cache_read_tokens, 200);
-    assert_eq!(resp.raw.as_ref().unwrap()["recovered_empty_function_call"], json!(true));
+    assert_eq!(
+        resp.raw.as_ref().unwrap()["recovered_empty_function_call"],
+        json!(true)
+    );
     assert!(!resp.raw.as_ref().unwrap().contains_key("error_code"));
 
     // Latest step NOT DONE -> must NOT backtrack!
@@ -326,10 +371,7 @@ async fn codex_cli_flags_usage_and_empty_completed_action_turn() {
     assert_eq!(r1.usage.input_tokens, 200);
     assert_eq!(r1.usage.cache_read_tokens, 800);
     assert_eq!(r1.usage.reasoning_tokens, 30);
-    assert_eq!(
-        r1.parsed.as_ref().unwrap()["decision"],
-        json!("DENY")
-    );
+    assert_eq!(r1.parsed.as_ref().unwrap()["decision"], json!("DENY"));
 
     let mut action_req = make_request("Decide", "SYS", Some(decision_schema()));
     action_req.schema_name = ACTION_SCHEMA_NAME.to_string();
@@ -392,7 +434,11 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
 
     // 2. Grok
     let g_runner = FakeRunner::single(|cmd| {
-        assert!(cmd.argv.iter().any(|a| a.starts_with("--system-prompt-override=")));
+        assert!(
+            cmd.argv
+                .iter()
+                .any(|a| a.starts_with("--system-prompt-override="))
+        );
         assert!(!cmd.argv.iter().any(|a| a.starts_with("--json-schema=")));
         ProcessResult {
             returncode: 0,
@@ -446,13 +492,15 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
         "SSE RESPONSE: event: response.subscription_usage\\ndata: {\"type\":\"response.subscription_usage\",\"subscription\":{\"used_percent\":2.5,\"active\":true,\"email\":\"private@example.invalid\",\"nested\":{\"a\":1}}}\n",
     );
     assert_eq!(trace_events(muse_stderr).len(), 2);
-    let muse_runner = FakeRunner::single(move |_cmd| ProcessResult {
+    let muse_runner = FakeRunner::single(move |_cmd| {
+        ProcessResult {
         returncode: 0,
         stdout: r#"{"payload_type":"run.terminal.completed","payload":{"terminal":"completed","text":"{\"decision\":\"DENY\"}"}}"#.to_string(),
         stderr: muse_stderr.to_string(),
         duration_s: 0.01,
         timed_out: false,
         launch_error: None,
+    }
     });
     let muse_home = TempDir::new().unwrap();
     fs::create_dir_all(muse_home.path().join(".config").join("muse")).unwrap();

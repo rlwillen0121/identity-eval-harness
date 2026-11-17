@@ -44,10 +44,7 @@ fn check_no_symlinks_under_root(
     Ok(())
 }
 
-pub fn resolve_result_artifact(
-    root: &Path,
-    relative: &str,
-) -> Result<PathBuf, SharedRuntimeError> {
+pub fn resolve_result_artifact(root: &Path, relative: &str) -> Result<PathBuf, SharedRuntimeError> {
     let Some(parts) = check_posix_relative_parts(relative) else {
         return Err(SharedRuntimeError(format!(
             "unsafe artifact path: {relative:?}"
@@ -71,9 +68,10 @@ pub fn resolve_result_artifact(
     let resolved = candidate.canonicalize().map_err(|exc| {
         SharedRuntimeError(format!("artifact path does not exist ({relative}): {exc}"))
     })?;
-    let allowed_root = root.join(allowed_prefix).canonicalize().map_err(|exc| {
-        SharedRuntimeError(format!("approved results root unavailable: {exc}"))
-    })?;
+    let allowed_root = root
+        .join(allowed_prefix)
+        .canonicalize()
+        .map_err(|exc| SharedRuntimeError(format!("approved results root unavailable: {exc}")))?;
     check_no_symlinks_under_root(
         root,
         &candidate,
@@ -320,8 +318,8 @@ fn collect_tree_postorder(root: &Path) -> Result<Vec<PathBuf>, SharedRuntimeErro
     let read_dir = std::fs::read_dir(root)
         .map_err(|exc| SharedRuntimeError(format!("failed listing {root:?}: {exc}")))?;
     for entry in read_dir {
-        let entry = entry
-            .map_err(|exc| SharedRuntimeError(format!("failed reading dir entry: {exc}")))?;
+        let entry =
+            entry.map_err(|exc| SharedRuntimeError(format!("failed reading dir entry: {exc}")))?;
         let p = entry.path();
         if p.is_dir() && !p.is_symlink() {
             out.extend(collect_tree_postorder(&p)?);
@@ -354,7 +352,7 @@ pub fn parse_utc_timestamp_ns(value: &str) -> Result<i128, SharedRuntimeError> {
                 .ok_or_else(|| {
                     SharedRuntimeError("diagnostic batch frozen_at_utc is invalid".to_owned())
                 })?;
-            ( &value[..pos], Some(sign * (hh * 3600 + mm * 60)) )
+            (&value[..pos], Some(sign * (hh * 3600 + mm * 60)))
         } else {
             (value, None)
         }
@@ -465,9 +463,9 @@ pub fn verify_artifact_chronology(
         let meta = std::fs::metadata(path).map_err(|exc| {
             SharedRuntimeError(format!("artifact stat failed ({}): {exc}", path.display()))
         })?;
-        let modified = meta.modified().map_err(|exc| {
-            SharedRuntimeError(format!("artifact mtime unavailable: {exc}"))
-        })?;
+        let modified = meta
+            .modified()
+            .map_err(|exc| SharedRuntimeError(format!("artifact mtime unavailable: {exc}")))?;
         let mtime_ns: i128 = match modified.duration_since(UNIX_EPOCH) {
             Ok(d) => i128::from(d.as_secs()) * 1_000_000_000 + i128::from(d.subsec_nanos()),
             Err(e) => {

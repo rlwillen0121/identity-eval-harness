@@ -7,9 +7,8 @@ use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
-    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, as_dict, as_float,
-    as_int, parse_json_payload, render_transcript, served_models, structured_text,
-    system_override,
+    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, as_dict, as_float, as_int,
+    parse_json_payload, render_transcript, served_models, structured_text, system_override,
 };
 use crate::subprocess::ProcessResult;
 
@@ -87,9 +86,8 @@ impl CliAdapter for ClaudeAdapter {
         ];
         if let Some(schema) = &request.output_schema {
             if request.schema_name != ACTION_SCHEMA_NAME {
-                let schema_json =
-                    dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                        .unwrap_or_else(|_| "{}".to_string());
+                let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
+                    .unwrap_or_else(|_| "{}".to_string());
                 argv.push("--json-schema".to_string());
                 argv.push(schema_json);
             } else {
