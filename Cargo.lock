@@ -101,6 +101,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ib-v5-oracle"
+version = "5.0.0"
+dependencies = [
+ "ib-core",
+ "ib-v5-schemas",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "ib-v5-schemas"
 version = "5.0.0"
 dependencies = [
