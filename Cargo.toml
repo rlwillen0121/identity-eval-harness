@@ -15,6 +15,7 @@ publish = false
 ib-core = { path = "crates/ib-core" }
 ib-v5-schemas = { path = "crates/ib-v5-schemas" }
 ib-v5-accounting = { path = "crates/ib-v5-accounting" }
+ib-v5-oracle = { path = "crates/ib-v5-oracle" }
 ib-providers = { path = "crates/ib-providers" }
 
 # Async / HTTP / Process / Files
