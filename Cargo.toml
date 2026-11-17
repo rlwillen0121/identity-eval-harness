@@ -14,17 +14,29 @@ publish = false
 # Internal crates
 ib-core = { path = "crates/ib-core" }
 ib-v5-schemas = { path = "crates/ib-v5-schemas" }
+ib-providers = { path = "crates/ib-providers" }
+
+# Async / HTTP / Process / Files
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+async-trait = "0.1"
+tempfile = "3"
+url = "2"
+nix = { version = "0.32", features = ["signal", "user"] }
 
 # Serialization. `arbitrary_precision` keeps Python big ints and float text intact through
 # `serde_json::Value`; `preserve_order` mirrors Python dict insertion order for non-sorted dumps.
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "float_roundtrip"] }
+serde_yaml_ng = "0.10"
 indexmap = { version = "2", features = ["serde"] }
+base64 = "0.23"
 
 # Hashing
 sha2 = "0.10"
 hex = "0.4"
 hmac = "0.12"
+md-5 = "0.11"
 
 # Errors / CLI
 thiserror = "2"
