@@ -17,6 +17,7 @@ ib-v5-schemas = { path = "crates/ib-v5-schemas" }
 ib-v5-accounting = { path = "crates/ib-v5-accounting" }
 ib-v5-oracle = { path = "crates/ib-v5-oracle" }
 ib-v5-runtime = { path = "crates/ib-v5-runtime" }
+ib-v5-scoring = { path = "crates/ib-v5-scoring" }
 ib-providers = { path = "crates/ib-providers" }
 
 # Async / HTTP / Process / Files

@@ -618,6 +618,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ib-v5-scoring"
+version = "5.0.0"
+dependencies = [
+ "hex",
+ "ib-core",
+ "ib-v5-accounting",
+ "ib-v5-oracle",
+ "ib-v5-runtime",
+ "ib-v5-schemas",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
