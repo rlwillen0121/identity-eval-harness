@@ -309,7 +309,7 @@ pub struct SplitDisjointnessSummary {
 }
 
 #[must_use]
-pub(crate) fn cell_seed(seed: u64, family: &str, replicate: u64) -> u64 {
+pub(crate) fn cell_seed(seed: u128, family: &str, replicate: u64) -> u64 {
     let material = format!("identitybench-v5\0{seed}\0{family}\0{replicate}");
     sha256_prefix_u64(material.as_bytes())
 }
@@ -354,7 +354,11 @@ pub fn plan_v5_cells(suite: V5Suite, seed: u64) -> Vec<V5Cell> {
     let mut cells: Vec<V5Cell> = specs
         .into_iter()
         .map(|(family, regime, replicate)| {
-            let derived_seed = seed + offset;
+            // Python accepts every non-negative integer and formats the sum as
+            // decimal hash material. Widen before adding so every u64 input
+            // keeps that same representation even when the suite offset takes
+            // the intermediate value above u64::MAX.
+            let derived_seed = u128::from(seed) + u128::from(offset);
             let c_seed = cell_seed(derived_seed, family, replicate);
             let regime_str = regime_as_str(regime);
             let episode_material = format!(

@@ -151,6 +151,42 @@ fn test_seed_and_suite_identity_are_stable_and_isolated() {
 }
 
 #[test]
+fn test_planner_matches_python_reference_at_u64_seed_boundaries() {
+    // Each digest covers every `<cell seed>:<episode id>\n` pair from the
+    // Python reference planner, in planner order, for the corresponding suite.
+    let expected = [
+        [
+            "4fc7b766c0f6643fd104027c0e15d39197f4e75999fd30883bbb494742880bfe",
+            "e738f542dc43e4ec73c1be55cd73850b269f10528aaca804c294ee4e56ebc9ec",
+            "4234ebf2b62e3686c22e71038ce1077f57498f72e9763d98f626c42702832e1b",
+            "e9d27683294e12986664abc1bbbc30b813484c2a14bf3027648b8cce79aec7ab",
+        ],
+        [
+            "9048e38f1e10b31648d059196e0f1d4bc5c81d1e4bcea4f82ed043b65d2676f8",
+            "892f63eb6e576d59578534afbd5cd38cc45405a8c506d7aee633c15ac1fa1c6d",
+            "fb05bb56d5001c82d5d379f421b1799ed3bd762ae44b56fe40f75129d6d06fdd",
+            "cf2c19bd46f5a84d88915cb9aa89766fa910aa36c1becffe227d992b80953d02",
+        ],
+    ];
+
+    for (seed_index, seed) in [u64::MAX, u64::MAX - 1].into_iter().enumerate() {
+        for (suite_index, suite) in V5Suite::ALL.into_iter().enumerate() {
+            let cells = plan_v5_cells(suite, seed);
+            assert_eq!(cells.len(), suite.count());
+            let material: String = cells
+                .iter()
+                .map(|cell| format!("{}:{}\n", cell.seed, cell.episode_id))
+                .collect();
+            assert_eq!(
+                sha256_hex(material.as_bytes()),
+                expected[seed_index][suite_index],
+                "Python reference mismatch for seed {seed}, suite {suite}"
+            );
+        }
+    }
+}
+
+#[test]
 fn test_dataset_seal_declares_spec_and_normalized_generator_params() {
     let tmp = TempDir::new().expect("tempdir");
     let seal = write_v5_dataset(V5Suite::V5Dev, tmp.path(), 391, false).expect("write dev");
