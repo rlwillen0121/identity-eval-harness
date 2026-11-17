@@ -583,7 +583,10 @@ version = "5.0.0"
 dependencies = [
  "hex",
  "ib-core",
+ "ib-v5-oracle",
+ "ib-v5-runtime",
  "ib-v5-schemas",
+ "ib-v5-scoring",
  "indexmap",
  "regex",
  "serde",
