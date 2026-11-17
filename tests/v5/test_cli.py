@@ -870,6 +870,11 @@ def test_v5_run_fails_fast_on_missing_explicit_env_file_while_default_stays_opti
     )
 
     missing_env = tmp_path / "missing-explicit.env"
+
+    def fail_if_provider_is_created(_spec):
+        pytest.fail("provider construction must not occur before env-file validation")
+
+    monkeypatch.setattr(provider_factory, "make_provider", fail_if_provider_is_created)
     bad_env = CliRunner().invoke(
         root_cli.app,
         [
@@ -890,7 +895,7 @@ def test_v5_run_fails_fast_on_missing_explicit_env_file_while_default_stays_opti
 
     normalized_output = re.sub(r"[│╭╮╰╯─\s]+", " ", bad_env.output)
     assert "does not exist" in normalized_output
-    assert "missing-explicit.env" in normalized_output
+    assert "missing-explicit.env" in re.sub(r"\s+", "", normalized_output)
 
     # Without --env-file, an absent default <root>/.env remains optional.
     assert not (tmp_path / ".env").exists()
