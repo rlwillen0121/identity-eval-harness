@@ -1,0 +1,43 @@
+{
+  "command_exit_code": 1,
+  "command_id": "exported_v5_and_conformance_tests",
+  "duration_seconds": 115.221,
+  "failure": {
+    "candidate_paths_present": [
+      "reports/v5/conformance/native_audit/fresh-card-only-v2-ready-audit.json",
+      "reports/v5/conformance/native_audit/fresh-card-only-v2-origin-message-classification.json",
+      "reports/v5/conformance/review/fresh-card-only-v2-v6-source-origin-adjudication-2026-11-12.json",
+      "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/agent_view/fresh_card_only_v2/capture-manifest.json",
+      "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture-run-manifest.json"
+    ],
+    "classification": "Path-bound audit fixture portability failure, not a missing file. The included native audit binds session cwd and same_cwd to the owner checkout, which differs from the temporary export root. Import provenance remained entirely under export.",
+    "errors": [
+      "agent_view_only card-only session cwd differs from repository"
+    ],
+    "exact_closure_additions": [],
+    "gaps": [
+      "agent_view_only card-only native audit lacks a matched root spawn binding"
+    ],
+    "line": 2908,
+    "nodeid": "tests/v5/test_validation.py::test_shared_origin_qualification_binds_reviewed_card_v2_artifact",
+    "recommended_follow_up": "In a separate reviewed task, define relocatable root/spawn binding for this captured audit fixture, update its adjudication hash binding if changed, and adjust validator/test expectations without modifying the preserved historical evidence in this export task."
+  },
+  "no_export_test_rerun_after_failure": true,
+  "no_owner_fallback_used": true,
+  "other_required_test_results": {
+    "coordinator_synthetic_and_fixed_inventory_test": "No failure reported in this run; the actual inventory case was included.",
+    "current_blind_reference_fixture_tests": "No failure reported except the named shared-origin qualification test."
+  },
+  "pytest_progress_status_counts": {
+    ".": 1389,
+    "E": 0,
+    "F": 1,
+    "X": 0,
+    "s": 0,
+    "x": 0
+  },
+  "result_interpretation": "The quiet progress stream recorded 1389 passes, 1 failure, 0 errors, 0 skips, and 0 xfails. All test modules under tests/v5 and tests/conformance/v5 were selected with -m not live.",
+  "schema": "identitybench.v5.current-v8.export-test-failure-analysis.v1",
+  "selected_test_files": 36,
+  "status": "SCOPED_EXPORT_PORTABILITY_NOT_ESTABLISHED"
+}

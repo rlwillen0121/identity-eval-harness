@@ -1,0 +1,47 @@
+{
+  "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+  "env_file_disabled": true,
+  "exact_argv": [
+    "uv",
+    "run",
+    "--no-env-file",
+    "identitybench",
+    "--no-env-file",
+    "v5",
+    "score",
+    "--suite",
+    "v5_core",
+    "--out",
+    "runs/v5_core-baselines-v8-20261113"
+  ],
+  "git": {
+    "branch": "feat/v5-harness",
+    "git_dirty": true,
+    "git_status_sha256": "885c81af751776e392d6e35d1171c54c55d8db121c8020cca80bb7357edfba86",
+    "head": "f790e751c26d9667db588b95f9ef65cebe0f24e1"
+  },
+  "hashes_before": {
+    "core_dataset": {
+      "datasets/v5_core/SEAL.json": "2969985a86665a9ab5539426c83c4617f74b1d734da5e8431d93f23a5a9f4752",
+      "datasets/v5_core/episodes.jsonl": "7e2e08f530409750e205a664580586a418eb1d3cff1c5b6015e2e7aa383819ac",
+      "datasets/v5_core/oracles.jsonl": "dc914f1e8da757b263e1b2b54045c08869af391d26b39025dc3e9fc8bbdf3cb5"
+    },
+    "production_sources": {
+      "src/identitybench/cli.py": "2fefe0350e3d9064ccf8c07429f8523f5db59c9c671436d0492c4cce3817153f",
+      "src/identitybench/v4/jcs.py": "74606637a3d3d828343bf7b9133d38bd140385c863b942d7eae6ce4611542081",
+      "src/identitybench/v5/baselines.py": "f46700c21fc6707854683b572d809b1f7febcdca5af09d9dc4b88a25e14e7153",
+      "src/identitybench/v5/cli.py": "e8ddcc0cd6e3df858d3311dc6891808b600b073a04104795216b88f2f4f03228",
+      "src/identitybench/v5/generator.py": "6fc86b523219cde37eb16f99c53d1f492966592565e5d63b23dbe5b30533e4c4",
+      "src/identitybench/v5/oracle.py": "124679c936a73a38c43c718f9d7bc448494621ee224aad898f77f6e1541502ec",
+      "src/identitybench/v5/policy_card.py": "ba103d5da7074fa602ff79b6b68c097ad54cfed8184a84d3e4a24bb79a0e61fe",
+      "src/identitybench/v5/report.py": "e7d2f196ca87f57e3f8a403503c1d6c3e0b77bbe1b7ee664e20daf48d7fb974e",
+      "src/identitybench/v5/runner.py": "3ea52754e9ff44eda32de3741790f2124cd5b30a3ebfde4b915cc1cb67b1465d",
+      "src/identitybench/v5/runtime.py": "7fb1732d135c9ae1bfe0de09053c56ecaaf4dc280b38cd2535a94fec614553d2",
+      "src/identitybench/v5/schemas.py": "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7",
+      "src/identitybench/v5/scoring.py": "eba7269d2cf94e689cd27f06192e7f0b1b1b4f039f340e37760783ab15338d4e",
+      "src/identitybench/v5/state_machine.py": "e78f4b09c196ffa6c6386ab6e2b70db480de7a059bf5b1d8b240c3e15c2fbc78",
+      "src/identitybench/v5/validation.py": "b9d4b2ba021197c39898f8d50cb0f9deeb8585550b1f972beb39e46576989e0e"
+    },
+    "v8_inputs_manifest_sha256": "8d42a11e9affb488b2cfe3b056200762cdf294ea3add8abee381b0e68dabd8ac"
+  }
+}

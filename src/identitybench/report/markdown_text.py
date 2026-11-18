@@ -1,7 +1,6 @@
 """Markdown escaping for report text, including untrusted case data and model output.
 
-Justifications, reviewer notes and rationales can carry attacks
-(``archive/specs/SPEC-v1.md`` §8.4), and a report is
+Justifications, reviewer notes and rationales can carry attacks (SPEC §8.4), and a report is
 read on GitHub and in editors that render Markdown and inline HTML. So text never reaches the
 Markdown as markup:
 
@@ -29,12 +28,13 @@ _AUTOLINK = re.compile(r"(?:https?|ftp)://|mailto:|www\.|@", re.IGNORECASE)
 
 def escape_inline(text: str) -> str:
     """``text`` as literal Markdown inline content: special characters escaped and line
-    breaks folded to spaces. Entities cannot inject markup, and link punctuation is encoded
-    so GitHub's extended autolink parser cannot turn model-controlled text into links."""
+    breaks folded to spaces. An ``&`` that would start an entity becomes ``&amp;``."""
     flat = " ".join(text.split())
     escaped = _SPECIAL.sub(r"\\\1", _AMP.sub("&amp;", flat))
     return _AUTOLINK.sub(
-        lambda m: m.group().replace(":", "&#58;").replace(".", "&#46;").replace("@", "&#64;"),
+        lambda match: (
+            match.group().replace(":", "&#58;").replace(".", "&#46;").replace("@", "&#64;")
+        ),
         escaped,
     )
 
@@ -45,13 +45,9 @@ def escape_cell(text: str) -> str:
 
 
 def code_cell(text: str) -> str:
-    """Literal inline code in a pipe table, with a delimiter the value cannot close.
-
-    Backslash escapes don't work inside code spans; only table pipes are escaped here.
-    Padding keeps embedded edge backticks separate from the delimiter.
-    """
+    """Literal inline code in a pipe table, using a delimiter the value cannot close."""
     flat = " ".join(text.split()).replace("|", "\\|")
-    longest = max((len(m.group()) for m in _BACKTICKS.finditer(flat)), default=0)
+    longest = max((len(match.group()) for match in _BACKTICKS.finditer(flat)), default=0)
     delimiter = "`" * (longest + 1)
     body = f" {flat} " if longest else flat or " "
     return f"{delimiter}{body}{delimiter}"

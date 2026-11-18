@@ -1,7 +1,6 @@
-"""Replay provider: serves recorded responses by cache key, for CI and re-scoring
-(``archive/specs/SPEC-v1.md`` §11.1).
+"""Replay provider: serves recorded responses by cache key, for CI and re-scoring (SPEC §11.1).
 
-The runner computes each request's cache key (``archive/specs/SPEC-v1.md`` §11.4) and passes it in
+The runner computes each request's cache key (SPEC §11.4) and passes it in
 ``request.params.extra["cache_key"]``. A key with no recording comes back as an error response
 (scored INVALID), never as a fabricated answer. ``has`` tells a caller whether a key is
 recorded at all, since a recorded provider error comes back as an error response too.
@@ -13,7 +12,7 @@ a ``responses.jsonl`` file with one record per line::
      "cost_usd": 0.0123, "cost_source": "metered"}
 
 ``cost_usd`` and ``cost_source`` (optional, together) are what the answer cost when it was
-recorded, as the recording run priced it: a replay
+recorded, as the recording run priced it (``schemas.predictions.PredictionUsage``): a replay
 spends nothing, but the answer it serves still cost that, and ``recorded_cost`` hands it to the
 runner so a replayed prediction keeps its cost provenance. Other fields of a record (the
 runner's ``config_id`` and ``fresh``) are ignored here.
@@ -73,19 +72,30 @@ def response_from_dict(data: Mapping[str, Any]) -> ModelResponse:
     if unknown:
         raise ValueError(f"unknown ModelResponse fields: {sorted(unknown)}")
     fields = dict(data)
-    usage = fields.pop("usage", None) or {}
+    usage = fields.pop("usage", None)
+    if usage is None:
+        usage = {}
     if not isinstance(usage, dict):
         raise ValueError("malformed response (usage must be an object)")
     unknown_usage = set(usage) - _USAGE_FIELDS
     if unknown_usage:
         raise ValueError(f"unknown Usage fields: {sorted(unknown_usage)}")
-    try:
-        calls = [
-            ToolCall(id=call["id"], name=call["name"], arguments=dict(call.get("arguments") or {}))
-            for call in fields.pop("tool_calls", None) or []
-        ]
-    except (KeyError, AttributeError, TypeError, ValueError) as exc:
-        raise ValueError("malformed response (invalid tool calls)") from exc
+    raw_calls = fields.pop("tool_calls", [])
+    if not isinstance(raw_calls, list):
+        raise ValueError("malformed response (invalid tool calls)")
+    calls = []
+    for call in raw_calls:
+        if not isinstance(call, Mapping):
+            raise ValueError("malformed response (invalid tool calls)")
+        call_id, name = call.get("id"), call.get("name")
+        arguments = call.get("arguments", {})
+        if (
+            not isinstance(call_id, str)
+            or not isinstance(name, str)
+            or not isinstance(arguments, dict)
+        ):
+            raise ValueError("malformed response (invalid tool calls)")
+        calls.append(ToolCall(id=call_id, name=name, arguments=arguments))
     return sanitize_response(
         ModelResponse(**fields, usage=Usage(**usage), tool_calls=calls), "replay"
     )
@@ -93,7 +103,7 @@ def response_from_dict(data: Mapping[str, Any]) -> ModelResponse:
 
 @dataclass(frozen=True)
 class RecordedCost:
-    """What a recorded answer cost when it was produced: ``cost_usd`` and
+    """What a recorded answer cost when it was produced: ``PredictionUsage``'s ``cost_usd`` and
     ``cost_source`` for that one call."""
 
     cost_usd: float | None
@@ -172,7 +182,9 @@ class ReplayProvider:
             self._costs = {key: cost for key, (_, cost) in loaded.items() if cost is not None}
         else:
             self._records = {
-                key: value if isinstance(value, ModelResponse) else response_from_dict(value)
+                key: sanitize_response(copy.deepcopy(value), self.kind)
+                if isinstance(value, ModelResponse)
+                else response_from_dict(value)
                 for key, value in records.items()
             }
         keys_digest = hashlib.sha256("\n".join(sorted(self._records)).encode()).hexdigest()

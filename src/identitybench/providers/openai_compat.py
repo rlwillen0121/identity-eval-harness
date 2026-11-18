@@ -49,8 +49,7 @@ Base URL and key are always passed to the SDK explicitly, so it never falls back
 ``api_key_env``, ``OPENAI_API_KEY`` is used only for the vendor endpoint (no ``base_url_env``,
 or ``OPENAI_BASE_URL``, the variable it conventionally pairs with). A custom ``base_url_env``
 reads its paired variable instead (``LOCAL_LLM_BASE_URL`` -> ``LOCAL_LLM_API_KEY``, as in
-``.env.example``), and sends a placeholder when that is unset, so the
-``archive/specs/SPEC-v1.md`` §16 self-hosted entry
+``.env.example``), and sends a placeholder when that is unset, so the SPEC §16 self-hosted entry
 works against a key-protected server and never hands a real OpenAI key to a LAN server.
 """
 
@@ -71,7 +70,12 @@ from openai.types.chat import ChatCompletion
 from openai.types.responses import Response
 
 from identitybench.providers._env import paired_api_key_env
-from identitybench.providers._json import bounded_token_count, load_object, sanitize_response
+from identitybench.providers._json import (
+    bounded_token_count,
+    load_object,
+    raw_usage_payload,
+    sanitize_response,
+)
 from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     Message,
@@ -183,6 +187,11 @@ def _usage_extra(completion: Reply) -> dict[str, Any]:
     """The non-OpenAI fields of ``usage`` (where OpenRouter puts cost and BYOK details)."""
     usage = completion.usage
     return (usage.model_extra if usage is not None else None) or {}
+
+
+def _raw_usage_metadata(completion: Reply) -> dict[str, Any]:
+    usage = raw_usage_payload(completion.usage)
+    return {"raw_usage": usage} if usage is not None else {}
 
 
 def _is_byok(completion: Reply) -> bool:
@@ -615,12 +624,34 @@ class OpenAICompatProvider:
             else:
                 completion = cast(ChatCompletion, await client.chat.completions.create(**params))
         except openai.APIStatusError as exc:
+            error_raw: dict[str, Any] = {
+                "http_status": exc.status_code,
+                "error_code": str(
+                    getattr(exc, "code", None) or getattr(exc, "type", None) or type(exc).__name__
+                ),
+            }
+            if exc.request_id:
+                error_raw["request_id"] = exc.request_id
+            if exc.status_code in (408, 409, 429) or exc.status_code >= 500:
+                error_raw["proven_unanswered"] = True
             return self._fail(
                 f"{type(exc).__name__} {exc.status_code}: {exc.message}",
-                raw={"request_id": exc.request_id} if exc.request_id else None,
+                raw=error_raw,
+            )
+        except openai.APITimeoutError as exc:
+            return self._fail(
+                f"{type(exc).__name__}: {exc.message}",
+                raw={"error_code": "APITimeoutError", "ambiguous_timeout": True},
             )
         except openai.APIConnectionError as exc:
-            return self._fail(f"{type(exc).__name__}: {exc.message}")
+            return self._fail(
+                f"{type(exc).__name__}: {exc.message}",
+                raw={
+                    "error_code": "APIConnectionError",
+                    "error_class": "TRANSIENT_FAILURE",
+                    "proven_unanswered": True,
+                },
+            )
         except openai.OpenAIError as exc:
             return self._fail(f"{type(exc).__name__}: {exc}")
         except (ValueError, RecursionError) as exc:
@@ -669,15 +700,18 @@ class OpenAICompatProvider:
         with contextlib.suppress(AttributeError, TypeError, ValueError):
             response.reported_cost_usd = _reported_cost(completion)
             gateway = _gateway_raw(completion)
-            if gateway:
-                response.raw = {**(response.raw or {}), **gateway}
+            response.raw = {
+                **(response.raw or {}),
+                **gateway,
+                **_raw_usage_metadata(completion),
+            }
 
     def _to_response(self, completion: ChatCompletion, request: ModelRequest) -> ModelResponse:
         response = ModelResponse(
             usage=_usage(completion),
             served_model=completion.model or None,
             reported_cost_usd=_reported_cost(completion),
-            raw={"id": completion.id},
+            raw={"id": completion.id, **_raw_usage_metadata(completion)},
         )
         fingerprint = getattr(completion, "system_fingerprint", None)
         if fingerprint and response.raw is not None:
@@ -718,7 +752,7 @@ class OpenAICompatProvider:
             usage=_usage(reply),
             served_model=reply.model or None,
             reported_cost_usd=_reported_cost(reply),
-            raw={"id": reply.id, **_gateway_raw(reply)},
+            raw={"id": reply.id, **_gateway_raw(reply), **_raw_usage_metadata(reply)},
         )
         if reply.status == "failed" or reply.error is not None:
             error = reply.error

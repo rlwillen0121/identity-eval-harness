@@ -220,6 +220,7 @@ class MuseCliProvider(CliProvider):
                 ),
             ),
             raw={
+                "raw_usage": usage,
                 "subscription_usage": {
                     key: value
                     for key, value in subscription[-1].items()
@@ -227,7 +228,7 @@ class MuseCliProvider(CliProvider):
                     and (not isinstance(value, float) or math.isfinite(value))
                 }
                 if subscription
-                else None
+                else None,
             },
         )
         problem = None

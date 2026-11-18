@@ -1,0 +1,31 @@
+[package]
+name = "ib-v5-validation"
+description = "Offline IdentityBench v5 dataset validation and acceptance gates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+ib-core.workspace = true
+ib-v5-baselines.workspace = true
+ib-v5-conformance.workspace = true
+ib-v5-generator.workspace = true
+ib-v5-oracle.workspace = true
+ib-v5-runner.workspace = true
+ib-v5-runtime.workspace = true
+ib-v5-schemas.workspace = true
+ib-v5-scoring.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

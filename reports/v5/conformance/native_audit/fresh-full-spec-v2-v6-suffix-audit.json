@@ -1,0 +1,1997 @@
+{
+  "artifact_kind": "bounded native suffix provenance audit; no eligibility verdict",
+  "created_at_utc": "2026-11-12T19:57:33.564053+00:00",
+  "findings": {
+    "bounded_assessment": "The explicit path tokens and resolved commands in this suffix point to the normative spec, public schema/skill/public packet inputs, or the author-owned package/audit. No exact forbidden source target is established. This is not a blanket clean claim.",
+    "non_path_reserved_word_mentions": {
+      "gold": 23,
+      "interpretation": "Literal non-path mentions in command arguments only; no path operand was resolved from these mentions.",
+      "receipt": 1
+    },
+    "resolved_external_network_reads": [],
+    "resolved_forbidden_source_or_dataset_reads": [],
+    "resolved_foreign_reference_or_roster_reads": [],
+    "resolved_native_history_reads": [],
+    "resolved_repository_or_dataset_wide_search_roots": []
+  },
+  "inspector_deviations": [
+    {
+      "actor": "audit helper, not author",
+      "classification": "Auditor scope deviation only; not evidence of author contamination.",
+      "extent": {
+        "assigned_suffix_bytes_through_line_3745": 8718896,
+        "assigned_suffix_lines_through_line_3745": 2414,
+        "bytes_after_assigned_cutoff": 38634,
+        "last_read_timestamp_utc": "2026-11-12T19:27:50.753Z",
+        "lines_after_assigned_cutoff": 39,
+        "post-prefix_bytes_read_to_eof": 8757530,
+        "post-prefix_lines_read_to_eof": 2453,
+        "prior_prefix_bytes": 5767063
+      },
+      "kind": "post-cutoff EOF overread",
+      "what_was_processed": "The earlier mistaken EOF scan parsed tool-call/output/public-message record metadata through EOF; it did not parse private analysis or retain/print command bodies or output bodies. It included one post-cutoff tool-output record and one post-cutoff public-message metadata/content hash. All post-cutoff records are excluded from author findings here."
+    },
+    {
+      "actor": "audit helper, not author",
+      "classification": "Only outer timestamp/line length was read for the first record after the assigned bound; it is excluded from the new prefix and findings.",
+      "extent": {
+        "included_in_prefix": false,
+        "line": 3746,
+        "record_bytes_read_metadata_only": 2695,
+        "timestamp": "2026-11-12T19:24:43.009000+00:00"
+      },
+      "kind": "cutoff metadata lookahead"
+    }
+  ],
+  "native_suffix_inventory": {
+    "author_owned_patch_targets": [
+      {
+        "patch_file_header_count": 4,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/AMBIGUITIES.md"
+      },
+      {
+        "patch_file_header_count": 3,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/apply.py"
+      },
+      {
+        "patch_file_header_count": 1,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/apply_state.py"
+      },
+      {
+        "patch_file_header_count": 3,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/phase1.py"
+      },
+      {
+        "patch_file_header_count": 9,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/phase2.py"
+      },
+      {
+        "patch_file_header_count": 9,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/submission.py"
+      },
+      {
+        "patch_file_header_count": 5,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/test_apply.py"
+      },
+      {
+        "patch_file_header_count": 1,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/test_derive_phase.py"
+      },
+      {
+        "patch_file_header_count": 10,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/test_submission.py"
+      },
+      {
+        "patch_file_header_count": 8,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/test_trace.py"
+      },
+      {
+        "patch_file_header_count": 20,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/trace.py"
+      },
+      {
+        "patch_file_header_count": 5,
+        "path": "tests/conformance/v5/fresh_full_spec_v2/worker.py"
+      }
+    ],
+    "author_self_audit_path": "reports/v5/conformance/fresh_full_spec_v2_read_audit.json",
+    "cmd_array_records": [
+      {
+        "arguments_sha256": "ffed12b037cc4f4f231e9077b0adde1aea82b206c1d2e5dd33ce4c8346919102",
+        "call_id": "call_77be4ee88ebd49e7bff939b3ab52c259",
+        "line": 1382,
+        "paired_output_text_bytes_only": 40157,
+        "resolved_command_entries": [
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "SPEC-v5.md",
+            "range": "1,520p"
+          },
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "src/identitybench/v5/schemas.py",
+            "range": "1,400p"
+          },
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "tests/conformance/v5/fresh_full_spec_v2/common.py",
+            "range": "1,280p"
+          },
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "tests/conformance/v5/fresh_full_spec_v2/phase2.py",
+            "range": "1,300p"
+          },
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+            "range": "1,520p"
+          },
+          {
+            "executable": "cat",
+            "operation": "author_self_audit_read",
+            "path": "reports/v5/conformance/fresh_full_spec_v2_read_audit.json"
+          }
+        ]
+      },
+      {
+        "arguments_sha256": "7e14dd5f384c1693cc6bb75aa309631f5914f09084b5d30636c63ef90feea2d2",
+        "call_id": "call_6b1862bcba9441e69f8d846009dd34a9",
+        "line": 1400,
+        "paired_output_text_bytes_only": 40156,
+        "resolved_command_entries": [
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+            "range": "1,84p"
+          },
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "SPEC-v5.md",
+            "range": "177,227p"
+          },
+          {
+            "executable": "sed",
+            "operation": "content_read",
+            "path": "SPEC-v5.md",
+            "range": "2189,2220p"
+          },
+          {
+            "executable": "sed",
+            "operation": "author_owned_content_read",
+            "path": "tests/conformance/v5/fresh_full_spec_v2/phase2.py",
+            "range": "1,190p"
+          },
+          {
+            "executable": "sed",
+            "operation": "author_owned_content_read",
+            "path": "tests/conformance/v5/fresh_full_spec_v2/common.py",
+            "range": "240,620p"
+          },
+          {
+            "executable": "cat",
+            "operation": "author_owned_content_read",
+            "path": "tests/conformance/v5/fresh_full_spec_v2/AMBIGUITIES.md"
+          }
+        ]
+      },
+      {
+        "arguments_sha256": "371e548a0f9745639e7ba1563a8e887b2744a5298b5fe6e5898a037721b74d3b",
+        "call_id": "call_f46300d7b56c4d8cbc198a408bb9f15f",
+        "line": 3454,
+        "paired_output_text_bytes_only": 3092,
+        "resolved_command_entries": "Local `cmds` array resolves to uv/test commands targeting tests/conformance/v5/fresh_full_spec_v2; command bodies omitted."
+      },
+      {
+        "arguments_sha256": "d4efed0a006a365b7e7d38440a2082e12e3bb26851033e0e40ab43360dfac66c",
+        "call_id": "call_8812f15d8101436c9703d72bf72a1ce8",
+        "line": 3490,
+        "paired_output_text_bytes_only": 1804,
+        "resolved_command_entries": "Local `cmds` array resolves to uv/test commands targeting tests/conformance/v5/fresh_full_spec_v2; command bodies omitted."
+      },
+      {
+        "arguments_sha256": "04a9cea37d605c60a0ddaedb2931e17ed65cd3f3bc8596d62fa37be0a1504355",
+        "call_id": "call_2213cfa8facd4a48853b72144b469fd4",
+        "line": 3558,
+        "paired_output_text_bytes_only": 1431,
+        "resolved_command_entries": "Local `cmds` array resolves to uv/test commands targeting tests/conformance/v5/fresh_full_spec_v2; command bodies omitted."
+      },
+      {
+        "arguments_sha256": "a801049dc81d803718595e995e0d1620c9ae93d1c03afd7b2a56ef18a8bac76d",
+        "call_id": "call_31fc3902e70147f08a7301c43f157299",
+        "line": 3580,
+        "paired_output_text_bytes_only": 1534,
+        "resolved_command_entries": "Local `cmds` array resolves to uv/test commands targeting tests/conformance/v5/fresh_full_spec_v2; command bodies omitted."
+      },
+      {
+        "arguments_sha256": "f517ba1db8eb08ce7ec37910cb67a14492a20952d70624a01cb73998d59a106f",
+        "call_id": "call_b0bd295a3e294dab9d7a9d74a658b0bf",
+        "line": 3664,
+        "paired_output_text_bytes_only": 1532,
+        "resolved_command_entries": "Local `cmds` array resolves to uv/test commands targeting tests/conformance/v5/fresh_full_spec_v2; command bodies omitted."
+      }
+    ],
+    "explicit_python_heredoc_imports": {
+      "author_owned_test_modules": [
+        "tests.conformance.v5.fresh_full_spec_v2.apply",
+        "tests.conformance.v5.fresh_full_spec_v2.common",
+        "tests.conformance.v5.fresh_full_spec_v2.phase2",
+        "tests.conformance.v5.fresh_full_spec_v2.submission",
+        "tests.conformance.v5.fresh_full_spec_v2.test_derive_phase",
+        "tests.conformance.v5.fresh_full_spec_v2.test_submission",
+        "tests.conformance.v5.fresh_full_spec_v2.trace",
+        "tests.conformance.v5.fresh_full_spec_v2.worker"
+      ],
+      "modules": [
+        "__future__",
+        "copy",
+        "difflib",
+        "hashlib",
+        "json",
+        "pathlib",
+        "tests.conformance.v5.fresh_full_spec_v2.apply",
+        "tests.conformance.v5.fresh_full_spec_v2.common",
+        "tests.conformance.v5.fresh_full_spec_v2.phase2",
+        "tests.conformance.v5.fresh_full_spec_v2.submission",
+        "tests.conformance.v5.fresh_full_spec_v2.test_derive_phase",
+        "tests.conformance.v5.fresh_full_spec_v2.test_submission",
+        "tests.conformance.v5.fresh_full_spec_v2.trace",
+        "tests.conformance.v5.fresh_full_spec_v2.worker",
+        "textwrap"
+      ],
+      "production_identitybench_module_literal_observed": false,
+      "standard_library_modules": [
+        "__future__",
+        "copy",
+        "difflib",
+        "hashlib",
+        "json",
+        "pathlib",
+        "textwrap"
+      ],
+      "test_runtime_import_graph": "unknown; test runner execution is not an import trace"
+    },
+    "literal_path_argument_mentions": [
+      {
+        "call_ids": [
+          "call_1158e54bb4194277b5cdba5e3f18782f",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_401d2bc67c1847ad86c98e2fa8a5bf41",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_93cc01414b754f788399f9984f617dc0",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8"
+        ],
+        "event_lines": [
+          2496,
+          2503,
+          2510,
+          2525,
+          3567,
+          3591
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": ".agents/skills/blind-conformance/SKILL.md"
+      },
+      {
+        "call_ids": [
+          "call_02b0fc6e06194802993d9504ecdcd2b2",
+          "call_1158e54bb4194277b5cdba5e3f18782f",
+          "call_1a497eb17cfa4802b2b595ca4bfc08c7",
+          "call_2109ea04fd814735b79a584b83e8ea25",
+          "call_286b4d5f045c4e6a801e00779b6f54a8",
+          "call_287edc8790d241d3af2e0d7c5cd2f12e",
+          "call_2a700f63f19b42459b51fd7fbf8a6b3f",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_334ba474581041b189cc25664dfd8a5f",
+          "call_38737ae36ebf4ae9b5a0e88264c00086",
+          "call_3ce1fe494ce44ec49069035f6a46f0a3",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_401d2bc67c1847ad86c98e2fa8a5bf41",
+          "call_4ae58cff28fa4f2395527b3c8b9bf466",
+          "call_4dc1dd77c855416bb41a1d1d2255f7f9",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_59b8752d37a840e79f0ab8dcc90e5272",
+          "call_63606609801948d988d946bdf592a400",
+          "call_6b1862bcba9441e69f8d846009dd34a9",
+          "call_6e399bc56a0e4f18b4a347ce672a690d",
+          "call_771a3b1d16a34f579d5768fa9c69d145",
+          "call_77be4ee88ebd49e7bff939b3ab52c259",
+          "call_80cd1dae3ee242fdae20bea6cc82c465",
+          "call_88441ded1f8449bbabe7cbab336ba1e2",
+          "call_93cc01414b754f788399f9984f617dc0",
+          "call_9a5604319c8745bd8eed2582d800c3da",
+          "call_9db0511b1de645e5aa09249b70bc138c",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8",
+          "call_a70152e11449446390f901b48fada525",
+          "call_aa3a68ebd25240bca2f4d89c67a321ec",
+          "call_adb61f097ac04327ba8e994ef4620947",
+          "call_b0ff766cc52f4fb8b3fc03be9635c9b4",
+          "call_ba314547e4124fe68e02dc06c90a86af",
+          "call_c70e9f61bc5341389f6f1e02544d4877",
+          "call_e58a34c2e9164a32a7d2cabdefd62461",
+          "call_ea0cdb5cf5be44919d0ba11ea2edc55c",
+          "call_ecd204149a5547449b128d8f6ca2e569",
+          "call_f3c92feda0a94ec08c86ec77d3951a99",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1382,
+          1393,
+          1400,
+          1426,
+          1441,
+          1647,
+          1793,
+          1810,
+          2274,
+          2281,
+          2306,
+          2405,
+          2496,
+          2503,
+          2510,
+          2525,
+          2608,
+          2615,
+          2622,
+          2629,
+          2645,
+          2660,
+          2681,
+          2694,
+          2725,
+          2810,
+          2840,
+          2918,
+          3080,
+          3089,
+          3098,
+          3105,
+          3114,
+          3135,
+          3149,
+          3567,
+          3591,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "SPEC-v5.md"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_6c9343c49d6c4ea285ff160d06d28111",
+          "call_77be4ee88ebd49e7bff939b3ab52c259",
+          "call_7fac236ae111463ca02bb918461b0f5f",
+          "call_8f1fda28a670406cb9ea1b08829ae9b4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8",
+          "call_f16d556795224bbc8b831f393e088f4d",
+          "call_faa0511403a2489d95051cbeae710427"
+        ],
+        "event_lines": [
+          1382,
+          2265,
+          2525,
+          2567,
+          2574,
+          3515,
+          3524,
+          3591,
+          3602,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/fresh_full_spec_v2_read_audit.json"
+      },
+      {
+        "call_ids": [
+          "call_1158e54bb4194277b5cdba5e3f18782f",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_401d2bc67c1847ad86c98e2fa8a5bf41",
+          "call_6c9343c49d6c4ea285ff160d06d28111",
+          "call_93cc01414b754f788399f9984f617dc0",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8"
+        ],
+        "event_lines": [
+          2496,
+          2503,
+          2510,
+          2525,
+          2567,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5"
+      },
+      {
+        "call_ids": [
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_core/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_core/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_02b0fc6e06194802993d9504ecdcd2b2",
+          "call_2109ea04fd814735b79a584b83e8ea25",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_334ba474581041b189cc25664dfd8a5f",
+          "call_38737ae36ebf4ae9b5a0e88264c00086",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_42f3597f229a4ccca9e91365c96f77c7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_63606609801948d988d946bdf592a400",
+          "call_6b1862bcba9441e69f8d846009dd34a9",
+          "call_77be4ee88ebd49e7bff939b3ab52c259",
+          "call_7ea3e245f9c248809e352d4fee68c9f3",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf",
+          "call_ad982d10cd504070b18ef7616fdb3f49",
+          "call_c70e9f61bc5341389f6f1e02544d4877",
+          "call_d0fcd7b34e67492d8610d8adc0692c41",
+          "call_f1ed3863524c4edca9161cdc3d85c381",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1382,
+          1393,
+          1400,
+          1412,
+          1419,
+          1441,
+          1793,
+          1810,
+          2274,
+          2281,
+          2796,
+          3567,
+          3591,
+          3602,
+          3629,
+          3636,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_dev/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_full/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_full/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_lite/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v5/v5_lite/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_ad982d10cd504070b18ef7616fdb3f49"
+        ],
+        "event_lines": [
+          3629,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_core/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_core/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_7ea3e245f9c248809e352d4fee68c9f3",
+          "call_ad982d10cd504070b18ef7616fdb3f49",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3629,
+          3636,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_dev/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_dev/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_full/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_full/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_lite/rendered-card.txt"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "reports/v5/conformance/inputs/v6/v5_lite/selected-episodes.jsonl"
+      },
+      {
+        "call_ids": [
+          "call_01aa0460a285401eab249528e399c271",
+          "call_02b0fc6e06194802993d9504ecdcd2b2",
+          "call_1158e54bb4194277b5cdba5e3f18782f",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_334ba474581041b189cc25664dfd8a5f",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_401d2bc67c1847ad86c98e2fa8a5bf41",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_6c9343c49d6c4ea285ff160d06d28111",
+          "call_7260b9aba94144e08acc3bfefd7269d2",
+          "call_77be4ee88ebd49e7bff939b3ab52c259",
+          "call_80cd1dae3ee242fdae20bea6cc82c465",
+          "call_8702fff7cc7e422facb12b26b0a500a9",
+          "call_93cc01414b754f788399f9984f617dc0",
+          "call_95e34fc6a2fe45919548ed65574cc2ab",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf",
+          "call_9a5604319c8745bd8eed2582d800c3da",
+          "call_9f54ad5f7d1f41b187fca524934261f1",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8",
+          "call_a70152e11449446390f901b48fada525",
+          "call_b3a30fb3b6374ee8a8ed1220c70ea598",
+          "call_c70e9f61bc5341389f6f1e02544d4877",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1382,
+          1441,
+          1549,
+          1588,
+          1595,
+          1631,
+          1793,
+          1810,
+          2496,
+          2503,
+          2510,
+          2525,
+          2567,
+          2608,
+          2629,
+          2638,
+          2645,
+          2718,
+          3567,
+          3591,
+          3602,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "src/identitybench/v5/schemas.py"
+      },
+      {
+        "call_ids": [
+          "call_01bd3f5a4b5f471c9c8e8305d02713f2",
+          "call_04f0b5682f9e4a05823d9fede69d9d6d",
+          "call_0990afbdb3304f51a0864ab9485a94b6",
+          "call_0d25cfc897fa45debbccc534a50ae8d3",
+          "call_1158e54bb4194277b5cdba5e3f18782f",
+          "call_11d71431452d4c91b509a635c0d3afd8",
+          "call_180a364018b6417e859bb6a33812d658",
+          "call_2213cfa8facd4a48853b72144b469fd4",
+          "call_293096a760a64871889554164972c65b",
+          "call_2c818b09de5649efb47acc4d4c6bde48",
+          "call_31fc3902e70147f08a7301c43f157299",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_35a68ff1ccbc45c6a6aedc98ac205bcb",
+          "call_401d2bc67c1847ad86c98e2fa8a5bf41",
+          "call_430dc3610c14461581791a9155c851d8",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_54beec5ff0664e55bf3e0278cde33625",
+          "call_59d79cb6817244c0ac0095e86be61b42",
+          "call_5e5c2df8053e4cc485ce3a420af825aa",
+          "call_5f6f6b3bdb3f4cafbe5013622c622712",
+          "call_618528dce7a74e3eae8f2e405a75e198",
+          "call_6623d1b221a34a26b21dfc9dbe1a39fc",
+          "call_6c9343c49d6c4ea285ff160d06d28111",
+          "call_72b4c03fdb4f46f1ab162764816e387c",
+          "call_79992e9238bc46b387e7c5456590ac2d",
+          "call_805a465dd8fb411a829485fc72e0159d",
+          "call_8812f15d8101436c9703d72bf72a1ce8",
+          "call_889821d38afc42ef8db619564a252c59",
+          "call_8c4314548fa745caa5cdeb579bc5e321",
+          "call_8fde54bbc15a4f0186aa0da10a945c03",
+          "call_90478137e1b944969ba16027d0761546",
+          "call_93cc01414b754f788399f9984f617dc0",
+          "call_94bb596495884882ad5cac11b9d2fe4e",
+          "call_9596185d2af94a42bdbd64c4294253cf",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf",
+          "call_9f189e29adca4dc596e585acadd7179d",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8",
+          "call_a9c6d962f85c453d8ad9f91082a0ef4c",
+          "call_aa6f2d8376d4463eacfd4412ba0c2ad4",
+          "call_ad3dbc1479e44733b4fd483d394031cb",
+          "call_adec31d85d2448f3b9bf0eda74552fcb",
+          "call_b003d275a94f4a8e9098e93cc1455c13",
+          "call_b0bd295a3e294dab9d7a9d74a658b0bf",
+          "call_b262a2dbdba24a9990f2d0ad72a24bd8",
+          "call_b41384f14a0d4084989b9d58a89463ea",
+          "call_b9bfefee18844bcbb7a754274081306b",
+          "call_c7dcaca8f89f460aa9ed9cecac6c007c",
+          "call_cd47b16436514c118c7652d8d5801d97",
+          "call_cf0df479528947818fb4dcca286f4cb2",
+          "call_d55f818fff234a7aa62e83978f11ccac",
+          "call_dc2facd9ad6b45fda91cd78a20f43284",
+          "call_e70b93a1a12d46be906958216739bc6f",
+          "call_e72fb939d2374b8e9eb2737ac17b9d7e",
+          "call_eb54e0fa7e314c5798747b157b79ab29",
+          "call_f46300d7b56c4d8cbc198a408bb9f15f"
+        ],
+        "event_lines": [
+          1508,
+          1542,
+          1563,
+          1824,
+          1979,
+          2006,
+          2042,
+          2062,
+          2091,
+          2104,
+          2132,
+          2139,
+          2195,
+          2202,
+          2216,
+          2344,
+          2416,
+          2432,
+          2453,
+          2471,
+          2484,
+          2496,
+          2503,
+          2510,
+          2525,
+          2550,
+          2558,
+          2567,
+          2899,
+          2925,
+          2982,
+          3000,
+          3029,
+          3057,
+          3188,
+          3254,
+          3266,
+          3278,
+          3290,
+          3297,
+          3376,
+          3417,
+          3447,
+          3454,
+          3462,
+          3490,
+          3542,
+          3551,
+          3558,
+          3580,
+          3591,
+          3602,
+          3645,
+          3664,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_355d163a69dd4209ae1e5cb607680871",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_4f3c4444bd504761939a41422f3102af",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_6b1862bcba9441e69f8d846009dd34a9",
+          "call_7fac236ae111463ca02bb918461b0f5f",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1400,
+          2265,
+          2361,
+          3426,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/AMBIGUITIES.md"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/__init__.py"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_8392adee99fd41708f79a6de2e62569e",
+          "call_96aad1ed4db04e46997e96bb91b4b5bd",
+          "call_f57bbf57dba547e39dea694c0173d25b",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          3064,
+          3469,
+          3506,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/apply.py"
+      },
+      {
+        "call_ids": [
+          "call_48a7edf98af34991b32c25fe87332cdb",
+          "call_97a0570a17c44f8fbb5689c119ab0fdf",
+          "call_b80dbf6ce0224adb9fcc63256b2e80bd"
+        ],
+        "event_lines": [
+          2906,
+          3202,
+          3602
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/apply_state.py"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_63606609801948d988d946bdf592a400",
+          "call_6b1862bcba9441e69f8d846009dd34a9",
+          "call_771a3b1d16a34f579d5768fa9c69d145",
+          "call_77be4ee88ebd49e7bff939b3ab52c259",
+          "call_80cd1dae3ee242fdae20bea6cc82c465",
+          "call_8b035a78917a48d78b779a9b16b64a51",
+          "call_96c9e9d735e44b27a7d3807290b8785f",
+          "call_a70152e11449446390f901b48fada525",
+          "call_af2bb6a4319349ba9fec393bb41b3497",
+          "call_f5adb08cf3da441098672e8fc5bbaf3c",
+          "call_fa82dfee830a4d4e809a393f44ced0b3",
+          "call_fc375cb29f67494f9a74c69668cf58b7"
+        ],
+        "event_lines": [
+          1344,
+          1382,
+          1393,
+          1400,
+          2290,
+          2295,
+          2608,
+          2629,
+          2681,
+          2911,
+          2934,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/common.py"
+      },
+      {
+        "call_ids": [
+          "call_00b86219995142e09895c13666154bac",
+          "call_01aa0460a285401eab249528e399c271",
+          "call_0797440ebd11476eaf082b9542f86e4c",
+          "call_15b3c59541eb4ac7bf041ed82783432f",
+          "call_16b1989ea5c54cf094759aec5c68af02",
+          "call_1a80cf2e29ee49e99521214285a313fc",
+          "call_2c551ac477044a298a348ea506474682",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_5b1048037cbf45c097a4199053d35dfe",
+          "call_5e9921f6afa247ab965b7c0910d86c0b",
+          "call_63606609801948d988d946bdf592a400",
+          "call_6c570c68dcb949588e486b98a3bbb545",
+          "call_771a3b1d16a34f579d5768fa9c69d145",
+          "call_7c5af0cc5aaa4107889cbd76c2523fbd",
+          "call_80cd1dae3ee242fdae20bea6cc82c465",
+          "call_8d4b0fa523884ed9b612970bfea21fec",
+          "call_9a5604319c8745bd8eed2582d800c3da",
+          "call_9db0511b1de645e5aa09249b70bc138c",
+          "call_a14302ec7947483781c491475ffb7624",
+          "call_a18afb99148747d5a2f2ed71e03ed9d7",
+          "call_adb61f097ac04327ba8e994ef4620947",
+          "call_b0ff766cc52f4fb8b3fc03be9635c9b4",
+          "call_c56e402d13d54cb2be61236a0c46962c",
+          "call_c7bb1f98b7444e4cb32e0483d2a30ad8",
+          "call_cf8d0b67ddb74a3d8ed74b029c83a5fc",
+          "call_ef5e355895e14dc280be0a7f393e7549",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1393,
+          1570,
+          1631,
+          1640,
+          1665,
+          1672,
+          1679,
+          1686,
+          1756,
+          1831,
+          2146,
+          2153,
+          2160,
+          2167,
+          2174,
+          2608,
+          2645,
+          2681,
+          2918,
+          3128,
+          3135,
+          3142,
+          3149,
+          3156,
+          3163,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/phase1.py"
+      },
+      {
+        "call_ids": [
+          "call_01aa0460a285401eab249528e399c271",
+          "call_0797440ebd11476eaf082b9542f86e4c",
+          "call_15b3c59541eb4ac7bf041ed82783432f",
+          "call_1a80cf2e29ee49e99521214285a313fc",
+          "call_287edc8790d241d3af2e0d7c5cd2f12e",
+          "call_2e5be860364643fbb5a4bf03754b7aab",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_4ae58cff28fa4f2395527b3c8b9bf466",
+          "call_4dc1dd77c855416bb41a1d1d2255f7f9",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_5b1048037cbf45c097a4199053d35dfe",
+          "call_5e9921f6afa247ab965b7c0910d86c0b",
+          "call_6b1862bcba9441e69f8d846009dd34a9",
+          "call_6c570c68dcb949588e486b98a3bbb545",
+          "call_6e399bc56a0e4f18b4a347ce672a690d",
+          "call_7749b64aa9aa4cc18505645b66cc1fe0",
+          "call_77be4ee88ebd49e7bff939b3ab52c259",
+          "call_7c5af0cc5aaa4107889cbd76c2523fbd",
+          "call_80cd1dae3ee242fdae20bea6cc82c465",
+          "call_8702fff7cc7e422facb12b26b0a500a9",
+          "call_8d4b0fa523884ed9b612970bfea21fec",
+          "call_94caeea0fb2444d18cda670eb7425fe4",
+          "call_95e34fc6a2fe45919548ed65574cc2ab",
+          "call_a14302ec7947483781c491475ffb7624",
+          "call_a7d9cd0888f34d1f85bdb8b10359c3f2",
+          "call_a8b532bc85c8458985c85dbe20d2632f",
+          "call_ac8b7a0ac8b6438581cba8d21192f090",
+          "call_adb61f097ac04327ba8e994ef4620947",
+          "call_b0ff766cc52f4fb8b3fc03be9635c9b4",
+          "call_b10ff5064b1147dca8c6604f5f2f3920",
+          "call_b33f83e1012a4c3c84f78653034e76c3",
+          "call_ba314547e4124fe68e02dc06c90a86af",
+          "call_c56e402d13d54cb2be61236a0c46962c",
+          "call_c63db633af99410780c1d0626800eb6d",
+          "call_c7bb1f98b7444e4cb32e0483d2a30ad8",
+          "call_cf8d0b67ddb74a3d8ed74b029c83a5fc",
+          "call_e30f1dd3ae594e7ebb5f0ed34aaf8f20",
+          "call_ecd204149a5547449b128d8f6ca2e569",
+          "call_f1ed3863524c4edca9161cdc3d85c381",
+          "call_f3c92feda0a94ec08c86ec77d3951a99",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1359,
+          1375,
+          1382,
+          1400,
+          1570,
+          1631,
+          1640,
+          1647,
+          1656,
+          1672,
+          1679,
+          1722,
+          1729,
+          1756,
+          2146,
+          2153,
+          2167,
+          2608,
+          2638,
+          2718,
+          2725,
+          2796,
+          2803,
+          2810,
+          2817,
+          2828,
+          2833,
+          2918,
+          3080,
+          3089,
+          3098,
+          3105,
+          3121,
+          3128,
+          3142,
+          3149,
+          3156,
+          3163,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/phase2.py"
+      },
+      {
+        "call_ids": [
+          "call_16b1989ea5c54cf094759aec5c68af02",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_6c570c68dcb949588e486b98a3bbb545",
+          "call_8d4b0fa523884ed9b612970bfea21fec",
+          "call_9db0511b1de645e5aa09249b70bc138c",
+          "call_a18afb99148747d5a2f2ed71e03ed9d7",
+          "call_a8b532bc85c8458985c85dbe20d2632f",
+          "call_c63db633af99410780c1d0626800eb6d",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1665,
+          1831,
+          2828,
+          2833,
+          3128,
+          3135,
+          3163,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/policy.py"
+      },
+      {
+        "call_ids": [
+          "call_00b86219995142e09895c13666154bac",
+          "call_12140c72c72f49a9bd7a2f141f8e11d5",
+          "call_15b3c59541eb4ac7bf041ed82783432f",
+          "call_286b4d5f045c4e6a801e00779b6f54a8",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_334ba474581041b189cc25664dfd8a5f",
+          "call_3a142c25047f4770a1d93d00acff362a",
+          "call_3af6e10640b64de4989ee60054deeb68",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_3eae11d490f54aad98c9e8f6720495de",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_5e9921f6afa247ab965b7c0910d86c0b",
+          "call_7260b9aba94144e08acc3bfefd7269d2",
+          "call_97d8cf0aac7d48b3bb0b48e964b28e57",
+          "call_9f54ad5f7d1f41b187fca524934261f1",
+          "call_adb61f097ac04327ba8e994ef4620947",
+          "call_b33f83e1012a4c3c84f78653034e76c3",
+          "call_e58a34c2e9164a32a7d2cabdefd62461",
+          "call_f5adb08cf3da441098672e8fc5bbaf3c",
+          "call_fa82dfee830a4d4e809a393f44ced0b3",
+          "call_fa8f67acc097457ebd14220be4a9f3b0"
+        ],
+        "event_lines": [
+          1375,
+          1549,
+          1595,
+          1793,
+          2153,
+          2160,
+          2167,
+          2181,
+          2306,
+          2386,
+          2393,
+          2398,
+          2405,
+          2423,
+          2918,
+          2934,
+          3015,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/submission.py"
+      },
+      {
+        "call_ids": [
+          "call_04f0b5682f9e4a05823d9fede69d9d6d",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3886ea04f51945aca81196b9ebc23ce2",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_430dc3610c14461581791a9155c851d8",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_54beec5ff0664e55bf3e0278cde33625",
+          "call_618528dce7a74e3eae8f2e405a75e198",
+          "call_8392adee99fd41708f79a6de2e62569e",
+          "call_96aad1ed4db04e46997e96bb91b4b5bd",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          2982,
+          3000,
+          3057,
+          3064,
+          3403,
+          3417,
+          3469,
+          3567,
+          3591,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/test_apply.py"
+      },
+      {
+        "call_ids": [
+          "call_01bd3f5a4b5f471c9c8e8305d02713f2",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_6b5ccf28c22a44dfb98d8e906f60d87d",
+          "call_6c9343c49d6c4ea285ff160d06d28111",
+          "call_7fac236ae111463ca02bb918461b0f5f",
+          "call_8b035a78917a48d78b779a9b16b64a51",
+          "call_8fde54bbc15a4f0186aa0da10a945c03",
+          "call_92b6708c83134bc1a816f00e10643684",
+          "call_9f189e29adca4dc596e585acadd7179d",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8",
+          "call_b003d275a94f4a8e9098e93cc1455c13",
+          "call_c7dcaca8f89f460aa9ed9cecac6c007c",
+          "call_d47c36fb3333495d96ff9fcab86b3d81",
+          "call_f5adb08cf3da441098672e8fc5bbaf3c",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1344,
+          1490,
+          1979,
+          2006,
+          2209,
+          2223,
+          2265,
+          2432,
+          2484,
+          2525,
+          2550,
+          2567,
+          2934,
+          3567,
+          3591,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/test_derive_phase.py"
+      },
+      {
+        "call_ids": [
+          "call_01bd3f5a4b5f471c9c8e8305d02713f2",
+          "call_0d25cfc897fa45debbccc534a50ae8d3",
+          "call_2c818b09de5649efb47acc4d4c6bde48",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_5e5c2df8053e4cc485ce3a420af825aa",
+          "call_5e9921f6afa247ab965b7c0910d86c0b",
+          "call_6623d1b221a34a26b21dfc9dbe1a39fc",
+          "call_6b5ccf28c22a44dfb98d8e906f60d87d",
+          "call_6c9343c49d6c4ea285ff160d06d28111",
+          "call_72b4c03fdb4f46f1ab162764816e387c",
+          "call_7fac236ae111463ca02bb918461b0f5f",
+          "call_8c4314548fa745caa5cdeb579bc5e321",
+          "call_8fde54bbc15a4f0186aa0da10a945c03",
+          "call_92b6708c83134bc1a816f00e10643684",
+          "call_9596185d2af94a42bdbd64c4294253cf",
+          "call_9f189e29adca4dc596e585acadd7179d",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8",
+          "call_adb61f097ac04327ba8e994ef4620947",
+          "call_b003d275a94f4a8e9098e93cc1455c13",
+          "call_b262a2dbdba24a9990f2d0ad72a24bd8",
+          "call_c7dcaca8f89f460aa9ed9cecac6c007c",
+          "call_f4849275695d4daeab9f95f4c1723cff",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1508,
+          1542,
+          1563,
+          1824,
+          1979,
+          2006,
+          2042,
+          2062,
+          2091,
+          2153,
+          2209,
+          2223,
+          2265,
+          2432,
+          2471,
+          2484,
+          2525,
+          2550,
+          2567,
+          2918,
+          3195,
+          3567,
+          3591,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/test_submission.py"
+      },
+      {
+        "call_ids": [
+          "call_01bd3f5a4b5f471c9c8e8305d02713f2",
+          "call_04f0b5682f9e4a05823d9fede69d9d6d",
+          "call_11d71431452d4c91b509a635c0d3afd8",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_54beec5ff0664e55bf3e0278cde33625",
+          "call_5f6f6b3bdb3f4cafbe5013622c622712",
+          "call_618528dce7a74e3eae8f2e405a75e198",
+          "call_65d10259169e4445a7557fcf586fe33c",
+          "call_6b5ccf28c22a44dfb98d8e906f60d87d",
+          "call_6c9343c49d6c4ea285ff160d06d28111",
+          "call_79992e9238bc46b387e7c5456590ac2d",
+          "call_805a465dd8fb411a829485fc72e0159d",
+          "call_8392adee99fd41708f79a6de2e62569e",
+          "call_889821d38afc42ef8db619564a252c59",
+          "call_94bb596495884882ad5cac11b9d2fe4e",
+          "call_9f189e29adca4dc596e585acadd7179d",
+          "call_a3c342d5e9b3430cbe36dff09bae08b8",
+          "call_adec31d85d2448f3b9bf0eda74552fcb",
+          "call_b003d275a94f4a8e9098e93cc1455c13",
+          "call_b9bfefee18844bcbb7a754274081306b",
+          "call_e70b93a1a12d46be906958216739bc6f",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          2209,
+          2344,
+          2432,
+          2484,
+          2525,
+          2536,
+          2550,
+          2567,
+          2899,
+          3000,
+          3029,
+          3057,
+          3064,
+          3254,
+          3266,
+          3278,
+          3290,
+          3297,
+          3376,
+          3417,
+          3567,
+          3591,
+          3686,
+          3702
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/test_trace.py"
+      },
+      {
+        "call_ids": [
+          "call_00b86219995142e09895c13666154bac",
+          "call_12140c72c72f49a9bd7a2f141f8e11d5",
+          "call_15b3c59541eb4ac7bf041ed82783432f",
+          "call_17313d432b22466e8ab56ecd9d9b705f",
+          "call_26b9c2a306854ea6943716959b8d4037",
+          "call_2c551ac477044a298a348ea506474682",
+          "call_2e071b3ec8144442afaa9448c1c9009e",
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_355d163a69dd4209ae1e5cb607680871",
+          "call_3a142c25047f4770a1d93d00acff362a",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_3e651fad544042339b88275da7bcce32",
+          "call_400e94c0132b4db097261df6ea89232b",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_4f00efd41051423789386a5afde9a019",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_5e9921f6afa247ab965b7c0910d86c0b",
+          "call_65d10259169e4445a7557fcf586fe33c",
+          "call_6c919b7816b94cc7b1f1232ed334d403",
+          "call_805a465dd8fb411a829485fc72e0159d",
+          "call_80cd1dae3ee242fdae20bea6cc82c465",
+          "call_8392adee99fd41708f79a6de2e62569e",
+          "call_96aad1ed4db04e46997e96bb91b4b5bd",
+          "call_96c9e9d735e44b27a7d3807290b8785f",
+          "call_b80dbf6ce0224adb9fcc63256b2e80bd",
+          "call_f4849275695d4daeab9f95f4c1723cff",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1910,
+          2153,
+          2160,
+          2167,
+          2174,
+          2181,
+          2249,
+          2256,
+          2361,
+          2368,
+          2423,
+          2536,
+          2608,
+          2899,
+          2906,
+          2911,
+          3064,
+          3195,
+          3224,
+          3231,
+          3236,
+          3469,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/trace.py"
+      },
+      {
+        "call_ids": [
+          "call_3209b83e22a041b5802bc997afd480af",
+          "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+          "call_420d01ab4f434e9e95ca9ef3945d5227",
+          "call_4ae58cff28fa4f2395527b3c8b9bf466",
+          "call_4f3c4444bd504761939a41422f3102af",
+          "call_5363caf4b0c54a31b10f4f85598a85f4",
+          "call_8b035a78917a48d78b779a9b16b64a51",
+          "call_9fff1fbc144a4698adaeb807df89b711",
+          "call_b33f83e1012a4c3c84f78653034e76c3",
+          "call_d47c36fb3333495d96ff9fcab86b3d81",
+          "call_fa82dfee830a4d4e809a393f44ced0b3"
+        ],
+        "event_lines": [
+          1344,
+          1375,
+          1490,
+          2319,
+          3089,
+          3426,
+          3567,
+          3591,
+          3686,
+          3702,
+          3743
+        ],
+        "evidence_type": "argument token mention; path does not alone establish an OS read",
+        "path_token": "tests/conformance/v5/fresh_full_spec_v2/worker.py"
+      }
+    ],
+    "nested_tool_call_sites": {
+      "apply_patch": 71,
+      "clock__curr_time": 17,
+      "exec_command": 190,
+      "write_stdin": 10
+    },
+    "outer_custom_tool_calls": 257,
+    "paired_custom_tool_outputs_within_bound": 256,
+    "public_message_records": [
+      {
+        "author": "/root",
+        "content_sha256": "694333dc9a6b39ca0a1a3e5c2645eeec7aac368aeff862502fcd215003f9b38c",
+        "event_id": "amsg_01a1d033-0b13-7062-92e5-256f33129775",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 1335,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 82,
+        "timestamp": "2026-11-12T14:39:28.531Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "5218529e07ffa13933ec67c1b80b1581021ee57f0e187b6a0cc92e3a24d32efd",
+        "event_id": "amsg_01a1d03d-0c10-7481-b819-514a27f43458",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 1576,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T14:50:24.144Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "8fae5f76600962c8bf9c7f96417034313684d28ea3f565f2d18f9bd20a6c9f8a",
+        "event_id": "amsg_01a1d03d-8d63-7d72-8a1f-cdcc7fa2b120",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 1605,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T14:50:57.251Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "db08e7dc09bd7953beccbbab40bc6d325bc303a82e1726c2417eab33acf095e6",
+        "event_id": "amsg_01a1d048-717c-7f83-b9b5-bc62e038a841",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 1892,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T15:02:51.004Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "7545533983dd53317f970266b2c3056ec583b05171e0a0f550081dbc146104e4",
+        "event_id": "amsg_01a1d04f-500d-7572-ab55-4d0053bfc94f",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 2131,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T15:10:21.197Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "525870d8176021b8f171e2c327ade618616cfcdd903a736ac9f336a7ba36eabb",
+        "event_id": "amsg_01a1d05d-82aa-7410-b60b-a760702fbd60",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 2596,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 82,
+        "timestamp": "2026-11-12T15:25:51.658Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "c2277f4d28ddf73398fda10c7d43d730ab5fc39b3fca88c2e3491f81f3d0b606",
+        "event_id": "amsg_01a1d0ee-97ff-7493-b8f9-237755f38525",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 2750,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T18:04:19.839Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "6233b8a348e44afda955b997951d93ef94cfe5330ee02d25f027c73339df8fe2",
+        "event_id": "amsg_01a1d0f3-e49a-7222-91bc-56ec3a0ab624",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 2858,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T18:10:07.130Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "182d34e7fa0dd3f39d4c44d9ff6a7ef43cfbcddc89a546b1b4110028afc7d006",
+        "event_id": "amsg_01a1d0f7-e147-7620-b3f8-158c283c1c13",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 2887,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T18:14:28.423Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "8b1529a4e15b73d8116614280286641dfe8ccf5e1c8ca098d7812790dd8ce57d",
+        "event_id": "amsg_01a1d0f9-06ee-79e3-a2e8-40d155025557",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 2948,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 81,
+        "timestamp": "2026-11-12T18:15:43.598Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "bbbd32e644ae585e67656cbfca4893ee81e020b2f5d3400676547165a03f23e2",
+        "event_id": "amsg_01a1d10f-2e84-78a0-845d-5472b89ad1d4",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 3624,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 82,
+        "timestamp": "2026-11-12T18:39:55.524Z"
+      },
+      {
+        "author": "/root",
+        "content_sha256": "a07dc20eef837783bfac03b36df9ba9e0101111faf92cc0652643a011e6cd06d",
+        "event_id": "amsg_01a1d138-0056-7251-b185-ad27501ea7b9",
+        "hold_marker": false,
+        "known_final_hashes_present": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "line": 3738,
+        "ready_marker": false,
+        "recipient": "/root/fresh_full_spec_v2",
+        "text_bytes": 82,
+        "timestamp": "2026-11-12T19:24:30.678Z"
+      }
+    ],
+    "resolved_packet_file_operations": [
+      {
+        "arguments_sha256": "641ea2e98a6581ed22fa11cfe360c7c0b1d893b19a0cbb7511a5929cbbae2d65",
+        "call_id": "call_3dc07a3a62f94d9e9620b6e397d29fb7",
+        "line": 3567,
+        "operation": "read_bytes",
+        "paired_output_text_bytes_only": 4347,
+        "paths": [
+          "reports/v5/conformance/inputs/v5/v5_dev/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+          "reports/v5/conformance/inputs/v5/v5_lite/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v5/v5_lite/rendered-card.txt",
+          "reports/v5/conformance/inputs/v5/v5_core/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v5/v5_core/rendered-card.txt",
+          "reports/v5/conformance/inputs/v5/v5_full/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v5/v5_full/rendered-card.txt"
+        ]
+      },
+      {
+        "arguments_sha256": "655032602c6bfc813a3b79872d3ccc4e314997712f6ace04e6e87350456a4563",
+        "call_id": "call_ad982d10cd504070b18ef7616fdb3f49",
+        "line": 3629,
+        "operation": "read_bytes",
+        "paired_output_text_bytes_only": 556,
+        "paths": [
+          "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_dev/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_dev/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_lite/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_core/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_full/selected-episodes.jsonl"
+        ]
+      },
+      {
+        "arguments_sha256": "feb59e82aa829566c0b3d24ecfe2802a7f7233c4a95bb7c651646bbb55567aae",
+        "call_id": "call_7ea3e245f9c248809e352d4fee68c9f3",
+        "line": 3636,
+        "operation": "read_text",
+        "paired_output_text_bytes_only": 3083,
+        "paths": [
+          "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_dev/rendered-card.txt"
+        ]
+      },
+      {
+        "arguments_sha256": "8793bc48a699b5de140a2b738044d8aa4cb789939dd2308cc4a75d176e63279b",
+        "call_id": "call_fa82dfee830a4d4e809a393f44ced0b3",
+        "line": 3686,
+        "operation": "read_bytes",
+        "paired_output_text_bytes_only": 4364,
+        "paths": [
+          "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_dev/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_dev/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_lite/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_lite/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_core/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_core/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_full/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_full/rendered-card.txt"
+        ]
+      },
+      {
+        "arguments_sha256": "d0d3bf4844b5cb8a3d21bb26fdad7422a94f92227ff270463331362aceae9d6a",
+        "call_id": "call_3209b83e22a041b5802bc997afd480af",
+        "line": 3702,
+        "operation": "self_audit_write_and_read; public v6 paths are declared in audit payload, not independently established as file reads by this command record",
+        "paired_output_text_bytes_only": 106,
+        "paths": [
+          "reports/v5/conformance/inputs/v6/v5_dev/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_dev/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_lite/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_lite/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_core/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_core/rendered-card.txt",
+          "reports/v5/conformance/inputs/v6/v5_full/selected-episodes.jsonl",
+          "reports/v5/conformance/inputs/v6/v5_full/rendered-card.txt"
+        ]
+      }
+    ],
+    "self_audit_write_read_event_lines": [
+      2265,
+      2525,
+      2567,
+      2574,
+      3515,
+      3524,
+      3591,
+      3602,
+      3702,
+      3743
+    ],
+    "unpaired_call_count_at_bound": 1,
+    "unpaired_calls": [
+      {
+        "arguments_sha256": "cf56a64c1ccd9c20b537a65cdd3dc6ee53c610322c69e839193cb3ef0fe42b9f",
+        "call_id": "call_420d01ab4f434e9e95ca9ef3945d5227",
+        "event_id": "ctc_0a02cc2740cecda1016af61273e9e087d1801368927c3eaf92",
+        "line": 3743,
+        "timestamp": "2026-11-12T19:24:42.818Z"
+      }
+    ]
+  },
+  "prior_evidence_references": {
+    "inherited_known_limitations": [
+      "Earlier audit recorded an unresolved dynamic command/path at child line 1292.",
+      "Earlier audit recorded an author-owned directory enumeration and unresolved pytest/import/config/cache effects."
+    ],
+    "prior_audit_artifacts": [
+      {
+        "matches_task_supplied": true,
+        "path": "reports/v5/conformance/native_audit/fresh-full-spec-v2-phase-checkpoint-audit.json",
+        "sha256": "702e41f8afc256ec4a26c44afaefeb9f7450fa9d65340f4bb37d55a3aea5c2f8"
+      },
+      {
+        "matches_task_supplied": true,
+        "path": "reports/v5/conformance/native_audit/fresh-full-spec-v2-path-evidence.json",
+        "sha256": "c96917fbb55531408e2db11da3abc4ee755cece1ed7045d27e16a8abe3e531df"
+      },
+      {
+        "matches_task_supplied": true,
+        "path": "reports/v5/conformance/native_audit/fresh-full-spec-v2-final-path-bindings.json",
+        "sha256": "3f9bf0acf04095cf5e034dd4a241bf38525e5e98f128bedc0a8b0654b3b631eb"
+      }
+    ],
+    "prior_scope_note": "Earlier allowed-path and limitation findings are carried forward from these immutable artifacts; suffix analysis starts strictly after child line 1331.",
+    "source_origin_record_file": "not re-located or read in this suffix task",
+    "source_origin_record_sha256_from_parent": "b39beab81e494a932644b64dd429babf172849f0f1f0f754450ad9a1d7bb654c"
+  },
+  "scope": {
+    "audit_verdict": "none; independent reviewer owns eligibility decision.",
+    "author_path": "/root/fresh_full_spec_v2",
+    "native_log_authenticity": "Unsigned local JSONL evidence; hashes bind inspected bytes only.",
+    "native_log_path": "/Users/ryanwillen/.codex/sessions/2026/11/12/rollout-2026-11-12T07-29-24-01a1cff2-e629-7b51-990c-5a3834a6cc27.jsonl",
+    "new_prefix": {
+      "bytes": 14485959,
+      "last_included_record": {
+        "bytes": 4465,
+        "line": 3745,
+        "timestamp": "2026-11-12T19:24:42.986000+00:00"
+      },
+      "metadata_only_lookahead": {
+        "included_in_prefix": false,
+        "line": 3746,
+        "record_bytes_read_metadata_only": 2695,
+        "timestamp": "2026-11-12T19:24:43.009000+00:00"
+      },
+      "sha256": "e563631d49449c7682c0832782c461211e008bf4083ee600ddca40fe2c96c8cb",
+      "suffix_bytes": 8718896,
+      "suffix_lines": 2414,
+      "suffix_sha256": "e59c440adb505569b261bfff2a9a598b691252a4226f96e6dd05e25ea2698817",
+      "through_line": 3745
+    },
+    "parent_task_checkpoint_claim": {
+      "ambiguities_sha256": "153c051ce31b6cea68fba022aa56b23ac5380d4cedf3f0fc678417604f7bbcf9",
+      "apply_sha256": "a861006bc02bbaf14f8e346981e74a2714bd53238b9ebc844af85c919677231c",
+      "initializer_sha256": "36b7ec1f1fc7266f1023c5eaba67fb85b33f20c0fdc959eb25f0a80191e4c658",
+      "native_message_binding": "No author-to-root public message with all five supplied hashes and READY/HOLD markers was observed within the child prefix ending at line 3745; task-supplied checkpoint claims remain outside this bounded native message evidence. Runtime hash values not extracted.",
+      "runtime_hash_count_reported": 8,
+      "self_audit_sha256": "ef81da0fc345cffffdb096962965ed25aa7aa84d97d978ab120efc2a2a5bb4c3",
+      "source": "task-supplied; root message contents were not re-read in this suffix audit",
+      "state": "READY/HOLD, hash-only",
+      "timestamp_utc": "2026-11-12T19:24:42Z",
+      "worker_sha256": "666e012eabd97268a5bd775ca374d042d996d4a5d12162be37831b3e049855d1"
+    },
+    "prior_qualified_prefix": {
+      "bytes": 5767063,
+      "cutoff_timestamp_utc": "2026-11-12T14:37:07.016Z",
+      "matches_prior_record": true,
+      "sha256": "186a260521525d94a2c016266eff0b1030b235b9413616161e6e54a5e1f3f3a3",
+      "through_line": 1331
+    },
+    "session_id": "01a1cff2-e629-7b51-990c-5a3834a6cc27",
+    "source_capture_binding": "not included; parent will bind the later captured copy separately",
+    "suffix_bound": "2026-11-12T19:24:42.999Z; last complete included child record is line 3745 at 19:24:42.986Z"
+  },
+  "source_hash_readback": {
+    "all_expected_hashes_match_current_bytes": true,
+    "items": [
+      {
+        "expected_sha256": "666e012eabd97268a5bd775ca374d042d996d4a5d12162be37831b3e049855d1",
+        "matches": true,
+        "observed_sha256": "666e012eabd97268a5bd775ca374d042d996d4a5d12162be37831b3e049855d1",
+        "path": "tests/conformance/v5/fresh_full_spec_v2/worker.py"
+      },
+      {
+        "expected_sha256": "a861006bc02bbaf14f8e346981e74a2714bd53238b9ebc844af85c919677231c",
+        "matches": true,
+        "observed_sha256": "a861006bc02bbaf14f8e346981e74a2714bd53238b9ebc844af85c919677231c",
+        "path": "tests/conformance/v5/fresh_full_spec_v2/apply.py"
+      },
+      {
+        "expected_sha256": "36b7ec1f1fc7266f1023c5eaba67fb85b33f20c0fdc959eb25f0a80191e4c658",
+        "matches": true,
+        "observed_sha256": "36b7ec1f1fc7266f1023c5eaba67fb85b33f20c0fdc959eb25f0a80191e4c658",
+        "path": "tests/conformance/v5/fresh_full_spec_v2/__init__.py"
+      },
+      {
+        "expected_sha256": "153c051ce31b6cea68fba022aa56b23ac5380d4cedf3f0fc678417604f7bbcf9",
+        "matches": true,
+        "observed_sha256": "153c051ce31b6cea68fba022aa56b23ac5380d4cedf3f0fc678417604f7bbcf9",
+        "path": "tests/conformance/v5/fresh_full_spec_v2/AMBIGUITIES.md"
+      },
+      {
+        "expected_sha256": "ef81da0fc345cffffdb096962965ed25aa7aa84d97d978ab120efc2a2a5bb4c3",
+        "matches": true,
+        "observed_sha256": "ef81da0fc345cffffdb096962965ed25aa7aa84d97d978ab120efc2a2a5bb4c3",
+        "path": "reports/v5/conformance/fresh_full_spec_v2_read_audit.json"
+      }
+    ],
+    "self_audit_note": "Only the self-audit byte hash was checked; its assertions were not used to establish native read facts.",
+    "self_audit_used_as_provenance": false
+  },
+  "specific_reads_and_scope_questions": {
+    "other_exact_public_reads": [
+      {
+        "child_line": 1382,
+        "operation": "content_read",
+        "path": "src/identitybench/v5/schemas.py",
+        "sed_range": "1,400p"
+      },
+      {
+        "child_line": 1382,
+        "operation": "content_read",
+        "path": "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+        "sed_range": "1,520p"
+      },
+      {
+        "child_line": 1400,
+        "operation": "content_read",
+        "path": "reports/v5/conformance/inputs/v5/v5_dev/rendered-card.txt",
+        "sed_range": "1,84p"
+      },
+      {
+        "child_line": 2496,
+        "operation": "path appears in bounded script; exact byte-read use is summarized in path-event index",
+        "path": ".agents/skills/blind-conformance/SKILL.md"
+      }
+    ],
+    "path_operation_caveat": "The path-event index contains literal operands and script path tokens. It is not OS-syscall tracing; entries marked as path mentions are not promoted to reads without a concrete file operation.",
+    "spec_content_reads": [
+      {
+        "child_line": 1382,
+        "operation": "content_read",
+        "path": "SPEC-v5.md",
+        "scope_note": "Exact range recorded; this audit does not inspect section headings or infer whether the range extends beyond allowed §§1–4.",
+        "sed_range": "1,520p"
+      },
+      {
+        "child_line": 1400,
+        "operation": "content_read",
+        "path": "SPEC-v5.md",
+        "sed_range": "177,227p"
+      },
+      {
+        "child_line": 1400,
+        "operation": "content_read",
+        "path": "SPEC-v5.md",
+        "sed_range": "2189,2220p"
+      }
+    ]
+  },
+  "unresolved_bindings": [
+    {
+      "record": "SPEC-v5.md line range 1,520p at child line 1382",
+      "unknown": "Whether this range extends beyond §§1–4; no spec content/heading lookup was performed by this audit."
+    },
+    {
+      "record": "test runner and interpreter calls under tests/conformance/v5/fresh_full_spec_v2",
+      "unknown": "Implicit imports, pytest/uv configuration, plugin/cache paths and process-internal reads are not exposed as explicit file operands; no syscall tracing."
+    },
+    {
+      "record": "final bounded call/output pairing",
+      "unknown": "One outer tool call has no paired output within the 19:24:42.999Z cutoff; its result is excluded if it occurs later."
+    },
+    {
+      "record": "task-supplied READY/HOLD checkpoint hashes",
+      "unknown": "The exact root message is not natively bound by this child-prefix artifact; values are recorded only as supplied claims and current source-file byte hashes."
+    }
+  ]
+}

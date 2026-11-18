@@ -1,0 +1,660 @@
+{
+  "lifecycle_status": "RELEASED",
+  "manifest_history": [
+    {
+      "lifecycle_status": "RELEASED",
+      "manifest_sha256": "afe20d8d68aa424fdd0336ed19f39497886c01f2bc70e0ddfd382ef56fa4a1a0",
+      "review_status": "PASS"
+    },
+    {
+      "lifecycle_status": "RELEASED",
+      "manifest_sha256": "348f63fc4aead2923b7b4e5070c1222b3036f853f2a60eaf05231fd0169c7e7a",
+      "review_status": "PASS"
+    },
+    {
+      "lifecycle_status": "PENDING_REVIEW",
+      "manifest_sha256": "ac387a45bb036370cf03ed314f281a6809a16397a02992fd9ccb6b2504546a98",
+      "review_status": "PENDING_REVIEW"
+    }
+  ],
+  "phase_projection_key_allowlists": {
+    "phase1": [
+      "episode_id",
+      "policy_card",
+      "phase1_manifest",
+      "phase1_slices",
+      "q1_slice_ids_p1",
+      "q2_slice_ids_p1"
+    ],
+    "phase2": [
+      "episode_id",
+      "policy_card",
+      "phase1_manifest",
+      "phase1_slices",
+      "q1_slice_ids_p1",
+      "q2_slice_ids_p1",
+      "phase2_base_manifest",
+      "phase2_slices",
+      "q1_slice_ids_p2",
+      "q2_slice_ids_p2"
+    ]
+  },
+  "policy_source_sha256": "a90c7e232f82d1b4d5730495e4172f48dde5ce8587c12ef3950f81f05e1d144e",
+  "rendered_markdown_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+  "review_status": "PASS",
+  "root_review": {
+    "approved_by": "/root",
+    "independent_readback_status": "PASS",
+    "not_claimed": [
+      "author_isolation",
+      "G-SPEC-01",
+      "G-TOK-01",
+      "independent_query_algorithm_proof"
+    ],
+    "readback_basis": [
+      "25 preserved snapshot artifacts and their byte counts and hashes verified",
+      "fixed SPEC, policy source, rendered card, dataset seals, episode files, oracle files, and packet hashes verified against current v7 bindings",
+      "all four oracle JSONL files are byte-identical to the preserved v6 snapshot",
+      "all 180 EpisodeV5 source rows and exact ten-key public packet rows verified; phase-one six-key and phase-two ten-key allowlists verified",
+      "canonical JSONL, public manifests, embedded card text, overlay, catalog, and all non-card public fields verified",
+      "production OBS Q1/Q2 selectors replayed from Q1-only delivered rows with exact selected payload equality and hashes",
+      "each v7 public row differs from its v6 counterpart only in the reviewed rendered cursor literal"
+    ],
+    "readback_counts": {
+      "all_suites_episode_rows": 180,
+      "all_suites_selected_payload_count": 1620,
+      "suites": {
+        "v5_core": {
+          "episode_rows": 48,
+          "phase1": {
+            "q1_slice_count": 48,
+            "q2_slice_count": 240,
+            "selected_payload_count": 288
+          },
+          "phase2": {
+            "q1_slice_count": 48,
+            "q2_slice_count": 96,
+            "selected_payload_count": 144
+          },
+          "selected_payload_count": 432
+        },
+        "v5_dev": {
+          "episode_rows": 12,
+          "phase1": {
+            "q1_slice_count": 12,
+            "q2_slice_count": 60,
+            "selected_payload_count": 72
+          },
+          "phase2": {
+            "q1_slice_count": 12,
+            "q2_slice_count": 24,
+            "selected_payload_count": 36
+          },
+          "selected_payload_count": 108
+        },
+        "v5_full": {
+          "episode_rows": 96,
+          "phase1": {
+            "q1_slice_count": 96,
+            "q2_slice_count": 480,
+            "selected_payload_count": 576
+          },
+          "phase2": {
+            "q1_slice_count": 96,
+            "q2_slice_count": 192,
+            "selected_payload_count": 288
+          },
+          "selected_payload_count": 864
+        },
+        "v5_lite": {
+          "episode_rows": 24,
+          "phase1": {
+            "q1_slice_count": 24,
+            "q2_slice_count": 120,
+            "selected_payload_count": 144
+          },
+          "phase2": {
+            "q1_slice_count": 24,
+            "q2_slice_count": 48,
+            "selected_payload_count": 72
+          },
+          "selected_payload_count": 216
+        }
+      }
+    },
+    "readback_source_hashes": {
+      "fixed_spec_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+      "policy_source_sha256": "a90c7e232f82d1b4d5730495e4172f48dde5ce8587c12ef3950f81f05e1d144e",
+      "preserved_snapshot_manifest_sha256": "c304bd1b77f2684b9c27c60754351f5aac22a4f04187349173f98e7e42062084",
+      "producer_source_sha256": {
+        "src/identitybench/v4/jcs.py": "74606637a3d3d828343bf7b9133d38bd140385c863b942d7eae6ce4611542081",
+        "src/identitybench/v5/baselines.py": "f46700c21fc6707854683b572d809b1f7febcdca5af09d9dc4b88a25e14e7153",
+        "src/identitybench/v5/generator.py": "6fc86b523219cde37eb16f99c53d1f492966592565e5d63b23dbe5b30533e4c4",
+        "src/identitybench/v5/policy_card.py": "a90c7e232f82d1b4d5730495e4172f48dde5ce8587c12ef3950f81f05e1d144e",
+        "src/identitybench/v5/schemas.py": "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7",
+        "src/identitybench/v5/validation.py": "5154cb832fc5068555119901f11811b5800ef471cd29a37dc09f1b22f351117c"
+      },
+      "rendered_markdown_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+      "suites": {
+        "v5_core": {
+          "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+          "dataset_seal_sha256": "26a6fa82382feb14595097b0801c813e42dd2ffd5d57c7d0bfefa695aafde584",
+          "episode_rows": 48,
+          "episodes_sha256": "e6255957a083101b9113986fd0a9a9ff678431da17e249e2a244a545045870a5",
+          "oracles_sha256": "dc914f1e8da757b263e1b2b54045c08869af391d26b39025dc3e9fc8bbdf3cb5",
+          "packet_sha256": "4da4d9beb7849431eacb97f2f74c7a1550ad97d1f890942bb76090135d2b56b4",
+          "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_core/projection-receipt.json"
+        },
+        "v5_dev": {
+          "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+          "dataset_seal_sha256": "c8d2f06ff2c2aa11b350c3272ceb9a9d129553ad76b262b1ce17105ace9aa41b",
+          "episode_rows": 12,
+          "episodes_sha256": "52a9e3c8f0b193cebe0348745b562fb6660efcc15ae62e9232cc6c0b3d99cf36",
+          "oracles_sha256": "1c7ef86eee7cdd1da1450d15417e873183355f20308703d9752e864c02ed6fbb",
+          "packet_sha256": "741aa4fe9532ad99023e02aa30819cdb326a1e0225f201697c45aead2107ab57",
+          "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_dev/projection-receipt.json"
+        },
+        "v5_full": {
+          "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+          "dataset_seal_sha256": "804c4da604ed95cfdaefa6db765a41603568279b137d1ca037fa81641ea1e815",
+          "episode_rows": 96,
+          "episodes_sha256": "3f54d39418229700f3af6c821d55cda8baab611eaebb0c4f26b7d36077960746",
+          "oracles_sha256": "a8328ef671137b4e64493210d53689bd7b1b830bc35f514e5840eb18dabe2550",
+          "packet_sha256": "1428165a2965f0873d907d7b7f38d8cc054e92d85d10865c8724ba17c87187b5",
+          "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_full/projection-receipt.json"
+        },
+        "v5_lite": {
+          "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+          "dataset_seal_sha256": "581aaf459e66372de43bfb3b3e03fdab7614500a6bfe7c12dd213b60a83e50ec",
+          "episode_rows": 24,
+          "episodes_sha256": "71cfc475bb0669e08ba6ba2103281ddbbc91d10b350c1d0ce2d98080d340c28e",
+          "oracles_sha256": "c4eb15d7693557f6d2fbb94a4aa73ca0f355915f52dc0abcd0bf7676e4226f8c",
+          "packet_sha256": "bc5f2d08698929b75d78161c9e561a292a5750f9c707f688bc7ff124ac123845",
+          "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_lite/projection-receipt.json"
+        }
+      }
+    },
+    "reviewer": "/root",
+    "scope": "projection-only",
+    "status": "PASS"
+  },
+  "row_key_allowlist": [
+    "episode_id",
+    "phase1_manifest",
+    "phase1_slices",
+    "phase2_base_manifest",
+    "phase2_slices",
+    "policy_card",
+    "q1_slice_ids_p1",
+    "q1_slice_ids_p2",
+    "q2_slice_ids_p1",
+    "q2_slice_ids_p2"
+  ],
+  "schema_version": "identitybench.v5.public-inputs-manifest.v1",
+  "seed": 20261111,
+  "selection_rule": "For each phase k, derive Q1 with obs_strategy_q1(manifest, policy_card, k); derive Q2 with obs_strategy_q2 from only the Q1-delivered payloads, the same public manifest work_queue, policy_card, and phase index; include payloads only for Q1 union Q2. Retain the complete public phase manifests and policy card. No oracle or gold fields are read.",
+  "spec_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+  "spec_version": "SPEC-v5.0",
+  "suites": {
+    "v5_core": {
+      "episode_count": 48,
+      "family_count": 12,
+      "logical_input_tokens_min_max": [
+        26154,
+        26531
+      ],
+      "oracle_changed_episode_rows": 0,
+      "oracle_changed_p1_episode_rows": 0,
+      "oracle_changed_p2_episode_rows": 0,
+      "payload_counts": {
+        "phase1": {
+          "q1_slice_count": 48,
+          "q2_slice_count": 240,
+          "selected_payload_count": 288
+        },
+        "phase2": {
+          "q1_slice_count": 48,
+          "q2_slice_count": 96,
+          "selected_payload_count": 144
+        },
+        "total_q1_slice_count": 96,
+        "total_q2_slice_count": 336,
+        "total_selected_payload_count": 432
+      },
+      "policy_card_tokens_min_max": [
+        16353,
+        16355
+      ],
+      "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_core/projection-receipt.json",
+      "projection_receipt_sha256": "0c98c26406357bbf0cd9b9d7272cc68702606ba80faea7852452aaee5b440fb3",
+      "release_status": "RELEASED",
+      "rendered_card_path": "reports/v5/conformance/inputs/v7/v5_core/rendered-card.txt",
+      "rendered_card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+      "review_status": "PASS",
+      "root_readback_counts": {
+        "all_suites_episode_rows": 180,
+        "all_suites_selected_payload_count": 1620,
+        "suites": {
+          "v5_core": {
+            "episode_rows": 48,
+            "phase1": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 240,
+              "selected_payload_count": 288
+            },
+            "phase2": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 96,
+              "selected_payload_count": 144
+            },
+            "selected_payload_count": 432
+          },
+          "v5_dev": {
+            "episode_rows": 12,
+            "phase1": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 60,
+              "selected_payload_count": 72
+            },
+            "phase2": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 24,
+              "selected_payload_count": 36
+            },
+            "selected_payload_count": 108
+          },
+          "v5_full": {
+            "episode_rows": 96,
+            "phase1": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 480,
+              "selected_payload_count": 576
+            },
+            "phase2": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 192,
+              "selected_payload_count": 288
+            },
+            "selected_payload_count": 864
+          },
+          "v5_lite": {
+            "episode_rows": 24,
+            "phase1": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 120,
+              "selected_payload_count": 144
+            },
+            "phase2": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 48,
+              "selected_payload_count": 72
+            },
+            "selected_payload_count": 216
+          }
+        }
+      },
+      "root_readback_source_hashes": {
+        "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+        "dataset_seal_sha256": "26a6fa82382feb14595097b0801c813e42dd2ffd5d57c7d0bfefa695aafde584",
+        "episode_rows": 48,
+        "episodes_sha256": "e6255957a083101b9113986fd0a9a9ff678431da17e249e2a244a545045870a5",
+        "oracles_sha256": "dc914f1e8da757b263e1b2b54045c08869af391d26b39025dc3e9fc8bbdf3cb5",
+        "packet_sha256": "4da4d9beb7849431eacb97f2f74c7a1550ad97d1f890942bb76090135d2b56b4",
+        "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_core/projection-receipt.json"
+      },
+      "seed": 20261111,
+      "selected_packet_path": "reports/v5/conformance/inputs/v7/v5_core/selected-episodes.jsonl",
+      "selected_packet_sha256": "4da4d9beb7849431eacb97f2f74c7a1550ad97d1f890942bb76090135d2b56b4",
+      "source_dataset_seal_path": "datasets/v5_core/SEAL.json",
+      "source_dataset_seal_sha256": "26a6fa82382feb14595097b0801c813e42dd2ffd5d57c7d0bfefa695aafde584",
+      "source_episodes_path": "datasets/v5_core/episodes.jsonl",
+      "source_episodes_sha256": "e6255957a083101b9113986fd0a9a9ff678431da17e249e2a244a545045870a5"
+    },
+    "v5_dev": {
+      "episode_count": 12,
+      "family_count": 12,
+      "logical_input_tokens_min_max": [
+        26146,
+        26530
+      ],
+      "oracle_changed_episode_rows": 0,
+      "oracle_changed_p1_episode_rows": 0,
+      "oracle_changed_p2_episode_rows": 0,
+      "payload_counts": {
+        "phase1": {
+          "q1_slice_count": 12,
+          "q2_slice_count": 60,
+          "selected_payload_count": 72
+        },
+        "phase2": {
+          "q1_slice_count": 12,
+          "q2_slice_count": 24,
+          "selected_payload_count": 36
+        },
+        "total_q1_slice_count": 24,
+        "total_q2_slice_count": 84,
+        "total_selected_payload_count": 108
+      },
+      "policy_card_tokens_min_max": [
+        16353,
+        16355
+      ],
+      "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_dev/projection-receipt.json",
+      "projection_receipt_sha256": "1597b93effa6027f1262a023cbe38502bb84ad9be777f99db47092abcf34458c",
+      "release_status": "RELEASED",
+      "rendered_card_path": "reports/v5/conformance/inputs/v7/v5_dev/rendered-card.txt",
+      "rendered_card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+      "review_status": "PASS",
+      "root_readback_counts": {
+        "all_suites_episode_rows": 180,
+        "all_suites_selected_payload_count": 1620,
+        "suites": {
+          "v5_core": {
+            "episode_rows": 48,
+            "phase1": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 240,
+              "selected_payload_count": 288
+            },
+            "phase2": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 96,
+              "selected_payload_count": 144
+            },
+            "selected_payload_count": 432
+          },
+          "v5_dev": {
+            "episode_rows": 12,
+            "phase1": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 60,
+              "selected_payload_count": 72
+            },
+            "phase2": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 24,
+              "selected_payload_count": 36
+            },
+            "selected_payload_count": 108
+          },
+          "v5_full": {
+            "episode_rows": 96,
+            "phase1": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 480,
+              "selected_payload_count": 576
+            },
+            "phase2": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 192,
+              "selected_payload_count": 288
+            },
+            "selected_payload_count": 864
+          },
+          "v5_lite": {
+            "episode_rows": 24,
+            "phase1": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 120,
+              "selected_payload_count": 144
+            },
+            "phase2": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 48,
+              "selected_payload_count": 72
+            },
+            "selected_payload_count": 216
+          }
+        }
+      },
+      "root_readback_source_hashes": {
+        "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+        "dataset_seal_sha256": "c8d2f06ff2c2aa11b350c3272ceb9a9d129553ad76b262b1ce17105ace9aa41b",
+        "episode_rows": 12,
+        "episodes_sha256": "52a9e3c8f0b193cebe0348745b562fb6660efcc15ae62e9232cc6c0b3d99cf36",
+        "oracles_sha256": "1c7ef86eee7cdd1da1450d15417e873183355f20308703d9752e864c02ed6fbb",
+        "packet_sha256": "741aa4fe9532ad99023e02aa30819cdb326a1e0225f201697c45aead2107ab57",
+        "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_dev/projection-receipt.json"
+      },
+      "seed": 20261111,
+      "selected_packet_path": "reports/v5/conformance/inputs/v7/v5_dev/selected-episodes.jsonl",
+      "selected_packet_sha256": "741aa4fe9532ad99023e02aa30819cdb326a1e0225f201697c45aead2107ab57",
+      "source_dataset_seal_path": "datasets/v5_dev/SEAL.json",
+      "source_dataset_seal_sha256": "c8d2f06ff2c2aa11b350c3272ceb9a9d129553ad76b262b1ce17105ace9aa41b",
+      "source_episodes_path": "datasets/v5_dev/episodes.jsonl",
+      "source_episodes_sha256": "52a9e3c8f0b193cebe0348745b562fb6660efcc15ae62e9232cc6c0b3d99cf36"
+    },
+    "v5_full": {
+      "episode_count": 96,
+      "family_count": 12,
+      "logical_input_tokens_min_max": [
+        26146,
+        26532
+      ],
+      "oracle_changed_episode_rows": 0,
+      "oracle_changed_p1_episode_rows": 0,
+      "oracle_changed_p2_episode_rows": 0,
+      "payload_counts": {
+        "phase1": {
+          "q1_slice_count": 96,
+          "q2_slice_count": 480,
+          "selected_payload_count": 576
+        },
+        "phase2": {
+          "q1_slice_count": 96,
+          "q2_slice_count": 192,
+          "selected_payload_count": 288
+        },
+        "total_q1_slice_count": 192,
+        "total_q2_slice_count": 672,
+        "total_selected_payload_count": 864
+      },
+      "policy_card_tokens_min_max": [
+        16353,
+        16355
+      ],
+      "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_full/projection-receipt.json",
+      "projection_receipt_sha256": "fb21b0a9a1b124fcfdb4b34a84f207df452786362e2189decd6bc0f8e528f9a7",
+      "release_status": "RELEASED",
+      "rendered_card_path": "reports/v5/conformance/inputs/v7/v5_full/rendered-card.txt",
+      "rendered_card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+      "review_status": "PASS",
+      "root_readback_counts": {
+        "all_suites_episode_rows": 180,
+        "all_suites_selected_payload_count": 1620,
+        "suites": {
+          "v5_core": {
+            "episode_rows": 48,
+            "phase1": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 240,
+              "selected_payload_count": 288
+            },
+            "phase2": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 96,
+              "selected_payload_count": 144
+            },
+            "selected_payload_count": 432
+          },
+          "v5_dev": {
+            "episode_rows": 12,
+            "phase1": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 60,
+              "selected_payload_count": 72
+            },
+            "phase2": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 24,
+              "selected_payload_count": 36
+            },
+            "selected_payload_count": 108
+          },
+          "v5_full": {
+            "episode_rows": 96,
+            "phase1": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 480,
+              "selected_payload_count": 576
+            },
+            "phase2": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 192,
+              "selected_payload_count": 288
+            },
+            "selected_payload_count": 864
+          },
+          "v5_lite": {
+            "episode_rows": 24,
+            "phase1": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 120,
+              "selected_payload_count": 144
+            },
+            "phase2": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 48,
+              "selected_payload_count": 72
+            },
+            "selected_payload_count": 216
+          }
+        }
+      },
+      "root_readback_source_hashes": {
+        "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+        "dataset_seal_sha256": "804c4da604ed95cfdaefa6db765a41603568279b137d1ca037fa81641ea1e815",
+        "episode_rows": 96,
+        "episodes_sha256": "3f54d39418229700f3af6c821d55cda8baab611eaebb0c4f26b7d36077960746",
+        "oracles_sha256": "a8328ef671137b4e64493210d53689bd7b1b830bc35f514e5840eb18dabe2550",
+        "packet_sha256": "1428165a2965f0873d907d7b7f38d8cc054e92d85d10865c8724ba17c87187b5",
+        "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_full/projection-receipt.json"
+      },
+      "seed": 20261111,
+      "selected_packet_path": "reports/v5/conformance/inputs/v7/v5_full/selected-episodes.jsonl",
+      "selected_packet_sha256": "1428165a2965f0873d907d7b7f38d8cc054e92d85d10865c8724ba17c87187b5",
+      "source_dataset_seal_path": "datasets/v5_full/SEAL.json",
+      "source_dataset_seal_sha256": "804c4da604ed95cfdaefa6db765a41603568279b137d1ca037fa81641ea1e815",
+      "source_episodes_path": "datasets/v5_full/episodes.jsonl",
+      "source_episodes_sha256": "3f54d39418229700f3af6c821d55cda8baab611eaebb0c4f26b7d36077960746"
+    },
+    "v5_lite": {
+      "episode_count": 24,
+      "family_count": 12,
+      "logical_input_tokens_min_max": [
+        26149,
+        26532
+      ],
+      "oracle_changed_episode_rows": 0,
+      "oracle_changed_p1_episode_rows": 0,
+      "oracle_changed_p2_episode_rows": 0,
+      "payload_counts": {
+        "phase1": {
+          "q1_slice_count": 24,
+          "q2_slice_count": 120,
+          "selected_payload_count": 144
+        },
+        "phase2": {
+          "q1_slice_count": 24,
+          "q2_slice_count": 48,
+          "selected_payload_count": 72
+        },
+        "total_q1_slice_count": 48,
+        "total_q2_slice_count": 168,
+        "total_selected_payload_count": 216
+      },
+      "policy_card_tokens_min_max": [
+        16353,
+        16355
+      ],
+      "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_lite/projection-receipt.json",
+      "projection_receipt_sha256": "bf2dbd3277110ec25a57444daa9be6f8db5eb5c5b098499084d38f1555e59eb9",
+      "release_status": "RELEASED",
+      "rendered_card_path": "reports/v5/conformance/inputs/v7/v5_lite/rendered-card.txt",
+      "rendered_card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+      "review_status": "PASS",
+      "root_readback_counts": {
+        "all_suites_episode_rows": 180,
+        "all_suites_selected_payload_count": 1620,
+        "suites": {
+          "v5_core": {
+            "episode_rows": 48,
+            "phase1": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 240,
+              "selected_payload_count": 288
+            },
+            "phase2": {
+              "q1_slice_count": 48,
+              "q2_slice_count": 96,
+              "selected_payload_count": 144
+            },
+            "selected_payload_count": 432
+          },
+          "v5_dev": {
+            "episode_rows": 12,
+            "phase1": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 60,
+              "selected_payload_count": 72
+            },
+            "phase2": {
+              "q1_slice_count": 12,
+              "q2_slice_count": 24,
+              "selected_payload_count": 36
+            },
+            "selected_payload_count": 108
+          },
+          "v5_full": {
+            "episode_rows": 96,
+            "phase1": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 480,
+              "selected_payload_count": 576
+            },
+            "phase2": {
+              "q1_slice_count": 96,
+              "q2_slice_count": 192,
+              "selected_payload_count": 288
+            },
+            "selected_payload_count": 864
+          },
+          "v5_lite": {
+            "episode_rows": 24,
+            "phase1": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 120,
+              "selected_payload_count": 144
+            },
+            "phase2": {
+              "q1_slice_count": 24,
+              "q2_slice_count": 48,
+              "selected_payload_count": 72
+            },
+            "selected_payload_count": 216
+          }
+        }
+      },
+      "root_readback_source_hashes": {
+        "card_sha256": "72f9d37ba8dd83440042d6b2b8acdd489b5f7a8ee708d998bcc8c3e46771d09c",
+        "dataset_seal_sha256": "581aaf459e66372de43bfb3b3e03fdab7614500a6bfe7c12dd213b60a83e50ec",
+        "episode_rows": 24,
+        "episodes_sha256": "71cfc475bb0669e08ba6ba2103281ddbbc91d10b350c1d0ce2d98080d340c28e",
+        "oracles_sha256": "c4eb15d7693557f6d2fbb94a4aa73ca0f355915f52dc0abcd0bf7676e4226f8c",
+        "packet_sha256": "bc5f2d08698929b75d78161c9e561a292a5750f9c707f688bc7ff124ac123845",
+        "projection_receipt_path": "reports/v5/conformance/inputs/v7/v5_lite/projection-receipt.json"
+      },
+      "seed": 20261111,
+      "selected_packet_path": "reports/v5/conformance/inputs/v7/v5_lite/selected-episodes.jsonl",
+      "selected_packet_sha256": "bc5f2d08698929b75d78161c9e561a292a5750f9c707f688bc7ff124ac123845",
+      "source_dataset_seal_path": "datasets/v5_lite/SEAL.json",
+      "source_dataset_seal_sha256": "581aaf459e66372de43bfb3b3e03fdab7614500a6bfe7c12dd213b60a83e50ec",
+      "source_episodes_path": "datasets/v5_lite/episodes.jsonl",
+      "source_episodes_sha256": "71cfc475bb0669e08ba6ba2103281ddbbc91d10b350c1d0ce2d98080d340c28e"
+    }
+  },
+  "token_limits": {
+    "logical_input_tokens": 9600,
+    "policy_card_tokens": 3200
+  }
+}

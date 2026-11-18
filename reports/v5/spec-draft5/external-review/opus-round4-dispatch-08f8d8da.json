@@ -1,0 +1,12 @@
+{
+  "candidate_sha256": "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104",
+  "script_sha256": "0de70488b0a254f914332e2663cd70aa042971b80cbacd6a35782e3a9fc6ba03",
+  "incremental_diff_sha256": "577bc5cc7e4c5da3a42e986dc7c4c7ed5a4982b47d371aa0a74b6bbdcf916a7f",
+  "catalog": "opus-round4-catalog-08f8d8da.json",
+  "tasks": {
+    "Opus": "claude-opus-5-5-high"
+  },
+  "transport": "Carbon streaming packets; Opus Responses full candidate",
+  "overall_bound_per_task_s": 1800,
+  "scope": "Only own three round3 repairs plus introduced regressions; no peer opinions"
+}

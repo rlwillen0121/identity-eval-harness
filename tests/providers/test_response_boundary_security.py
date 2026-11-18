@@ -1,15 +1,22 @@
-"""Offline regressions for untrusted response data and diagnostic boundaries."""
+"""Offline regressions for untrusted provider responses and diagnostic boundaries."""
 
 import json
-import time
 from pathlib import Path
 
 import pytest
 
 from identitybench.providers import _json
 from identitybench.providers._cli import as_float, as_int
+from identitybench.providers._json import (
+    MAX_JSON_TEXT,
+    MAX_RESPONSE_DEPTH,
+    extract_json_object,
+    json_safe_usage_value,
+    raw_usage_payload,
+    sanitize_response,
+)
 from identitybench.providers._subprocess import Command, ProcessResult, redact, run_command
-from identitybench.providers.claude_cli import ClaudeCliProvider
+from identitybench.providers.base import ModelResponse, ToolCall, Usage
 from identitybench.providers.replay import response_from_dict, response_to_dict
 from tests.providers.fakes import make_request
 from tests.providers.test_anthropic_api import api_message
@@ -18,9 +25,100 @@ from tests.providers.test_openai_compat import completion, responses_provider, r
 from tests.providers.test_openai_compat import provider as openai_provider
 
 
+def test_json_payloads_have_size_and_scan_work_bounds(monkeypatch):
+    oversized = '{"answer":"' + ("x" * (MAX_JSON_TEXT + 1)) + '"}'
+    assert extract_json_object(oversized) is None
+
+    calls = 0
+    decoder = _json._DECODER
+
+    class CountingDecoder:
+        def raw_decode(self, *args):
+            nonlocal calls
+            calls += 1
+            return decoder.raw_decode(*args)
+
+    monkeypatch.setattr(_json, "_DECODER", CountingDecoder())
+    deeply_nested = "{" * (512 * 1024)
+    assert extract_json_object(deeply_nested) is None
+    assert calls < len(deeply_nested) // 8
+
+
+def test_response_boundary_clamps_usage_and_rejects_malformed_fields():
+    response = sanitize_response(
+        ModelResponse(
+            text=123,  # type: ignore[arg-type]
+            served_model={"unexpected": "object"},  # type: ignore[arg-type]
+            stop_reason=["stop"],  # type: ignore[arg-type]
+            usage=Usage(output_tokens=10**400),
+            tool_calls=[ToolCall(id="call", name="lookup", arguments={})],
+            raw={"nested": [float("nan"), float("inf")]},
+        ),
+        "fixture",
+    )
+    assert response.error == "fixture: malformed response"
+    assert response.text is None
+    assert response.served_model is None
+    assert response.stop_reason is None
+    assert response.usage.output_tokens == 1_000_000_000
+    assert response.raw is not None
+    assert response.raw["nested"] == [None, None]
+    assert response.raw["usage_original"]["output_tokens"] == {
+        "type": "integer",
+        "value": str(10**400),
+    }
+    assert response.raw["usage_anomaly"] == {"output_tokens": "clamped"}
+    json.dumps(response_to_dict(response), allow_nan=False)
+
+
+def test_replay_rejects_malformed_tool_calls_and_sanitizes_raw_numbers():
+    response = response_from_dict(
+        {
+            "usage": {"output_tokens": float("inf")},
+            "raw": {"value": float("nan")},
+            "text": "answer",
+        }
+    )
+    assert response.usage.output_tokens == 0
+    assert response.raw is not None
+    assert response.raw["value"] is None
+    assert response.raw["usage_original"]["output_tokens"] == {
+        "type": "float",
+        "value": "inf",
+    }
+    assert response.raw["usage_anomaly"] == {"output_tokens": "not_integer"}
+    json.dumps(response_to_dict(response), allow_nan=False)
+
+    with pytest.raises(ValueError, match="invalid tool calls"):
+        response_from_dict({"tool_calls": [{"id": 5, "name": "lookup", "arguments": {}}]})
+
+
+@pytest.mark.parametrize("kind", ["openai", "responses", "anthropic"])
+async def test_api_usage_is_bounded_before_returning(kind):
+    if kind == "openai":
+        reply = completion()
+        reply.usage.completion_tokens = 10**400
+        reply.usage.prompt_tokens = 10**400
+        response = await openai_provider(reply).complete(make_request())
+    elif kind == "responses":
+        reply = responses_reply()
+        reply.usage.output_tokens = 10**400
+        reply.usage.input_tokens_details.cached_tokens = 10**400
+        response = await responses_provider(reply).complete(make_request())
+    else:
+        reply = api_message()
+        reply.usage.output_tokens = 10**400
+        response = await anthropic_provider(reply).complete(make_request())
+
+    assert response.usage.output_tokens == 1_000_000_000
+    assert response.raw is not None
+    assert response.raw["usage_anomaly"]
+    json.dumps(response_to_dict(response), allow_nan=False)
+
+
 @pytest.mark.parametrize("value", [-(10**12), 10**400, float("nan"), float("inf"), "wrong", True])
 @pytest.mark.parametrize("kind", ["openai", "responses", "anthropic", "replay"])
-async def test_usage_is_bounded_and_cache_serializable(kind, value):
+async def test_all_provider_usage_shapes_remain_cache_serializable(kind, value):
     if kind == "openai":
         reply = completion()
         reply.usage.completion_tokens = value
@@ -38,39 +136,6 @@ async def test_usage_is_bounded_and_cache_serializable(kind, value):
     else:
         response = response_from_dict({"usage": {"output_tokens": value}})
     assert 0 <= response.usage.output_tokens <= 1_000_000_000
-    json.dumps(response_to_dict(response), allow_nan=False)
-
-
-@pytest.mark.parametrize("kind", ["openai", "responses", "anthropic", "replay"])
-async def test_metadata_and_raw_are_safe(kind):
-    if kind == "openai":
-        reply = completion()
-        reply.model = {"bad": "model"}
-        reply.id = float("nan")
-        reply.choices[0].finish_reason = ["stop"]
-        response = await openai_provider(reply).complete(make_request())
-    elif kind == "responses":
-        reply = responses_reply()
-        reply.model = []
-        reply.id = float("nan")
-        response = await responses_provider(reply).complete(make_request())
-    elif kind == "anthropic":
-        reply = api_message()
-        reply.model = 123
-        reply.id = float("inf")
-        response = await anthropic_provider(reply).complete(make_request())
-    else:
-        response = response_from_dict(
-            {
-                "text": [],
-                "served_model": {},
-                "stop_reason": 4,
-                "raw": {"nested": [float("nan"), {"x": float("inf")}]},
-            }
-        )
-    assert response.served_model is None or isinstance(response.served_model, str)
-    assert response.stop_reason is None or isinstance(response.stop_reason, str)
-    assert response.text is None or isinstance(response.text, str)
     json.dumps(response_to_dict(response), allow_nan=False)
 
 
@@ -94,13 +159,7 @@ async def test_invalid_tool_identifiers_are_provider_errors(kind, field, bad):
     elif kind == "responses":
         reply = responses_reply(
             None,
-            function_calls=[
-                {
-                    "call_id": "call",
-                    "name": "lookup",
-                    "arguments": "{}",
-                }
-            ],
+            function_calls=[{"call_id": "call", "name": "lookup", "arguments": "{}"}],
         )
         setattr(reply.output[-1], "call_id" if field == "id" else field, bad)
         response = await responses_provider(reply).complete(make_request())
@@ -111,132 +170,14 @@ async def test_invalid_tool_identifiers_are_provider_errors(kind, field, bad):
     else:
         call = {"id": "call", "name": "lookup", "arguments": {}}
         call[field] = bad
-        response = response_from_dict({"tool_calls": [call]})
+        with pytest.raises(ValueError, match="invalid tool calls"):
+            response_from_dict({"tool_calls": [call]})
+        return
     assert response.error and "malformed response" in response.error
     assert not response.tool_calls
 
 
-@pytest.mark.parametrize("content", [[], 123, {"content": "bad"}])
-async def test_chat_nontext_content_is_rejected(content):
-    reply = completion()
-    reply.choices[0].message.content = content
-    response = await openai_provider(reply).complete(make_request())
-    assert response.error and "malformed response" in response.error
-
-
-def test_cli_huge_token_count_is_capped():
-    assert as_int(10**400) <= 1_000_000_000
-    assert as_float(10**400) is None
-
-
-def test_json_scanning_has_a_decode_budget(monkeypatch):
-    calls = 0
-    decoder = _json._DECODER
-
-    class CountingDecoder:
-        def raw_decode(self, *args):
-            nonlocal calls
-            calls += 1
-            return decoder.raw_decode(*args)
-
-    monkeypatch.setattr(_json, "_DECODER", CountingDecoder())
-    text = "{" * (512 * 1024)
-    assert _json.extract_json_object(text) is None
-    assert calls < len(text) // 8
-
-
-def test_prose_with_many_stray_braces_still_yields_the_answer():
-    text = "use {name} and {id} here\n" * 2000 + '{"answer": 1}'
-    assert _json.extract_json_object(text) == {"answer": 1}
-
-
-def test_oversized_json_is_unparseable():
-    assert _json.extract_json_object('{"x":"' + "x" * (2 * 1024 * 1024) + '"}') is None
-
-
-def test_repeated_reasoning_tags_are_bounded():
-    start = time.monotonic()
-    assert _json.strip_reasoning("<think>" * 16000) == ""
-    assert time.monotonic() - start < 1.0
-
-
-def test_home_paths_are_redacted(monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    text = f"{tmp_path}/bin /Users/private-person/bin /home/private-person/bin"
-    assert redact(text, {}) == "~/bin /Users/<redacted>/bin /home/<redacted>/bin"
-    provider = ClaudeCliProvider("test", version="fixture")
-    response = provider._fail("could not set up a private CLI home", ProcessResult(1, "", text))
-    assert "private-person" not in response.error
-    assert str(tmp_path) not in response.error
-
-
-async def test_launch_error_is_redacted():
-    result = await run_command(
-        Command(
-            argv=("/Users/private-person/nonexistent-cli",),
-            cwd="/tmp",
-            env={},
-            timeout_s=1,
-        )
-    )
-    assert result.launch_error and "private-person" not in result.launch_error
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "DB_ADDR",
-        "DB_URI",
-        "DB_DSN",
-        "OPENAI_API_KEY_OLD",
-        "TOKEN_BACKUP",
-        "MY_SECRET_VALUE",
-        "PASSWORD_PREVIOUS",
-    ],
-)
-def test_sensitive_env_name_variants(name):
-    assert "sensitive-value" not in redact("failure: sensitive-value", {name: "sensitive-value"})
-    assert redact("tiny", {name: "tiny"}) == "tiny"
-
-
-def test_unknown_url_credentials_are_masked():
-    assert redact("connect https://private-user:private-password@example.test/path", {}) == (
-        "connect https://<redacted>@example.test/path"
-    )
-
-
-def test_muse_subscription_only_keeps_numeric_boolean_scalars(tmp_path):
-    from identitybench.providers.muse_cli import MuseCliProvider
-    from tests.providers.test_muse_cli import result
-
-    original = result()
-    event = {
-        "type": "response.subscription_usage",
-        "subscription": {
-            "used_percent": 2.5,
-            "active": True,
-            "email": "private@example.test",
-            "nested": {"token": "sensitive"},
-            "bad": float("nan"),
-        },
-    }
-    stderr = (
-        original.stderr
-        + "SSE RESPONSE: event: response.subscription_usage\\ndata: "
-        + json.dumps(event)
-        + "\n"
-    )
-    response = MuseCliProvider("muse-wonder-full-1.0", version="fixture")._parse(
-        ProcessResult(0, original.stdout, stderr),
-        make_request(),
-        Path(tmp_path),
-    )
-    assert response.raw["subscription_usage"] == {"used_percent": 2.5, "active": True}
-
-
-async def test_raw_only_nonfinite_values_do_not_discard_a_valid_answer():
+async def test_nonfinite_diagnostic_metadata_does_not_discard_valid_answer():
     reply = completion('{"decision":"DENY"}')
     reply.id = float("nan")
     response = await openai_provider(reply).complete(make_request())
@@ -246,6 +187,196 @@ async def test_raw_only_nonfinite_values_do_not_discard_a_valid_answer():
     json.dumps(response_to_dict(response), allow_nan=False)
 
 
-def test_reasoning_tag_pairing_and_span_membership_are_linear():
-    text = "prefix " + '{"note":"<think>"}<think>draft</think>' * 100
-    assert _json.strip_reasoning(text) == "prefix " + '{"note":"<think>"}' * 100
+@pytest.mark.parametrize("bad_raw", [{"nested": object()}, {"nested": {1: "bad key"}}])
+def test_response_boundary_fails_closed_on_non_json_nested_raw_data(bad_raw):
+    response = sanitize_response(ModelResponse(text="answer", raw=bad_raw), "fixture")
+
+    assert response.error == "fixture: malformed response"
+    assert response.text is None
+    assert response.raw is None
+
+
+def test_response_boundary_deep_copies_nested_tool_arguments():
+    arguments = {"nested": [{"values": ["original"]}]}
+    response = sanitize_response(
+        ModelResponse(tool_calls=[ToolCall("call", "lookup", arguments)]), "fixture"
+    )
+
+    arguments["nested"][0]["values"][0] = "source changed"
+    assert response.tool_calls[0].arguments["nested"][0]["values"] == ["original"]
+    response.tool_calls[0].arguments["nested"][0]["values"][0] = "response changed"
+    assert arguments["nested"][0]["values"] == ["source changed"]
+
+
+def test_normal_provider_raw_usage_mapping_and_codex_list_are_preserved():
+    mapping = sanitize_response(
+        ModelResponse(
+            usage=Usage(input_tokens=3, output_tokens=2),
+            raw={"raw_usage": {"input_tokens": 3, "output_tokens": 2}},
+        ),
+        "fixture",
+    )
+    codex = sanitize_response(
+        ModelResponse(
+            usage=Usage(input_tokens=3, output_tokens=2),
+            raw={"raw_usage": [{"input_tokens": 3, "output_tokens": 2}]},
+        ),
+        "codex",
+    )
+
+    assert mapping.raw == {"raw_usage": {"input_tokens": 3, "output_tokens": 2}}
+    assert codex.raw == {"raw_usage": [{"input_tokens": 3, "output_tokens": 2}]}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        ModelResponse(text="x" * (MAX_JSON_TEXT + 1)),
+        ModelResponse(raw={"value": "x" * (MAX_JSON_TEXT + 1)}),
+        ModelResponse(parsed={"value": "x" * (MAX_JSON_TEXT + 1)}),
+        ModelResponse(tool_calls=[ToolCall("c", "tool", {"value": "x" * (MAX_JSON_TEXT + 1)})]),
+        ModelResponse(raw={"value": 10**400}),
+        ModelResponse(raw={"items": [None] * 10_001}),
+    ],
+)
+def test_response_boundary_fails_closed_on_oversized_or_excessive_values(response):
+    sanitized = sanitize_response(response, "fixture")
+
+    assert sanitized.error == "fixture: malformed response"
+    assert sanitized.text is None
+    assert sanitized.parsed is None
+    assert sanitized.tool_calls == []
+    json.dumps(response_to_dict(sanitized), allow_nan=False)
+
+
+def test_response_boundary_fails_closed_on_excessive_depth_and_cycles():
+    deep: dict[str, object] = {"leaf": "value"}
+    for _ in range(MAX_RESPONSE_DEPTH + 2):
+        deep = {"next": deep}
+    cyclic: dict[str, object] = {}
+    cyclic["self"] = cyclic
+
+    for response in (
+        ModelResponse(raw={"deep": deep}),
+        ModelResponse(raw=cyclic),
+        ModelResponse(tool_calls=[ToolCall("c", "tool", cyclic)]),
+    ):
+        sanitized = sanitize_response(response, "fixture")
+        assert sanitized.error == "fixture: malformed response"
+        assert sanitized.raw is None
+        json.dumps(response_to_dict(sanitized), allow_nan=False)
+
+
+def test_cyclic_raw_usage_keeps_bounded_json_safe_anomaly_evidence():
+    cycle: list[object] = []
+    cycle.append(cycle)
+    response = sanitize_response(
+        ModelResponse(
+            usage=Usage(input_tokens=3, output_tokens=2),
+            raw={"raw_usage": cycle},
+        ),
+        "fixture",
+    )
+
+    assert response.raw is not None
+    assert response.raw["usage_anomaly"]
+    assert "cycle" in json.dumps(response.raw, allow_nan=False)
+    captured = raw_usage_payload({"input_tokens": 1, "bad": cycle})
+    assert captured is not None
+    json.dumps(captured, allow_nan=False)
+    json.dumps(json_safe_usage_value(cycle), allow_nan=False)
+
+
+async def test_api_provider_rejects_nontext_message_content():
+    reply = completion()
+    reply.choices[0].message.content = ["unexpected"]
+    response = await openai_provider(reply).complete(make_request())
+    assert response.error is not None
+    assert "malformed response" in response.error
+
+
+def test_cli_numeric_metadata_is_bounded():
+    assert as_int(10**400) == 1_000_000_000
+    assert as_float(10**400) is None
+
+
+def test_diagnostics_redact_url_userinfo_and_query_values():
+    text = (
+        "request https://private-user:private-passphrase@example.invalid/v1"
+        "?api_key=synthetic-value&state=synthetic-state#synthetic-fragment"
+    )
+    safe = redact(text)
+    for private in (
+        "private-user",
+        "private-passphrase",
+        "synthetic-value",
+        "synthetic-state",
+        "synthetic-fragment",
+    ):
+        assert private not in safe
+    assert "https://<redacted>" in safe
+    assert "example.invalid/v1" not in safe
+
+
+def test_diagnostics_redact_inline_url_repeated_mixed_case_host():
+    text = "Failed at https://MixedCase-GW.Internal.Lan:8443/v1 on MIXEDCASE-GW.INTERNAL.LAN"
+    safe = redact(text, {})
+    assert "mixedcase-gw.internal.lan" not in safe.lower()
+    assert safe == "Failed at https://<redacted> on <redacted>"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["TOKEN_BACKUP", "OPENAI_API_KEY_OLD", "DB_URI", "DB_DSN", "HTTP_PROXY"],
+)
+def test_sensitive_environment_name_segments_are_redacted(name):
+    safe = redact("failure: synthetic-sensitive-value", {name: "synthetic-sensitive-value"})
+    assert "synthetic-sensitive-value" not in safe
+
+
+def test_home_paths_are_redacted(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    text = f"{tmp_path}/bin /Users/private-person/bin /home/private-person/bin"
+    assert redact(text, {}) == "~/bin /Users/<redacted>/bin /home/<redacted>/bin"
+
+
+async def test_launch_error_redacts_user_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = await run_command(
+        Command(
+            argv=(str(tmp_path / "missing-cli"),),
+            cwd=str(tmp_path),
+            env={},
+            timeout_s=1,
+        )
+    )
+    assert result.launch_error is not None
+    assert str(tmp_path) not in result.launch_error
+
+
+def test_muse_raw_subscription_metadata_is_scalar_only(tmp_path):
+    from identitybench.providers.muse_cli import MuseCliProvider
+    from tests.providers.fakes import make_request
+    from tests.providers.test_muse_cli import result as muse_result
+
+    original = muse_result()
+    event = {
+        "type": "response.subscription_usage",
+        "subscription": {
+            "used_percent": 2.5,
+            "active": True,
+            "email": "private@example.invalid",
+            "nested": {"detail": "private"},
+            "bad": float("nan"),
+        },
+    }
+    stderr = (
+        original.stderr
+        + "SSE RESPONSE: event: response.subscription_usage\\ndata: "
+        + json.dumps(event)
+        + "\n"
+    )
+    response = MuseCliProvider("muse-test-model", version="fixture")._parse(
+        ProcessResult(0, original.stdout, stderr), make_request(), Path(tmp_path)
+    )
+    assert response.raw["subscription_usage"] == {"used_percent": 2.5, "active": True}

@@ -1,0 +1,50 @@
+{
+  "started_at": "2026-11-14T07:23:56.173389+00:00",
+  "candidate_sha256": "095f2ea08fc9266c5157d70c268ced96e8a48a59d0dc89e3a55583753dccf900",
+  "candidate_bytes": 285751,
+  "prompt_sha256": "e93b553d2cc2a8ab55f3469cfed54ce0a24e4aa4bf3eb5dc07b3f2191c5b0139",
+  "prompt_characters": 580076,
+  "requested_model": "claude-opus-5-5-high",
+  "requested_effort": "high",
+  "requested_service_tier": "priority",
+  "requested_max_output_tokens": 64000,
+  "streaming": false,
+  "route": "global_cpa_configured_route",
+  "protocol": "responses",
+  "purpose": "specification_review_not_benchmark",
+  "independence": "No peer/internal opinions; Opus receives only its own prior findings and author proposed dispositions. Gemini receives no prior findings.",
+  "sources": [
+    "candidate",
+    "fixed_base",
+    "approved_addendum",
+    "approved_directive"
+  ],
+  "finished_at": "2026-11-14T07:36:19.062209+00:00",
+  "elapsed_seconds": 742.893,
+  "dispatch_status": "RETURNED_COMPLETE",
+  "response_metadata": {
+    "id": "resp_req_vrtx_011Ch2RiDS7oRdPUwn4HTBCw",
+    "model": "claude-opus-5-5-high",
+    "service_tier": "priority",
+    "reasoning_effort": {
+      "effort": "high"
+    },
+    "usage": {
+      "input_tokens": 290301,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 45191,
+      "total_tokens": 335492,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "status": "completed",
+    "incomplete_details": null,
+    "error": null
+  },
+  "review_characters": 23383,
+  "review_sha256": "14c76bb42fb2c4bb4fb7d3bb484b08a688d411d6beb7cfef3e2ccb6fa9cfd5aa",
+  "candidate_hash_echoed": true
+}

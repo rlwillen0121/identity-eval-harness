@@ -1,0 +1,220 @@
+{
+  "anchor_structure": {
+    "alias_map_keys": 39,
+    "checker_interpretation": "structural/count diagnostic only, not a semantic conformance verdict",
+    "exact_body_checker_error_count": 39,
+    "exact_body_checker_sample": [
+      "section CONN-V5-01 differs from its authored baseline",
+      "section ITSM-V5-01 differs from its authored baseline",
+      "section HR-AUTH-V5-01 differs from its authored baseline",
+      "section BIND-V5-01a differs from its authored baseline",
+      "section BIND-V5-01b differs from its authored baseline",
+      "section CONV-V5-02 differs from its authored baseline"
+    ],
+    "expected_body_headings": 35,
+    "expected_boundaries": 8,
+    "expected_rules": 26,
+    "missing_headings": [],
+    "tools_heading": true,
+    "total_headings": 35,
+    "unique_headings": 35
+  },
+  "candidate": {
+    "empty_markdown_card_tokens": {
+      "max": 384,
+      "mean": 383,
+      "min": 382
+    },
+    "empty_markdown_logical_tokens": {
+      "max": 10559,
+      "mean": 10306.5,
+      "min": 10175
+    },
+    "logical_limit": 9600,
+    "logical_tokens": {
+      "max": 22023,
+      "mean": 21770.5,
+      "min": 21639
+    },
+    "markdown_raw_tokens": 11326,
+    "serialized_card_limit": 3200,
+    "serialized_card_tokens": {
+      "max": 11848,
+      "mean": 11847,
+      "min": 11846
+    }
+  },
+  "candidate_artifact_sha256": {
+    "candidate-card.txt": "059a0d489dc53e12e9cb7af5992fd4b94f32bd71838d76a5e93eb43f7009c344",
+    "card-iga.txt": "9e17b31b06dc8e041953f1bad59b59d948da14072e1d2bfe2dc37aefa89ebce1",
+    "card-protocol.txt": "3594c9f7fccd5f49b09186b125d71586f10866aef070ab6038200c3177aa9853",
+    "coverage-iga.json": "a463e413ca24d1a16e947b33bb1f5f18059a30fb2eb7483526b930ae350c0a32",
+    "coverage-protocol.json": "de08e5ae12b820147bbf9075f804faaa6ee5f9c812a1242a5cead1110eadd54d"
+  },
+  "fully_omitted_card_logical_tokens": {
+    "max": 10175,
+    "mean": 9923.5,
+    "min": 9793,
+    "per_episode": [
+      {
+        "episode_id": "v5_dev_ep_0c1bd072e1eede39e572",
+        "logical_tokens_card_omitted": 10040
+      },
+      {
+        "episode_id": "v5_dev_ep_18c533d42f7cf5dbc399",
+        "logical_tokens_card_omitted": 10175
+      },
+      {
+        "episode_id": "v5_dev_ep_3367a05bf62050971b48",
+        "logical_tokens_card_omitted": 9946
+      },
+      {
+        "episode_id": "v5_dev_ep_625b3a01944c670ba676",
+        "logical_tokens_card_omitted": 9797
+      },
+      {
+        "episode_id": "v5_dev_ep_62f0a3ed98cb91f33dad",
+        "logical_tokens_card_omitted": 10112
+      },
+      {
+        "episode_id": "v5_dev_ep_647cac08078e7a51f44f",
+        "logical_tokens_card_omitted": 9813
+      },
+      {
+        "episode_id": "v5_dev_ep_848f94b0de6db4b18bb6",
+        "logical_tokens_card_omitted": 9793
+      },
+      {
+        "episode_id": "v5_dev_ep_af92c36b651ce0c8270c",
+        "logical_tokens_card_omitted": 9828
+      },
+      {
+        "episode_id": "v5_dev_ep_c5a518f4feb5bb747f4d",
+        "logical_tokens_card_omitted": 9802
+      },
+      {
+        "episode_id": "v5_dev_ep_d9b1c59fbd802c98fa97",
+        "logical_tokens_card_omitted": 10012
+      },
+      {
+        "episode_id": "v5_dev_ep_d9da5ba7e65c1998e13b",
+        "logical_tokens_card_omitted": 9941
+      },
+      {
+        "episode_id": "v5_dev_ep_fd885fb6b4b7ada9e16f",
+        "logical_tokens_card_omitted": 9823
+      }
+    ]
+  },
+  "limitations": [
+    "The source-level exact-body checker is expected to reject the candidate body against its authored baseline; this is not a meaning-preservation verdict.",
+    "Coverage files enumerate unresolved semantic clauses."
+  ],
+  "measurement_method": {
+    "card": "PolicyCardV5.model_validate_json then count_policy_card_tokens; full serialized card with packet scope_catalog/overlay/default fields",
+    "encoding": "o200k_base",
+    "logical": "count_logical_episode_tokens: exact default T0_UNSTEERED system text, card, p1 manifest, packet Q1 then Q2 slices, p2 base manifest, packet Q1 then Q2 slices",
+    "q_ids": "read packet q1/q2 ID arrays; no generator/oracle/verifier/baselines import"
+  },
+  "packet": {
+    "episodes": 12,
+    "path": "reports/v5/conformance/inputs/v8/v5_dev/selected-episodes.jsonl",
+    "sha256": "ce95f83fd7b9e4cfce99fe3ddb612cfbbe0c2d3f923c54d62fce5dab61fae600",
+    "suite": "v5_dev"
+  },
+  "per_episode": [
+    {
+      "card_tokens": 11848,
+      "empty_card_tokens": 384,
+      "empty_logical_tokens": 10424,
+      "episode_id": "v5_dev_ep_0c1bd072e1eede39e572",
+      "logical_tokens": 21888
+    },
+    {
+      "card_tokens": 11848,
+      "empty_card_tokens": 384,
+      "empty_logical_tokens": 10559,
+      "episode_id": "v5_dev_ep_18c533d42f7cf5dbc399",
+      "logical_tokens": 22023
+    },
+    {
+      "card_tokens": 11846,
+      "empty_card_tokens": 382,
+      "empty_logical_tokens": 10328,
+      "episode_id": "v5_dev_ep_3367a05bf62050971b48",
+      "logical_tokens": 21792
+    },
+    {
+      "card_tokens": 11848,
+      "empty_card_tokens": 384,
+      "empty_logical_tokens": 10181,
+      "episode_id": "v5_dev_ep_625b3a01944c670ba676",
+      "logical_tokens": 21645
+    },
+    {
+      "card_tokens": 11846,
+      "empty_card_tokens": 382,
+      "empty_logical_tokens": 10494,
+      "episode_id": "v5_dev_ep_62f0a3ed98cb91f33dad",
+      "logical_tokens": 21958
+    },
+    {
+      "card_tokens": 11848,
+      "empty_card_tokens": 384,
+      "empty_logical_tokens": 10197,
+      "episode_id": "v5_dev_ep_647cac08078e7a51f44f",
+      "logical_tokens": 21661
+    },
+    {
+      "card_tokens": 11846,
+      "empty_card_tokens": 382,
+      "empty_logical_tokens": 10175,
+      "episode_id": "v5_dev_ep_848f94b0de6db4b18bb6",
+      "logical_tokens": 21639
+    },
+    {
+      "card_tokens": 11846,
+      "empty_card_tokens": 382,
+      "empty_logical_tokens": 10210,
+      "episode_id": "v5_dev_ep_af92c36b651ce0c8270c",
+      "logical_tokens": 21674
+    },
+    {
+      "card_tokens": 11846,
+      "empty_card_tokens": 382,
+      "empty_logical_tokens": 10184,
+      "episode_id": "v5_dev_ep_c5a518f4feb5bb747f4d",
+      "logical_tokens": 21648
+    },
+    {
+      "card_tokens": 11848,
+      "empty_card_tokens": 384,
+      "empty_logical_tokens": 10396,
+      "episode_id": "v5_dev_ep_d9b1c59fbd802c98fa97",
+      "logical_tokens": 21860
+    },
+    {
+      "card_tokens": 11846,
+      "empty_card_tokens": 382,
+      "empty_logical_tokens": 10323,
+      "episode_id": "v5_dev_ep_d9da5ba7e65c1998e13b",
+      "logical_tokens": 21787
+    },
+    {
+      "card_tokens": 11848,
+      "empty_card_tokens": 384,
+      "empty_logical_tokens": 10207,
+      "episode_id": "v5_dev_ep_fd885fb6b4b7ada9e16f",
+      "logical_tokens": 21671
+    }
+  ],
+  "prior_comparison": {
+    "basis": "parent-provided comparison against prior candidate; exact prior baseline was not remeasured in this subtask",
+    "candidate_max_full_card_tokens": 11848,
+    "planning_target_full_card_tokens": 2300,
+    "remaining_tokens_to_planning_target": 9548,
+    "remaining_tokens_to_spec_card_limit": 8648,
+    "reported_reduction_pct": 28.44
+  },
+  "spec_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43"
+}

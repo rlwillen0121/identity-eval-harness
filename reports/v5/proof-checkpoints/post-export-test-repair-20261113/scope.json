@@ -1,0 +1,80 @@
+{
+  "run_id": "post-export-test-repair-20261113",
+  "run_authorized": true,
+  "root_release": {
+    "granted": true,
+    "released_at_utc": "2026-11-13 08:37:42 UTC",
+    "basis": "Explicit root release for two sequential source checks after accepted test-only portability repair"
+  },
+  "branch": "feat/v5-harness",
+  "head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+  "expected_spec_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+  "expected_test_hashes": {
+    "tests/v5/test_validation.py": "6cd03ebc73f0442b3239d0cbf1d41eda5640505a71a59477e46d7f65b35e6db7",
+    "tests/v5/test_prepare_safety_domain_corpus_v1.py": "f09e2d98ebd25802e68dbf6f00ce13b80769b14d4158f914fa159a59f7791998"
+  },
+  "expected_report_hashes": {
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py": "5b40d2306b7433892eb57f936e881c25124cdda56865896822a1ad79d80eb27c"
+  },
+  "expected_source_hashes": {
+    "src/identitybench/v5/validation.py": "18ded6b8228610a83a2097233d27732a9122703a1ed4e3ec7c3646e7f296a64b"
+  },
+  "expected_foreign_v41_untracked_paths": [
+    "reports/v41-skill-orch-v2/charts/delegation-breakdown-dark.svg",
+    "reports/v41-skill-orch-v2/charts/delegation-breakdown-light.svg",
+    "reports/v41-skill-orch-v2/charts/leaderboard-dark.svg",
+    "reports/v41-skill-orch-v2/charts/leaderboard-light.svg",
+    "reports/v41-skill-orch-v2/charts/pareto-quota-dark.svg",
+    "reports/v41-skill-orch-v2/charts/pareto-quota-light.svg",
+    "reports/v41-skill-orch-v2/charts/skill-progression-dark.svg",
+    "reports/v41-skill-orch-v2/charts/skill-progression-light.svg",
+    "reports/v41-skill-orch-v2/index.html",
+    "reports/v41-skill-orch-v2/report.md",
+    "reports/v41-skill-orch-v2/summary.json"
+  ],
+  "expected_foreign_v41_indexed_and_untracked_count": 124,
+  "expected_v5_dataset_artifact_count": 12,
+  "expected_report_python_count": 33,
+  "prior_mypy_proof": {
+    "result_path": "reports/v5/proof-checkpoints/source-health-v8-recheck-20261113/results/02-mypy.json",
+    "source_snapshot_path": "reports/v5/proof-checkpoints/source-health-v8-recheck-20261113/snapshots/00-frozen-inputs.json",
+    "expected_exit_code": 0,
+    "purpose": "Prove current src file hashes still match the source bytes used by the prior successful mypy check"
+  },
+  "report_fixture_roots": [
+    "reports/v5/conformance/inputs/v4",
+    "reports/v5/conformance/inputs/v5/v5_dev",
+    "reports/v5/conformance/inputs/v6",
+    "reports/v5/conformance/inputs/v7",
+    "reports/v5/conformance/inputs/v8",
+    "reports/v5/conformance/inputs/spec-sections-1-4",
+    "reports/v5/conformance/shared_inputs",
+    "reports/v5/conformance/protocol",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2"
+  ],
+  "report_fixture_files": [
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/public-inputs.jsonl"
+  ],
+  "commands": [
+    "uv run --no-env-file ruff check .",
+    "uv run --no-env-file pytest -q -m 'not live'"
+  ],
+  "snapshot_scope": [
+    "all current regular files beneath src and tests",
+    "the 12 explicit v5 dataset artifacts",
+    "project config/governance/spec files and configured governance roots",
+    "fixed v5 conformance fixtures and safety-domain corpus coordinator inputs",
+    "all git-indexed and worktree reports/v41-* files (113 indexed, 11 untracked expected)",
+    "all Python files in full-conformance-v3 coordinators, successor-audits-v1, and successor-audits-v2",
+    "absence of Python copies beneath reports/v5/packaging"
+  ],
+  "excluded": [".venv", "Python/tool caches", "runs", "dotenv/local secrets", "raw native logs"],
+  "requested_service_tier": "fast",
+  "actual_native_service_tier_observable": false,
+  "authority_boundaries": [
+    "Only the two commands above, in order",
+    "No live model calls, validators, or mypy rerun",
+    "No source, dataset, git, or remote edits",
+    "Stop before the next command if any frozen input drifts"
+  ]
+}

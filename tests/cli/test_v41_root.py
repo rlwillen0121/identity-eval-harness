@@ -1,4 +1,4 @@
-"""Only the v4.1 command group is live; offline leaves never export model secrets."""
+"""Only v4.1 and the retained v5 Python reference commands are registered."""
 
 import os
 from pathlib import Path
@@ -12,12 +12,19 @@ from identitybench import __version__
 from identitybench.cli import ExitCode, app, find_repo_root
 
 COMMANDS = {"generate", "validate", "score", "run", "report", "verify"}
+V5_REFERENCE_COMMANDS = {"build", "validate", "score", "run", "report"}
 
 
-def test_only_v41_commands_are_registered():
+def test_v41_and_v5_reference_commands_are_registered():
     root = get_command(app)
-    assert set(root.commands) == {"v41"}
+    assert set(root.commands) == {"v41", "v5"}
     assert set(root.commands["v41"].commands) == COMMANDS
+    assert set(root.commands["v5"].commands) == V5_REFERENCE_COMMANDS
+    v5_help = CliRunner().invoke(app, ["v5", "--help"])
+    assert "Python v5 compatibility reference only" in v5_help.output
+    assert "native Rust executable" in v5_help.output
+    v5_run_help = CliRunner().invoke(app, ["v5", "run", "--help"])
+    assert "native Rust executable" in v5_run_help.output
     assert CliRunner().invoke(app, ["--version"]).stdout.strip() == f"identitybench {__version__}"
 
 

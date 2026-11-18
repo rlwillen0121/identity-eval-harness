@@ -1,0 +1,77 @@
+{
+  "scope": "Independent Python reference diagnostics after main integration; frozen receipts preserved; not a new conformance receipt",
+  "suites": {
+    "dev": {
+      "status": "FAIL",
+      "errors": [
+        "receipt is stale or unrelated: source_sha256 mismatch",
+        "review provenance is stale or has invalid source_sha256",
+        "full_spec_blind allowed input 0 provenance input bytes do not match the declared SHA-256",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 3 provenance input bytes do not match the declared SHA-256"
+      ],
+      "diagnostics_sha256": "ff6ecef54fed859c8d435a466759a698083613de59446e957ee53f7514686e1b"
+    },
+    "lite": {
+      "status": "FAIL",
+      "errors": [
+        "receipt is stale or unrelated: source_sha256 mismatch",
+        "review provenance is stale or has invalid source_sha256",
+        "full_spec_blind allowed input 0 provenance input bytes do not match the declared SHA-256",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 3 provenance input bytes do not match the declared SHA-256"
+      ],
+      "diagnostics_sha256": "ff6ecef54fed859c8d435a466759a698083613de59446e957ee53f7514686e1b"
+    },
+    "core": {
+      "status": "FAIL",
+      "errors": [
+        "receipt is stale or unrelated: source_sha256 mismatch",
+        "review provenance is stale or has invalid source_sha256",
+        "full_spec_blind allowed input 0 provenance input bytes do not match the declared SHA-256",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 3 provenance input bytes do not match the declared SHA-256"
+      ],
+      "diagnostics_sha256": "ff6ecef54fed859c8d435a466759a698083613de59446e957ee53f7514686e1b"
+    },
+    "full": {
+      "status": "FAIL",
+      "errors": [
+        "receipt is stale or unrelated: source_sha256 mismatch",
+        "review provenance is stale or has invalid source_sha256",
+        "full_spec_blind allowed input 0 provenance input bytes do not match the declared SHA-256",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 9 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "full_spec_blind allowed input 10 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 0 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 1 packet producer source is stale",
+        "agent_view_only allowed input 3 provenance input bytes do not match the declared SHA-256"
+      ],
+      "diagnostics_sha256": "ff6ecef54fed859c8d435a466759a698083613de59446e957ee53f7514686e1b"
+    }
+  }
+}

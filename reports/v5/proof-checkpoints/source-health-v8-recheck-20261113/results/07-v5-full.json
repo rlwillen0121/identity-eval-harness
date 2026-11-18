@@ -1,0 +1,54 @@
+{
+  "argv": [
+    "uv",
+    "run",
+    "--no-env-file",
+    "identitybench",
+    "--no-env-file",
+    "v5",
+    "validate",
+    "--suite",
+    "v5_full",
+    "--double-build"
+  ],
+  "changed_paths_by_category": {
+    "dataset_hashes": [],
+    "foreign_v41_report_hashes": [],
+    "report_fixture_and_coordinator_hashes": [],
+    "source_test_spec_governance_hashes": []
+  },
+  "dataset_changed_count": 0,
+  "elapsed_monotonic_ns": 145352661500,
+  "elapsed_seconds": 145.3526615,
+  "exact_command": "uv run --no-env-file identitybench --no-env-file v5 validate --suite v5_full --double-build",
+  "exit_code": 1,
+  "finished_utc": "2026-11-13T07:58:30.570048+00:00",
+  "foreign_v41_report_changed_count": 0,
+  "git_dirty_after": true,
+  "git_dirty_before": true,
+  "id": "07-v5-full",
+  "post_snapshot_path": "snapshots/07-v5-full-after.json",
+  "pre_snapshot_path": "snapshots/07-v5-full-before.json",
+  "preflight_expected_hash_matches": {
+    "SPEC-v5.md": true,
+    "frozen_input_manifest_unchanged": true,
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py": true,
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/corpus-snapshot-manifest-v1.json": true,
+    "tests/v5/test_prepare_safety_domain_corpus_v1.py": true
+  },
+  "preflight_hashes": {
+    "SPEC-v5.md": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py": "5b40d2306b7433892eb57f936e881c25124cdda56865896822a1ad79d80eb27c",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2/corpus-snapshot-manifest-v1.json": "4cc6bb44a09bf5517599303962c3088ed11c78c4632f35646b34983da83130c8",
+    "tests/v5/test_prepare_safety_domain_corpus_v1.py": "f09e2d98ebd25802e68dbf6f00ce13b80769b14d4158f914fa159a59f7791998"
+  },
+  "report_fixture_and_coordinator_changed_count": 0,
+  "source_test_spec_governance_changed_count": 0,
+  "started_utc": "2026-11-13T07:56:05.217686+00:00",
+  "stderr_bytes": 0,
+  "stderr_path": "stderr/07-v5-full.raw",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stdout_bytes": 1875711,
+  "stdout_path": "stdout/07-v5-full.raw",
+  "stdout_sha256": "2681ccc7e2107010136f903f5f76a077861add9bd1b86c39c64027636a6fa12a"
+}

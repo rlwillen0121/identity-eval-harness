@@ -1,0 +1,21 @@
+{
+  "base_head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+  "credential_like_environment_variable_count_filtered": 20,
+  "dotenv_read": false,
+  "import_proof_exit_code": 0,
+  "limitations": [
+    "This does not establish full-suite/source-health status, milestone gates, dataset freeze, G-SPEC qualification, provider or model behavior, publication, or a clean git tree.",
+    "The original export-proof is immutable and records the prior test-validation revision."
+  ],
+  "live_calls": false,
+  "owner_172_path_hashes_unchanged_pre_to_post": true,
+  "path_count": 172,
+  "qualification_claim": false,
+  "schema": "identitybench.v5.current-v8-export-proof.v2",
+  "scope": "isolated export portability for the pinned 172-path overlay and 36 selected non-live v5/conformance test files only",
+  "selected_test_file_count": 36,
+  "status": "PASS",
+  "temp_export_root": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout",
+  "test_duration_seconds": 119.134,
+  "test_exit_code": 0
+}

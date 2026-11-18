@@ -26,6 +26,7 @@ from identitybench.providers._cli import (
     SYSTEM_BEGIN,
     SYSTEM_END,
     SYSTEM_POINTER,
+    _merge_attempts,
     as_float,
     as_int,
     base_child_env,
@@ -58,7 +59,7 @@ from identitybench.providers._subprocess import (
     register_group,
 )
 from identitybench.providers.agy_cli import AgyCliProvider
-from identitybench.providers.base import Message, Provider, Role, ToolCall
+from identitybench.providers.base import Message, ModelResponse, Provider, Role, ToolCall
 from identitybench.providers.claude_cli import ClaudeCliProvider
 from identitybench.providers.codex_cli import CodexCliProvider
 from identitybench.providers.cursor_cli import CursorCliProvider
@@ -498,6 +499,11 @@ async def test_timeout_is_an_error_and_is_not_retried() -> None:
     runner = FakeRunner(ProcessResult(returncode=-9, stdout="", stderr="", timed_out=True))
     response = await claude(runner, timeout_s=5).complete(make_request())
     assert response.error == "claude_cli: no result within the 5s timeout"
+    assert response.raw is not None
+    assert response.raw["cli_buffered_error"] is True
+    assert response.raw["error_code"] == "CLI_SUBPROCESS_TIMEOUT"
+    assert response.raw["error_class"] == "TRANSIENT_FAILURE"
+    assert response.raw["proven_unanswered"] is True
     assert len(runner.commands) == 1
 
 
@@ -558,6 +564,27 @@ async def test_single_attempt_has_no_attempt_bookkeeping() -> None:
     assert response.raw is not None
     assert "attempts" not in response.raw
     assert "wall_s" not in response.raw
+
+
+def test_retry_cost_aggregation_saturates_and_keeps_finite_provider_costs() -> None:
+    attempts = [
+        ModelResponse(reported_cost_usd=1e308, raw={"provider_cost_usd": 1e308}),
+        ModelResponse(reported_cost_usd=1e308, raw={"provider_cost_usd": 1e308}),
+    ]
+
+    _merge_attempts(attempts[-1], attempts, wall_s=0.0)
+
+    assert attempts[0].reported_cost_usd == 1e308
+    assert attempts[-1].reported_cost_usd == sys.float_info.max
+    assert attempts[-1].raw is not None
+    assert attempts[-1].raw["reported_cost_saturated"] is True
+    json.dumps(attempts[-1].raw, allow_nan=False)
+
+    oversized = ModelResponse(reported_cost_usd=sys.float_info.max)
+    _merge_attempts(oversized, [oversized], wall_s=0.0)
+    assert oversized.reported_cost_usd == sys.float_info.max
+    assert oversized.raw is not None
+    assert "reported_cost_saturated" not in oversized.raw
 
 
 async def test_transient_retries_stop_after_max_retries() -> None:

@@ -1,0 +1,28 @@
+[package]
+name = "ib-v5-report"
+description = "Strict offline IdentityBench v5 report generation with artifact provenance and Markdown escaping"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hex.workspace = true
+ib-core.workspace = true
+ib-v5-accounting.workspace = true
+ib-v5-generator.workspace = true
+ib-v5-schemas.workspace = true
+ib-v5-scoring.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+ib-v5-runtime.workspace = true
+
+[lints]
+workspace = true

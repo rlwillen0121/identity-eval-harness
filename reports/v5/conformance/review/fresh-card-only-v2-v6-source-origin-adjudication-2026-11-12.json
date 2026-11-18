@@ -1,0 +1,106 @@
+{
+  "record_type": "source_origin_adjudication",
+  "record_version": 2,
+  "created_at_utc": "2026-11-12T20:15:07Z",
+  "status": "QUALIFIED_ELIGIBLE",
+  "subject": {
+    "author_origin": "fresh_independent_card_only_author_v2",
+    "author_task": "/root/fresh_card_only_v2",
+    "source_profile": "fresh_card_only_v2",
+    "evaluator_id": "agent_view_only"
+  },
+  "scope": {
+    "capture_manifest_raw_sha256": "f2f7cd26996a145cc75bcc0f3724744d8ea5c5554dd382880a3c8ae230827421",
+    "capture_manifest_logical_sha256": "c4d772c0911bcf419429dd5b82688f600b8f76e903e6b7c0d38c44586d5c73ce",
+    "capture_manifest_path": "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/agent_view/fresh_card_only_v2/capture-manifest.json",
+    "captured_source_files_count": 2,
+    "session_id": "01a1d03e-ff8c-7c61-a196-33cf733e609e",
+    "prefix_bytes": 4012385,
+    "prefix_sha256": "79b1e0d57e178ba226176aa9132235c5d8636f408251e27dbb9bdea5ef52bdfd",
+    "cutoff_line_inclusive": 1304,
+    "cutoff_timestamp_utc": "2026-11-12T18:45:38.553Z"
+  },
+  "normative_spec": {
+    "path": "SPEC-v5.md",
+    "sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43"
+  },
+  "basis": {
+    "trusted_root_orchestration_attestation": {
+      "statement": "The task and messages were public-only, no foreign reference/results were sent, and phase comparisons occurred only after READY/HOLD.",
+      "evidence_character": "Supplied trusted root orchestration attestation; encrypted task/message plaintext was not independently recovered or reviewed."
+    },
+    "bounded_native_audit": "The fork-none bounded audit observed no forbidden explicit reads within the adjudicated prefix. The stable two-file capture is bound by the supplied capture manifest and run manifest.",
+    "source_isolation_interpretation": "SPEC-v5.md §4.3 G-SPEC-01 (line2247), AGENTS.md line44, and blind-conformance SKILL.md lines18 and28 require actual public-view derivation and isolation; they do not mandate plaintext archival or an OS-level read trace.",
+    "qualification": "The bounded attestation, audit, and capture evidence support source-origin eligibility for this scope only."
+  },
+  "independent_review": {
+    "reviewers": [
+      {
+        "reviewer": "/root/review/fresh_card_origin_rules",
+        "decision": "QUALIFIED_ELIGIBLE",
+        "route": {
+          "model": "gpt-6.1-sol",
+          "reasoning_effort": "medium",
+          "routing": "native CPA",
+          "service_tier": "fast requested"
+        }
+      },
+      {
+        "reviewer": "/root/review/fresh_card_origin_security",
+        "decision": "QUALIFIED_ELIGIBLE",
+        "route": {
+          "model": "gpt-6.1-sol",
+          "reasoning_effort": "medium",
+          "routing": "native CPA",
+          "service_tier": "fast requested"
+        }
+      }
+    ],
+    "parent_route": {
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "routing": "native CPA",
+      "service_tier": "fast requested"
+    },
+    "agreement": "Both fresh independent source-origin reviews and the parent disposition are QUALIFIED_ELIGIBLE for the stated bounded scope."
+  },
+  "limitations": {
+    "encrypted_initial_task_and_nine_messages": "Their exact semantics are independently unverifiable here. The public-only characterization rests on the supplied root attestation, not recovered plaintext.",
+    "message_hash_correction": "Prior apparent base-message lengths/hashes must not be described as verified plaintext hashes.",
+    "inspector_deviations": "Audit-inspector byte overreads and other disclosed inspector deviations are separate from author activity and are not author-contamination findings.",
+    "evidence": "Unsigned local evidence; implicit imports/configuration/cache reads and activity after the cutoff are outside this bounded adjudication. Contrary evidence of actual forbidden exposure overrides this qualification."
+  },
+  "not_claimed": [
+    "full G-SPEC result",
+    "semantic conformance",
+    "runtime or dependency behavior",
+    "execution result",
+    "M5.0 milestone completion",
+    "publication readiness"
+  ],
+  "evidence": [
+    {
+      "path": "reports/v5/conformance/native_audit/fresh-card-only-v2-ready-audit.json",
+      "raw_sha256": "dac88517caed8a8119b04021f75109e16ca6ac8467ae8f698f023362c625ae99"
+    },
+    {
+      "path": "reports/v5/conformance/native_audit/fresh-card-only-v2-origin-message-classification.json",
+      "raw_sha256": "a7f3c55c7bc5e0beeea073c2e4512225fc969d1ce8e71717c9d3a51cb372ca9d"
+    },
+    {
+      "path": "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture/agent_view/fresh_card_only_v2/capture-manifest.json",
+      "raw_sha256": "f2f7cd26996a145cc75bcc0f3724744d8ea5c5554dd382880a3c8ae230827421"
+    },
+    {
+      "path": "reports/v5/conformance/shared_results/v1/current-v6-phase-checkpoint-v3/source-capture-run-manifest.json",
+      "raw_sha256": "3220adc196ddd5c58438ed9440dab4b590b8c66370107abc0c050e870b99b73c"
+    }
+  ],
+  "supersession": "This fresh v2 assessment supersedes the historical UNKNOWN disposition for the stated source origin and bounded evidence only; historical records remain untouched.",
+  "record_authoring_route": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "xhigh",
+    "routing": "native CPA",
+    "service_tier": "fast requested"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "files": [
+    {
+      "archive_path": "import-proof-check.py.txt",
+      "bytes": 1170,
+      "original_command_path": "import-proof-check.py",
+      "original_removed_after_execution": true,
+      "role": "isolated import provenance check",
+      "sha256": "f75da722ae5ef26cf2697cfb93da2d6611391f54c2f51eb2ab23c56bdc02f163"
+    },
+    {
+      "archive_path": "exported-test-runner.py.txt",
+      "bytes": 1717,
+      "original_command_path": "exported-test-runner.py",
+      "original_removed_after_execution": true,
+      "role": "selected exported pytest runner",
+      "sha256": "7721ccd75e83cedfbae76a5d800bd2192751ea929526c315eafafa07683a05db"
+    },
+    {
+      "archive_path": "diagnose-v6-origin-qualification.py.txt",
+      "bytes": 1893,
+      "original_command_path": "diagnose-v6-origin-qualification.py",
+      "original_removed_after_execution": true,
+      "role": "read-only diagnosis of the single failed fixture validation",
+      "sha256": "17484342414d1722ea448e44bab494bd361683162b807b428e0fc82e669e4256"
+    }
+  ],
+  "reason": "Preserve exact executed helper bytes as Ruff-inert text evidence; remove accidental Python source files from report output after execution.",
+  "schema": "identitybench.v5.export-helper-archive.v1"
+}

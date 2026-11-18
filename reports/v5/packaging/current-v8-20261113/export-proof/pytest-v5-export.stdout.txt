@@ -1,0 +1,75 @@
+........................................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 15%]
+........................................................................ [ 20%]
+........................................................................ [ 25%]
+........................................................................ [ 31%]
+........................................................................ [ 36%]
+........................................................................ [ 41%]
+........................................................................ [ 46%]
+........................................................................ [ 51%]
+........................................................................ [ 56%]
+........................................................................ [ 62%]
+........................................................................ [ 67%]
+........................................................................ [ 72%]
+........................................................................ [ 77%]
+........................................................................ [ 82%]
+........................................................................ [ 88%]
+.................................................................F...... [ 93%]
+........................................................................ [ 98%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+_______ test_shared_origin_qualification_binds_reviewed_card_v2_artifact _______
+
+    def test_shared_origin_qualification_binds_reviewed_card_v2_artifact() -> None:
+        repo = Path.cwd()
+        adjudication_path = repo / (
+            "reports/v5/conformance/review/"
+            "fresh-card-only-v2-v6-source-origin-adjudication-2026-11-12.json"
+        )
+        adjudication_raw = adjudication_path.read_bytes()
+        adjudication = json.loads(adjudication_raw)
+        evidence = adjudication["evidence"]
+        audit_evidence = next(
+            row for row in evidence if row["path"].endswith("fresh-card-only-v2-ready-audit.json")
+        )
+        capture_path = adjudication["scope"]["capture_manifest_path"]
+        capture_raw = (repo / capture_path).read_bytes()
+        qualification = {
+            "kind": "author_origin",
+            "adjudication": {
+                "path": adjudication_path.relative_to(repo).as_posix(),
+                "sha256": hashlib.sha256(adjudication_raw).hexdigest(),
+            },
+            "origin_audit": {
+                "path": audit_evidence["path"],
+                "sha256": audit_evidence["raw_sha256"],
+            },
+        }
+        errors: list[str] = []
+        gaps: list[str] = []
+    
+        qualified = _validate_shared_qualification(
+            "agent_view_only",
+            qualification,
+            source_profile="fresh_card_only_v2",
+            author_origin="fresh_independent_card_only_author_v2",
+            closure_sha="c" * 64,
+            capture_raw_sha=hashlib.sha256(capture_raw).hexdigest(),
+            capture_logical_sha=adjudication["scope"]["capture_manifest_logical_sha256"],
+            capture_manifest_path=capture_path,
+            captured_source_files_count=adjudication["scope"]["captured_source_files_count"],
+            runtime_manifest={},
+            repository_root=repo,
+            errors=errors,
+            gaps=gaps,
+        )
+    
+>       assert qualified
+E       assert False
+
+tests/v5/test_validation.py:2908: AssertionError
+=========================== short test summary info ============================
+FAILED tests/v5/test_validation.py::test_shared_origin_qualification_binds_reviewed_card_v2_artifact
+
+EXPORT_IMPORT_PROOF {"all_identitybench_modules_under_export": true, "identitybench_module_count": 74, "owner_checkout_absent_from_sys_path": true, "pytest_exit_code": 1}

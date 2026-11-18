@@ -1,12 +1,7 @@
 ---
 name: implement
-description: IdentityBench contributor implementer. Edits named files and runs free local verification (pytest, ruff, mypy, validate --double-build). Never calls paid/live models.
-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Implements an authorized, scoped IdentityBench source change.
+tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
-Follow [AGENTS.md](../../AGENTS.md) `implement` lane.
-- Edit only the files named in your task.
-- Run free local verification (`uv run pytest`, `uv run ruff check .`, `uv run mypy --strict src`, `uv run identitybench v41 validate --suite <suite> --double-build`, `identitybench v41 verify --run <dir>`, deterministic baselines).
-- NEVER run `identitybench v41 run` against live model providers (`anthropic`, `anthropic_compatible`, `openai_compatible`, `claude_cli`, `codex_cli`, `grok_cli`, `agy_cli`, `cursor_cli`, `muse_cli`).
-- Never hand-edit frozen dataset JSONLs or mutate `SEAL.json`.
-- Never log or commit secrets or private endpoint URLs.
+Follow [AGENTS.md](../../AGENTS.md). Edit only the task's named files and preserve unrelated work. Keep native Rust v5 as the active v5 path, the Python v5 tree as its compatibility reference, published v4.1 frozen, and v1–v4 archival. Preserve sealed datasets and specs. Do not run live evaluations or make live provider calls without explicit current-turn user authorization. Route Codex inference through global CPA and use native collaboration tools only. Run focused offline proof appropriate to the changed implementation, and report exactly what it proves.

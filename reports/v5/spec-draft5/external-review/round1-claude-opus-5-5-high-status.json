@@ -1,0 +1,34 @@
+{
+  "started_at": "2026-11-14T06:59:31.147971+00:00",
+  "candidate_sha256": "6cd516ad39c829130286c7a0a4a6dfefa38960401332b0921d4914e72e519671",
+  "requested_model": "claude-opus-5-5-high",
+  "requested_effort": "high",
+  "requested_service_tier": "priority",
+  "requested_max_output_tokens": 32000,
+  "route": "global_cpa_configured_route",
+  "purpose": "independent_specification_review_not_benchmark",
+  "finished_at": "2026-11-14T07:03:55.323387+00:00",
+  "elapsed_seconds": 264.199,
+  "dispatch_status": "RETURNED",
+  "response_id": "resp_req_vrtx_011Ch2PU2rG3Mp31JmuUSJkb",
+  "response_model": "claude-opus-5-5-high",
+  "response_status": "completed",
+  "response_effort": {
+    "effort": "high"
+  },
+  "response_service_tier": "priority",
+  "usage": {
+    "input_tokens": 138625,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 26808,
+    "total_tokens": 165433,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "incomplete_details": null,
+  "review_sha256": "c8ea869b56473688a33eae9f62b3bac3f78fb456a5cd8fee000a3b4e11d89b64",
+  "candidate_hash_echoed": true
+}

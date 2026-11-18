@@ -31,8 +31,7 @@ The CLIs can't take a multi-turn transcript or native tools, so transcripts are 
 single user message and requests with tools are rejected (``capabilities().native_tools`` is
 False for every CLI provider).
 
-A CLI's endpoint identity (``archive/specs/SPEC-v1.md`` §11.4) covers more than its version and
-the model: the harness's
+A CLI's endpoint identity (SPEC §11.4) covers more than its version and the model: the harness's
 own setup (fixed flags, disabled features, the private home's contents, environment rules) and
 the provider's default effort change the prompt or the model's behaviour too, so they are hashed
 in as well (``CliProvider.setup_revision``). Changing that setup invalidates cached responses
@@ -65,7 +64,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar, TypedDict
 
-from identitybench.providers._json import bounded_token_count, load_object
+from identitybench.providers._json import (
+    bounded_token_count,
+    load_object,
+    safe_nonnegative_float_add,
+    sanitize_response,
+)
 from identitybench.providers._subprocess import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BASE_DELAY_S,
@@ -254,7 +258,7 @@ def structured_text(
     """``(response text, CLI text to keep in raw)`` for a CLI result.
 
     ``ModelResponse.text`` must agree with ``parsed``: anything that reads the text later (cache
-    inspection and later JSON extraction) have to see the answer that was scored. So the CLI's own
+    inspection, the judge, re-extraction) has to see the answer that was scored. So the CLI's own
     text is used only when it *is* the structured output; otherwise the text is the structured
     output serialized and the CLI's text is returned separately for ``raw["cli_text"]``.
     """
@@ -279,8 +283,7 @@ def probe_version(binary: str, env: EnvItems | None = None) -> str:
     """``<binary> --version`` (first line), cached per binary and environment for the life of
     the process.
 
-    Part of a CLI provider's endpoint identity (``archive/specs/SPEC-v1.md`` §11.4): upgrading
-    the CLI changes the system
+    Part of a CLI provider's endpoint identity (SPEC §11.4): upgrading the CLI changes the system
     prompt and agent scaffolding around the model, so cached responses from an older CLI must not
     be reused.
 
@@ -1021,7 +1024,7 @@ class CliProvider(ABC):
         return name in COMMON_ENV_KEEP or name.startswith(COMMON_ENV_KEEP_PREFIXES)
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
-        response = await self._complete(request)
+        response = sanitize_response(await self._complete(request), self.kind)
         ignored = self._ignored_params(request)
         if ignored:
             response.raw = {**(response.raw or {}), "ignored_params": ignored}
@@ -1110,6 +1113,12 @@ class CliProvider(ABC):
                     response = self._fail(result.launch_error)
                 elif result.timed_out:
                     response = self._fail(f"no result within the {self.timeout_s:g}s timeout")
+                    response.raw = {
+                        "cli_buffered_error": True,
+                        "error_code": "CLI_SUBPROCESS_TIMEOUT",
+                        "error_class": "TRANSIENT_FAILURE",
+                        "proven_unanswered": True,
+                    }
                 else:
                     response = self._parse(result, request, io_dir)
                 response.latency_s = time.perf_counter() - started
@@ -1193,10 +1202,24 @@ def _merge_attempts(final: ModelResponse, attempts: Sequence[ModelResponse], wal
     """
     for earlier in attempts[:-1]:
         final.usage.add(earlier.usage)
-    costs = [item.reported_cost_usd for item in attempts if item.reported_cost_usd is not None]
-    final.reported_cost_usd = sum(costs) if costs else None
-    final.raw = {
+    costs = [
+        item.reported_cost_usd
+        for item in attempts
+        if item.reported_cost_usd is not None
+        and math.isfinite(item.reported_cost_usd)
+        and item.reported_cost_usd >= 0
+    ]
+    reported_cost_total = 0.0
+    reported_cost_saturated = False
+    for cost in costs:
+        reported_cost_total, saturated = safe_nonnegative_float_add(reported_cost_total, cost)
+        reported_cost_saturated = reported_cost_saturated or saturated
+    final.reported_cost_usd = reported_cost_total if costs else None
+    raw = {
         **(final.raw or {}),
         "attempts": len(attempts),
         "wall_s": round(wall_s, 3),
     }
+    if reported_cost_saturated:
+        raw["reported_cost_saturated"] = True
+    final.raw = raw

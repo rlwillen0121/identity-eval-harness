@@ -1,0 +1,51 @@
+{
+  "started_at": "2026-11-14T08:00:31.913600+00:00",
+  "candidate_sha256": "c7410b68d4f1d7a4a1c82ff5d3fd1662b3bde2cbfd4de9b9b5ba7142c312d12f",
+  "requested_model": "claude-opus-5-5-high",
+  "requested_effort": "high",
+  "requested_service_tier": "priority",
+  "requested_max_output_tokens": 64000,
+  "streaming": false,
+  "protocol": "responses",
+  "route": "global_cpa_configured_route",
+  "overall_deadline_seconds": 1800,
+  "purpose": "specification_revision_review_not_benchmark",
+  "review_scope": "full_candidate_round3",
+  "prompt_sha256": "f2b14f1dad813511396223c716d92908d26b14844128d386ef95e60fbf9bc629",
+  "prompt_characters": 603404,
+  "catalog_snapshot": "scoped-catalog-c7410b68.json",
+  "catalog_sha256": "6aa5db72e85bd8d5304a814791a2454128e04fdd65fe637ea9f8a0f785da41d5",
+  "packet_sha256": null,
+  "independence": "No peer/internal opinions; Opus receives only its own prior report and author proposed repairs.",
+  "finished_at": "2026-11-14T08:05:13.431035+00:00",
+  "elapsed_seconds": 281.519,
+  "dispatch_status": "RETURNED_COMPLETE",
+  "response_metadata": {
+    "id": "resp_req_vrtx_011Ch2U7udSr2GxQ81UdgjY5",
+    "model": "claude-opus-5-5-high",
+    "service_tier": "priority",
+    "reasoning": {
+      "effort": "high"
+    },
+    "usage": {
+      "input_tokens": 298553,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 29411,
+      "total_tokens": 327964,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "status": "completed",
+    "incomplete_details": null,
+    "error": null
+  },
+  "finish_reasons": [],
+  "done_seen": false,
+  "events": 0,
+  "review_characters": 12235,
+  "candidate_hash_echoed": true,
+  "review_sha256": "0374013397eb6154bd0c0678f36fd64e4c8f1143fe3787ca36e4142323d22560"
+}

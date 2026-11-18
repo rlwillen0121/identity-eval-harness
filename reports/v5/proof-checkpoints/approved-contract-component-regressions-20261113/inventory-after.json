@@ -1,0 +1,85 @@
+{
+  "head": "62390a98c896b87dc9eca9edf7f4ea52e081f95e",
+  "index_empty": true,
+  "owned_file_sha256": {
+    "src/identitybench/v5/conformance_process.py": "3b1eb66893a2beaaa5c36a7970abb512e1dc71dff4a1b82a03f7d4388faf784e",
+    "src/identitybench/v5/conformance_shared.py": "1e6275b9797ed3be15cd817ab2ac2bb9245fba8bde0416adf7db2e0ebdd4d245",
+    "src/identitybench/v5/normative_contract.py": "12af3e62572538d52eea08292fd543211a3c3934348d493e530b70c01d8121b2",
+    "src/identitybench/v5/validation.py": "388e5ff3e6c0ea5c2a87ea458bd978161aad39247c2110d3783ac971268c0a39",
+    "tests/v5/test_conformance_process.py": "7f1de64aa4d61ed9f924fd03bff972526cf6dc14b37202c9707dbcb272170019",
+    "tests/v5/test_conformance_shared.py": "46fc678b68328d2446e60103b0841476e24207940b2dbcb745a4edf9f75a4ad4",
+    "tests/v5/test_validation.py": "fabf83a75073628c01406f3b2808c312d6f3bf9190b9c635b66043c27cbaa25e"
+  },
+  "tested_helper_sha256": [
+    {
+      "name": "capture_source_closure",
+      "path": "src/identitybench/v5/conformance_process.py",
+      "sha256": "86eeef54c8579b31aacc97203cb529f84fbce42eb6e26a21d861abd8655c22b0"
+    },
+    {
+      "name": "archive_frozen_source_snapshot",
+      "path": "src/identitybench/v5/conformance_process.py",
+      "sha256": "4d8d8cd04eb7990fc1b4f734ccf8510b931c09888c566572dc37fca0e2ad078b"
+    },
+    {
+      "name": "verify_blind_freeze_receipt",
+      "path": "src/identitybench/v5/conformance_process.py",
+      "sha256": "39f4982f3fd0c6bdf73a6651b700a3160b3ee4fc1e2aa033c542782733e56986"
+    },
+    {
+      "name": "freeze_shared_conformance",
+      "path": "src/identitybench/v5/conformance_process.py",
+      "sha256": "d4ad6566c368152a84ae23e8d738891bf87d9b1b882d060de022f57db3570038"
+    },
+    {
+      "name": "_freeze_evaluator",
+      "path": "src/identitybench/v5/conformance_process.py",
+      "sha256": "51d00da09a84becd15b98c19a5eb9f7e4fd2154d86837ab6b0936145e2422b9a"
+    },
+    {
+      "name": "_verify_capture_manifest",
+      "path": "src/identitybench/v5/conformance_process.py",
+      "sha256": "9fd3c838e4007d9ad30c1e0789ebe305d66e1e36dd0c649a66cb164783d3c5a2"
+    },
+    {
+      "name": "_verify_source_snapshot",
+      "path": "src/identitybench/v5/conformance_process.py",
+      "sha256": "fa60d349a653579d3a5b1efaa555e265687d19386a516465e780357d97c36c69"
+    },
+    {
+      "name": "freeze_source_closure",
+      "path": "src/identitybench/v5/conformance_shared.py",
+      "sha256": "cfd3f21385f6bd1302c3a7a5d8536f1632c6136b16a13d9e362f6cf93bc61113"
+    },
+    {
+      "name": "_bind_public_artifacts",
+      "path": "src/identitybench/v5/conformance_shared.py",
+      "sha256": "82270713509af3d4d7e86624ad3a83e0e587c37e0c3204d19553cc4a042691ab"
+    },
+    {
+      "name": "freeze_run",
+      "path": "src/identitybench/v5/conformance_shared.py",
+      "sha256": "e858b4c7ee6ba52d5d656f176cdec49dc66005db191f21a48a9f801ed38b0a4a"
+    },
+    {
+      "name": "verify_frozen_run",
+      "path": "src/identitybench/v5/conformance_shared.py",
+      "sha256": "46d67ee1d17c58377f1d70b239fa01b92c46fe1547228745ba79be72b236a681"
+    },
+    {
+      "name": "_validate_shared_proof_receipt",
+      "path": "src/identitybench/v5/validation.py",
+      "sha256": "47135c5c81eddfedd7d0ee611b23ac9f8b0a15f929c6d06b348370df03d9d742"
+    },
+    {
+      "name": "_validate_shared_evaluator_entry",
+      "path": "src/identitybench/v5/validation.py",
+      "sha256": "8394c2ab606eca6776b1f381eb6a4dacc1f315accdde2e64b2be647b83f0990a"
+    },
+    {
+      "name": "_verify_shared_freeze",
+      "path": "src/identitybench/v5/validation.py",
+      "sha256": "21b71f67ef5410e338099048b87cfbf5a0205d1ff473faf3a5d7f842b5feab56"
+    }
+  ]
+}

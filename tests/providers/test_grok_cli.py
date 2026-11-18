@@ -210,6 +210,7 @@ async def test_parses_the_verified_payload() -> None:
         "num_turns": 1,
         "cli_text": '{"decision":"DENY"}',
         "ignored_params": ["max_output_tokens"],
+        "raw_usage": VERIFIED["usage"],
     }
 
 
@@ -217,7 +218,11 @@ async def test_consistent_cli_text_is_kept_verbatim() -> None:
     payload = {**VERIFIED, "text": '{"decision":"DENY","rules":["LIFE-001"]}'}
     response = await provider(FakeRunner(ok(payload))).complete(make_request())
     assert response.text == '{"decision":"DENY","rules":["LIFE-001"]}'
-    assert response.raw == {"num_turns": 1, "ignored_params": ["max_output_tokens"]}
+    assert response.raw == {
+        "num_turns": 1,
+        "ignored_params": ["max_output_tokens"],
+        "raw_usage": VERIFIED["usage"],
+    }
 
 
 # --------------------------------------------------------------------------- isolation

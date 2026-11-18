@@ -1,0 +1,150 @@
+[
+  {
+    "argv": [
+      "git",
+      "archive",
+      "--format=tar",
+      "--output=/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/base-head.tar",
+      "f790e751c26d9667db588b95f9ef65cebe0f24e1"
+    ],
+    "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+    "duration_seconds": 0.311,
+    "exit_code": 0,
+    "id": "git_archive_exact_head",
+    "nonsecret_environment_overrides": {},
+    "stderr_path": "git-archive.stderr.txt",
+    "stdout_path": "git-archive.stdout.txt"
+  },
+  {
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic",
+    "duration_seconds": 0.283,
+    "exit_code": 0,
+    "id": "extract_git_archive",
+    "method": "python tarfile.extractall(filter=data)",
+    "nonsecret_environment_overrides": {},
+    "stderr_path": "archive-extract.stderr.txt",
+    "stdout_path": "archive-extract.stdout.txt"
+  },
+  {
+    "argv": [
+      "uv",
+      "sync",
+      "--frozen",
+      "--group",
+      "dev"
+    ],
+    "credential_handling": "provider credential-like variables filtered; no dotenv read",
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout",
+    "duration_seconds": 2.905,
+    "exit_code": 0,
+    "id": "uv_sync_frozen_dev_group",
+    "nonsecret_environment_overrides": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONPATH": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src:/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/tests",
+      "TMPDIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/tmp",
+      "UV_CACHE_DIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/uv-cache",
+      "UV_PROJECT_ENVIRONMENT": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv",
+      "UV_PYTHON_DOWNLOADS": "never"
+    },
+    "stderr_path": "uv-sync.stderr.txt",
+    "stdout_path": "uv-sync.stdout.txt"
+  },
+  {
+    "argv": [
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv/bin/python",
+      "/Users/ryanwillen/orca/projects/identity-eval-harness/reports/v5/packaging/current-v8-20261113/export-proof/import-proof-check.py"
+    ],
+    "credential_handling": "provider credential-like variables filtered; no dotenv read",
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout",
+    "duration_seconds": 15.057,
+    "exit_code": 0,
+    "id": "isolated_import_provenance",
+    "nonsecret_environment_overrides": {
+      "EXPORT_ROOT": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONPATH": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src:/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/tests",
+      "TMPDIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/tmp",
+      "UV_CACHE_DIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/uv-cache",
+      "UV_PROJECT_ENVIRONMENT": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv",
+      "UV_PYTHON_DOWNLOADS": "never"
+    },
+    "stderr_path": "import-proof.stderr.txt",
+    "stdout_path": "import-proof.stdout.txt"
+  },
+  {
+    "argv": [
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv/bin/python",
+      "/Users/ryanwillen/orca/projects/identity-eval-harness/reports/v5/packaging/current-v8-20261113/export-proof/exported-test-runner.py"
+    ],
+    "credential_handling": "provider credential-like variables filtered; no dotenv read; marker not live deselected",
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout",
+    "duration_seconds": 115.221,
+    "exit_code": 1,
+    "id": "exported_v5_and_conformance_tests",
+    "import_proof_path": "test-import-proof.json",
+    "nonsecret_environment_overrides": {
+      "EXPORT_ROOT": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout",
+      "PYTEST_ADDOPTS": "",
+      "PYTEST_BASETEMP": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/tmp/pytest-base",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONPATH": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/src:/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/tests",
+      "TMPDIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/tmp",
+      "UV_CACHE_DIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/uv-cache",
+      "UV_PROJECT_ENVIRONMENT": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv",
+      "UV_PYTHON_DOWNLOADS": "never"
+    },
+    "pytest_arguments": [
+      "-q",
+      "-m",
+      "not live",
+      "--basetemp",
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/tmp/pytest-base",
+      "all test_*.py under tests/v5 and tests/conformance/v5"
+    ],
+    "selected_test_paths_path": "selected-test-paths.json",
+    "stderr_path": "pytest-v5-export.stderr.txt",
+    "stdout_path": "pytest-v5-export.stdout.txt"
+  },
+  {
+    "argv": [
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout/.venv/bin/python",
+      "/Users/ryanwillen/orca/projects/identity-eval-harness/reports/v5/packaging/current-v8-20261113/export-proof/diagnose-v6-origin-qualification.py"
+    ],
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout",
+    "duration_seconds": 1.797,
+    "exit_code": 0,
+    "id": "diagnose_exported_v6_origin_fixture_failure",
+    "scope": "Read-only reproduction of the failing validator call; owner checkout filtered from sys.path; no test rerun.",
+    "stderr_path": "qualification-diagnostic.stderr.txt",
+    "stdout_path": "qualification-diagnostic.stdout.txt"
+  },
+  {
+    "argv": [
+      "python3",
+      "<inline output-only evidence finalization>"
+    ],
+    "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+    "duration_seconds": 0.4,
+    "exit_code": 1,
+    "id": "evidence_finalization_attempts",
+    "note": "Two evidence-only finalization attempts used an incorrect JSON key; neither reran export tests or changed source/test/report fixture files.",
+    "stderr_path": "evidence-finalization-attempt.stderr.txt",
+    "stdout_path": "evidence-finalization-attempt.stdout.txt"
+  },
+  {
+    "argv": [
+      "python3",
+      "<inline output-only summary write>"
+    ],
+    "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+    "duration_seconds": 0.1,
+    "exit_code": 0,
+    "id": "finalize_export_proof_records",
+    "note": "Completed summary from captured logs and verified post-test hashes; no .py helper remains.",
+    "stderr_path": "evidence-finalization.stderr.txt",
+    "stdout_path": "evidence-finalization.stdout.txt"
+  }
+]

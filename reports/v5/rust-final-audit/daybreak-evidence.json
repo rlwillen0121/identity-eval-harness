@@ -1,0 +1,59 @@
+{
+  "binary_sha256": "7300439c6f863e0078d1f46533fa3bebb8f331565d5d31e351e6767a4086c458",
+  "compiled_source_count": 151,
+  "compiled_source_sha256_replacements": {
+    "Cargo.lock": "6933fbf9fccc7d8084b721d51313340c94358c9193afd84028288ef03f24e197",
+    "crates/ib-cli/src/artifacts.rs": "892da0e0fcfd317ce3e9d74515283463f626890229ce73551042ecf7ae26d2ca",
+    "crates/ib-providers/src/anthropic_api.rs": "98a140c5a60e4418f3ce4adfe7ee47c6011bb919b98cfbf78604529a0a61a831",
+    "crates/ib-providers/src/base.rs": "d512f658d179a61283af909259b05d6a9fd7f8318aadd216f06459dfa3fb8d6b",
+    "crates/ib-providers/src/cli/agy.rs": "9d4fd5c15486945a450e7c9c8b13703171ffe812169e20767489c559361d6ba2",
+    "crates/ib-providers/src/cli/codex.rs": "29a85f17887a1f11668a8497bfd89e143ecf2041c7350cc38d4db191cbc91513",
+    "crates/ib-providers/src/cli/mod.rs": "3f3dc6de614afc14b2868eb233b61db82a55a189482c56bd5fe55a88bc0c7be6",
+    "crates/ib-providers/src/factory.rs": "8c5c1c00c0ad634f37860e27cd627bd4ae0f30a7359ad0ceaafca2baf837fc62",
+    "crates/ib-providers/src/openai_compat.rs": "6c3069ee405ce53a3caca70d474672930939e06d8f6fb3d7cf0f694d83377aad",
+    "crates/ib-providers/src/subprocess.rs": "9bf840c1c47166f5ee9a3bf217ec127070121744564b5a2a7b7c7351a728cf10",
+    "crates/ib-v5-generator/Cargo.toml": "bbced53c8649bf0f6a35c51b6ee701ede0c5f96aed78c7915a182c3a659e176b",
+    "crates/ib-v5-generator/src/dataset_loader.rs": "aeb4b93bc0c8ad6da5b4522665c5c1ebadc8ae9df7bef07445f245f08eef1a9e"
+  },
+  "dependency_audit": {
+    "dependencies": 232,
+    "lockfile_sha256": "6933fbf9fccc7d8084b721d51313340c94358c9193afd84028288ef03f24e197",
+    "rustsec_revision": "233155b4025b854c68a4b199c0e32d7fd53291a2",
+    "vulnerabilities": 0,
+    "warnings": 0
+  },
+  "historical_regrade": {
+    "canonical_inventory_encoding": "JSON indent=2, sort_keys=true, trailing newline",
+    "fresh_inventory_file_sha256": "7cdfeb2b0989830fd1c89610b5b69cd472c5a8a23d8d4d4cf28e448fb4ad7f7d",
+    "parent_inventory_file_sha256": "0d1cebf86f3d598c89f45ab9a0b5eeb5a26f8efcbc73dcc4311c5c4c8f4c9b2d",
+    "replacements": {
+      "binary_sha256": "7300439c6f863e0078d1f46533fa3bebb8f331565d5d31e351e6767a4086c458",
+      "created_utc": "2026-11-18T03:58:01.565703+00:00",
+      "finished_utc": "2026-11-18T04:00:31.332076+00:00"
+    },
+    "source": "same historical inputs and relative locators as historical/inventory.json",
+    "totals": {
+      "audit_outcomes": {
+        "complete": 24
+      },
+      "blocked": 0,
+      "corrected": 0,
+      "max_turns_exceeded": 285,
+      "parse_failures": 40,
+      "planned_slots": 3456,
+      "provider_errors": 580,
+      "records": 3456,
+      "report_markdown_byte_identical": 24,
+      "run_completion": {
+        "protocol_complete": 18,
+        "provider_incomplete": 6
+      },
+      "runs": 24,
+      "stored_score_delta_paths": 0,
+      "summary_delta_paths": 0,
+      "summary_json_byte_identical": 24
+    }
+  },
+  "parent_audit_commit": "0bdd288c74996640f1b01e31f180a6fe24cbfe7f",
+  "parent_source_inventory_file_sha256": "38485fea1dda11a6cd09fb64b8dc82f3c40829acb4431fe6fb22bf9c846535ee"
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "01-ruff",
+    "argv": ["uv", "run", "--no-env-file", "ruff", "check", "."]
+  },
+  {
+    "id": "02-mypy",
+    "argv": ["uv", "run", "--no-env-file", "mypy", "--strict", "src"]
+  },
+  {
+    "id": "03-pytest",
+    "argv": ["uv", "run", "--no-env-file", "pytest", "-q", "-m", "not live"]
+  },
+  {
+    "id": "04-v5-dev",
+    "argv": ["uv", "run", "--no-env-file", "identitybench", "--no-env-file", "v5", "validate", "--suite", "v5_dev", "--double-build"]
+  },
+  {
+    "id": "05-v5-lite",
+    "argv": ["uv", "run", "--no-env-file", "identitybench", "--no-env-file", "v5", "validate", "--suite", "v5_lite", "--double-build"]
+  },
+  {
+    "id": "06-v5-core",
+    "argv": ["uv", "run", "--no-env-file", "identitybench", "--no-env-file", "v5", "validate", "--suite", "v5_core", "--double-build"]
+  },
+  {
+    "id": "07-v5-full",
+    "argv": ["uv", "run", "--no-env-file", "identitybench", "--no-env-file", "v5", "validate", "--suite", "v5_full", "--double-build"]
+  }
+]

@@ -1,0 +1,151 @@
+{
+  "actual_native_service_tier_observable": false,
+  "all_commands_exit_zero": true,
+  "branch": "feat/v5-harness",
+  "commands": [
+    {
+      "actual_native_service_tier_observable": false,
+      "after_snapshot_path": "snapshots/01-ruff-after.json",
+      "after_snapshot_sha256": "cd39b0d3635e06bc74a6c59646b37ec6551b9cd8da29d9fc4e92f4b3b7974602",
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "ruff",
+        "check",
+        "."
+      ],
+      "before_snapshot_path": "snapshots/01-ruff-before.json",
+      "before_snapshot_sha256": "cd39b0d3635e06bc74a6c59646b37ec6551b9cd8da29d9fc4e92f4b3b7974602",
+      "changed_path_counts": {
+        "configuration_governance": 0,
+        "fixed_report_fixtures_and_coordinator": 0,
+        "foreign_v41_indexed_and_untracked": 0,
+        "packaging_python_copies": 0,
+        "report_python_coordinator_successor": 0,
+        "source": 0,
+        "tests": 0,
+        "v5_datasets": 0
+      },
+      "changed_paths_by_category": {
+        "configuration_governance": [],
+        "fixed_report_fixtures_and_coordinator": [],
+        "foreign_v41_indexed_and_untracked": [],
+        "packaging_python_copies": [],
+        "report_python_coordinator_successor": [],
+        "source": [],
+        "tests": [],
+        "v5_datasets": []
+      },
+      "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+      "elapsed_monotonic_ns": 1011357875,
+      "elapsed_seconds": 1.011357875,
+      "ended_at_utc": "2026-11-13T08:41:25.062026+00:00",
+      "exact_command": "uv run --no-env-file ruff check .",
+      "exit_code": 0,
+      "id": "01-ruff",
+      "preflight_checks": {
+        "branch_matches": true,
+        "current_source_hash_count": 235,
+        "expected_report_hashes_match": {
+          "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py": true
+        },
+        "expected_source_hashes_match": {
+          "src/identitybench/v5/validation.py": true
+        },
+        "expected_test_hashes_match": {
+          "tests/v5/test_prepare_safety_domain_corpus_v1.py": true,
+          "tests/v5/test_validation.py": true
+        },
+        "foreign_v41_path_count_matches": true,
+        "foreign_v41_untracked_paths_match": true,
+        "head_matches": true,
+        "no_packaging_python_copies": true,
+        "prior_mypy_exit_code": 0,
+        "prior_mypy_exit_code_matches": true,
+        "prior_mypy_result_sha256": "eee06505de198531ca6ec6040fe551a9bcc90c10509b8cbc1529ed36a56d4913",
+        "prior_source_hash_count": 235,
+        "production_validation_sha256_matches_prior_mypy": true,
+        "report_python_count_matches": true,
+        "source_hash_count_matches_prior": true,
+        "spec_hash_matches": true,
+        "src_matches_prior_mypy_snapshot": true,
+        "v5_dataset_count_is_12": true,
+        "v5_datasets_all_present": true
+      },
+      "requested_service_tier": "fast",
+      "started_at_utc": "2026-11-13T08:41:24.050676+00:00",
+      "stderr_bytes": 0,
+      "stderr_path": "stderr/01-ruff.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 19,
+      "stdout_path": "stdout/01-ruff.raw",
+      "stdout_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "actual_native_service_tier_observable": false,
+      "after_snapshot_path": "snapshots/02-pytest-after.json",
+      "after_snapshot_sha256": "cd39b0d3635e06bc74a6c59646b37ec6551b9cd8da29d9fc4e92f4b3b7974602",
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "pytest",
+        "-q",
+        "-m",
+        "not live"
+      ],
+      "before_snapshot_path": "snapshots/02-pytest-before.json",
+      "before_snapshot_sha256": "cd39b0d3635e06bc74a6c59646b37ec6551b9cd8da29d9fc4e92f4b3b7974602",
+      "changed_path_counts": {
+        "configuration_governance": 0,
+        "fixed_report_fixtures_and_coordinator": 0,
+        "foreign_v41_indexed_and_untracked": 0,
+        "packaging_python_copies": 0,
+        "report_python_coordinator_successor": 0,
+        "source": 0,
+        "tests": 0,
+        "v5_datasets": 0
+      },
+      "changed_paths_by_category": {
+        "configuration_governance": [],
+        "fixed_report_fixtures_and_coordinator": [],
+        "foreign_v41_indexed_and_untracked": [],
+        "packaging_python_copies": [],
+        "report_python_coordinator_successor": [],
+        "source": [],
+        "tests": [],
+        "v5_datasets": []
+      },
+      "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+      "elapsed_monotonic_ns": 730823590708,
+      "elapsed_seconds": 730.823590708,
+      "ended_at_utc": "2026-11-13T08:53:45.344313+00:00",
+      "exact_command": "uv run --no-env-file pytest -q -m not live",
+      "exit_code": 0,
+      "id": "02-pytest",
+      "preflight_checks": {},
+      "requested_service_tier": "fast",
+      "started_at_utc": "2026-11-13T08:41:34.527241+00:00",
+      "stderr_bytes": 0,
+      "stderr_path": "stderr/02-pytest.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 9600,
+      "stdout_path": "stdout/02-pytest.raw",
+      "stdout_sha256": "b7573442da7b7cccc790a62d09b9eb6f19a384b18d72cdd8e21c53a1af45b849"
+    }
+  ],
+  "dotenv_loaded": false,
+  "expected_spec_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+  "head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+  "input_drift_detected": false,
+  "interpretation": "Point-in-time Ruff and non-live pytest evidence only; report every nonzero exit without repair.",
+  "live_model_calls": false,
+  "mypy_or_validators_rerun": false,
+  "packaging_python_copies_present_before": false,
+  "prior_mypy_exit_code": 0,
+  "production_validation_sha256_matches_prior_mypy": true,
+  "requested_service_tier": "fast",
+  "run_id": "post-export-test-repair-20261113",
+  "src_matches_prior_mypy_snapshot": true
+}

@@ -1,0 +1,15 @@
+{
+  "retrieved_at": "2026-11-14T07:13:08.155241+00:00",
+  "route": "global_cpa_configured_route",
+  "credential_source": "existing_process_CPA_CLIENT_API_KEY",
+  "models": [
+    {
+      "context_length": 1048576,
+      "id": "gemini-4-carbon-high",
+      "max_completion_tokens": 1048576,
+      "object": "model",
+      "owned_by": "antigravity"
+    }
+  ],
+  "effort_capability_basis": "Live CPA advertised high-effort model aliases. Earlier reviewer setting high is preserved; metadata does not separately expose effective reasoning effort or tier."
+}

@@ -36,6 +36,11 @@ dependencies = [
   "pydantic>=2.9",
   "typer>=0.15",
   "pyyaml>=6.0",
+  "jinja2>=3.1",
+  "numpy>=2.1",
+  "scipy>=1.14",
+  "scikit-learn>=1.5",
+  "tiktoken>=0.9.0",
   "anthropic>=0.60",
   "openai>=1.60",
 ]
@@ -66,6 +71,11 @@ packages = ["src/identitybench"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+extend-exclude = [
+  "reports/v5/conformance/shared_results/**",
+  "reports/v5/conformance/author_inputs/**",
+  "reports/v5/spec-draft5/external-review/**",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
@@ -74,11 +84,45 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["identitybench"]
+
+# These paths are byte-bound by frozen v5 conformance receipts or captured spec evidence.
+# Keep Ruff lint and pytest coverage active; omit only their formatter rewrite check.
+[tool.ruff.format]
+exclude = [
+  "SPEC-v5.md",
+  "SPEC-v5.0-draft.5.md",
+  "reports/v5/conformance/inputs/spec-sections-1-4/SPEC-v5-sections-1-4.md",
+  "src/identitybench/v5/cli.py",
+  "src/identitybench/v5/conformance_process.py",
+  "src/identitybench/v5/conformance_production.py",
+  "src/identitybench/v5/conformance_shared.py",
+  "src/identitybench/v5/family_couplings.py",
+  "src/identitybench/v5/generator.py",
+  "src/identitybench/v5/oracle.py",
+  "src/identitybench/v5/provider_accounting.py",
+  "src/identitybench/v5/report.py",
+  "src/identitybench/v5/runner.py",
+  "src/identitybench/v5/runtime.py",
+  "src/identitybench/v5/schemas.py",
+  "src/identitybench/v5/scope_algebra.py",
+  "src/identitybench/v5/scoring.py",
+  "src/identitybench/v5/shortcut_proofs.py",
+  "src/identitybench/v5/validation.py",
+  "tests/conformance/v5/agent_view_safety.py",
+  "tests/conformance/v5/approved_full_spec_v1/reference.py",
+  "tests/conformance/v5/fresh_card_only_v2/test_worker.py",
+  "tests/conformance/v5/fresh_card_only_v2/worker.py",
+  "tests/conformance/v5/test_conformance_v5.py",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
 asyncio_mode = "auto"
 markers = [
+  "slow: long-running tests (dataset builds, large property runs)",
   "live: tests that call real model endpoints (never run in CI)",
 ]
 

@@ -1,10 +1,7 @@
 ---
 name: lane-rules
-description: Blind review lane — checks instruction, spec, and domain boundary compliance (no SOC/SIEM drift, no nhi_ai_agent governance).
+description: Read-only audit of project scope, version boundaries, and instruction consistency.
 tools: Read, Grep, Glob
 ---
 
-Review only instruction, spec (`SPEC-v4.1.md`), and domain boundary compliance:
-- Check `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, skills, and modified files for contradictions.
-- Verify strict Enterprise IGA domain alignment (human identities, including `admin_secondary` accounts, plus standard NHIs `service_account`, `workload_identity`, `integration_bot`, `shared_break_glass`; no SOC/SIEM drift; no `nhi_ai_agent` or OBO agent delegation governance).
-- Return `p_findings` as `File:line` items. Do not edit files.
+Follow [AGENTS.md](../../AGENTS.md). Audit the relevant agent instructions, normative specs, and changed files for contradictions. Keep v4.1's six-category contract frozen; keep structured `agent_governance` confined to native v5; treat v1–v4 as archival. Prohibit generic SOC/SIEM/EDR, firewall/network incident response, unstructured prompt-injection or jailbreak testing, and LLM content moderation in every version. Return specific `File:line` findings without editing.

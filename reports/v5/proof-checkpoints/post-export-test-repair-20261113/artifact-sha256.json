@@ -1,0 +1,81 @@
+{
+  "algorithm": "sha256",
+  "covers_all_files_except_this_manifest": true,
+  "files": {
+    "capture-runner.txt": {
+      "bytes": 19864,
+      "exists": true,
+      "sha256": "5af4ff72da546ad3a32e87aea16dc072063621d43f2ee406cda09fca16225917"
+    },
+    "commands.json": {
+      "bytes": 207,
+      "exists": true,
+      "sha256": "5f93f48b391ca40bdbe71a979e6751428b9bda453654f9d15c5a6149a3f269c1"
+    },
+    "results/01-ruff.json": {
+      "bytes": 2891,
+      "exists": true,
+      "sha256": "3ae6b29afc796e96cd8945f81d3b46c5a656f2bf114601592e8f00bbe864c23a"
+    },
+    "results/02-pytest.json": {
+      "bytes": 1791,
+      "exists": true,
+      "sha256": "7222bc209e73be9b8410f9628d9852db3568ddbf13afc61eb4a6a3d635c3d953"
+    },
+    "scope.json": {
+      "bytes": 4092,
+      "exists": true,
+      "sha256": "de23128dbcd0cddb0b1e33d8c73338389b80c2a4a79c8b93d72bf2fe089595db"
+    },
+    "snapshots/00-frozen-inputs.json": {
+      "bytes": 192049,
+      "exists": true,
+      "sha256": "546a2ca66f702897054e02a6b55629b0127815d828452459db50e75bef7a52fa"
+    },
+    "snapshots/01-ruff-after.json": {
+      "bytes": 192048,
+      "exists": true,
+      "sha256": "d601c7f0022ebfb79794ef800347509853e0e1d27976775417d04c44c75d0463"
+    },
+    "snapshots/01-ruff-before.json": {
+      "bytes": 192049,
+      "exists": true,
+      "sha256": "546a2ca66f702897054e02a6b55629b0127815d828452459db50e75bef7a52fa"
+    },
+    "snapshots/02-pytest-after.json": {
+      "bytes": 192050,
+      "exists": true,
+      "sha256": "c88c5fef5a66e9ae1e172b19326a6eb2b9163994a87816abd44ff014f58d9f10"
+    },
+    "snapshots/02-pytest-before.json": {
+      "bytes": 192051,
+      "exists": true,
+      "sha256": "c2a7506220b8cdfa75843a782f93b61927722151f4f38f9419f549a1ec5a762e"
+    },
+    "stderr/01-ruff.raw": {
+      "bytes": 0,
+      "exists": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stderr/02-pytest.raw": {
+      "bytes": 0,
+      "exists": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout/01-ruff.raw": {
+      "bytes": 19,
+      "exists": true,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    "stdout/02-pytest.raw": {
+      "bytes": 9600,
+      "exists": true,
+      "sha256": "b7573442da7b7cccc790a62d09b9eb6f19a384b18d72cdd8e21c53a1af45b849"
+    },
+    "summary.json": {
+      "bytes": 6004,
+      "exists": true,
+      "sha256": "c0e4df96e5d0741b925f93ba777d8f16f92b91e38e645a816a36739cfa193e63"
+    }
+  }
+}

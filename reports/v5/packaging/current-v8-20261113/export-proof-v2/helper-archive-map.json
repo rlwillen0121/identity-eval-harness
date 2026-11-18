@@ -1,0 +1,18 @@
+{
+  "helpers": [
+    {
+      "archived_path": "import-proof-check.py.txt",
+      "byte_identical": true,
+      "bytes": 1093,
+      "executed_temp_path": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/import-proof-check.py",
+      "sha256": "88b9d7f8b2f4844588072be65040e7b9c0200ebd4ed7b0f35c55dd83a50b5ba8"
+    },
+    {
+      "archived_path": "exported-test-runner.py.txt",
+      "byte_identical": true,
+      "bytes": 2227,
+      "executed_temp_path": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/exported-test-runner.py",
+      "sha256": "13e4c643bc6c20c6d80d21ef8c65b55b22af1be9cc6464ff103f3bd372536833"
+    }
+  ]
+}

@@ -144,7 +144,10 @@ class ClaudeCliProvider(CliProvider):
             stop_reason=stop_reason if isinstance(stop_reason, str) else None,
             served_model=served_models(payload.get("modelUsage")),
             reported_cost_usd=as_float(payload.get("total_cost_usd")),
-            raw={key: payload[key] for key in _RAW_KEYS if key in payload},
+            raw={
+                "raw_usage": usage_in,
+                **{key: payload[key] for key in _RAW_KEYS if key in payload},
+            },
         )
         if payload.get("is_error") or (subtype is not None and subtype != "success"):
             message = payload.get("result") or payload.get("error") or "the CLI reported an error"

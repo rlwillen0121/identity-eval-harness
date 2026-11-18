@@ -1,0 +1,28 @@
+{
+  "candidate_file_count": 172,
+  "export_files_matching_pretest_manifest": 172,
+  "export_mismatches": [],
+  "note": "Owner source, test, dataset, report fixture and three original inventory contents were only read; pytest ran only in the temporary export.",
+  "original_inventory_document_hashes": [
+    {
+      "matches_root_recorded_hash": true,
+      "path": "reports/v5/packaging/current-v8-20261113/inventory.json",
+      "sha256": "bc2a195697d5cf29d85a88afac42de8d5febfbd8a3ef93dbcdb5101f7bf98a58"
+    },
+    {
+      "matches_root_recorded_hash": true,
+      "path": "reports/v5/packaging/current-v8-20261113/dependency-manifest.json",
+      "sha256": "05cabf9e63201ff90cdda22023a187d4fc2824e8b7144ef77137f385b51dc755"
+    },
+    {
+      "matches_root_recorded_hash": true,
+      "path": "reports/v5/packaging/current-v8-20261113/plan.md",
+      "sha256": "72081adedbf571bb7172bf93b437b2a478a379a7e30aab64aa7aa349c47b46d8"
+    }
+  ],
+  "original_inventory_documents_unchanged": true,
+  "owner_files_matching_inventory": 172,
+  "owner_mismatches": [],
+  "schema": "identitybench.v5.current-v8.post-test-hash-check.v1",
+  "temporary_export_root": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-20261113-tesxijic/checkout"
+}

@@ -1,0 +1,45 @@
+[package]
+name = "ib-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "identitybench"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+ib-core.workspace = true
+ib-providers.workspace = true
+ib-v5-accounting.workspace = true
+ib-v5-baselines.workspace = true
+ib-v5-conformance.workspace = true
+ib-v5-generator.workspace = true
+ib-v5-report.workspace = true
+ib-v5-runner.workspace = true
+ib-v5-runtime.workspace = true
+ib-v5-schemas.workspace = true
+ib-v5-scoring.workspace = true
+ib-v5-validation.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+tokio.workspace = true
+tempfile.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+async-trait.workspace = true
+
+[build-dependencies]
+hex.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

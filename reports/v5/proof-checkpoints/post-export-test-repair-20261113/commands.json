@@ -1,0 +1,10 @@
+[
+  {
+    "id": "01-ruff",
+    "argv": ["uv", "run", "--no-env-file", "ruff", "check", "."]
+  },
+  {
+    "id": "02-pytest",
+    "argv": ["uv", "run", "--no-env-file", "pytest", "-q", "-m", "not live"]
+  }
+]

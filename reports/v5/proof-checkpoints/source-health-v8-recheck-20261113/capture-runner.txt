@@ -1,0 +1,232 @@
+from __future__ import annotations
+import hashlib, json, pathlib, subprocess, sys, threading, time
+from datetime import datetime, timezone
+REPO=pathlib.Path.cwd().resolve()
+ROOT=REPO/'reports/v5/proof-checkpoints/source-health-v8-recheck-20261113'
+VOLATILE={'.git','.venv','__pycache__','.pytest_cache','.mypy_cache','.ruff_cache','runs'}
+ROOT_FILES={'pyproject.toml','AGENTS.md','GEMINI.md','CLAUDE.md','CONTRIBUTING.md','CODE_OF_CONDUCT.md','SECURITY.md','pytest.ini','mypy.ini','ruff.toml','.ruff.toml','setup.cfg','tox.ini','noxfile.py'}
+REPORT_INPUTS=(
+ 'reports/v5/conformance/inputs/v4',
+ 'reports/v5/conformance/inputs/v5/v5_dev',
+ 'reports/v5/conformance/inputs/v6',
+ 'reports/v5/conformance/inputs/v7',
+ 'reports/v5/conformance/inputs/v8',
+ 'reports/v5/conformance/inputs/spec-sections-1-4',
+ 'reports/v5/conformance/shared_inputs',
+ 'reports/v5/conformance/protocol',
+ 'reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2',
+)
+REPORT_FILES=(
+ 'reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/public-inputs.jsonl',
+ 'reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py',
+)
+EXPECTED_FOREIGN_PATHS={
+ 'reports/v41-skill-orch-v2/charts/delegation-breakdown-dark.svg',
+ 'reports/v41-skill-orch-v2/charts/delegation-breakdown-light.svg',
+ 'reports/v41-skill-orch-v2/charts/leaderboard-dark.svg',
+ 'reports/v41-skill-orch-v2/charts/leaderboard-light.svg',
+ 'reports/v41-skill-orch-v2/charts/pareto-quota-dark.svg',
+ 'reports/v41-skill-orch-v2/charts/pareto-quota-light.svg',
+ 'reports/v41-skill-orch-v2/charts/skill-progression-dark.svg',
+ 'reports/v41-skill-orch-v2/charts/skill-progression-light.svg',
+ 'reports/v41-skill-orch-v2/index.html',
+ 'reports/v41-skill-orch-v2/report.md',
+ 'reports/v41-skill-orch-v2/summary.json',
+}
+def sha(b:bytes)->str:return hashlib.sha256(b).hexdigest()
+def utc()->str:return datetime.now(timezone.utc).isoformat()
+def git(args):return subprocess.run(['git',*args],cwd=REPO,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE).stdout.decode()
+def excluded(p:pathlib.Path)->bool:
+ return any(part in VOLATILE for part in p.parts) or p.suffix in {'.pyc','.pyo'}
+def collect_paths():
+ paths=set()
+ for base in ('src','tests','.agents','.github','docs/governance'):
+  b=REPO/base
+  if b.exists():
+   for p in b.rglob('*'):
+    if p.is_file() and not excluded(p.relative_to(REPO)):paths.add(p.relative_to(REPO).as_posix())
+ for base in ('.claude/agents','.claude/skills','.opencode/agents'):
+  b=REPO/base
+  if b.exists():
+   for p in b.rglob('*'):
+    if p.is_file() and not excluded(p.relative_to(REPO)):paths.add(p.relative_to(REPO).as_posix())
+ # These report-resident fixtures are read by the non-live v5 test suite.
+ report_inputs=set()
+ for raw in REPORT_INPUTS:
+  b=REPO/raw
+  if b.is_dir():
+   for p in b.rglob('*'):
+    if p.is_file() and not excluded(p.relative_to(REPO)):report_inputs.add(p.relative_to(REPO).as_posix())
+ for raw in REPORT_FILES:
+  if (REPO/raw).is_file():report_inputs.add(raw)
+ # Preserve missing tracked paths in scope so deletions are visible.
+ tracked=[p for p in git(['ls-files','-z']).split('\0') if p]
+ for raw in tracked:
+  p=pathlib.PurePosixPath(raw)
+  if excluded(pathlib.Path(raw)):continue
+  first=p.parts[0] if p.parts else ''
+  if first in {'src','tests','.agents','.github'} or raw.startswith('docs/governance/'):
+   paths.add(raw)
+  elif first=='.' or '/' not in raw:
+   name=p.name
+   if name in ROOT_FILES or name.startswith('SPEC') and name.endswith('.md') or 'lock' in name.lower() or name.startswith('requirements'):
+    paths.add(raw)
+ # Add untracked root governance/config/spec/lock manifests.
+ for p in REPO.iterdir():
+  if not p.is_file():continue
+  name=p.name
+  if name in ROOT_FILES or (name.startswith('SPEC') and name.endswith('.md')) or 'lock' in name.lower() or name.startswith('requirements'):
+   paths.add(name)
+ suites=('v5_dev','v5_lite','v5_core','v5_full')
+ data=[]
+ for suite in suites:
+  for name in ('episodes.jsonl','oracles.jsonl','SEAL.json'):
+   rel=f'datasets/{suite}/{name}'; data.append(rel)
+ # Snapshot all actual tracked and untracked files under the v41 report prefixes.
+ tracked_foreign=[p for p in git(['ls-files','-z','--','reports/v41-*']).split('\0') if p]
+ foreign={p:'tracked' for p in tracked_foreign}
+ foreign_lines=git(['status','--short','--untracked-files=all','--','reports/v41-*']).splitlines()
+ for line in foreign_lines:
+  if len(line)<4:continue
+  status=line[:2]
+  rel=line[3:]
+  if rel.startswith('reports/v41-'):
+   foreign[rel]=status
+ # Explicit repo configuration only; never include local settings or secret files.
+ for raw in ('.gitignore','opencode.json','examples/codex.config.toml'):
+  if (REPO/raw).is_file():paths.add(raw)
+ return sorted(paths),data,sorted(report_inputs),foreign
+def hash_path(rel):
+ p=REPO/rel
+ if not p.is_file():return {'exists':False,'sha256':None,'bytes':None}
+ b=p.read_bytes();return {'exists':True,'sha256':sha(b),'bytes':len(b)}
+def snapshot(label):
+ source_paths,data_paths,report_paths,foreign_status=collect_paths()
+ status=git(['status','--porcelain']).splitlines()
+ head=git(['rev-parse','HEAD']).strip()
+ branch=git(['branch','--show-current']).strip()
+ source={p:hash_path(p) for p in source_paths}
+ datasets={p:hash_path(p) for p in data_paths}
+ report_inputs={p:hash_path(p) for p in report_paths}
+ foreign={p:{'status':state,**hash_path(p)} for p,state in sorted(foreign_status.items())}
+ return {'captured_utc':utc(),'label':label,'head':head,'branch':branch,'git_dirty':bool(status),'git_status_entry_count':len(status),
+  'source_test_spec_governance_hashes':source,'dataset_hashes':datasets,
+  'report_fixture_and_coordinator_hashes':report_inputs,
+  'four_suite_episode_file_hashes':{p:datasets[p] for p in data_paths if p.endswith('/episodes.jsonl')},
+  'foreign_v41_report_hashes':foreign}
+def changed(a,b):
+ out={}
+ for group in ('source_test_spec_governance_hashes','dataset_hashes','report_fixture_and_coordinator_hashes','foreign_v41_report_hashes'):
+  aa=a[group];bb=b[group]
+  keys=sorted(set(aa)|set(bb)); out[group]=[p for p in keys if aa.get(p)!=bb.get(p)]
+ return out
+def stable_inputs(s):
+ return {k:s[k] for k in ('source_test_spec_governance_hashes','dataset_hashes','report_fixture_and_coordinator_hashes','foreign_v41_report_hashes')}
+def write_json(path,value):
+ path.parent.mkdir(parents=True,exist_ok=True)
+ path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+def main():
+ if len(sys.argv)==2 and sys.argv[1]=='finalize':
+  scope=json.loads((ROOT/'scope.json').read_text())
+  if scope.get('run_authorized') is not True:raise SystemExit('blocked: awaiting explicit root RELEASE')
+  commands=json.loads((ROOT/'commands.json').read_text())
+  missing=[c['id'] for c in commands if not (ROOT/'results'/f"{c['id']}.json").is_file()]
+  if missing:raise SystemExit('cannot finalize; missing command results: '+','.join(missing))
+  results=[json.loads((ROOT/'results'/f"{c['id']}.json").read_text()) for c in commands]
+  summary={'run_id':scope['run_id'],'branch':scope['expected_branch'],'head':scope['expected_head'],
+   'spec_v5_sha256':scope['expected_spec_sha256'],'command_count':len(results),
+   'commands':[{'id':r['id'],'argv':r['argv'],'exit_code':r['exit_code'],'elapsed_seconds':r.get('elapsed_seconds'),
+    'stdout_path':r.get('stdout_path'),'stdout_sha256':r.get('stdout_sha256'),'stderr_path':r.get('stderr_path'),
+    'stderr_sha256':r.get('stderr_sha256'),'changed_paths_by_category':r.get('changed_paths_by_category'),
+    'not_run_reason':r.get('not_run_reason')} for r in results],
+   'source_health_pass':all(next(r for r in results if r['id']==name)['exit_code']==0 for name in ('01-ruff','02-mypy','03-pytest')),
+   'all_v5_validation_exits_zero':all(next(r for r in results if r['id']==name)['exit_code']==0 for name in ('04-v5-dev','05-v5-lite','06-v5-core','07-v5-full')),
+   'inputs_unchanged_during_each_command':all(not any(paths for paths in r.get('changed_paths_by_category',{}).values()) for r in results),
+   'live_model_calls':False,'baseline_score_rerun':False,'legacy_v41_rerun':False,
+   'interpretation':'Raw command evidence only. Validation exit codes and blockers are preserved without repair or relaxation.'}
+  write_json(ROOT/'summary.json',summary)
+  artifacts={}
+  for p in sorted(ROOT.rglob('*')):
+   if p.is_file() and p.name!='artifact-sha256.json':
+    rel=p.relative_to(ROOT).as_posix(); data=p.read_bytes()
+    artifacts[rel]={'sha256':sha(data),'bytes':len(data)}
+  write_json(ROOT/'artifact-sha256.json',{'algorithm':'sha256','covers_all_files_except_this_manifest':True,'artifacts':artifacts})
+  print(json.dumps({'status':'FINALIZED','summary_sha256':sha((ROOT/'summary.json').read_bytes()),
+   'artifact_manifest_sha256':sha((ROOT/'artifact-sha256.json').read_bytes()),'artifact_count':len(artifacts)}),flush=True)
+  return 0
+ if len(sys.argv)!=3 or sys.argv[1]!='run':raise SystemExit('usage: capture-runner.txt run <command-id> | finalize')
+ cid=sys.argv[2]; commands=json.loads((ROOT/'commands.json').read_text())
+ ids=[c['id'] for c in commands]
+ if cid not in ids:raise SystemExit('unknown command id')
+ index=ids.index(cid); result_path=ROOT/'results'/f'{cid}.json'
+ if result_path.exists():raise SystemExit(f'result already exists: {cid}')
+ if index and not (ROOT/'results'/f'{ids[index-1]}.json').is_file():raise SystemExit('commands must run sequentially')
+ spec=next(c for c in commands if c['id']==cid); argv=spec['argv']
+ scope=json.loads((ROOT/'scope.json').read_text())
+ if scope.get('run_authorized') is not True:raise SystemExit('blocked: awaiting explicit root RELEASE')
+ before=snapshot(cid+'-before'); (ROOT/'snapshots'/f'{cid}-before.json').write_text(json.dumps(before,indent=2,sort_keys=True)+'\n')
+ expected=scope['expected_held_hashes']
+ held={p:before['source_test_spec_governance_hashes'].get(p,{}).get('sha256') for p in expected}
+ for p in scope.get('expected_report_hashes',{}):
+  held[p]=before['report_fixture_and_coordinator_hashes'].get(p,{}).get('sha256')
+  expected[p]=scope['expected_report_hashes'][p]
+ matches={p:held[p]==digest for p,digest in expected.items()}
+ if index==0:
+  untracked_paths={p for p,v in before['foreign_v41_report_hashes'].items() if v['status']=='??'}
+  matches['foreign_v41_untracked_paths_exact']=untracked_paths==set(scope['expected_foreign_v41_paths'])
+  matches['foreign_v41_tracked_and_untracked_count']=len(before['foreign_v41_report_hashes'])==scope['expected_foreign_v41_path_count']
+  matches['expected_branch']=before['branch']==scope['expected_branch']
+  matches['expected_head']=before['head']==scope['expected_head']
+  matches['dataset_artifact_count']=len(before['dataset_hashes'])==12
+  matches['dataset_artifacts_present']=all(v['exists'] for v in before['dataset_hashes'].values())
+  (ROOT/'snapshots'/'00-frozen-inputs.json').write_text(json.dumps(before,indent=2,sort_keys=True)+'\n')
+ else:
+  frozen=json.loads((ROOT/'snapshots'/'00-frozen-inputs.json').read_text())
+  matches['frozen_input_manifest_unchanged']=stable_inputs(before)==stable_inputs(frozen)
+ # First invocation is a final fail-closed confirmation of the pinned active sources/tests.
+ if not all(matches.values()):
+  after=snapshot(cid+'-after-preflight-failure'); (ROOT/'snapshots'/f'{cid}-after.json').write_text(json.dumps(after,indent=2,sort_keys=True)+'\n')
+  r={'id':cid,'argv':argv,'preflight_expected_hash_matches':matches,'preflight_hashes':held,'started_utc':utc(),'finished_utc':utc(),'exit_code':None,'not_run_reason':'pinned held source/test hash mismatch','changed_paths':changed(before,after)}
+  result_path.write_text(json.dumps(r,indent=2,sort_keys=True)+'\n'); print(json.dumps({'status':'BLOCKED_PREFLIGHT','id':cid,'hash_matches':matches}),flush=True); return 2
+ start_utc=utc(); start_ns=time.monotonic_ns()
+ print(json.dumps({'status':'START','id':cid,'argv':argv,'pre_snapshot_complete':True}),flush=True)
+ proc=subprocess.Popen(argv,cwd=REPO,stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0)
+ counters={'stdout_bytes':0,'stderr_bytes':0}; lock=threading.Lock()
+ def drain(stream,name,rel):
+  with open(ROOT/rel,'wb') as out:
+   while True:
+    chunk=stream.read(8192)
+    if not chunk:break
+    out.write(chunk);out.flush()
+    with lock:counters[name]+=len(chunk)
+ threads=[threading.Thread(target=drain,args=(proc.stdout,'stdout_bytes',f'stdout/{cid}.raw'),daemon=True),threading.Thread(target=drain,args=(proc.stderr,'stderr_bytes',f'stderr/{cid}.raw'),daemon=True)]
+ for t in threads:t.start()
+ last=0
+ while proc.poll() is None:
+  elapsed=(time.monotonic_ns()-start_ns)/1e9
+  if elapsed-last>=15:
+   with lock:counts=dict(counters)
+   print(json.dumps({'status':'PROGRESS','id':cid,'elapsed_seconds':round(elapsed,1),**counts}),flush=True);last=elapsed
+  time.sleep(1)
+ for t in threads:t.join()
+ elapsed_ns=time.monotonic_ns()-start_ns; code=proc.returncode; end_utc=utc()
+ after=snapshot(cid+'-after'); (ROOT/'snapshots'/f'{cid}-after.json').write_text(json.dumps(after,indent=2,sort_keys=True)+'\n')
+ stdout=(ROOT/'stdout'/f'{cid}.raw').read_bytes(); stderr=(ROOT/'stderr'/f'{cid}.raw').read_bytes()
+ changes=changed(before,after)
+ record={'id':cid,'argv':argv,'exact_command':' '.join(argv),'started_utc':start_utc,'finished_utc':end_utc,
+  'elapsed_monotonic_ns':elapsed_ns,'elapsed_seconds':elapsed_ns/1e9,'exit_code':code,
+  'stdout_path':f'stdout/{cid}.raw','stdout_bytes':len(stdout),'stdout_sha256':sha(stdout),
+  'stderr_path':f'stderr/{cid}.raw','stderr_bytes':len(stderr),'stderr_sha256':sha(stderr),
+  'pre_snapshot_path':f'snapshots/{cid}-before.json','post_snapshot_path':f'snapshots/{cid}-after.json',
+  'preflight_expected_hash_matches':matches,'preflight_hashes':held,'changed_paths_by_category':changes,
+  'source_test_spec_governance_changed_count':len(changes['source_test_spec_governance_hashes']),
+  'dataset_changed_count':len(changes['dataset_hashes']),'report_fixture_and_coordinator_changed_count':len(changes['report_fixture_and_coordinator_hashes']),
+  'foreign_v41_report_changed_count':len(changes['foreign_v41_report_hashes']),
+  'git_dirty_before':before['git_dirty'],'git_dirty_after':after['git_dirty']}
+ result_path.write_text(json.dumps(record,indent=2,sort_keys=True)+'\n')
+ print(json.dumps({'status':'DONE','id':cid,'exit_code':code,'elapsed_seconds':record['elapsed_seconds'],
+  'stdout_bytes':len(stdout),'stderr_bytes':len(stderr),'source_changes':record['source_test_spec_governance_changed_count'],
+  'dataset_changes':record['dataset_changed_count'],'report_fixture_and_coordinator_changes':record['report_fixture_and_coordinator_changed_count'],
+  'foreign_v41_report_changes':record['foreign_v41_report_changed_count']}),flush=True)
+ return code
+if __name__=='__main__':raise SystemExit(main())

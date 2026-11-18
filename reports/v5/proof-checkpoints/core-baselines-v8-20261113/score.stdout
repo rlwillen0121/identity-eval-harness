@@ -1,0 +1,12 @@
+{
+  "run_dirs": [
+    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_core-baselines-v8-20261113/oracle_team_replay",
+    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_core-baselines-v8-20261113/noop_team",
+    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_core-baselines-v8-20261113/metadata_newest_selector_greedy",
+    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_core-baselines-v8-20261113/regime_lookup_memorizer",
+    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_core-baselines-v8-20261113/local_myopic_no_dag",
+    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_core-baselines-v8-20261113/constant_conservative_deny",
+    "/Users/ryanwillen/orca/projects/identity-eval-harness/runs/v5_core-baselines-v8-20261113/constant_workflow_template"
+  ],
+  "suite_id": "v5_core"
+}

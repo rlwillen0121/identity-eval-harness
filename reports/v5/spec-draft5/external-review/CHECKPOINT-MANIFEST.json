@@ -1,0 +1,563 @@
+{
+  "status": "FINAL_FROZEN_SAFE_CHECKPOINT_INVENTORY_NO_STAGING_PERFORMED",
+  "created_at": "2026-11-14T08:46:05.076202+00:00",
+  "candidate": {
+    "path": "SPEC-v5.0-draft.5.md",
+    "sha256": "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104",
+    "opus_verdict": "PASS_WITH_NONBLOCKING_NOTES_0P0_0P1_0P2",
+    "carbon_verdict": "UNAVAILABLE_no_valid_review",
+    "two_model_consensus": false
+  },
+  "protected_active_spec": {
+    "sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+    "include_in_checkpoint": false
+  },
+  "safe_artifact_count": 50,
+  "safe_artifacts": [
+    {
+      "path": "reports/v5/spec-draft5/external-review/CARBON-REVISION-COVERAGE-PLAN.md",
+      "sha256": "f5a5712dbd3d0be35d01a22569ac5f07dbbcc288e8441d507954cd7595a015d3",
+      "bytes": 5406,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/REVIEW-STATUS-08f8d8da.md",
+      "sha256": "a22ab12fb072ab32c35cae51b257125d568da1a3dd555dfabd51b32bfde3aedc",
+      "bytes": 4004,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/ROUND1-STATUS.md",
+      "sha256": "60b725b8cdd636775fffe89174e230701ac884716ebca01e2f9eaa0eb250974b",
+      "bytes": 4080,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-coverage-7b243747.json",
+      "sha256": "b021e03a00503e263e1d88cf9801f7f5fa452c95251abb3482ca2fbc167514cc",
+      "bytes": 37309,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-coverage-c7410b68.json",
+      "sha256": "c304075aa6db75a44751ee24558c4606f42b50e4b96a73fd2a42d600c22c533e",
+      "bytes": 43977,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-A-7b243747.md",
+      "sha256": "e9b96af7eb655aef096d197839b1638a327ce05c85fc5b1f66768de33947cbf0",
+      "bytes": 211450,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-A-c7410b68-status.json",
+      "sha256": "fb73d0711d742b3d1a1c5b44cd036291824746dc8b1ed4273a8033546ad8a8c0",
+      "bytes": 1347,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-A-c7410b68.md",
+      "sha256": "fff85d56bba19ce6c4e046db095279cfa049302b4409bf3625eaf77a48c7d76e",
+      "bytes": 158657,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+      "sha256": "06df194985bdc284d76e10bea99e90c79895ab1f5186ab1be088c10f498ddd84",
+      "bytes": 230859,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-c7410b68-status.json",
+      "sha256": "b64a731bd77a042a925bd0f4db811cce6d8479993178771ae9865c4e7cb6b8c6",
+      "bytes": 1347,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-c7410b68.md",
+      "sha256": "6b43e41a90cf63f65363c5107e6c65516f9b51a74db8652b032c067d68ea2e9e",
+      "bytes": 155075,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-C-7b243747.md",
+      "sha256": "49b1fe035846055aa85c916a61791d91989131a4feb1893267e90e9c82d7b104",
+      "bytes": 145178,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-C-c7410b68-status.json",
+      "sha256": "bda1f37c15a0ac9d5083f549f7382908b1875ce17aab311be70923b4aec007c7",
+      "bytes": 1347,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-packet-C-c7410b68.md",
+      "sha256": "688d7c36f5005bd6981cc890da527cf69b02fac36dfedfc3e46820e96e6771fa",
+      "bytes": 127933,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-small-policy-08f8d8da.md",
+      "sha256": "e6fa99f96886f8bb964c6a3a87f7c4373325507133e358bf9e31bac0e2d32e97",
+      "bytes": 7545,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-small-policy-v2-08f8d8da-dispatch.json",
+      "sha256": "85cf97dcf92f06d916e5c6ab650e69afca1067292b9f794477df09ac8804a94a",
+      "bytes": 1337,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-small-policy-v2-08f8d8da-outcome.json",
+      "sha256": "1681d3c968b1bd8170cbca2c2747f0bab500e0225644f0678aa76b575e7e0d27",
+      "bytes": 1404,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-small-policy-v2-08f8d8da-progress.json",
+      "sha256": "5d2de2f2668d3505b010e479a5031048c9791bf4909c2841839f43c1fa75b638",
+      "bytes": 478,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/carbon-small-policy-v2-08f8d8da-status.json",
+      "sha256": "a3108389f48642f2b2f76cc31c9081139ad9ceda8c30582d0c9c3d97fb3f89fe",
+      "bytes": 2123,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/chat-protocol-adjustment.json",
+      "sha256": "d3078beeb1206c2a14d32c46db74ad82c8aba07a11f9f96d2e166ba02aa87f23",
+      "bytes": 534,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/dispatch-script-provenance.json",
+      "sha256": "edc9443915cad13a3ca95cc9c8f66476dc725888b236999df0cfc941cdac773f",
+      "bytes": 920,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/input-candidate-08f8d8da.md",
+      "sha256": "08f8d8da64dffb3b1b5a5bb549348b9d48f2eccb192abe64fb3062a3c62ff104",
+      "bytes": 309295,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/input-candidate-095f2ea0.md",
+      "sha256": "095f2ea08fc9266c5157d70c268ced96e8a48a59d0dc89e3a55583753dccf900",
+      "bytes": 285751,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/input-candidate-c7410b68.md",
+      "sha256": "c7410b68d4f1d7a4a1c82ff5d3fd1662b3bde2cbfd4de9b9b5ba7142c312d12f",
+      "bytes": 304066,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/model-metadata.json",
+      "sha256": "d192edcf7ac4f4b76d36d41596578b4f2a93d3cfe1d6cd1d0f7e3764221691f4",
+      "bytes": 553,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true,
+      "role_limit": "latest_cache_only_not_historical_catalog_proof"
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/opus-round4-c741-to-08.diff",
+      "sha256": "577bc5cc7e4c5da3a42e986dc7c4c7ed5a4982b47d371aa0a74b6bbdcf916a7f",
+      "bytes": 54155,
+      "mode": "0o400",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/opus-round4-catalog-08f8d8da.json",
+      "sha256": "bc996d78307912773ec3a4f119c9919d9fe25a3fa97702909d1e9a95ba67240d",
+      "bytes": 295,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/opus-round4-dispatch-08f8d8da.json",
+      "sha256": "34a0d719dcc7bf32804d4618e20c3a81c2b8cc7c770e8bc50544726507084875",
+      "bytes": 580,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/revision-dispatch-script.json",
+      "sha256": "060bb1d4a66aed15f2658a6e7e4f2168413df94d6c481d92ab31214d40cbe87a",
+      "bytes": 591,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/revision-model-metadata.json",
+      "sha256": "8d79fa7793b9e379c2ac1e2259aed1ddf6ab7102e4e143d5d7cb26bd06f121b2",
+      "bytes": 536,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-chat1-gemini-4-carbon-high-response-metadata.json",
+      "sha256": "4bd8021dea9b9a24a008fdbf1da4c307b1bbfcb5b390920b1921fa3d9a34db36",
+      "bytes": 762,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-chat1-gemini-4-carbon-high-status.json",
+      "sha256": "f574c3ab4a0414cdcb619b57cd15061c63df0ffce303c6599c3ed45f7a1595e5",
+      "bytes": 564,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-claude-opus-5-5-high-status.json",
+      "sha256": "6bd4cfc900e99c6d5c09206bc8e3443efb6b650ec11b9f3b7c7710a42f90069d",
+      "bytes": 1125,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-claude-opus-5-5-high.md",
+      "sha256": "b90fa08f59ac8886277c9107ea995302e886b580a860f18a7695b833b217aa00",
+      "bytes": 20361,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-gemini-4-carbon-high-status.json",
+      "sha256": "3e7a09d4502b328aaa24fbcf583350150e9ddba51cd7b5db7bf954b80a3db51d",
+      "bytes": 520,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-input-provenance.json",
+      "sha256": "f51c7fd0cc8519ada5df0ff3f965b08287e8fa7fd49dea1eb127b5282bf2e9b9",
+      "bytes": 499,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-retry1-gemini-4-carbon-high-response-metadata.json",
+      "sha256": "c1b8dfe19c228a06b233cfd7d67f4dfbd7700c47d3289ce29bcd8abbc6b887b6",
+      "bytes": 755,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round1-retry1-gemini-4-carbon-high-status.json",
+      "sha256": "80180359ab934dfef4853a6c2faafe262e89be2b2c9787e769925a156f9de7f5",
+      "bytes": 564,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round2-claude-opus-5-5-high-status.json",
+      "sha256": "3aef2555d6e8acce51d54cebdf106555677b1db466378e0fc16705054320bc2a",
+      "bytes": 1663,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round2-claude-opus-5-5-high.md",
+      "sha256": "6e6cbdfd892a2f111b318b476ca96a080fe49b68f62020e05e1d1028dc1d351c",
+      "bytes": 23473,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round2-stream-gemini-4-carbon-high-deadline.json",
+      "sha256": "518d39664051299eb3b3f1086751e4531bf7724f2e89c1a5a5f06872a197ca5d",
+      "bytes": 1506,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round2-stream-gemini-4-carbon-high-status.json",
+      "sha256": "518d39664051299eb3b3f1086751e4531bf7724f2e89c1a5a5f06872a197ca5d",
+      "bytes": 1506,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round3-claude-opus-5-5-high-c7410b68-review.md",
+      "sha256": "385f31ff75259f1277e93092eeb621248f0f3e8522de4eb1e8ae7bc608cf3967",
+      "bytes": 12314,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round3-claude-opus-5-5-high-c7410b68-status.json",
+      "sha256": "1c4000083ce3477b57084792f181edfc92fd1de6af21a0e5b6151b212be1f1d4",
+      "bytes": 1796,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round4-claude-opus-5-5-high-08f8d8da-review.md",
+      "sha256": "b043ae4f1992f23fb30c0cc30e68ffcce371957f231beacfde62f88bbc2ab944",
+      "bytes": 7444,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/round4-claude-opus-5-5-high-08f8d8da-status.json",
+      "sha256": "7b35bc87e9203669a3ee557363e494efb1a1081b785d11c28ab12ae9b8814a4b",
+      "bytes": 1821,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/scoped-catalog-c7410b68.json",
+      "sha256": "6aa5db72e85bd8d5304a814791a2454128e04fdd65fe637ea9f8a0f785da41d5",
+      "bytes": 474,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/scoped-dispatch-c7410b68.json",
+      "sha256": "eb3e5a1853de78d3a529eb5911718aad3e10d00525dfc5d9f58d1d4dabd5532d",
+      "bytes": 685,
+      "mode": "0o600",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/stream_capture_v2.py",
+      "sha256": "39376646b122a3c7006c9f428926e272af92983ca80b03ab61e2b1ab9c9f8eda",
+      "bytes": 28181,
+      "mode": "0o644",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/test_stream_capture_v2.py",
+      "sha256": "a1e80f06ee22860e8dad0e79afec7837801a2217d42cf6d28b7c5b17eac113e0",
+      "bytes": 21179,
+      "mode": "0o644",
+      "scan": "PASS_known_protected_client_credentials_and_configured_private_endpoint",
+      "frozen": true
+    }
+  ],
+  "excluded_count": 13,
+  "excluded_private_or_ephemeral_artifacts": [
+    {
+      "path": "reports/v5/spec-draft5/external-review/CHECKPOINT-MANIFEST-PRELIMINARY.json",
+      "sha256": "e0827db79500c640e2e43c5a97a263b57ffcbdbb8defdd89f1f1a7b66bd7d60b",
+      "bytes": 22137,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "superseded_preliminary_inventory_preserved_not_for_staging"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/__pycache__/run_opus_closure4.cpython-314.pyc",
+      "sha256": "9d14d5df502fe306c98e0e9d708e7d29f24f70a4871eb1d03c8c99b662e15717",
+      "bytes": 24046,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "ephemeral_runtime_cache",
+        "unsupported_artifact_type_for_scope"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/__pycache__/run_scoped_reviews.cpython-314.pyc",
+      "sha256": "492429e12284760ff0519dd65c9a085a2d2b7975eff65e64976e2dea75741f60",
+      "bytes": 23483,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "ephemeral_runtime_cache",
+        "unsupported_artifact_type_for_scope"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/__pycache__/run_small_carbon_v2.cpython-314.pyc",
+      "sha256": "78740a549970462246bc1267fc5346a8f0d60772a72163dd6c10954654a35dba",
+      "bytes": 16958,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "ephemeral_runtime_cache",
+        "unsupported_artifact_type_for_scope"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/__pycache__/stream_capture_v2.cpython-314.pyc",
+      "sha256": "84ad64d0ebf45a7cd9b90771c59d5f2391be589a21f2e06ac5bc3edc4ffab015",
+      "bytes": 43518,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "ephemeral_runtime_cache",
+        "unsupported_artifact_type_for_scope"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/build_carbon_packets.py",
+      "sha256": "ca1c35cdc8e478e0177186e3b7a933f7e0cfa0d3e1a2c23e5e844bb114e6b4ec",
+      "bytes": 6691,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/run_opus_closure4.py",
+      "sha256": "0de70488b0a254f914332e2663cd70aa042971b80cbacd6a35782e3a9fc6ba03",
+      "bytes": 12629,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/run_reviews.py",
+      "sha256": "98f50f85e80001e3b42fe868751ec9e41d5dcd445e4d78fedb9db1385d30308c",
+      "bytes": 8400,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint",
+        "configured_private_endpoint_literal"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/run_reviews_chat.py",
+      "sha256": "dd65067f7fa907bde9520fb952b80831882285cd9d3f73003833f28ca7263bcd",
+      "bytes": 8926,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/run_reviews_initial.py",
+      "sha256": "1b5b08fbda13ad126ef7d6ac8c39dc9ee99c05f8745f58e8bfe8115616cb91c9",
+      "bytes": 7342,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint",
+        "configured_private_endpoint_literal"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/run_revision_reviews.py",
+      "sha256": "1f18ef493b8b7670475fa9b0048ddcfa8000e47778ec57593549ecf026019ccb",
+      "bytes": 10233,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/run_scoped_reviews.py",
+      "sha256": "b533e2759fc238b38ce6c5eea7409bfb4234a226f65aa0e35b611185b500b8de",
+      "bytes": 12349,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint"
+      ]
+    },
+    {
+      "path": "reports/v5/spec-draft5/external-review/run_small_carbon_v2.py",
+      "sha256": "44d5175bddb878e59d5af8d381cd975e761d76114d35cd1dcfcbe28c9c01cc2a",
+      "bytes": 7999,
+      "mode": "0o600",
+      "excluded_reasons": [
+        "private_runtime_or_packet_builder_not_for_checkpoint"
+      ]
+    }
+  ],
+  "key_outcome_paths": {
+    "review_status": "reports/v5/spec-draft5/external-review/REVIEW-STATUS-08f8d8da.md",
+    "opus_acceptance": "reports/v5/spec-draft5/external-review/round4-claude-opus-5-5-high-08f8d8da-review.md",
+    "carbon_blocker": "reports/v5/spec-draft5/external-review/carbon-small-policy-v2-08f8d8da-outcome.json"
+  },
+  "owner_metadata_files_to_refresh_separately": [
+    "reports/v5/spec-draft5/CHANGELOG.md",
+    "reports/v5/spec-draft5/REVIEW-PACKET.md"
+  ],
+  "scope_limits": [
+    "No additional inference after bounded small-call deadline",
+    "No fake consensus or Carbon synthesis",
+    "No source health, implementation, G-SPEC, dataset integrity, milestone, live benchmark or publication claim",
+    "No review-lane stage/commit/push/delete; private originals retained unchanged",
+    "Root/owner must verify final selected hashes immediately before explicit scoped staging"
+  ],
+  "scan_limits": "Known protected CPA client credential values and configured private endpoint literals checked in process; no values printed. Functional helper/tests independently reviewed and offline tested. This is local checkpoint inventory, not publication approval.",
+  "manifest_self_hash": "Supplied in handoff; self excluded from its own entry list."
+}

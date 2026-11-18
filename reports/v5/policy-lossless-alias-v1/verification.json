@@ -1,0 +1,166 @@
+{
+  "candidate": {
+    "alias_count": 8,
+    "aliases_are_explicit_and_inline": true,
+    "best_found_within_bounded_search": true,
+    "complete_policy_markdown_roundtrip_byte_equal": true,
+    "decoded_sha256": "4a8b0a4f44217eb6832c7147a45a96d2cdb70e4e7cc31985567b057232cda855",
+    "literal_anchor_key_count_preserved": 39,
+    "literal_original_section_headings_preserved": true,
+    "literal_rule_ids_and_headings_preserved": true,
+    "original_section_heading_count": 35,
+    "rendered_rules_markdown_characters": 57941,
+    "rendered_rules_markdown_o200k_tokens": 16799,
+    "rendered_rules_markdown_sha256": "bb45077fa6623b3a877c929bf495cda200a787ba201dfcb15991ead7dacff8af"
+  },
+  "experiment": "lossless inline phrase and identifier alias encoding",
+  "full_serialized_card": {
+    "all_under_normative_limit": false,
+    "all_under_planning_target": false,
+    "baseline_max": 17411,
+    "baseline_min": 17409,
+    "candidate_max": 17410,
+    "candidate_mean": 17409.0,
+    "candidate_min": 17408,
+    "exact_savings_max": 1,
+    "exact_savings_mean": 1.0,
+    "exact_savings_min": 1,
+    "exact_savings_percent_of_baseline_mean": 0.005743825387708214,
+    "max_candidate_over_normative_limit_tokens": 14210,
+    "max_candidate_over_planning_target_tokens": 15210,
+    "normative_limit": 3200,
+    "planning_target": 2200
+  },
+  "logical_episode_envelope": {
+    "all_under_normative_limit": false,
+    "baseline_max": 27586,
+    "baseline_min": 27202,
+    "candidate_max": 27585,
+    "candidate_min": 27201,
+    "exact_savings_max": 1,
+    "exact_savings_min": 1,
+    "max_candidate_over_normative_limit_tokens": 17985,
+    "normative_limit": 9600
+  },
+  "optimization": {
+    "dictionary_format_comparison": [
+      {
+        "alias_count": 8,
+        "exact_savings_max": 1,
+        "exact_savings_min": 1,
+        "format": "json",
+        "full_card_max": 17410,
+        "full_card_min": 17408,
+        "roundtrip_byte_equal": true
+      },
+      {
+        "alias_count": 8,
+        "exact_savings_max": -7,
+        "exact_savings_min": -7,
+        "format": "tab",
+        "full_card_max": 17418,
+        "full_card_min": 17416,
+        "roundtrip_byte_equal": true
+      }
+    ],
+    "history": [
+      {
+        "exact_full_card_tokens": 17431,
+        "occurrences": 2,
+        "seed_prefix_alias": "«FAID»",
+        "seed_rank": 1
+      },
+      {
+        "exact_full_card_tokens": 17423,
+        "occurrences": 3,
+        "seed_prefix_alias": "«REVOKE»",
+        "seed_rank": 20
+      },
+      {
+        "exact_full_card_tokens": 17420,
+        "occurrences": 3,
+        "seed_prefix_alias": "«ACCOUNT»",
+        "seed_rank": 31
+      },
+      {
+        "exact_full_card_tokens": 17416,
+        "occurrences": 2,
+        "seed_prefix_alias": "«CALL»",
+        "seed_rank": 39
+      },
+      {
+        "exact_full_card_tokens": 17415,
+        "occurrences": 2,
+        "seed_prefix_alias": "«WRONG»",
+        "seed_rank": 47
+      },
+      {
+        "accepted": true,
+        "alias": "«STAGES»",
+        "exact_candidates_scored": 48,
+        "exact_full_card_token_saving": 3,
+        "full_card_tokens_after": 17412,
+        "occurrences": 5,
+        "pass": 1,
+        "phrase_tokens": 6
+      },
+      {
+        "accepted": true,
+        "alias": "«NONE»",
+        "exact_candidates_scored": 48,
+        "exact_full_card_token_saving": 1,
+        "full_card_tokens_after": 17411,
+        "occurrences": 2,
+        "pass": 2,
+        "phrase_tokens": 12
+      },
+      {
+        "accepted": true,
+        "alias": "«APPROVED»",
+        "exact_candidates_scored": 48,
+        "exact_full_card_token_saving": 1,
+        "full_card_tokens_after": 17410,
+        "occurrences": 2,
+        "pass": 3,
+        "phrase_tokens": 18
+      },
+      {
+        "accepted": false,
+        "exact_candidates_scored": 48,
+        "pass": 4,
+        "reason": "no exact token-count improvement"
+      }
+    ],
+    "marginal_candidates_exact_scored": 192,
+    "marginal_passes_run": 4,
+    "max_candidates_per_pass": 48,
+    "max_passes": 64,
+    "method": "bounded deterministic ranked-prefix search plus exact marginal greedy; each score covers the full serialized PolicyCardV5 including decoder and dictionary",
+    "seed_prefixes_scored": 5,
+    "selected_alias_count": 8,
+    "selected_dictionary_format": "json",
+    "stopped_after_no_exact_improvement": true
+  },
+  "proof_boundary": "Offline text-compression experiment only. This does not establish model readability, normative conformance, G-SPEC-01, source health, or any live benchmark result.",
+  "source": {
+    "policy_card_py_sha256": "95cbbd83b1c926a157dba1c59ba8fe2cb3f1c352f65b5a38b7e9fe9b86937843",
+    "rendered_rules_markdown_characters": 57988,
+    "rendered_rules_markdown_o200k_tokens": 16810,
+    "rendered_rules_markdown_sha256": "4a8b0a4f44217eb6832c7147a45a96d2cdb70e4e7cc31985567b057232cda855"
+  },
+  "status": "exact markdown roundtrip verified; exact token fit and residual deficits are reported below",
+  "system_and_opening_envelopes": {
+    "all_system_plus_card_under_limit": false,
+    "all_system_plus_initial_opening_under_limit": false,
+    "baseline_system_plus_initial_opening_max": 18311,
+    "baseline_system_plus_initial_opening_min": 18305,
+    "max_system_plus_initial_opening_over_limit_tokens": 15110,
+    "normative_limit": 3200,
+    "system_plus_card_max": 17512,
+    "system_plus_card_min": 17510,
+    "system_plus_initial_opening_max": 18310,
+    "system_plus_initial_opening_min": 18304
+  },
+  "tokenizer": "o200k_base",
+  "v5_dev_episode_count": 12
+}

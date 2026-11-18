@@ -1,0 +1,26 @@
+[package]
+name = "ib-v5-conformance"
+description = "Shared conformance transport, safety-domain Stage 2 gate, and bounded process verification for IdentityBench v5"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ib-core.workspace = true
+ib-v5-oracle.workspace = true
+ib-v5-runtime.workspace = true
+ib-v5-schemas.workspace = true
+ib-v5-scoring.workspace = true
+indexmap.workspace = true
+nix.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

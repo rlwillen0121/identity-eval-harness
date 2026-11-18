@@ -1,0 +1,10 @@
+{
+  "«ACCOUNT»": "`(m.account_action == \"KEEP_ACTIVE\" and",
+  "«APPROVED»": "and 0 < m.approved_ttl_s < g.approved_ttl_s)`",
+  "«CALL»": "call 2+→`status=\"DIAGNOSTIC_LIMIT_REACHED\"` with",
+  "«FAID»": "`LV(faid,S_1)` and `LV(bound_person_p1(faid),S_1)` iff both `faid in S_1.idp_accounts` and `bound_person_p1(faid) is not",
+  "«NONE»": "is not None and m.emergency_custodian_account_id",
+  "«REVOKE»": "!= \"REVOKE_ORPHAN_CLOUD_PRINCIPAL\")` OR",
+  "«STAGES»": "Stages 1–5 against",
+  "«WRONG»": "wrong phase/stage→`status=\"REJECTED_STRUCTURAL\"` without quota;"
+}

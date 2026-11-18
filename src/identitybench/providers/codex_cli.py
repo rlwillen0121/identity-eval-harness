@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Unpack
 
 from identitybench.providers._cli import (
+    ACTION_SCHEMA_NAME,
     CliOptions,
     CliProvider,
     Invocation,
@@ -185,20 +186,25 @@ class CodexCliProvider(CliProvider):
         for override in CONFIG_OVERRIDES:
             argv += ["-c", override]
         argv += ["--json", "-o", str(io_dir / OUTPUT_FILE)]
-        if request.output_schema is not None:
+        raw: dict[str, Any] = {}
+        if request.output_schema is not None and request.schema_name != ACTION_SCHEMA_NAME:
             schema_path = io_dir / SCHEMA_FILE
             schema_path.write_text(json.dumps(request.output_schema), encoding="utf-8")
             argv += ["--output-schema", str(schema_path)]
+        elif request.output_schema is not None:
+            raw = {"output_schema": "withheld (JSON action protocol turn)"}
         argv += ["-C", str(work_dir), "-"]
-        return Invocation(argv=tuple(argv), stdin=prompt)
+        return Invocation(argv=tuple(argv), stdin=prompt, raw=raw)
 
     def _parse(self, result: ProcessResult, request: ModelRequest, io_dir: Path) -> ModelResponse:
         events = parse_jsonl(result.stdout)
         usage = Usage()
         raw: dict[str, Any] = {}
+        raw_usage: list[dict[str, Any]] = []
         errors: list[str] = []
         streamed_text: str | None = None
         turn_completed = False
+        turn_failed = False
         for event in events:
             kind = event.get("type")
             if kind == "thread.started" and event.get("thread_id"):
@@ -206,6 +212,7 @@ class CodexCliProvider(CliProvider):
             elif kind == "turn.completed":
                 turn_completed = True
                 counts = as_dict(event.get("usage"))
+                raw_usage.append(counts)
                 total_in = as_int(counts.get("input_tokens"))
                 cached = min(as_int(counts.get("cached_input_tokens")), total_in)
                 # Codex reports OpenAI-style counts: input includes cached tokens and output
@@ -221,6 +228,8 @@ class CodexCliProvider(CliProvider):
             elif (message := _agent_message(event)) is not None:
                 streamed_text = message
             elif (error := _event_error(event)) is not None:
+                if kind == "turn.failed":
+                    turn_failed = True
                 errors.append(error)
 
         text: str | None = None
@@ -228,12 +237,20 @@ class CodexCliProvider(CliProvider):
             text = (io_dir / OUTPUT_FILE).read_text(encoding="utf-8").strip() or None
         if text is None and streamed_text:
             text = streamed_text.strip() or None
+        if (
+            text is None
+            and turn_completed
+            and not turn_failed
+            and result.returncode == 0
+            and request.schema_name == ACTION_SCHEMA_NAME
+        ):
+            text = ""
 
         response = ModelResponse(
             text=text,
             usage=usage,
             stop_reason="completed" if turn_completed else None,
-            raw=raw or None,
+            raw={**raw, "raw_usage": raw_usage} if raw_usage else raw or None,
         )
         if text is None:
             reason = errors[-1] if errors else "no final message"

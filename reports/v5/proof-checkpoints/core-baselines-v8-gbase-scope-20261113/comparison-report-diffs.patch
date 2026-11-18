@@ -1,0 +1,138 @@
+--- historical/oracle_team_replay/report.md
++++ current/oracle_team_replay/report.md
+@@ -36,12 +36,15 @@
+ | Gate | Status |
+ | --- | --- |
+ | G-BASE-01 | `UNMEASURED` |
++| G-BASE-01-NUMERIC | `UNMEASURED` |
+ | G-CAL-01 | `NOT_APPLICABLE` |
+ | G-CAL-02 | `UNMEASURED` |
+ | G-CAL-03 | `UNMEASURED` |
+ | G-ECON-01 | `UNMEASURED` |
+ 
+ G-ECON-01 is not measured for this artifact because required actual-token, cost, pricing, comparator, or exact-suite evidence is missing.
++
++`G-BASE-01-NUMERIC` reports this baseline run's numeric threshold check only. Full `G-BASE-01` requires `noop_team`, all five heuristic baselines, and 100% counterfactual flip-pair and ID/row-order permutation passes. A numeric failure is sufficient to fail the full gate; numeric passes alone leave it unmeasured.
+ 
+ ## Cost and token provenance
+ 
+--- historical/noop_team/report.md
++++ current/noop_team/report.md
+@@ -35,13 +35,16 @@
+ 
+ | Gate | Status |
+ | --- | --- |
+-| G-BASE-01 | `PASS` |
++| G-BASE-01 | `UNMEASURED` |
++| G-BASE-01-NUMERIC | `PASS` |
+ | G-CAL-01 | `NOT_APPLICABLE` |
+ | G-CAL-02 | `UNMEASURED` |
+ | G-CAL-03 | `UNMEASURED` |
+ | G-ECON-01 | `UNMEASURED` |
+ 
+ G-ECON-01 is not measured for this artifact because required actual-token, cost, pricing, comparator, or exact-suite evidence is missing.
++
++`G-BASE-01-NUMERIC` reports this baseline run's numeric threshold check only. Full `G-BASE-01` requires `noop_team`, all five heuristic baselines, and 100% counterfactual flip-pair and ID/row-order permutation passes. A numeric failure is sufficient to fail the full gate; numeric passes alone leave it unmeasured.
+ 
+ ## Cost and token provenance
+ 
+--- historical/metadata_newest_selector_greedy/report.md
++++ current/metadata_newest_selector_greedy/report.md
+@@ -35,13 +35,16 @@
+ 
+ | Gate | Status |
+ | --- | --- |
+-| G-BASE-01 | `PASS` |
++| G-BASE-01 | `UNMEASURED` |
++| G-BASE-01-NUMERIC | `PASS` |
+ | G-CAL-01 | `NOT_APPLICABLE` |
+ | G-CAL-02 | `UNMEASURED` |
+ | G-CAL-03 | `UNMEASURED` |
+ | G-ECON-01 | `UNMEASURED` |
+ 
+ G-ECON-01 is not measured for this artifact because required actual-token, cost, pricing, comparator, or exact-suite evidence is missing.
++
++`G-BASE-01-NUMERIC` reports this baseline run's numeric threshold check only. Full `G-BASE-01` requires `noop_team`, all five heuristic baselines, and 100% counterfactual flip-pair and ID/row-order permutation passes. A numeric failure is sufficient to fail the full gate; numeric passes alone leave it unmeasured.
+ 
+ ## Cost and token provenance
+ 
+--- historical/regime_lookup_memorizer/report.md
++++ current/regime_lookup_memorizer/report.md
+@@ -35,13 +35,16 @@
+ 
+ | Gate | Status |
+ | --- | --- |
+-| G-BASE-01 | `PASS` |
++| G-BASE-01 | `UNMEASURED` |
++| G-BASE-01-NUMERIC | `PASS` |
+ | G-CAL-01 | `NOT_APPLICABLE` |
+ | G-CAL-02 | `UNMEASURED` |
+ | G-CAL-03 | `UNMEASURED` |
+ | G-ECON-01 | `UNMEASURED` |
+ 
+ G-ECON-01 is not measured for this artifact because required actual-token, cost, pricing, comparator, or exact-suite evidence is missing.
++
++`G-BASE-01-NUMERIC` reports this baseline run's numeric threshold check only. Full `G-BASE-01` requires `noop_team`, all five heuristic baselines, and 100% counterfactual flip-pair and ID/row-order permutation passes. A numeric failure is sufficient to fail the full gate; numeric passes alone leave it unmeasured.
+ 
+ ## Cost and token provenance
+ 
+--- historical/local_myopic_no_dag/report.md
++++ current/local_myopic_no_dag/report.md
+@@ -35,13 +35,16 @@
+ 
+ | Gate | Status |
+ | --- | --- |
+-| G-BASE-01 | `PASS` |
++| G-BASE-01 | `UNMEASURED` |
++| G-BASE-01-NUMERIC | `PASS` |
+ | G-CAL-01 | `NOT_APPLICABLE` |
+ | G-CAL-02 | `UNMEASURED` |
+ | G-CAL-03 | `UNMEASURED` |
+ | G-ECON-01 | `UNMEASURED` |
+ 
+ G-ECON-01 is not measured for this artifact because required actual-token, cost, pricing, comparator, or exact-suite evidence is missing.
++
++`G-BASE-01-NUMERIC` reports this baseline run's numeric threshold check only. Full `G-BASE-01` requires `noop_team`, all five heuristic baselines, and 100% counterfactual flip-pair and ID/row-order permutation passes. A numeric failure is sufficient to fail the full gate; numeric passes alone leave it unmeasured.
+ 
+ ## Cost and token provenance
+ 
+--- historical/constant_conservative_deny/report.md
++++ current/constant_conservative_deny/report.md
+@@ -35,13 +35,16 @@
+ 
+ | Gate | Status |
+ | --- | --- |
+-| G-BASE-01 | `PASS` |
++| G-BASE-01 | `UNMEASURED` |
++| G-BASE-01-NUMERIC | `PASS` |
+ | G-CAL-01 | `NOT_APPLICABLE` |
+ | G-CAL-02 | `UNMEASURED` |
+ | G-CAL-03 | `UNMEASURED` |
+ | G-ECON-01 | `UNMEASURED` |
+ 
+ G-ECON-01 is not measured for this artifact because required actual-token, cost, pricing, comparator, or exact-suite evidence is missing.
++
++`G-BASE-01-NUMERIC` reports this baseline run's numeric threshold check only. Full `G-BASE-01` requires `noop_team`, all five heuristic baselines, and 100% counterfactual flip-pair and ID/row-order permutation passes. A numeric failure is sufficient to fail the full gate; numeric passes alone leave it unmeasured.
+ 
+ ## Cost and token provenance
+ 
+--- historical/constant_workflow_template/report.md
++++ current/constant_workflow_template/report.md
+@@ -35,13 +35,16 @@
+ 
+ | Gate | Status |
+ | --- | --- |
+-| G-BASE-01 | `PASS` |
++| G-BASE-01 | `UNMEASURED` |
++| G-BASE-01-NUMERIC | `PASS` |
+ | G-CAL-01 | `NOT_APPLICABLE` |
+ | G-CAL-02 | `UNMEASURED` |
+ | G-CAL-03 | `UNMEASURED` |
+ | G-ECON-01 | `UNMEASURED` |
+ 
+ G-ECON-01 is not measured for this artifact because required actual-token, cost, pricing, comparator, or exact-suite evidence is missing.
++
++`G-BASE-01-NUMERIC` reports this baseline run's numeric threshold check only. Full `G-BASE-01` requires `noop_team`, all five heuristic baselines, and 100% counterfactual flip-pair and ID/row-order permutation passes. A numeric failure is sufficient to fail the full gate; numeric passes alone leave it unmeasured.
+ 
+ ## Cost and token provenance
+ 

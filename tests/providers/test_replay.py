@@ -85,6 +85,12 @@ def test_from_dict_rejects_unknown_fields() -> None:
         response_from_dict({"text": "x", "usage": {"tokens": 1}})
 
 
+@pytest.mark.parametrize("usage", [[], False, 0, ""])
+def test_from_dict_rejects_falsy_non_object_usage(usage: object) -> None:
+    with pytest.raises(ValueError, match="usage must be an object"):
+        response_from_dict({"usage": usage})
+
+
 async def test_serves_recorded_responses_by_cache_key() -> None:
     replay = ReplayProvider({"k1": RECORDED, "k2": response_to_dict(ModelResponse(text="two"))})
     assert isinstance(replay, Provider)
@@ -103,6 +109,33 @@ async def test_returned_responses_are_copies() -> None:
     first.parsed["decision"] = "APPROVE"
     again = await replay.complete(keyed("k1"))
     assert again == RECORDED
+
+
+async def test_replayed_tool_arguments_are_deep_copies_in_both_directions() -> None:
+    arguments = {"nested": [{"values": ["recorded"]}]}
+    recorded = ModelResponse(tool_calls=[ToolCall("t1", "lookup", arguments)])
+    replay = ReplayProvider({"k1": recorded})
+
+    first = await replay.complete(keyed("k1"))
+    first.tool_calls[0].arguments["nested"][0]["values"][0] = "first changed"
+    assert recorded.tool_calls[0].arguments["nested"][0]["values"] == ["recorded"]
+    second = await replay.complete(keyed("k1"))
+    assert second.tool_calls[0].arguments["nested"][0]["values"] == ["recorded"]
+    second.tool_calls[0].arguments["nested"][0]["values"][0] = "second changed"
+    assert first.tool_calls[0].arguments["nested"][0]["values"] == ["first changed"]
+
+
+async def test_replay_constructor_copies_and_sanitizes_model_responses() -> None:
+    arguments = {"nested": ["recorded"]}
+    recorded = ModelResponse(text="answer", tool_calls=[ToolCall("t1", "lookup", arguments)])
+    replay = ReplayProvider({"k1": recorded})
+
+    arguments["nested"][0] = "changed after construction"
+    first = await replay.complete(keyed("k1"))
+    assert first.tool_calls[0].arguments["nested"] == ["recorded"]
+    first.tool_calls[0].arguments["nested"][0] = "changed after replay"
+    second = await replay.complete(keyed("k1"))
+    assert second.tool_calls[0].arguments["nested"] == ["recorded"]
 
 
 async def test_unknown_or_missing_key_is_an_error() -> None:

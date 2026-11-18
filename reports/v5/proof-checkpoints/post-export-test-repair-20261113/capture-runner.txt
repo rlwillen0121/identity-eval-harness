@@ -1,0 +1,417 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import pathlib
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime, timezone
+
+REPO = pathlib.Path.cwd().resolve()
+OUT = REPO / "reports/v5/proof-checkpoints/post-export-test-repair-20261113"
+VOLATILE = {".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "runs"}
+ROOT_CONFIG_FILES = {
+    "pyproject.toml", "uv.lock", "AGENTS.md", "CLAUDE.md", "GEMINI.md", ".gitignore",
+    ".python-version", "pytest.ini", "mypy.ini", ".mypy.ini", "ruff.toml", ".ruff.toml",
+    "setup.cfg", "tox.ini", "noxfile.py", "opencode.json", "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md", "SECURITY.md",
+}
+SUITES = ("v5_dev", "v5_lite", "v5_core", "v5_full")
+REPORT_INPUT_ROOTS = (
+    "reports/v5/conformance/inputs/v4",
+    "reports/v5/conformance/inputs/v5/v5_dev",
+    "reports/v5/conformance/inputs/v6",
+    "reports/v5/conformance/inputs/v7",
+    "reports/v5/conformance/inputs/v8",
+    "reports/v5/conformance/inputs/spec-sections-1-4",
+    "reports/v5/conformance/shared_inputs",
+    "reports/v5/conformance/protocol",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/corpus-snapshot-v2",
+)
+REPORT_INPUT_FILES = (
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/prepared/full-conformance-v3-cursor-literal/public-inputs.jsonl",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators/prepare-safety-domain-corpus-v1.py",
+)
+REPORT_PY_ROOTS = (
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/coordinators",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/successor-audits-v1",
+    "reports/v5/conformance/shared_results/v1/full-conformance-v3/successor-audits-v2",
+)
+EXPECTED_FOREIGN_UNTRACKED = {
+    "reports/v41-skill-orch-v2/charts/delegation-breakdown-dark.svg",
+    "reports/v41-skill-orch-v2/charts/delegation-breakdown-light.svg",
+    "reports/v41-skill-orch-v2/charts/leaderboard-dark.svg",
+    "reports/v41-skill-orch-v2/charts/leaderboard-light.svg",
+    "reports/v41-skill-orch-v2/charts/pareto-quota-dark.svg",
+    "reports/v41-skill-orch-v2/charts/pareto-quota-light.svg",
+    "reports/v41-skill-orch-v2/charts/skill-progression-dark.svg",
+    "reports/v41-skill-orch-v2/charts/skill-progression-light.svg",
+    "reports/v41-skill-orch-v2/index.html",
+    "reports/v41-skill-orch-v2/report.md",
+    "reports/v41-skill-orch-v2/summary.json",
+}
+COMMANDS = json.loads((OUT / "commands.json").read_text())
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def excluded(path: pathlib.Path) -> bool:
+    return any(part in VOLATILE for part in path.parts) or path.suffix in {".pyc", ".pyo"}
+
+
+def digest_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def digest_file(path: pathlib.Path) -> dict[str, int | str | bool]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+            size += len(chunk)
+    return {"exists": True, "bytes": size, "sha256": digest.hexdigest()}
+
+
+def git(args: list[str]) -> str:
+    result = subprocess.run(["git", *args], cwd=REPO, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return result.stdout.decode()
+
+
+def add_tree(paths: set[str], rel_root: str, suffix: str | None = None) -> None:
+    root = REPO / rel_root
+    if not root.is_dir():
+        return
+    for path in root.rglob("*"):
+        if path.is_file() and not excluded(path.relative_to(REPO)) and (suffix is None or path.suffix == suffix):
+            paths.add(path.relative_to(REPO).as_posix())
+
+
+def selected_paths() -> dict[str, list[str]]:
+    groups: dict[str, set[str]] = {
+        "source": set(),
+        "tests": set(),
+        "configuration_governance": set(),
+        "v5_datasets": set(),
+        "fixed_report_fixtures_and_coordinator": set(),
+        "report_python_coordinator_successor": set(),
+        "packaging_python_copies": set(),
+    }
+    add_tree(groups["source"], "src")
+    add_tree(groups["tests"], "tests")
+    for rel_root in (
+        ".agents", ".github", ".claude/agents", ".claude/skills", ".opencode/agents",
+        "docs/governance", "experiments", "config", "configs",
+    ):
+        add_tree(groups["configuration_governance"], rel_root)
+    for name in ROOT_CONFIG_FILES:
+        if (REPO / name).is_file():
+            groups["configuration_governance"].add(name)
+    for path in REPO.glob("SPEC*.md"):
+        if path.is_file():
+            groups["configuration_governance"].add(path.relative_to(REPO).as_posix())
+    examples_config = REPO / "examples/codex.config.toml"
+    if examples_config.is_file():
+        groups["configuration_governance"].add(examples_config.relative_to(REPO).as_posix())
+    for suite in SUITES:
+        for name in ("SEAL.json", "episodes.jsonl", "oracles.jsonl"):
+            groups["v5_datasets"].add(f"datasets/{suite}/{name}")
+    for rel_root in REPORT_INPUT_ROOTS:
+        add_tree(groups["fixed_report_fixtures_and_coordinator"], rel_root)
+    for rel in REPORT_INPUT_FILES:
+        if (REPO / rel).is_file():
+            groups["fixed_report_fixtures_and_coordinator"].add(rel)
+    for rel_root in REPORT_PY_ROOTS:
+        add_tree(groups["report_python_coordinator_successor"], rel_root, suffix=".py")
+    add_tree(groups["packaging_python_copies"], "reports/v5/packaging", suffix=".py")
+    return {name: sorted(paths) for name, paths in groups.items()}
+
+
+def foreign_paths() -> dict[str, str]:
+    tracked = [p for p in git(["ls-files", "-z", "--", "reports/v41-*"]).split("\0") if p]
+    result = {path: "indexed" for path in tracked}
+    for line in git(["status", "--short", "--untracked-files=all", "--", "reports/v41-*"]).splitlines():
+        if len(line) < 4:
+            continue
+        status, path = line[:2], line[3:]
+        if path.startswith("reports/v41-"):
+            result[path] = status
+    return result
+
+
+def snapshot(label: str) -> dict[str, object]:
+    paths = selected_paths()
+    hashes = {
+        group: {rel: digest_file(REPO / rel) for rel in entries}
+        for group, entries in paths.items()
+    }
+    foreign = {
+        rel: {"status": state, **digest_file(REPO / rel)}
+        for rel, state in sorted(foreign_paths().items())
+    }
+    hashes["foreign_v41_indexed_and_untracked"] = foreign
+    status = git(["status", "--porcelain", "--untracked-files=all"]).splitlines()
+    return {
+        "label": label,
+        "captured_at_utc": utc_now(),
+        "cwd": str(REPO),
+        "head": git(["rev-parse", "HEAD"]).strip(),
+        "branch": git(["branch", "--show-current"]).strip(),
+        "git_dirty": bool(status),
+        "git_status_entry_count": len(status),
+        "file_counts": {group: len(entries) for group, entries in hashes.items()},
+        "sha256_by_category": hashes,
+    }
+
+
+def stable_hashes(value: dict[str, object]) -> object:
+    return value["sha256_by_category"]
+
+
+def snapshot_sha(value: dict[str, object]) -> str:
+    return digest_bytes(json.dumps(stable_hashes(value), sort_keys=True, separators=(",", ":")).encode())
+
+
+def changed_paths(before: dict[str, object], after: dict[str, object]) -> dict[str, list[str]]:
+    old = before["sha256_by_category"]
+    new = after["sha256_by_category"]
+    assert isinstance(old, dict) and isinstance(new, dict)
+    changes: dict[str, list[str]] = {}
+    for group in sorted(set(old) | set(new)):
+        left, right = old.get(group, {}), new.get(group, {})
+        assert isinstance(left, dict) and isinstance(right, dict)
+        changes[group] = [rel for rel in sorted(set(left) | set(right)) if left.get(rel) != right.get(rel)]
+    return changes
+
+
+def write_json(path: pathlib.Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+
+
+def initial_checks(before: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
+    hashes = before["sha256_by_category"]
+    assert isinstance(hashes, dict)
+    tests = hashes["tests"]
+    source = hashes["source"]
+    config = hashes["configuration_governance"]
+    fixtures = hashes["fixed_report_fixtures_and_coordinator"]
+    assert isinstance(tests, dict) and isinstance(source, dict) and isinstance(config, dict) and isinstance(fixtures, dict)
+    checks: dict[str, object] = {
+        "head_matches": before["head"] == scope["head"],
+        "branch_matches": before["branch"] == scope["branch"],
+        "spec_hash_matches": config.get("SPEC-v5.md", {}).get("sha256") == scope["expected_spec_sha256"],
+        "expected_test_hashes_match": {
+            rel: tests.get(rel, {}).get("sha256") == digest
+            for rel, digest in scope["expected_test_hashes"].items()
+        },
+        "expected_report_hashes_match": {
+            rel: fixtures.get(rel, {}).get("sha256") == digest
+            for rel, digest in scope["expected_report_hashes"].items()
+        },
+        "expected_source_hashes_match": {
+            rel: source.get(rel, {}).get("sha256") == digest
+            for rel, digest in scope["expected_source_hashes"].items()
+        },
+        "v5_dataset_count_is_12": len(hashes["v5_datasets"]) == scope["expected_v5_dataset_artifact_count"],
+        "v5_datasets_all_present": all(item["exists"] for item in hashes["v5_datasets"].values()),
+        "foreign_v41_path_count_matches": len(hashes["foreign_v41_indexed_and_untracked"]) == scope["expected_foreign_v41_indexed_and_untracked_count"],
+        "foreign_v41_untracked_paths_match": {
+            path for path, entry in hashes["foreign_v41_indexed_and_untracked"].items() if entry["status"] == "??"
+        } == set(scope["expected_foreign_v41_untracked_paths"]),
+        "report_python_count_matches": len(hashes["report_python_coordinator_successor"]) == scope["expected_report_python_count"],
+        "no_packaging_python_copies": len(hashes["packaging_python_copies"]) == 0,
+    }
+
+    prior_snapshot_path = REPO / scope["prior_mypy_proof"]["source_snapshot_path"]
+    prior_mypy_result_path = REPO / scope["prior_mypy_proof"]["result_path"]
+    prior_snapshot = json.loads(prior_snapshot_path.read_text())
+    prior_mypy_result = json.loads(prior_mypy_result_path.read_text())
+    prior_source = {
+        rel: entry for rel, entry in prior_snapshot["source_test_spec_governance_hashes"].items()
+        if rel.startswith("src/")
+    }
+    checks["prior_mypy_exit_code"] = prior_mypy_result["exit_code"]
+    checks["prior_mypy_exit_code_matches"] = prior_mypy_result["exit_code"] == scope["prior_mypy_proof"]["expected_exit_code"]
+    checks["prior_mypy_result_sha256"] = digest_file(prior_mypy_result_path)["sha256"]
+    checks["src_matches_prior_mypy_snapshot"] = source == prior_source
+    checks["production_validation_sha256_matches_prior_mypy"] = (
+        source.get("src/identitybench/v5/validation.py", {}).get("sha256")
+        == prior_source.get("src/identitybench/v5/validation.py", {}).get("sha256")
+    )
+    checks["prior_source_hash_count"] = len(prior_source)
+    checks["current_source_hash_count"] = len(source)
+    checks["source_hash_count_matches_prior"] = len(source) == len(prior_source)
+    return checks
+
+
+def main() -> int:
+    if len(sys.argv) == 2 and sys.argv[1] == "finalize":
+        scope = json.loads((OUT / "scope.json").read_text())
+        commands = json.loads((OUT / "commands.json").read_text())
+        missing = [item["id"] for item in commands if not (OUT / "results" / f'{item["id"]}.json').is_file()]
+        if missing:
+            raise SystemExit("cannot finalize; missing results: " + ",".join(missing))
+        records = [json.loads((OUT / "results" / f'{item["id"]}.json').read_text()) for item in commands]
+        summary = {
+            "run_id": scope["run_id"],
+            "head": scope["head"],
+            "branch": scope["branch"],
+            "expected_spec_sha256": scope["expected_spec_sha256"],
+            "commands": records,
+            "all_commands_exit_zero": all(record.get("exit_code") == 0 for record in records),
+            "input_drift_detected": any(any(paths for paths in record.get("changed_paths_by_category", {}).values()) for record in records),
+            "src_matches_prior_mypy_snapshot": records[0].get("preflight_checks", {}).get("src_matches_prior_mypy_snapshot"),
+            "prior_mypy_exit_code": records[0].get("preflight_checks", {}).get("prior_mypy_exit_code"),
+            "production_validation_sha256_matches_prior_mypy": records[0].get("preflight_checks", {}).get("production_validation_sha256_matches_prior_mypy"),
+            "packaging_python_copies_present_before": records[0].get("preflight_checks", {}).get("no_packaging_python_copies") is False,
+            "requested_service_tier": "fast",
+            "actual_native_service_tier_observable": False,
+            "live_model_calls": False,
+            "dotenv_loaded": False,
+            "mypy_or_validators_rerun": False,
+            "interpretation": "Point-in-time Ruff and non-live pytest evidence only; report every nonzero exit without repair.",
+        }
+        write_json(OUT / "summary.json", summary)
+        artifacts: dict[str, dict[str, int | str | bool]] = {}
+        for path in sorted(OUT.rglob("*")):
+            if path.is_file() and path.name != "artifact-sha256.json":
+                artifacts[path.relative_to(OUT).as_posix()] = digest_file(path)
+        write_json(OUT / "artifact-sha256.json", {
+            "algorithm": "sha256", "covers_all_files_except_this_manifest": True, "files": artifacts,
+        })
+        print(json.dumps({
+            "status": "FINALIZED",
+            "summary_sha256": digest_file(OUT / "summary.json")["sha256"],
+            "artifact_manifest_sha256": digest_file(OUT / "artifact-sha256.json")["sha256"],
+            "artifact_count": len(artifacts),
+        }, sort_keys=True), flush=True)
+        return 0
+
+    if len(sys.argv) != 3 or sys.argv[1] != "run":
+        raise SystemExit("usage: capture-runner.txt run <command-id> | finalize")
+    if not (OUT / "scope.json").is_file() or not json.loads((OUT / "scope.json").read_text()).get("run_authorized"):
+        raise SystemExit("blocked: no root release")
+    command_id = sys.argv[2]
+    command_ids = [item["id"] for item in COMMANDS]
+    if command_id not in command_ids:
+        raise SystemExit("unknown command id")
+    index = command_ids.index(command_id)
+    result_path = OUT / "results" / f"{command_id}.json"
+    if result_path.exists():
+        raise SystemExit("command already captured")
+    if index and not (OUT / "results" / f"{command_ids[index - 1]}.json").is_file():
+        raise SystemExit("commands must run sequentially")
+
+    scope = json.loads((OUT / "scope.json").read_text())
+    before = snapshot(f"{command_id}-before")
+    before_path = OUT / "snapshots" / f"{command_id}-before.json"
+    write_json(before_path, before)
+    checks: dict[str, object]
+    if index == 0:
+        checks = initial_checks(before, scope)
+        write_json(OUT / "snapshots" / "00-frozen-inputs.json", before)
+    else:
+        frozen = json.loads((OUT / "snapshots" / "00-frozen-inputs.json").read_text())
+        checks = {"frozen_input_map_unchanged": stable_hashes(before) == stable_hashes(frozen)}
+        checks.update(initial_checks(before, scope))
+
+    if not all(value if isinstance(value, bool) else all(value.values()) if isinstance(value, dict) else True for value in checks.values()):
+        after = snapshot(f"{command_id}-blocked-after-preflight")
+        write_json(OUT / "snapshots" / f"{command_id}-after.json", after)
+        record = {
+            "id": command_id, "argv": COMMANDS[index]["argv"], "cwd": str(REPO),
+            "exit_code": None, "not_run_reason": "preflight hash or scope mismatch",
+            "preflight_checks": checks, "changed_paths_by_category": changed_paths(before, after),
+        }
+        write_json(result_path, record)
+        print(json.dumps({"status": "BLOCKED_PREFLIGHT", "id": command_id, "checks": checks}, sort_keys=True), flush=True)
+        return 2
+
+    argv = COMMANDS[index]["argv"]
+    started_at = utc_now()
+    started_ns = time.monotonic_ns()
+    process = subprocess.Popen(argv, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+    counters = {"stdout": 0, "stderr": 0}
+    counter_lock = threading.Lock()
+
+    def drain(stream: object, label: str, path: pathlib.Path) -> None:
+        assert hasattr(stream, "read")
+        with path.open("wb") as output:
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                output.write(chunk)
+                output.flush()
+                with counter_lock:
+                    counters[label] += len(chunk)
+
+    assert process.stdout is not None and process.stderr is not None
+    stdout_path = OUT / "stdout" / f"{command_id}.raw"
+    stderr_path = OUT / "stderr" / f"{command_id}.raw"
+    threads = [
+        threading.Thread(target=drain, args=(process.stdout, "stdout", stdout_path), daemon=True),
+        threading.Thread(target=drain, args=(process.stderr, "stderr", stderr_path), daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    last_heartbeat = 0.0
+    print(json.dumps({"status": "START", "id": command_id, "argv": argv, "cwd": str(REPO)}, sort_keys=True), flush=True)
+    while process.poll() is None:
+        elapsed = (time.monotonic_ns() - started_ns) / 1_000_000_000
+        if elapsed - last_heartbeat >= 15:
+            with counter_lock:
+                counts = dict(counters)
+            print(json.dumps({"status": "PROGRESS", "id": command_id, "elapsed_seconds": round(elapsed, 1), **counts}, sort_keys=True), flush=True)
+            last_heartbeat = elapsed
+        time.sleep(1)
+    ended_at = utc_now()
+    ended_ns = time.monotonic_ns()
+    for thread in threads:
+        thread.join()
+    after = snapshot(f"{command_id}-after")
+    after_path = OUT / "snapshots" / f"{command_id}-after.json"
+    write_json(after_path, after)
+    changes = changed_paths(before, after)
+    stdout, stderr = stdout_path.read_bytes(), stderr_path.read_bytes()
+    record = {
+        "id": command_id,
+        "argv": argv,
+        "exact_command": " ".join(argv),
+        "cwd": str(REPO),
+        "started_at_utc": started_at,
+        "ended_at_utc": ended_at,
+        "elapsed_monotonic_ns": ended_ns - started_ns,
+        "elapsed_seconds": (ended_ns - started_ns) / 1_000_000_000,
+        "exit_code": process.returncode,
+        "stdout_path": stdout_path.relative_to(OUT).as_posix(),
+        "stdout_bytes": len(stdout),
+        "stdout_sha256": digest_bytes(stdout),
+        "stderr_path": stderr_path.relative_to(OUT).as_posix(),
+        "stderr_bytes": len(stderr),
+        "stderr_sha256": digest_bytes(stderr),
+        "before_snapshot_path": before_path.relative_to(OUT).as_posix(),
+        "after_snapshot_path": after_path.relative_to(OUT).as_posix(),
+        "before_snapshot_sha256": snapshot_sha(before),
+        "after_snapshot_sha256": snapshot_sha(after),
+        "preflight_checks": checks if index == 0 else {},
+        "changed_paths_by_category": changes,
+        "changed_path_counts": {key: len(value) for key, value in changes.items()},
+        "requested_service_tier": "fast",
+        "actual_native_service_tier_observable": False,
+    }
+    write_json(result_path, record)
+    print(json.dumps({
+        "status": "DONE", "id": command_id, "exit_code": process.returncode,
+        "elapsed_seconds": record["elapsed_seconds"], "stdout_bytes": len(stdout), "stderr_bytes": len(stderr),
+        "changed_path_counts": record["changed_path_counts"],
+    }, sort_keys=True), flush=True)
+    return int(process.returncode or 0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

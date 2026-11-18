@@ -1,0 +1,176 @@
+{
+  "artifact": "IdentityBench v5 public author input packet verification",
+  "checks": {
+    "SPEC_full_source_differs_from_packet_projection": true,
+    "SPEC_packet_equals_exact_projection": true,
+    "all_eight_non_SPEC_copies_byte_equal": true,
+    "all_loaded_identitybench_modules_resolved_from_packet_src": true,
+    "all_pinned_source_hashes_match": true,
+    "author_spawned_or_comparison_run": false,
+    "input_copies_are_read_only": true,
+    "manifest_has_only_nine_authorized_inputs": true,
+    "package_schema_scope_import_smoke_passed": true,
+    "packet_contains_no_pycache": true,
+    "packet_contains_no_symlinks": true,
+    "packet_contains_no_unexpected_files": true,
+    "packet_directories_are_writable": true,
+    "provider_calls_made": false,
+    "python_bytecode_writes_disabled": true,
+    "repository_conftest_loaded": false,
+    "schema_scope_direct_imports_limited_to_stdlib_pydantic_and_packet_modules": true,
+    "tests_run": false
+  },
+  "copy_equality_counts": {
+    "byte_equal_exact_source_copies": 8,
+    "projection_differs_from_full_source": 1
+  },
+  "import_smoke": {
+    "all_identitybench_modules_from_packet_src": true,
+    "conftest_loaded": false,
+    "direct_import_map": {
+      "identitybench": "none",
+      "identitybench.v5": ".schemas",
+      "identitybench.v5.schemas": "stdlib and pydantic only",
+      "identitybench.v5.scope_algebra": "stdlib and .schemas only"
+    },
+    "environment": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "<packet>/src"
+    },
+    "flags": [
+      "-B"
+    ],
+    "identitybench_module_count": 4,
+    "interpreter": "repository .venv/bin/python",
+    "modules": {
+      "identitybench": "src/identitybench/__init__.py",
+      "identitybench.v5": "src/identitybench/v5/__init__.py",
+      "identitybench.v5.schemas": "src/identitybench/v5/schemas.py",
+      "identitybench.v5.scope_algebra": "src/identitybench/v5/scope_algebra.py"
+    },
+    "python_version": "3.12.13"
+  },
+  "input_files": [
+    {
+      "byte_count": 4022,
+      "byte_equal": true,
+      "packet_path": ".agents/skills/blind-conformance/SKILL.md",
+      "packet_sha256": "ea7fb3036d786040cbfc07cdd3595b34b028c45712191e6147d2e83f6dbfdc74",
+      "source_path": ".agents/skills/blind-conformance/SKILL.md",
+      "source_sha256": "ea7fb3036d786040cbfc07cdd3595b34b028c45712191e6147d2e83f6dbfdc74"
+    },
+    {
+      "byte_count": 6021,
+      "byte_equal": true,
+      "packet_path": "SPEC-v5-ADDENDUM-01.md",
+      "packet_sha256": "bf0cb575a9ea20e2995164b3e34b696f1828b4e0870f198731cc7c9624c0c9e9",
+      "source_path": "SPEC-v5-ADDENDUM-01.md",
+      "source_sha256": "bf0cb575a9ea20e2995164b3e34b696f1828b4e0870f198731cc7c9624c0c9e9"
+    },
+    {
+      "byte_count": 3348,
+      "byte_equal": true,
+      "packet_path": "SPEC-v5-DIRECTIVE-01.md",
+      "packet_sha256": "d3b01715cf277730de027ef66ec2ea66f304b5ff388ebc9cb138aedd0cc98405",
+      "source_path": "SPEC-v5-DIRECTIVE-01.md",
+      "source_sha256": "d3b01715cf277730de027ef66ec2ea66f304b5ff388ebc9cb138aedd0cc98405"
+    },
+    {
+      "byte_count": 226462,
+      "byte_equal": false,
+      "packet_path": "SPEC-v5.md",
+      "packet_sha256": "3a7d5977e8d1bc16f9cb6c6c80340b432e480d59a14506d5fbe16845cd0b0c8f",
+      "source_path": "SPEC-v5.md",
+      "source_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43"
+    },
+    {
+      "byte_count": 1092019,
+      "byte_equal": true,
+      "packet_path": "selected-episodes.jsonl",
+      "packet_sha256": "ce95f83fd7b9e4cfce99fe3ddb612cfbbe0c2d3f923c54d62fce5dab61fae600",
+      "source_path": "reports/v5/conformance/inputs/v8/v5_dev/selected-episodes.jsonl",
+      "source_sha256": "ce95f83fd7b9e4cfce99fe3ddb612cfbbe0c2d3f923c54d62fce5dab61fae600"
+    },
+    {
+      "byte_count": 259,
+      "byte_equal": true,
+      "packet_path": "src/identitybench/__init__.py",
+      "packet_sha256": "f955c2275e5c07caf974539e537537bf2379c598722d0cabfeb10ca6cf11c717",
+      "source_path": "src/identitybench/__init__.py",
+      "source_sha256": "f955c2275e5c07caf974539e537537bf2379c598722d0cabfeb10ca6cf11c717"
+    },
+    {
+      "byte_count": 5163,
+      "byte_equal": true,
+      "packet_path": "src/identitybench/v5/__init__.py",
+      "packet_sha256": "77e127cce8b4dfa9d4692a8ccbe5ad27720705ef8ee52c10058323908acf1d18",
+      "source_path": "src/identitybench/v5/__init__.py",
+      "source_sha256": "77e127cce8b4dfa9d4692a8ccbe5ad27720705ef8ee52c10058323908acf1d18"
+    },
+    {
+      "byte_count": 98250,
+      "byte_equal": true,
+      "packet_path": "src/identitybench/v5/schemas.py",
+      "packet_sha256": "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7",
+      "source_path": "src/identitybench/v5/schemas.py",
+      "source_sha256": "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7"
+    },
+    {
+      "byte_count": 11279,
+      "byte_equal": true,
+      "packet_path": "src/identitybench/v5/scope_algebra.py",
+      "packet_sha256": "ea639f4c8061a6e911fe53ddb024d1ac904c5da10e01600c6c98fca8db264db7",
+      "source_path": "src/identitybench/v5/scope_algebra.py",
+      "source_sha256": "ea639f4c8061a6e911fe53ddb024d1ac904c5da10e01600c6c98fca8db264db7"
+    }
+  ],
+  "manifest_path": "MANIFEST.json",
+  "manifest_sha256": "eb07505df9d184298b9c21164a61426c8e45cadf83d6b8765c91ebe7e40708c5",
+  "packet_inventory": {
+    "directories": [
+      ".agents",
+      ".agents/skills",
+      ".agents/skills/blind-conformance",
+      "src",
+      "src/identitybench",
+      "src/identitybench/v5"
+    ],
+    "expected_file_count": 11,
+    "files": [
+      ".agents/skills/blind-conformance/SKILL.md",
+      "MANIFEST.json",
+      "SPEC-v5-ADDENDUM-01.md",
+      "SPEC-v5-DIRECTIVE-01.md",
+      "SPEC-v5.md",
+      "VERIFICATION.json",
+      "selected-episodes.jsonl",
+      "src/identitybench/__init__.py",
+      "src/identitybench/v5/__init__.py",
+      "src/identitybench/v5/schemas.py",
+      "src/identitybench/v5/scope_algebra.py"
+    ],
+    "symlink_count": 0,
+    "unexpected_files": []
+  },
+  "projection": {
+    "blank_lf_prefix_line_count": 78,
+    "included_source_line_count": 2176,
+    "original_source_full_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43",
+    "original_source_line_count": 2335,
+    "packet_equals_exact_projection": true,
+    "packet_labeled_as_content_projection_not_original": true,
+    "packet_path": "SPEC-v5.md",
+    "prefix_is_exactly_78_blank_lf_lines": true,
+    "projected_packet_line_count": 2254,
+    "projected_packet_sha256": "3a7d5977e8d1bc16f9cb6c6c80340b432e480d59a14506d5fbe16845cd0b0c8f",
+    "source_after_line_2254_not_included": true,
+    "source_lines_79_through_2254_byte_equal": true,
+    "source_lines_included": [
+      79,
+      2254
+    ]
+  },
+  "source_head_at_packet_capture": "46f5bd177c1e8e4c960b932e8769db6f37fa3c7f",
+  "status": "PASS",
+  "verification_head": "46f5bd177c1e8e4c960b932e8769db6f37fa3c7f"
+}

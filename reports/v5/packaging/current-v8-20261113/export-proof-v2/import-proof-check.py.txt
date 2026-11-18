@@ -1,0 +1,16 @@
+from __future__ import annotations
+import importlib, json, os, pathlib, sys
+root = pathlib.Path(os.environ["EXPORT_ROOT"]).resolve()
+src = root / "src"
+repo = pathlib.Path("/Users/ryanwillen/orca/projects/identity-eval-harness").resolve()
+if any(pathlib.Path(p or ".").resolve() == repo or repo in pathlib.Path(p or ".").resolve().parents for p in sys.path):
+    raise SystemExit("owner checkout present on sys.path before imports")
+names = ["identitybench", "identitybench.v5", "identitybench.v5.conformance_process", "identitybench.v5.conformance_safety_domain", "identitybench.v5.report", "identitybench.v5.validation"]
+modules = {}
+for name in names:
+    module = importlib.import_module(name)
+    origin = pathlib.Path(module.__file__).resolve()
+    if src not in origin.parents:
+        raise SystemExit(f"module imported outside exported src: {name} -> {origin}")
+    modules[name] = str(origin)
+print(json.dumps({"owner_checkout_present_on_sys_path": False, "owner_checkout_removed_before_imports": True, "export_root": str(root), "modules": modules, "sys_path": sys.path}, indent=2))

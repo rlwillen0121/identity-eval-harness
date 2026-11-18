@@ -1,0 +1,442 @@
+[
+  {
+    "path": "README.md",
+    "line": 9,
+    "blob": "19a9df4e6a792db816842d36dd6524691f44b5fb",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "README.md",
+    "line": 10,
+    "blob": "19a9df4e6a792db816842d36dd6524691f44b5fb",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "README.md",
+    "line": 11,
+    "blob": "19a9df4e6a792db816842d36dd6524691f44b5fb",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "README.md",
+    "line": 12,
+    "blob": "19a9df4e6a792db816842d36dd6524691f44b5fb",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 45,
+    "blob": "16dc4d0956cc44217e5a2f3a16712ce67f27c4a2",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 46,
+    "blob": "16dc4d0956cc44217e5a2f3a16712ce67f27c4a2",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 46,
+    "blob": "16dc4d0956cc44217e5a2f3a16712ce67f27c4a2",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 47,
+    "blob": "16dc4d0956cc44217e5a2f3a16712ce67f27c4a2",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 2470,
+    "blob": "16dc4d0956cc44217e5a2f3a16712ce67f27c4a2",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/REVIEW-PACKET.md",
+    "line": 156,
+    "blob": "7983e1604b7a83384b85f8d4f79e6455d92e74ef",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-A-7b243747.md",
+    "line": 734,
+    "blob": "92ca72f66e0ef0feae688a202d0f06f9c6bf6a9a",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-A-7b243747.md",
+    "line": 1418,
+    "blob": "92ca72f66e0ef0feae688a202d0f06f9c6bf6a9a",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-A-c7410b68.md",
+    "line": 734,
+    "blob": "94f2669dc3e8b538350d80c0219bf61f28ebf951",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 17,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 18,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 18,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 19,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 106,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 405,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 406,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 406,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 407,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 426,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 426,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 427,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-7b243747.md",
+    "line": 634,
+    "blob": "d8d0a4fb9961be24ef50bdfccc756b4515fb4b70",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-c7410b68.md",
+    "line": 17,
+    "blob": "ec967b97b6af62d4516fed6319bc52e10ac4aefe",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-c7410b68.md",
+    "line": 18,
+    "blob": "ec967b97b6af62d4516fed6319bc52e10ac4aefe",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-c7410b68.md",
+    "line": 18,
+    "blob": "ec967b97b6af62d4516fed6319bc52e10ac4aefe",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-c7410b68.md",
+    "line": 19,
+    "blob": "ec967b97b6af62d4516fed6319bc52e10ac4aefe",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/carbon-packet-B-c7410b68.md",
+    "line": 106,
+    "blob": "ec967b97b6af62d4516fed6319bc52e10ac4aefe",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-095f2ea0.md",
+    "line": 45,
+    "blob": "55c6720ed28fd408e2f2d09b21b94568535cd004",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-095f2ea0.md",
+    "line": 46,
+    "blob": "55c6720ed28fd408e2f2d09b21b94568535cd004",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-095f2ea0.md",
+    "line": 46,
+    "blob": "55c6720ed28fd408e2f2d09b21b94568535cd004",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-095f2ea0.md",
+    "line": 47,
+    "blob": "55c6720ed28fd408e2f2d09b21b94568535cd004",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-c7410b68.md",
+    "line": 45,
+    "blob": "6acc22eb34ce20561ae13b141634b045e7f05e51",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-c7410b68.md",
+    "line": 46,
+    "blob": "6acc22eb34ce20561ae13b141634b045e7f05e51",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-c7410b68.md",
+    "line": 46,
+    "blob": "6acc22eb34ce20561ae13b141634b045e7f05e51",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-c7410b68.md",
+    "line": 47,
+    "blob": "6acc22eb34ce20561ae13b141634b045e7f05e51",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/input-candidate-c7410b68.md",
+    "line": 2464,
+    "blob": "6acc22eb34ce20561ae13b141634b045e7f05e51",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/opus-round4-c741-to-08.diff",
+    "line": 11,
+    "blob": "b262523a2b3242fd8bc3cb2fbcaa39f6af45dcb1",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/opus-round4-c741-to-08.diff",
+    "line": 12,
+    "blob": "b262523a2b3242fd8bc3cb2fbcaa39f6af45dcb1",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/opus-round4-c741-to-08.diff",
+    "line": 12,
+    "blob": "b262523a2b3242fd8bc3cb2fbcaa39f6af45dcb1",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/opus-round4-c741-to-08.diff",
+    "line": 13,
+    "blob": "b262523a2b3242fd8bc3cb2fbcaa39f6af45dcb1",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/opus-round4-c741-to-08.diff",
+    "line": 57,
+    "blob": "b262523a2b3242fd8bc3cb2fbcaa39f6af45dcb1",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/external-review/revision-dispatch-script.json",
+    "line": 6,
+    "blob": "d9f9f9d9f324403aa091e844deeaf72fa67edeae",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "reports/v5/spec-draft5/REVIEW-PACKET.md",
+    "line": 155,
+    "blob": "99f93c5bab08f4b53b0ea1c01874a852b8009b2d",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 45,
+    "blob": "0818dd5ed270430e17cc4ef30173188e5ac12d98",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 46,
+    "blob": "0818dd5ed270430e17cc4ef30173188e5ac12d98",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 46,
+    "blob": "0818dd5ed270430e17cc4ef30173188e5ac12d98",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 47,
+    "blob": "0818dd5ed270430e17cc4ef30173188e5ac12d98",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 45,
+    "blob": "6d1193d8c75b9b32aa26ab3a332cdeba2d8c4a57",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 46,
+    "blob": "6d1193d8c75b9b32aa26ab3a332cdeba2d8c4a57",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 46,
+    "blob": "6d1193d8c75b9b32aa26ab3a332cdeba2d8c4a57",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": false
+  },
+  {
+    "path": "SPEC-v5.0-draft.5.md",
+    "line": 47,
+    "blob": "6d1193d8c75b9b32aa26ab3a332cdeba2d8c4a57",
+    "userinfo": false,
+    "query": false,
+    "public_doc_looking": true
+  }
+]

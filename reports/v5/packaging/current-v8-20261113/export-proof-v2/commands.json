@@ -1,0 +1,154 @@
+[
+  {
+    "argv": [
+      "git",
+      "archive",
+      "--format=tar",
+      "--output=/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/base-head.tar",
+      "f790e751c26d9667db588b95f9ef65cebe0f24e1"
+    ],
+    "cwd": "/Users/ryanwillen/orca/projects/identity-eval-harness",
+    "duration_seconds": 0.233,
+    "exit_code": 0,
+    "id": "git_archive_exact_head",
+    "nonsecret_environment_overrides": {},
+    "stderr_path": "git-archive.stderr.txt",
+    "stdout_path": "git-archive.stdout.txt"
+  },
+  {
+    "duration_seconds": 0.205,
+    "exit_code": 0,
+    "id": "extract_git_archive",
+    "method": "python tarfile.extractall(filter=data)",
+    "stderr_path": "archive-extract.stderr.txt",
+    "stdout_path": "archive-extract.stdout.txt"
+  },
+  {
+    "duration_seconds": 0.12,
+    "exit_code": 0,
+    "id": "overlay_exact_172_pinned_paths",
+    "method": "byte copy from owner checkout using exported-hash-manifest-v2.json",
+    "path_count": 172
+  },
+  {
+    "argv": [
+      "uv",
+      "sync",
+      "--frozen",
+      "--group",
+      "dev"
+    ],
+    "credential_handling": "provider credential-like variables filtered; no dotenv read",
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout",
+    "duration_seconds": 2.968,
+    "exit_code": 0,
+    "id": "uv_sync_frozen_dev_group",
+    "nonsecret_environment_overrides": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONPATH": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/src:/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/tests",
+      "TMPDIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/tmp",
+      "UV_CACHE_DIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/uv-cache",
+      "UV_NO_PROGRESS": "1",
+      "UV_PROJECT_ENVIRONMENT": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/.venv",
+      "UV_PYTHON_DOWNLOADS": "never"
+    },
+    "stderr_path": "uv-sync.stderr.txt",
+    "stdout_path": "uv-sync.stdout.txt"
+  },
+  {
+    "argv": [
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/.venv/bin/python",
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/import-proof-check.py"
+    ],
+    "credential_handling": "provider credential-like variables filtered; no dotenv read",
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout",
+    "duration_seconds": 14.941,
+    "exit_code": 0,
+    "id": "isolated_import_provenance",
+    "nonsecret_environment_overrides": {
+      "EXPORT_ROOT": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONPATH": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/src:/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/tests",
+      "TMPDIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/tmp",
+      "UV_CACHE_DIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/uv-cache",
+      "UV_NO_PROGRESS": "1",
+      "UV_PROJECT_ENVIRONMENT": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/.venv",
+      "UV_PYTHON_DOWNLOADS": "never"
+    },
+    "stderr_path": "import-proof.stderr.txt",
+    "stdout_path": "import-proof.stdout.txt"
+  },
+  {
+    "argv": [
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/.venv/bin/python",
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/exported-test-runner.py"
+    ],
+    "credential_handling": "provider credential-like variables filtered; no dotenv read; marker not live deselected",
+    "cwd": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout",
+    "duration_seconds": 119.134,
+    "exit_code": 0,
+    "id": "exported_v5_and_conformance_tests",
+    "import_proof_path": "test-import-proof.json",
+    "nonsecret_environment_overrides": {
+      "EXPORT_ROOT": "/private/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout",
+      "PYTEST_ADDOPTS": "",
+      "PYTEST_BASETEMP": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/tmp/pytest-base",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONPATH": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/src:/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/tests",
+      "TMPDIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/tmp",
+      "UV_CACHE_DIR": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/uv-cache",
+      "UV_NO_PROGRESS": "1",
+      "UV_PROJECT_ENVIRONMENT": "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/checkout/.venv",
+      "UV_PYTHON_DOWNLOADS": "never"
+    },
+    "pytest_arguments": [
+      "-q",
+      "-m",
+      "not live",
+      "--basetemp",
+      "/var/folders/vl/vv1s5gr53fv6ycs9hc9qk00h0000gn/T/identitybench-v5-current-v8-export-v2-5rc05c54/tmp/pytest-base",
+      "tests/conformance/v5/bounded_full_spec_reference/test_reference.py",
+      "tests/conformance/v5/fresh_card_only_v2/test_worker.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_apply.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_derive_phase.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_submission.py",
+      "tests/conformance/v5/fresh_full_spec_v2/test_trace.py",
+      "tests/conformance/v5/test_agent_view_reference.py",
+      "tests/conformance/v5/test_conformance_v5.py",
+      "tests/conformance/v5/test_shared_agent_view_worker.py",
+      "tests/conformance/v5/test_shared_full_spec_worker.py",
+      "tests/v5/test_baselines.py",
+      "tests/v5/test_cli.py",
+      "tests/v5/test_conformance_process.py",
+      "tests/v5/test_conformance_production.py",
+      "tests/v5/test_conformance_safety_domain.py",
+      "tests/v5/test_conformance_shared.py",
+      "tests/v5/test_family_couplings.py",
+      "tests/v5/test_generator.py",
+      "tests/v5/test_negative_proofs.py",
+      "tests/v5/test_noninterference.py",
+      "tests/v5/test_oracle.py",
+      "tests/v5/test_oracle_p2.py",
+      "tests/v5/test_oracle_requests.py",
+      "tests/v5/test_policy_card.py",
+      "tests/v5/test_prepare_safety_domain_corpus_v1.py",
+      "tests/v5/test_provider_accounting.py",
+      "tests/v5/test_report.py",
+      "tests/v5/test_runner.py",
+      "tests/v5/test_runtime.py",
+      "tests/v5/test_safety.py",
+      "tests/v5/test_schemas.py",
+      "tests/v5/test_scope_algebra.py",
+      "tests/v5/test_scoring.py",
+      "tests/v5/test_shortcut_proofs.py",
+      "tests/v5/test_validation.py",
+      "tests/v5/test_verifier.py"
+    ],
+    "selected_test_paths_path": "selected-test-paths.json",
+    "stderr_path": "pytest-v5-export.stderr.txt",
+    "stdout_path": "pytest-v5-export.stdout.txt"
+  }
+]

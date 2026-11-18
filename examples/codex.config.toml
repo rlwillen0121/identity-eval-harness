@@ -1,4 +1,9 @@
 # Follow AGENTS.md.
-# Contributors use orchestrate -> implement -> review (free local checks only).
-# Live model benchmark trials are run exclusively via bench-operator when requested by the user.
-# Strictly Enterprise IGA (humans + standard NHIs + Zero-Trust/ZSP/JIT/CAE); no SOC/SIEM drift or AI-agent governance.
+# v5.0 / M5.0-Core uses SPEC-v5.0-draft.5.md (08f8d8da..., superseding §0.4-listed protocol/resource/schema/ceiling/inference/gate sections) together with fixed SPEC-v5.md (6bc0adfa...), approved SPEC-v5-ADDENDUM-01.md, and SPEC-v5-DIRECTIVE-01.md; v1-v4.1 retain the frozen six-category boundary.
+# v5 alone adds structured deterministic agent_governance over EnterpriseAgentV5 and OBO delegation entities.
+# Contributors use free local checks; implementation, ordinary review, and required independent lanes use native collaboration subagents.
+# AGENTS.md's named-reviewer exception lets the review parent call an explicitly requested spec/adversarial model unavailable through native tools using the existing configured CPA connection, without another routing-permission question.
+# Record requested/effective non-secret route, model, effort, tier, candidate content hash, and unsupported settings or failures; preserve protected credentials and do not substitute models or routes.
+# No direct providers, model-specific CLIs, codex exec, separate sidebar tasks, or implementation bypass. The exception grants no live benchmark authority and preserves required independent lanes and blind isolation.
+# Live v5 or matching v41 runs are exclusive to bench-operator when explicitly requested by the user.
+# No SOC/SIEM/EDR triage, firewall/network incident response, unstructured prompt injection, jailbreak, or moderation work in any version.

@@ -49,7 +49,12 @@ from anthropic import AsyncAnthropic
 from anthropic.types import Message as ApiMessage
 
 from identitybench.providers._env import paired_api_key_env
-from identitybench.providers._json import bounded_token_count, load_object, sanitize_response
+from identitybench.providers._json import (
+    bounded_token_count,
+    load_object,
+    raw_usage_payload,
+    sanitize_response,
+)
 from identitybench.providers._subprocess import redact, redact_diagnostics
 from identitybench.providers.base import (
     Message,
@@ -283,6 +288,7 @@ class AnthropicProvider:
         params = self.request_params(request)
         try:
             client = self._get_client()
+            message: ApiMessage
             if params["max_tokens"] > STREAMING_THRESHOLD_TOKENS:
                 async with client.messages.stream(**params) as stream:
                     message = cast(ApiMessage, await stream.get_final_message())
@@ -336,9 +342,13 @@ class AnthropicProvider:
         # Optional-in-practice fields are read defensively: compatible servers may omit them.
         content = list(getattr(message, "content", None) or [])
         raw: dict[str, Any] = {"id": getattr(message, "id", None)}
+        api_usage = getattr(message, "usage", None)
+        raw_usage = raw_usage_payload(api_usage)
+        if raw_usage is not None:
+            raw["raw_usage"] = raw_usage
         response = ModelResponse(
             stop_reason=getattr(message, "stop_reason", None),
-            usage=_usage(getattr(message, "usage", None)),
+            usage=_usage(api_usage),
             served_model=getattr(message, "model", None) or None,
             raw=raw,
         )

@@ -1,0 +1,69 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "5.0.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/rlwillen0121/identity-eval-harness"
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+ib-core = { path = "crates/ib-core" }
+ib-v5-schemas = { path = "crates/ib-v5-schemas" }
+ib-v5-accounting = { path = "crates/ib-v5-accounting" }
+ib-v5-oracle = { path = "crates/ib-v5-oracle" }
+ib-v5-runtime = { path = "crates/ib-v5-runtime" }
+ib-v5-conformance = { path = "crates/ib-v5-conformance" }
+ib-v5-generator = { path = "crates/ib-v5-generator" }
+ib-v5-scoring = { path = "crates/ib-v5-scoring" }
+ib-v5-report = { path = "crates/ib-v5-report" }
+ib-providers = { path = "crates/ib-providers" }
+ib-v5-runner = { path = "crates/ib-v5-runner" }
+ib-v5-baselines = { path = "crates/ib-v5-baselines" }
+ib-v5-validation = { path = "crates/ib-v5-validation" }
+
+# Async / HTTP / Process / Files
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+async-trait = "0.1"
+tempfile = "3"
+url = "2"
+nix = { version = "0.32", features = ["signal", "user"] }
+
+# Serialization. `arbitrary_precision` keeps Python big ints and float text intact through
+# `serde_json::Value`; `preserve_order` mirrors Python dict insertion order for non-sorted dumps.
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "float_roundtrip"] }
+serde_norway = "0.9.42"
+indexmap = { version = "2", features = ["serde"] }
+base64 = "0.23"
+
+# Hashing
+sha2 = "0.10"
+hex = "0.4"
+md-5 = "0.11"
+
+# Errors / CLI
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+
+# Text
+regex = "1"
+tiktoken-rs = "0.12"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+debug = 1
+
+[profile.dev.package."*"]
+opt-level = 2

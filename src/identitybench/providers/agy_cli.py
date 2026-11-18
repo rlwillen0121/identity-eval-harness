@@ -121,6 +121,35 @@ def served_model(log_text: str) -> str | None:
     return found
 
 
+def _is_structured_request(request: ModelRequest) -> bool:
+    """Whether ``request`` uses ``--json-schema`` / the ``finish`` tool."""
+    return request.output_schema is not None and request.schema_name != ACTION_SCHEMA_NAME
+
+
+def _recover_completed_agent_text(events: list[dict[str, Any]]) -> str | None:
+    """Return the final ``agent_response`` text from ``events`` only if it reached ``DONE``."""
+    chunks_by_step: dict[int, list[str]] = {}
+    done_steps: set[int] = set()
+    last_step_index: int | None = None
+    for event in events:
+        if event.get("event") != "step_update":
+            continue
+        su = as_dict(event.get("step_update"))
+        step_index = su.get("step_index")
+        if type(step_index) is not int or su.get("step_type") != "agent_response":
+            continue
+        last_step_index = step_index
+        delta = su.get("text_delta")
+        if isinstance(delta, str):
+            chunks_by_step.setdefault(step_index, []).append(delta)
+        if su.get("state") == "DONE":
+            done_steps.add(step_index)
+    if last_step_index is None or last_step_index not in done_steps:
+        return None
+    candidate = "".join(chunks_by_step.get(last_step_index, ())).strip()
+    return candidate if candidate else None
+
+
 class AgyCliProvider(CliProvider):
     KIND = "agy_cli"
     ENV_DROP = frozenset(
@@ -168,7 +197,7 @@ class AgyCliProvider(CliProvider):
         if not system.strip():
             system = NEUTRAL_SYSTEM
             notes["substituted_system"] = NEUTRAL_SYSTEM
-        structured = request.output_schema is not None and request.schema_name != ACTION_SCHEMA_NAME
+        structured = _is_structured_request(request)
         if request.output_schema is not None and not structured:
             notes["json_schema"] = "withheld (JSON action protocol turn)"
         message = {
@@ -208,21 +237,27 @@ class AgyCliProvider(CliProvider):
         return (io_dir / LOG_FILE,)
 
     def _parse(self, result: ProcessResult, request: ModelRequest, io_dir: Path) -> ModelResponse:
+        events = list(parse_jsonl(result.stdout))
         results = [
-            as_dict(event.get("result"))
-            for event in parse_jsonl(result.stdout)
-            if event.get("event") == "result"
+            as_dict(event.get("result")) for event in events if event.get("event") == "result"
         ]
         if not results:
-            return self._fail("no result event on stdout", result)
+            failed = self._fail("no result event on stdout", result)
+            failed.raw = {
+                "cli_buffered_error": True,
+                "error_code": "CLI_NO_RESULT_EVENT",
+                "error_class": "TRANSIENT_FAILURE",
+                "proven_unanswered": True,
+            }
+            return failed
         payload = results[-1]
 
         usage_in = as_dict(payload.get("usage"))
         cache_read = as_int(usage_in.get("cache_read_tokens"))
-        structured = payload.get("structured_output")
-        parsed = structured if isinstance(structured, dict) else None
+        structured_output = payload.get("structured_output")
+        parsed = structured_output if isinstance(structured_output, dict) else None
         text, cli_text = structured_text(payload.get("response"), parsed)
-        raw = {key: payload[key] for key in _RAW_KEYS if key in payload}
+        raw = {"raw_usage": usage_in, **{key: payload[key] for key in _RAW_KEYS if key in payload}}
         if cli_text is not None:
             raw["cli_text"] = cli_text
         log_path = io_dir / LOG_FILE
@@ -241,10 +276,61 @@ class AgyCliProvider(CliProvider):
             served_model=served_model(log_text),
             raw=raw or None,
         )
+        structured = _is_structured_request(request)
         status = payload.get("status")
         if status != "SUCCESS":
+            if (
+                not structured
+                and result.returncode == 0
+                and "function call is empty - no input to parse"
+                in str(payload.get("error") or "").lower()
+            ):
+                recovered_text = _recover_completed_agent_text(events)
+                if recovered_text is not None:
+                    response.text = recovered_text
+                    response.parsed = None
+                    recovered_meta = dict(response.raw or {})
+                    recovered_meta["recovered_empty_function_call"] = True
+                    response.raw = recovered_meta
+                    return response
             message = payload.get("error") or f"status {status!r}"
             response.error = self._error_text(str(message), result)
+            haystack = f"{message}\n{log_text}".lower()
+            meta: dict[str, Any] = dict(response.raw or {})
+            meta["cli_buffered_error"] = True
+            if any(
+                needle in haystack
+                for needle in (
+                    "malformed function call",
+                    "improperly formatted function call",
+                    "function call",
+                    "unknown tool",
+                )
+            ):
+                meta["error_code"] = "CLI_MALFORMED_FUNCTION_CALL"
+                meta["proven_unanswered"] = True
+            elif any(
+                needle in haystack
+                for needle in (
+                    "429",
+                    "rate limit",
+                    "resource_exhausted",
+                    "at capacity",
+                    "overloaded",
+                    "503",
+                    "unavailable",
+                )
+            ):
+                meta["error_code"] = "CLI_TRANSIENT_CAPACITY"
+                meta["error_class"] = "TRANSIENT_FAILURE"
+                meta["proven_unanswered"] = True
+            elif "quota" in haystack or "billing" in haystack:
+                meta["error_code"] = "CLI_QUOTA"
+                meta["error_class"] = "QUOTA_INTERRUPTION"
+                meta["proven_unanswered"] = True
+            else:
+                meta["error_code"] = f"CLI_STATUS_{status}"
+            response.raw = meta
         elif result.returncode != 0:
             response.error = self._error_text("nonzero exit after a success result", result)
         return response

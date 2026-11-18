@@ -339,6 +339,12 @@ _REDACTED = "<redacted>"
 _LOCAL_HOSTS = frozenset({"localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"})
 _MIN_SECRET_CHARS = 8
 _MIN_HOST_CHARS = 4
+_URL_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*:)(//|(?:\\/){2})"
+    r"([^\s/\\?\"'<>]+)"
+    r"([^\s\"'<>]*)"
+)
+_QUERY_VALUE_RE = re.compile(r"([?&][^=&\s?#]+=)[^&\s#\"']*")
 
 
 def url_hostname(value: str) -> str | None:
@@ -373,15 +379,15 @@ def redact(
     Masks, in order:
 
     - the values of explicitly selected environment variables and credential- and
-      endpoint-looking environment variables (including KEY/TOKEN/SECRET/PASSWORD segments
-      and URL/URI/DSN/ADDR/PROXY suffixes), and
+      endpoint-looking environment variables (names ending in
+      KEY, TOKEN, SECRET, PASSWORD, CREDENTIAL(S), _URL, _ENDPOINT, _HOST, _AUTH or _BASE), and
       the JSON-escaped form of any such value holding a ``/`` (``https:\\/\\/...``), as a CLI's
       JSON error output would spell it;
     - the hostname of every such endpoint-named value that is a URL (``url_hostname``), as a
       whole word, so the host alone (or inside another URL, escaped or not) can't surface
       either. Only those variables: masking the host of any URL-valued variable turned a
       ``WORD_URL=http://test:8080`` into a mask over every ``test`` in a message;
-    - common key and bearer-token shapes, URL userinfo and home-directory paths.
+    - common key and bearer-token shapes, URL userinfo/query strings, and home-directory paths.
 
     Longer values go first, so a value that contains another is masked whole.
     """
@@ -400,25 +406,27 @@ def redact(
         host = url_hostname(value)
         if host is not None:
             hosts.add(host)
+    for match in _URL_RE.finditer(text):
+        host = url_hostname(match.group(0).replace(r"\/", "/"))
+        if host is not None and "." in host:
+            hosts.add(host)
+    text = _URL_RE.sub(_redact_url, text)
     for value in sorted(values, key=len, reverse=True):
         text = text.replace(value, _REDACTED)
+    text = _QUERY_VALUE_RE.sub(rf"\1{_REDACTED}", text)
     for host in sorted(hosts, key=len, reverse=True):
-        text = re.sub(rf"\b{re.escape(host)}\b", _REDACTED, text)
-    text = re.sub(
-        r"(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*://)([^\s/@]+:[^\s/@]+)@",
-        lambda match: (
-            match.group(1) + _REDACTED + "@"
-            if len(match.group(2)) >= _MIN_SECRET_CHARS
-            else match.group(0)
-        ),
-        text,
-    )
+        text = re.sub(rf"\b{re.escape(host)}\b", _REDACTED, text, flags=re.IGNORECASE)
     home = str(Path.home().resolve())
     if home != "/":
         text = re.sub(re.escape(home) + r"(?=/|$|[\s\"'])", "~", text)
-    # Any other account's home names a person too; keep the shape, drop the name.
     text = re.sub(r"(/(?:Users|home)/)[^/\s\"'<>:,)]+", rf"\1{_REDACTED}", text)
     return _SECRET_VALUE_RE.sub(_REDACTED, text)
+
+
+def _redact_url(match: re.Match[str]) -> str:
+    """Retain the URL scheme while removing arbitrary host, path, and query content."""
+    scheme, slashes, _authority, _tail = match.groups()
+    return f"{scheme}{slashes}{_REDACTED}"
 
 
 _FUNCTIONAL_RAW_KEYS = frozenset({"assistant_content"})

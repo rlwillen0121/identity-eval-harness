@@ -1,0 +1,25 @@
+{
+  "collected_and_run": 230,
+  "commit": "62390a98c896b87dc9eca9edf7f4ea52e081f95e",
+  "diff_check_command": "git diff --check -- src/identitybench/v5/normative_contract.py src/identitybench/v5/conformance_process.py src/identitybench/v5/conformance_shared.py src/identitybench/v5/validation.py tests/v5/test_conformance_process.py tests/v5/test_conformance_shared.py tests/v5/test_validation.py",
+  "diff_check_exit_code": 0,
+  "failed": 0,
+  "failure_correction": "Removed only the accidental scope_algebra.py entry from the expected historical fresh_full_spec_v3 tuple; approved_full_spec_v1 remains pinned to scope_algebra.py.",
+  "head": "62390a98c896b87dc9eca9edf7f4ea52e081f95e",
+  "index_empty": true,
+  "inventory_after": "inventory-after.json",
+  "inventory_before": "inventory-before.json",
+  "owned_and_helper_pins_stable_except_authorized_test_line": true,
+  "passed": 230,
+  "pytest_log": "pytest.log",
+  "pytest_reported_duration_seconds": 33.07,
+  "ruff_command": "uv run --no-env-file ruff check src/identitybench/v5/normative_contract.py src/identitybench/v5/conformance_process.py src/identitybench/v5/conformance_shared.py src/identitybench/v5/validation.py tests/v5/test_conformance_process.py tests/v5/test_conformance_shared.py tests/v5/test_validation.py",
+  "ruff_exit_code": 0,
+  "static_author_boundary": "Approved-profile adapter and capture tests synthesize author files under tmp_path; no test reads or invokes the active approved_full_spec_v1 author files.",
+  "status": "PASS",
+  "test_command": "PYTHONDONTWRITEBYTECODE=1 uv run --no-env-file pytest -o addopts= -q -p no:cacheprovider tests/v5/test_conformance_process.py tests/v5/test_conformance_shared.py tests/v5/test_validation.py",
+  "test_exit_code": 0,
+  "working_tree_changed_paths": [
+    "tests/v5/test_conformance_process.py"
+  ]
+}

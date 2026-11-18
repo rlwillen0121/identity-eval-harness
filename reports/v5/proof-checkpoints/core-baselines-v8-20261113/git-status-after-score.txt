@@ -1,0 +1,48 @@
+ M pyproject.toml
+ M src/identitybench/cli.py
+ M src/identitybench/v5/generator.py
+ M src/identitybench/v5/oracle.py
+ M src/identitybench/v5/policy_card.py
+ M src/identitybench/v5/runner.py
+ M src/identitybench/v5/runtime.py
+ M src/identitybench/v5/schemas.py
+ M tests/v5/test_generator.py
+ M tests/v5/test_oracle.py
+ M tests/v5/test_policy_card.py
+ M tests/v5/test_runner.py
+ M tests/v5/test_runtime.py
+ M tests/v5/test_schemas.py
+?? datasets/v5_core/
+?? datasets/v5_dev/
+?? datasets/v5_full/
+?? datasets/v5_lite/
+?? reports/v41-skill-orch-v2/charts/
+?? reports/v41-skill-orch-v2/index.html
+?? reports/v41-skill-orch-v2/report.md
+?? reports/v41-skill-orch-v2/summary.json
+?? reports/v5/
+?? src/identitybench/v5/cli.py
+?? src/identitybench/v5/conformance_process.py
+?? src/identitybench/v5/conformance_production.py
+?? src/identitybench/v5/conformance_safety_domain.py
+?? src/identitybench/v5/conformance_shared.py
+?? src/identitybench/v5/family_couplings.py
+?? src/identitybench/v5/negative_proofs.py
+?? src/identitybench/v5/provider_accounting.py
+?? src/identitybench/v5/report.py
+?? src/identitybench/v5/scoring.py
+?? src/identitybench/v5/shortcut_proofs.py
+?? src/identitybench/v5/validation.py
+?? tests/conformance/v5/
+?? tests/v5/test_cli.py
+?? tests/v5/test_conformance_process.py
+?? tests/v5/test_conformance_production.py
+?? tests/v5/test_conformance_safety_domain.py
+?? tests/v5/test_conformance_shared.py
+?? tests/v5/test_family_couplings.py
+?? tests/v5/test_negative_proofs.py
+?? tests/v5/test_provider_accounting.py
+?? tests/v5/test_report.py
+?? tests/v5/test_scoring.py
+?? tests/v5/test_shortcut_proofs.py
+?? tests/v5/test_validation.py

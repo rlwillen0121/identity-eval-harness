@@ -1,0 +1,22 @@
+import json, os, sys
+from pathlib import Path
+owner=Path("/Users/ryanwillen/orca/projects/identity-eval-harness").resolve()
+root=Path(os.environ["EXPORT_ROOT"]).resolve()
+out=Path(os.environ["EXPORT_PROOF_OUTPUT"]).resolve()
+def under_owner(raw):
+    try: Path(raw or os.getcwd()).resolve().relative_to(owner); return True
+    except (OSError, ValueError): return False
+sys.path[:]=[p for p in sys.path if not under_owner(p)]
+sys.path[:0]=[str(root/"src"),str(root/"tests")]
+import pytest
+files=json.loads((out/"selected-test-paths.json").read_text())["files"]
+args=["-q","-m","not live","--basetemp",os.environ["PYTEST_BASETEMP"],*files]
+rc=pytest.main(args)
+modules={name:str(Path(module.__file__).resolve()) for name,module in sorted(sys.modules.items()) if name.startswith("identitybench") and getattr(module,"__file__",None)}
+owner_paths=[str(Path(p or os.getcwd()).resolve()) for p in sys.path if under_owner(p)]
+module_paths_under_export=all(Path(path).is_relative_to(root) for path in modules.values())
+proof={"export_root":str(root),"owner_checkout_paths_on_sys_path":owner_paths,"owner_checkout_absent_from_sys_path":not owner_paths,"identitybench_module_count":len(modules),"identitybench_modules":modules,"all_identitybench_modules_under_export":module_paths_under_export,"pytest_exit_code":rc,"pytest_args":args}
+(out/"test-import-proof.json").write_text(json.dumps(proof,indent=2,sort_keys=True)+"\n")
+print("\nEXPORT_IMPORT_PROOF "+json.dumps({k:proof[k] for k in ("owner_checkout_absent_from_sys_path","identitybench_module_count","all_identitybench_modules_under_export","pytest_exit_code")},sort_keys=True))
+if owner_paths or not module_paths_under_export: raise SystemExit(86)
+raise SystemExit(rc)

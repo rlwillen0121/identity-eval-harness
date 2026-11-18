@@ -293,7 +293,18 @@ async def test_text_parsed_usage_and_served_model() -> None:
     usage = response.usage
     assert (usage.input_tokens, usage.cache_read_tokens) == (400, 600)
     assert (usage.output_tokens, usage.reasoning_tokens) == (300, 200)
-    assert response.raw == {"id": "chatcmpl-1", "system_fingerprint": "fp_1"}
+    assert response.raw is not None
+    assert response.raw["raw_usage"] == {
+        "prompt_tokens": 1000,
+        "completion_tokens": 300,
+        "total_tokens": 1300,
+        "prompt_tokens_details": {"cached_tokens": 600},
+        "completion_tokens_details": {"reasoning_tokens": 200},
+    }
+    assert {key: value for key, value in response.raw.items() if key != "raw_usage"} == {
+        "id": "chatcmpl-1",
+        "system_fingerprint": "fp_1",
+    }
 
 
 async def test_usage_without_details_or_at_all() -> None:
@@ -378,7 +389,14 @@ async def test_api_errors_become_error_responses(
     response = await provider(error).complete(make_request())
     assert response.error is not None
     assert str(code) in response.error
-    assert response.raw == {"request_id": "req_9"}
+    expected_raw: dict[str, object] = {
+        "http_status": code,
+        "error_code": cls.__name__,
+        "request_id": "req_9",
+    }
+    if code in (408, 409, 429) or code >= 500:
+        expected_raw["proven_unanswered"] = True
+    assert response.raw == expected_raw
 
 
 async def test_api_error_redacts_configured_values_in_error_and_nested_metadata(
@@ -430,6 +448,48 @@ async def test_connection_errors_become_error_responses() -> None:
     response = await provider(openai.APIConnectionError(request=request)).complete(make_request())
     assert response.error is not None
     assert "APIConnectionError" in response.error
+    assert response.raw == {
+        "error_code": "APIConnectionError",
+        "error_class": "TRANSIENT_FAILURE",
+        "proven_unanswered": True,
+    }
+
+
+async def test_timeout_and_status_errors_populate_non_secret_structured_metadata(
+    monkeypatch,
+) -> None:
+    secret_key = "sk-secret-value-999"
+    secret_url = "https://private-cpa.example.invalid/v1"
+    monkeypatch.setenv("CPA_KEY", secret_key)
+    monkeypatch.setenv("CPA_URL", secret_url)
+    request = httpx2.Request("POST", f"{secret_url}/chat/completions")
+
+    timeout_p = provider(
+        openai.APITimeoutError(request=request),
+        api_key_env="CPA_KEY",
+        base_url_env="CPA_URL",
+    )
+    timeout_resp = await timeout_p.complete(make_request())
+    assert timeout_resp.error is not None
+    assert timeout_resp.raw == {"error_code": "APITimeoutError", "ambiguous_timeout": True}
+
+    status_resp = await provider(
+        openai.RateLimitError(
+            f"rate limited at {secret_url} with {secret_key}",
+            response=httpx2.Response(429, request=request),
+            body={"code": "rate_limit_exceeded"},
+        ),
+        api_key_env="CPA_KEY",
+        base_url_env="CPA_URL",
+    ).complete(make_request())
+    assert status_resp.error is not None
+    assert secret_key not in status_resp.error and secret_url not in status_resp.error
+    assert status_resp.raw == {
+        "http_status": 429,
+        "error_code": "rate_limit_exceeded",
+        "proven_unanswered": True,
+    }
+    assert secret_key not in str(status_resp.raw) and secret_url not in str(status_resp.raw)
 
 
 # --------------------------------------------------------------------------- identity and client
@@ -672,7 +732,11 @@ async def test_an_error_after_usage_came_back_keeps_the_cost() -> None:
     assert response.error is not None and "malformed response" in response.error
     assert response.reported_cost_usd == 0.0001172292
     assert response.usage.output_tokens == 40
-    assert response.raw == {"upstream_provider": "Mistral"}
+    assert response.raw is not None
+    assert response.raw["raw_usage"] == OPENROUTER_USAGE
+    assert {key: value for key, value in response.raw.items() if key != "raw_usage"} == {
+        "upstream_provider": "Mistral"
+    }
 
 
 # --------------------------------------------------------------------------- routing preferences
@@ -1017,7 +1081,17 @@ async def test_responses_text_parsed_usage_and_served_model() -> None:
     usage = response.usage
     assert (usage.input_tokens, usage.cache_read_tokens) == (400, 600)
     assert (usage.output_tokens, usage.reasoning_tokens) == (300, 200)
-    assert response.raw == {"id": "resp_1"}
+    assert response.raw is not None
+    assert response.raw["raw_usage"] == {
+        "input_tokens": 1000,
+        "output_tokens": 300,
+        "total_tokens": 1300,
+        "input_tokens_details": {"cached_tokens": 600, "cache_write_tokens": 0},
+        "output_tokens_details": {"reasoning_tokens": 200},
+    }
+    assert {key: value for key, value in response.raw.items() if key != "raw_usage"} == {
+        "id": "resp_1"
+    }
 
 
 async def test_responses_usage_without_details_or_at_all() -> None:
@@ -1102,7 +1176,11 @@ async def test_responses_api_errors_and_malformed_replies_are_failed_calls() -> 
     )
     response = await responses_provider(error).complete(make_request())
     assert response.error is not None and "400" in response.error
-    assert response.raw == {"request_id": "req_9"}
+    assert response.raw == {
+        "http_status": 400,
+        "error_code": "BadRequestError",
+        "request_id": "req_9",
+    }
     shaped = responses_reply(usage=OPENROUTER_RESPONSES_USAGE)
     broken = Response.model_construct(**{**dict(shaped), "output": [object()]})
     response = await responses_provider(broken).complete(make_request())

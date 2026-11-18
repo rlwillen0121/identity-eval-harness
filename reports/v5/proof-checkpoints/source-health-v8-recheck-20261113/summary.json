@@ -1,0 +1,201 @@
+{
+  "all_v5_validation_exits_zero": false,
+  "baseline_score_rerun": false,
+  "branch": "feat/v5-harness",
+  "command_count": 7,
+  "commands": [
+    {
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "ruff",
+        "check",
+        "."
+      ],
+      "changed_paths_by_category": {
+        "dataset_hashes": [],
+        "foreign_v41_report_hashes": [],
+        "report_fixture_and_coordinator_hashes": [],
+        "source_test_spec_governance_hashes": []
+      },
+      "elapsed_seconds": 1.012388041,
+      "exit_code": 0,
+      "id": "01-ruff",
+      "not_run_reason": null,
+      "stderr_path": "stderr/01-ruff.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "stdout/01-ruff.raw",
+      "stdout_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "mypy",
+        "--strict",
+        "src"
+      ],
+      "changed_paths_by_category": {
+        "dataset_hashes": [],
+        "foreign_v41_report_hashes": [],
+        "report_fixture_and_coordinator_hashes": [],
+        "source_test_spec_governance_hashes": []
+      },
+      "elapsed_seconds": 1.0121985,
+      "exit_code": 0,
+      "id": "02-mypy",
+      "not_run_reason": null,
+      "stderr_path": "stderr/02-mypy.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "stdout/02-mypy.raw",
+      "stdout_sha256": "89d4ed4af1dadaf62fffaaaf50de4bfaeeca59fb13275d90d6ea84ff43e0fd68"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "pytest",
+        "-q",
+        "-m",
+        "not live"
+      ],
+      "changed_paths_by_category": {
+        "dataset_hashes": [],
+        "foreign_v41_report_hashes": [],
+        "report_fixture_and_coordinator_hashes": [],
+        "source_test_spec_governance_hashes": []
+      },
+      "elapsed_seconds": 728.827302083,
+      "exit_code": 0,
+      "id": "03-pytest",
+      "not_run_reason": null,
+      "stderr_path": "stderr/03-pytest.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "stdout/03-pytest.raw",
+      "stdout_sha256": "b7573442da7b7cccc790a62d09b9eb6f19a384b18d72cdd8e21c53a1af45b849"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "identitybench",
+        "--no-env-file",
+        "v5",
+        "validate",
+        "--suite",
+        "v5_dev",
+        "--double-build"
+      ],
+      "changed_paths_by_category": {
+        "dataset_hashes": [],
+        "foreign_v41_report_hashes": [],
+        "report_fixture_and_coordinator_hashes": [],
+        "source_test_spec_governance_hashes": []
+      },
+      "elapsed_seconds": 22.203380292,
+      "exit_code": 1,
+      "id": "04-v5-dev",
+      "not_run_reason": null,
+      "stderr_path": "stderr/04-v5-dev.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "stdout/04-v5-dev.raw",
+      "stdout_sha256": "22d5f05009d258b4a17a5983835df4dd82663587cb60d90f47dc175de1f8ae3d"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "identitybench",
+        "--no-env-file",
+        "v5",
+        "validate",
+        "--suite",
+        "v5_lite",
+        "--double-build"
+      ],
+      "changed_paths_by_category": {
+        "dataset_hashes": [],
+        "foreign_v41_report_hashes": [],
+        "report_fixture_and_coordinator_hashes": [],
+        "source_test_spec_governance_hashes": []
+      },
+      "elapsed_seconds": 39.372379583,
+      "exit_code": 1,
+      "id": "05-v5-lite",
+      "not_run_reason": null,
+      "stderr_path": "stderr/05-v5-lite.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "stdout/05-v5-lite.raw",
+      "stdout_sha256": "5ff1af69f06edddbd7744719c6e66a26b9cdf70d866055253edc12aa1e3d8026"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "identitybench",
+        "--no-env-file",
+        "v5",
+        "validate",
+        "--suite",
+        "v5_core",
+        "--double-build"
+      ],
+      "changed_paths_by_category": {
+        "dataset_hashes": [],
+        "foreign_v41_report_hashes": [],
+        "report_fixture_and_coordinator_hashes": [],
+        "source_test_spec_governance_hashes": []
+      },
+      "elapsed_seconds": 72.693642458,
+      "exit_code": 1,
+      "id": "06-v5-core",
+      "not_run_reason": null,
+      "stderr_path": "stderr/06-v5-core.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "stdout/06-v5-core.raw",
+      "stdout_sha256": "04404ad04d167700bf71a65082e9bb9318fce2a516ed8cb088a6e68477e4ad60"
+    },
+    {
+      "argv": [
+        "uv",
+        "run",
+        "--no-env-file",
+        "identitybench",
+        "--no-env-file",
+        "v5",
+        "validate",
+        "--suite",
+        "v5_full",
+        "--double-build"
+      ],
+      "changed_paths_by_category": {
+        "dataset_hashes": [],
+        "foreign_v41_report_hashes": [],
+        "report_fixture_and_coordinator_hashes": [],
+        "source_test_spec_governance_hashes": []
+      },
+      "elapsed_seconds": 145.3526615,
+      "exit_code": 1,
+      "id": "07-v5-full",
+      "not_run_reason": null,
+      "stderr_path": "stderr/07-v5-full.raw",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_path": "stdout/07-v5-full.raw",
+      "stdout_sha256": "2681ccc7e2107010136f903f5f76a077861add9bd1b86c39c64027636a6fa12a"
+    }
+  ],
+  "head": "f790e751c26d9667db588b95f9ef65cebe0f24e1",
+  "inputs_unchanged_during_each_command": true,
+  "interpretation": "Raw command evidence only. Validation exit codes and blockers are preserved without repair or relaxation.",
+  "legacy_v41_rerun": false,
+  "live_model_calls": false,
+  "run_id": "source-health-v8-recheck-20261113",
+  "source_health_pass": true,
+  "spec_v5_sha256": "6bc0adfa60b827b8babbdc17713f2b5e2909a8898ccd0242e0806180ab786e43"
+}

@@ -1,10 +1,7 @@
 ---
 name: lane-blind-conformance
-description: Blind conformance lane — authors and audits tests/conformance/ strictly from rendered policy text and SPEC without reading oracle.py or generator.py.
-tools: Read, Grep, Glob, Edit, Write, Bash
+description: Derives and audits conformance expectations under strict implementation isolation.
+tools: Read, Grep, Glob
 ---
 
-Follow `.claude/skills/blind-conformance/SKILL.md` (`SPEC-v4.1.md` §3.8, §4.2 `G-SPEC-01`).
-- NEVER read `oracle.py`, `generator.py`, or gold solution traces while authoring expected conformance outcomes.
-- Derive expectations strictly from `SPEC-v4.1.md` §1–§3 and the rendered episode policy card.
-- Run `uv run pytest tests/conformance/ -v` and log any discrepancy in the version's `AMBIGUITIES.md` (v4.1: `tests/conformance/v41/AMBIGUITIES.md`).
+Follow [AGENTS.md](../../AGENTS.md) and [the blind-conformance skill](../skills/blind-conformance/SKILL.md). Use a fresh isolated worker for expectation derivation. Read only the matching normative specification and rendered policy/episode views. Do not inspect Rust or Python oracle, generator, verifier, or baseline code, gold traces, oracle datasets, or hidden fixture fields while deriving expected results. Keep v5 full-spec and agent-view-only references separate; preserve v4.1's frozen boundary. Record ambiguity instead of changing expectations to match code. Return evidence-backed `File:line` findings.

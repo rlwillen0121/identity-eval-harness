@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-11-14T07:23:56.172397+00:00",
+  "candidate_sha256": "095f2ea08fc9266c5157d70c268ced96e8a48a59d0dc89e3a55583753dccf900",
+  "candidate_bytes": 285751,
+  "prompt_sha256": "58506763914f8a7ea539111dbf1450113fa14ea694221630aa951a07199aee6b",
+  "prompt_characters": 555279,
+  "requested_model": "gemini-4-carbon-high",
+  "requested_effort": "high",
+  "requested_service_tier": "priority",
+  "requested_max_output_tokens": 65536,
+  "streaming": true,
+  "route": "global_cpa_configured_route",
+  "protocol": "chat/completions",
+  "purpose": "specification_review_not_benchmark",
+  "independence": "No peer/internal opinions; Opus receives only its own prior findings and author proposed dispositions. Gemini receives no prior findings.",
+  "sources": [
+    "candidate",
+    "fixed_base",
+    "approved_addendum",
+    "approved_directive"
+  ],
+  "dispatch_status": "OVERALL_DEADLINE_INCOMPLETE",
+  "finished_at": "2026-11-14T07:53:56.074233+00:00",
+  "overall_deadline": "2026-11-14T07:53:56+00:00",
+  "client_cancellation": "SIGTERM to identified review runner only",
+  "client_processes_signaled": [
+    35707
+  ],
+  "provider_side_cancellation_confirmed": false,
+  "response_status": "UNAVAILABLE",
+  "usage": "UNAVAILABLE",
+  "terminal_finish": "UNAVAILABLE",
+  "done_seen": "UNAVAILABLE",
+  "safe_progress": null,
+  "review_verdict": "UNAVAILABLE",
+  "limitation": "No terminal visible review was captured before overall deadline; no reasoning or process-memory extraction attempted."
+}

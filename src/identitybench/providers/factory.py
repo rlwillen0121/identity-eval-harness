@@ -82,12 +82,12 @@ _ALLOWED_EXTRA: dict[str, frozenset[str]] = {
             "api",
         }
     ),
-    "claude_cli": frozenset({"binary"}),
-    "codex_cli": frozenset({"binary"}),
-    "grok_cli": frozenset({"binary"}),
-    "agy_cli": frozenset({"binary"}),
-    "cursor_cli": frozenset({"binary"}),
-    "muse_cli": frozenset({"binary"}),
+    "claude_cli": frozenset({"binary", "max_retries"}),
+    "codex_cli": frozenset({"binary", "max_retries"}),
+    "grok_cli": frozenset({"binary", "max_retries"}),
+    "agy_cli": frozenset({"binary", "max_retries"}),
+    "cursor_cli": frozenset({"binary", "max_retries"}),
+    "muse_cli": frozenset({"binary", "max_retries"}),
     "replay": frozenset({"path"}),
 }
 """Provider constructor options accepted in ``ModelSpec.extra``, per kind."""
@@ -253,15 +253,19 @@ def make_provider(spec: ModelSpec) -> Provider:
             **options,
         )
     if kind == "claude_cli":
-        return ClaudeCliProvider(spec.model, effort=spec.effort, **timeout, **binary)
+        return ClaudeCliProvider(spec.model, effort=spec.effort, **timeout, **binary, **retries)
     if kind == "codex_cli":
-        return CodexCliProvider(spec.model, effort=spec.effective_effort, **timeout, **binary)
+        return CodexCliProvider(
+            spec.model, effort=spec.effective_effort, **timeout, **binary, **retries
+        )
     if kind == "grok_cli":
-        return GrokCliProvider(spec.model, effort=spec.effort, **timeout, **binary)
+        return GrokCliProvider(spec.model, effort=spec.effort, **timeout, **binary, **retries)
     if kind == "agy_cli":
-        return AgyCliProvider(spec.model, effort=spec.effort, **timeout, **binary)
+        return AgyCliProvider(spec.model, effort=spec.effort, **timeout, **binary, **retries)
     if kind == "muse_cli":
-        return MuseCliProvider(spec.model, effort=spec.effective_effort, **timeout, **binary)
+        return MuseCliProvider(
+            spec.model, effort=spec.effective_effort, **timeout, **binary, **retries
+        )
     if kind == "cursor_cli":
-        return CursorCliProvider(spec.model, **timeout, **binary)
+        return CursorCliProvider(spec.model, **timeout, **binary, **retries)
     return ReplayProvider(extra["path"], model=spec.model)
