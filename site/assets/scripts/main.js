@@ -1,63 +1,10 @@
 import { END_TO_END_INTERVAL_METHOD, int, date, safetyScreenLabels } from './format.js';
+import { createStore } from './store.js';
+import { setupTheme, fontsReady, reveal } from './page.js';
 import { mount as mountTable } from './table.js';
 import { mount as mountUpdates } from './updates.js';
 
-function sameStoreValue(key, left, right) {
-  if (key === 'vendors' && left instanceof Set && right instanceof Set) {
-    return left.size === right.size && [...left].every((value) => right.has(value));
-  }
-  if (key === 'sort' && left && right && typeof left === 'object' && typeof right === 'object') {
-    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-    return [...keys].every((name) => Object.is(left[name], right[name]));
-  }
-  return Object.is(left, right);
-}
-
-export function createStore(initial) {
-  let state = initial;
-  const listeners = new Set();
-  return {
-    get: () => state,
-    set(patch) {
-      const next = { ...state, ...patch };
-      const selecting = Boolean(patch.selected);
-      if (selecting) {
-        next.query = '';
-        next.vendors = new Set();
-      }
-      const repeatedSelection = selecting && patch.selected === state.selected;
-      const unchanged = Object.keys(patch).every((key) => sameStoreValue(key, next[key], state[key]));
-      if (unchanged && !repeatedSelection) return;
-      state = next;
-      [...listeners].forEach((fn) => fn(state, patch));
-    },
-    subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
-  };
-}
-
-function setupTheme() {
-  const button = document.getElementById('theme-toggle');
-  const os = window.matchMedia('(prefers-color-scheme: dark)');
-  const isDark = () => document.documentElement.dataset.theme
-    ? document.documentElement.dataset.theme === 'dark' : os.matches;
-  function render() {
-    const dark = isDark();
-    const label = `Switch to ${dark ? 'light' : 'dark'} theme`;
-    button.setAttribute('aria-label', label);
-    button.title = label;
-    button.innerHTML = dark
-      ? '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.6 3.6L5 5M15 15l1.4 1.4M3.6 16.4L5 15M15 5l1.4-1.4" stroke="currentColor" stroke-width="1.3"/></svg>'
-      : '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.7 12.4A7 7 0 017.6 3.3a7 7 0 109.1 9.1z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
-  }
-  button.addEventListener('click', () => {
-    const theme = isDark() ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('identitybench-theme', theme); } catch { /* Theme still works without storage. */ }
-    render();
-  });
-  os.addEventListener('change', render);
-  render();
-}
+export { createStore };
 
 function fillSummary(data) {
   const models = data.models;
@@ -102,18 +49,6 @@ function fillSummary(data) {
 
 export function leaderboardLede(data) {
   return `Ranked by the ${int(data.suite.scenarios)} scenarios each resolves end to end: every wave correct, nothing unsafe, nothing missed.`;
-}
-
-// Chart labels are measured on a canvas, so wait briefly for the web fonts before drawing.
-async function fontsReady(limit = 1500) {
-  if (!document.fonts?.load) return;
-  const fonts = Promise.all([document.fonts.load('400 12px Inter'), document.fonts.load('400 10px "Geist Mono"')]);
-  await Promise.race([fonts.catch(() => {}), new Promise((resolve) => setTimeout(resolve, limit))]);
-}
-
-function reveal() {
-  document.documentElement.classList.remove('is-loading');
-  document.documentElement.classList.add('is-ready');
 }
 
 async function boot() {
@@ -174,7 +109,7 @@ async function boot() {
   }));
 }
 
-if (typeof document !== 'undefined') {
+if (typeof document !== 'undefined' && document.getElementById?.('leaderboard-root')) {
   boot().catch((error) => {
     console.error('Unable to load IdentityBench results', error);
     const status = document.getElementById('load-status');

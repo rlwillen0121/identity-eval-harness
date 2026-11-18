@@ -132,6 +132,7 @@ export function mount(rootEl, data, store) {
     const signature = JSON.stringify([state.sort, [...state.vendors].sort(), state.query, state.selected]);
     if (signature === previous) { highlight(); return; }
     previous = signature;
+    const focusedId = document.activeElement?.closest?.('.model-row')?.dataset?.modelId;
     cleanupDetail?.();
     const models = data.models.filter((m) => (!state.vendors.size || state.vendors.has(m.vendor)) && matchesModelQuery(m, state.query));
     models.sort(v5SortComparator(state.sort.key, state.sort.dir));
@@ -160,6 +161,7 @@ export function mount(rootEl, data, store) {
     const detail = body.querySelector('.model-detail');
     if (detail) cleanupDetail = mountDetail(detail, data, store);
     highlight();
+    if (focusedId) [...body.querySelectorAll('.model-row')].find((row) => row.dataset.modelId === focusedId)?.querySelector('.model-name')?.focus({ preventScroll: true });
   }
 
   search.addEventListener('input', () => store.set({ query: search.value }));
@@ -183,11 +185,11 @@ export function mount(rootEl, data, store) {
       : (['g_srr', 'sem_srr_commit', 'categories'].includes(key) ? 'desc' : 'asc');
     store.set({ sort: { key, dir } });
   });
+  const modelRow = (target) => (typeof target?.closest === 'function' ? target.closest('.model-row') : null);
   body.addEventListener('click', (e) => {
-    const row = e.target.closest('.model-row');
+    const row = modelRow(e.target);
     if (row) store.set({ selected: store.get().selected === row.dataset.modelId ? null : row.dataset.modelId });
   });
-  const modelRow = (target) => target instanceof Element ? target.closest('.model-row') : null;
   for (const eventName of ['mouseover', 'focusin']) {
     body.addEventListener(eventName, (e) => {
       const row = modelRow(e.target);

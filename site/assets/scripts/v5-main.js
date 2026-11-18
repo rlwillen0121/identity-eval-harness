@@ -1,30 +1,7 @@
 import { int, date } from './format.js';
-import { createStore } from './main.js';
+import { createStore } from './store.js';
+import { setupTheme, fontsReady, reveal } from './page.js';
 import { mount as mountTable, mountIncomplete } from './v5-table.js';
-
-function setupTheme() {
-  const button = document.getElementById('theme-toggle');
-  const os = window.matchMedia('(prefers-color-scheme: dark)');
-  const isDark = () => (document.documentElement.dataset.theme
-    ? document.documentElement.dataset.theme === 'dark' : os.matches);
-  function render() {
-    const dark = isDark();
-    const label = `Switch to ${dark ? 'light' : 'dark'} theme`;
-    button.setAttribute('aria-label', label);
-    button.title = label;
-    button.innerHTML = dark
-      ? '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.6 3.6L5 5M15 15l1.4 1.4M3.6 16.4L5 15M15 5l1.4-1.4" stroke="currentColor" stroke-width="1.3"/></svg>'
-      : '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.7 12.4A7 7 0 017.6 3.3a7 7 0 109.1 9.1z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
-  }
-  button.addEventListener('click', () => {
-    const theme = isDark() ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('identitybench-theme', theme); } catch { /* Theme works without storage. */ }
-    render();
-  });
-  os.addEventListener('change', render);
-  render();
-}
 
 export function v5LeaderboardLede(data) {
   return `${int(data.audit.protocol_complete_count)} protocol-complete configurations (${int(data.suite.slots_per_run)} slots each) are ranked below; ${int(data.audit.provider_incomplete_count)} provider-incomplete runs are separated below the charts.`;
@@ -107,17 +84,6 @@ function fillSummary(data) {
   document.getElementById('v5-published-date').textContent = `Offline Rust audit ${date(auditDay)}`;
 }
 
-async function fontsReady(limit = 1500) {
-  if (!document.fonts?.load) return;
-  const fonts = Promise.all([document.fonts.load('400 12px Inter'), document.fonts.load('400 10px "Geist Mono"')]);
-  await Promise.race([fonts.catch(() => {}), new Promise((resolve) => setTimeout(resolve, limit))]);
-}
-
-function reveal() {
-  document.documentElement.classList.remove('is-loading');
-  document.documentElement.classList.add('is-ready');
-}
-
 async function boot() {
   setupTheme();
   const response = await fetch(new URL('../../data/v5-preliminary.json', import.meta.url));
@@ -177,7 +143,7 @@ async function boot() {
   }));
 }
 
-if (typeof document !== 'undefined') {
+if (typeof document !== 'undefined' && document.getElementById?.('v5-leaderboard-root')) {
   boot().catch((error) => {
     console.error('Unable to load IdentityBench v5 preview results', error);
     const status = document.getElementById('load-status');
