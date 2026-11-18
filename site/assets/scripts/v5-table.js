@@ -76,7 +76,7 @@ export function v5ModelCellsMarkup(model, data, selected = false) {
     ? '<span class="muted">local</span>'
     : `${usd(model.cost_usd)}${model.accounting_coverage !== 'COMPLETE' ? '<span class="cost-partial">partial</span>' : ''}`;
   const costTitle = model.cost_basis === 'local'
-    ? (model.recorded_estimated_cost_usd ? `Local hardware (audit token estimate ${usd(model.recorded_estimated_cost_usd)})` : costBasis.local)
+    ? (model.recorded_estimated_cost_usd ? `Local hardware (audit token estimate ${usd(model.recorded_estimated_cost_usd)})` : costBasis['local'])
     : `${costBasis[model.cost_basis] || 'Cost'} (${model.accounting_coverage || 'COMPLETE'} accounting)`;
 
   return `
