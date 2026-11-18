@@ -3,6 +3,7 @@
   "date": "2026-11-18",
   "models": [
    "gemini-4-hydrogen-t0-high",
+   "gpt-6.2-astra-t0-high",
    "claude-opus-5-5-t0-high",
    "claude-sonnet-5-5-t0-high",
    "gemini-3.8-flash-t0-high",

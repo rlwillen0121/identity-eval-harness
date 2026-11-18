@@ -117,6 +117,8 @@ const MODEL_META = {
   'gpt-5.6-terra-t0-high': { name: 'GPT-5.6 Terra', vendor: 'openai', vendor_label: 'OpenAI' },
   'gpt-6.2-astra-t0-high': { name: 'GPT-6.2 Astra', vendor: 'openai', vendor_label: 'OpenAI' },
   'gpt-6.2-sol-t0-high': { name: 'GPT-6.2 Sol', vendor: 'openai', vendor_label: 'OpenAI' },
+  'gemini-4-neon-t0-high': { name: 'Gemini 4 Neon', vendor: 'google', vendor_label: 'Google' },
+  'gpt-5.6-luna-t0-high': { name: 'GPT-5.6 Luna', vendor: 'openai', vendor_label: 'OpenAI' },
 };
 
 const BASELINE_META = {
