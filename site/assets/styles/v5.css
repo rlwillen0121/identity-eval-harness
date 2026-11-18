@@ -1,0 +1,343 @@
+/* Preliminary v5 preview callout, failure accounting, and provider-incomplete separation. */
+.version-preview {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.preview-callout {
+  margin-top: 20px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 18px 22px;
+}
+
+.preview-callout-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+
+.preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.preview-canonical-link {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  text-decoration: underline;
+}
+
+.preview-callout p {
+  margin: 0 0 12px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.55;
+  max-width: 104ch;
+}
+
+.preview-gates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-gates li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--page);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.preview-gates code {
+  font: 500 11px/1.3 var(--mono);
+  color: var(--ink);
+}
+
+.audit-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.audit-strip > div {
+  min-width: 0;
+}
+
+.audit-strip dt {
+  color: var(--muted);
+  font: 400 10.5px/1.35 var(--mono);
+}
+
+.audit-strip dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* v5 primary table column layout (8 columns) */
+.v5-table th:first-child { width: 4.5%; }
+.v5-table th:nth-child(2) { width: 20.5%; }
+.v5-table th:nth-child(3) { width: 21%; }
+.v5-table th:nth-child(4) { width: 10.5%; }
+.v5-table th:nth-child(5) { width: 11%; }
+.v5-table th:nth-child(6) { width: 12.5%; }
+.v5-table th:nth-child(7) { width: 11.5%; text-align: left; }
+.v5-table th:nth-child(8) { width: 8.5%; text-align: right; }
+
+.effort-tag {
+  display: inline-block;
+  margin-left: 5px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0 6px;
+  font: 400 10px/1.5 var(--mono);
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.sem-measure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sem-number {
+  flex: 0 0 5ch;
+  text-align: right;
+}
+
+.sem-track {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 52px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--grid);
+  overflow: hidden;
+}
+
+.sem-fill {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+  border-radius: 2px;
+}
+
+.v5-category-bars {
+  width: 81px;
+}
+
+.safety-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.safety-pair span {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  max-width: 110px;
+}
+
+.safety-pair .safety-label {
+  color: var(--muted);
+  font: 400 10px/1.35 var(--mono);
+}
+
+.safety-pair .is-breach {
+  color: var(--critical);
+}
+
+.failure-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font: 400 11px/1.3 var(--mono);
+}
+
+.failure-pill {
+  display: inline-block;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--page);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.failure-pill.is-parse {
+  border-color: var(--critical);
+  color: var(--critical);
+}
+
+.failure-zero {
+  color: var(--muted);
+  font: 400 11.5px/1.3 var(--mono);
+}
+
+.cost-partial {
+  display: block;
+  font: 400 10px/1.3 var(--mono);
+  color: var(--muted);
+}
+
+/* Separated Provider-Incomplete Runs Section */
+.incomplete-board {
+  margin-top: 24px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.incomplete-callout {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--wash);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.incomplete-callout strong {
+  color: var(--ink);
+}
+
+.incomplete-wrap {
+  overflow-x: auto;
+}
+
+.incomplete-table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.incomplete-table th,
+.incomplete-table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--rule);
+  text-align: right;
+  vertical-align: middle;
+}
+
+.incomplete-table th {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.incomplete-table th:first-child,
+.incomplete-table td:first-child {
+  text-align: left;
+  padding-left: 20px;
+}
+
+.incomplete-table th:last-child,
+.incomplete-table td:last-child {
+  padding-right: 20px;
+}
+
+.incomplete-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.incomplete-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.incomplete-sub {
+  display: block;
+  margin-left: 22px;
+  font: 400 10.5px/1.4 var(--mono);
+  color: var(--muted);
+}
+
+.unmeasured-badge {
+  display: inline-block;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font: 500 10.5px/1.4 var(--mono);
+  color: var(--muted);
+  background: var(--page);
+}
+
+.provider-err-count {
+  font-weight: 600;
+  color: var(--critical);
+}
+
+/* Detail additions */
+.v5-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.v5-detail-grid dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.v5-detail-grid dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 759px) {
+  .preview-callout {
+    padding: 14px 16px;
+  }
+  .v5-table th:first-child { width: 12%; }
+  .v5-table th:nth-child(2) { width: 48%; }
+  .v5-table th:nth-child(3) { width: 40%; }
+  .incomplete-table th:first-child,
+  .incomplete-table td:first-child {
+    padding-left: 12px;
+  }
+  .incomplete-table th:last-child,
+  .incomplete-table td:last-child {
+    padding-right: 12px;
+  }
+}
