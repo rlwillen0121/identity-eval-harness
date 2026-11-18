@@ -207,7 +207,10 @@ regraded all 24 manifested Draft 5 core configurations from raw trajectories wit
 model calls. All 24 summary JSON and Markdown reports match the Python reports byte for
 byte, and all original input hashes are unchanged. Eighteen configurations have complete stored scoring slots; six retain 580 provider-failed
 slots and are not publication-complete results. This audit cannot reconstruct physical
-requests or attempts that an earlier runner discarded.
+requests or attempts that an earlier runner discarded. See the synthesized
+[preliminary `v5_core` preview report](../reports/v5/preliminary-core/report.md)
+([summary JSON](../reports/v5/preliminary-core/summary.json)) and the web preview at
+<https://identitybench.ai/v5.html>.
 The audit records its executable hash and compiled source identity separately from the
 original model-execution provenance. Keep the original run artifacts and compare later
 native runs as separately identified experiments.
