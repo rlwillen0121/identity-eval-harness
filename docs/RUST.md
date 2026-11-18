@@ -209,8 +209,7 @@ byte, and all original input hashes are unchanged. Eighteen configurations have 
 slots and are not publication-complete results. This audit cannot reconstruct physical
 requests or attempts that an earlier runner discarded. See the synthesized
 [preliminary `v5_core` preview report](../reports/v5/preliminary-core/report.md)
-([summary JSON](../reports/v5/preliminary-core/summary.json)) and the web preview at
-<https://identitybench.ai/v5.html>.
+([summary JSON](../reports/v5/preliminary-core/summary.json)).
 The audit records its executable hash and compiled source identity separately from the
 original model-execution provenance. Keep the original run artifacts and compare later
 native runs as separately identified experiments.

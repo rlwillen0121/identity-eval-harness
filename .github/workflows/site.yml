@@ -8,16 +8,12 @@ on:
       - "site/**"
       - "tests/site/**"
       - "reports/v41-full/summary.json"
-      - "reports/v5/rust-final-audit/historical/**"
-      - "datasets/v5_draft5/v5_core/SEAL.json"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
       - "site/**"
       - "tests/site/**"
       - "reports/v41-full/summary.json"
-      - "reports/v5/rust-final-audit/historical/**"
-      - "datasets/v5_draft5/v5_core/SEAL.json"
       - ".github/workflows/site.yml"
 
 permissions:
