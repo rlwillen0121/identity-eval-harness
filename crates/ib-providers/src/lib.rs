@@ -7,6 +7,7 @@ pub mod cli;
 pub mod env;
 pub mod envfile;
 pub mod factory;
+mod http;
 pub mod json;
 pub mod openai_compat;
 pub mod replay;

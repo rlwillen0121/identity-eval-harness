@@ -3,6 +3,8 @@
 //! Mirrors `identitybench.v5.conformance_process`.
 
 pub mod freeze;
+pub mod native;
+pub mod native_trace_delivery;
 pub mod paths;
 pub mod profiles;
 pub mod python_hygiene;
@@ -23,7 +25,13 @@ impl From<ConformanceProtocolError> for SharedRuntimeError {
 }
 
 pub use freeze::*;
+pub use native::*;
+pub use native_trace_delivery::*;
 pub use paths::*;
 pub use profiles::*;
 pub use python_hygiene::*;
 pub use verify::*;
+
+#[cfg(test)]
+#[path = "tests/native_trace_delivery_tests.rs"]
+mod native_trace_delivery_tests;

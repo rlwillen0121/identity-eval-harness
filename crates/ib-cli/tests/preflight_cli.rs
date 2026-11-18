@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -55,6 +56,30 @@ fn write_pricing(path: &Path) {
     .expect("pricing artifact");
 }
 
+fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
+    let mut pending = vec![PathBuf::new()];
+    let mut files = BTreeMap::new();
+    while let Some(relative) = pending.pop() {
+        let directory = root.join(&relative);
+        for entry in std::fs::read_dir(directory).expect("artifact directory reads") {
+            let entry = entry.expect("artifact directory entry reads");
+            let child = relative.join(entry.file_name());
+            let file_type = entry.file_type().expect("artifact type reads");
+            if file_type.is_dir() {
+                files.insert(child.clone(), None);
+                pending.push(child);
+            } else {
+                assert!(file_type.is_file(), "run artifacts contain regular files");
+                files.insert(
+                    child.clone(),
+                    Some(std::fs::read(root.join(child)).expect("artifact bytes read")),
+                );
+            }
+        }
+    }
+    files
+}
+
 struct MockProvider {
     base_url: String,
     requests: Arc<AtomicUsize>,
@@ -107,6 +132,98 @@ impl Drop for MockProvider {
             worker.join().expect("mock provider worker joins");
         }
     }
+}
+
+#[test]
+fn fresh_run_rejects_an_occupied_target_before_provider_requests_or_artifact_changes() {
+    let temp = tempdir().expect("temporary workspace");
+    let replay = temp.path().join("responses.jsonl");
+    std::fs::write(&replay, b"").expect("empty local replay log");
+    let original_config = temp.path().join("original.yaml");
+    std::fs::write(
+        &original_config,
+        format!(
+            "model:\n  provider: replay\n  model: original-model\n  extra:\n    path: {:?}\n",
+            replay
+        ),
+    )
+    .expect("offline replay config");
+    let pricing = temp.path().join("pricing.json");
+    write_pricing(&pricing);
+    let output = temp.path().join("run");
+    let initial = run_cli(
+        temp.path(),
+        &[
+            "v5",
+            "run",
+            "--config",
+            original_config.to_str().unwrap(),
+            "--pricing",
+            pricing.to_str().unwrap(),
+            "--suite",
+            "v5_dev",
+            "--dataset",
+            dataset().to_str().unwrap(),
+            "--out",
+            output.to_str().unwrap(),
+            "--repeats",
+            "1",
+        ],
+    );
+    assert!(
+        initial.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initial.stderr)
+    );
+    assert!(output.join("manifest.json").is_file());
+    assert!(output.join("episodes.jsonl").is_file());
+    let before = snapshot_tree(&output);
+
+    let mock = MockProvider::start();
+    let replacement_config = temp.path().join("replacement.yaml");
+    std::fs::write(
+        &replacement_config,
+        "model:\n  provider: openai_compatible\n  model: replacement-model\n  base_url_env: MOCK_BASE_URL\n  api_key_env: MOCK_API_KEY\n  timeout_s: 10\n  concurrency: 1\n  extra:\n    api: chat_completions\n    max_retries: 0\n",
+    )
+    .expect("replacement model config");
+    let rejected = Command::new(binary())
+        .arg("--root")
+        .arg(temp.path())
+        .arg("--no-env-file")
+        .env("MOCK_BASE_URL", &mock.base_url)
+        .env("MOCK_API_KEY", "local-test-key")
+        .env("NO_PROXY", "127.0.0.1,localhost")
+        .env("no_proxy", "127.0.0.1,localhost")
+        .args([
+            "v5",
+            "run",
+            "--config",
+            replacement_config.to_str().unwrap(),
+            "--pricing",
+            pricing.to_str().unwrap(),
+            "--suite",
+            "v5_dev",
+            "--dataset",
+            dataset().to_str().unwrap(),
+            "--out",
+            output.to_str().unwrap(),
+            "--repeats",
+            "1",
+        ])
+        .output()
+        .expect("identitybench process starts");
+
+    assert_eq!(rejected.status.code(), Some(3));
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .contains("run output directory already contains a run")
+    );
+    assert_eq!(mock.request_count(), 0, "provider must not be called");
+    assert_eq!(
+        snapshot_tree(&output),
+        before,
+        "run artifact bytes are unchanged"
+    );
 }
 
 fn respond_to_one_request(stream: &mut TcpStream) {
@@ -334,6 +451,8 @@ fn rejected_resume_does_not_replace_copied_usage_manifest() {
     let before = std::fs::read(&copied_manifest_path).expect("copied usage manifest");
     let original_run_manifest = std::fs::read(output.join("manifest.json")).expect("run manifest");
     let existing_records = std::fs::read(output.join("episodes.jsonl")).expect("run records");
+    std::fs::remove_file(output.join(".identitybench-run.lock"))
+        .expect("simulate a run directory created before target locking");
 
     let resume_args = args(&second_manifest_path, true);
     let resume_refs: Vec<_> = resume_args.iter().map(String::as_str).collect();
@@ -352,4 +471,29 @@ fn rejected_resume_does_not_replace_copied_usage_manifest() {
         std::fs::read(output.join("episodes.jsonl")).unwrap(),
         existing_records
     );
+    assert!(
+        !output.join(".identitybench-run.lock").exists(),
+        "invalid legacy resume must not create a lock marker"
+    );
+
+    let invalid_records = b"{ malformed episode record\n";
+    std::fs::write(output.join("episodes.jsonl"), invalid_records)
+        .expect("malformed legacy episode records");
+    let matching_resume_args = args(&first_manifest_path, true);
+    let matching_resume_refs: Vec<_> = matching_resume_args.iter().map(String::as_str).collect();
+    let rejected_rows = run_cli(temp.path(), &matching_resume_refs);
+    assert!(!rejected_rows.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected_rows.stderr)
+            .contains("resume episode record line 1 is invalid JSON")
+    );
+    assert_eq!(
+        std::fs::read(output.join("manifest.json")).unwrap(),
+        original_run_manifest
+    );
+    assert_eq!(
+        std::fs::read(output.join("episodes.jsonl")).unwrap(),
+        invalid_records
+    );
+    assert!(!output.join(".identitybench-run.lock").exists());
 }

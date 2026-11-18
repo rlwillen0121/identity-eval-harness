@@ -8,12 +8,16 @@ pub mod production;
 pub mod safety_domain;
 pub mod shared;
 
-pub use process::{SharedRuntimeError, VerifiedBlindFreeze, verify_blind_freeze_receipt};
+pub use process::{
+    LiteralTraceDeliveryProjection, LiteralTraceQueryReceipt, ReplayOutcome, SharedRuntimeError,
+    VerifiedBlindFreeze, replay_literal_trace_delivery, verify_blind_freeze_receipt,
+};
 pub use production::{
     METRIC_KEYS, ProductionEvalError, PublicPhase1RuntimeProjectionV5,
     PublicPhaseTransitionProjectionV5, apply_recipe, apply_rfc6902_patch, evaluate_frozen_case,
-    evaluate_public_case, evaluate_shared_input, evaluate_shared_input_batch, g_prop_metric,
-    json_pointer, materialize_candidate_source, materialized_base_rule_prefixes, phase_stage_args,
+    evaluate_public_case, evaluate_shared_input, evaluate_shared_input_batch,
+    evaluate_shared_input_with_native_context, g_prop_metric, json_pointer,
+    materialize_candidate_source, materialized_base_rule_prefixes, phase_stage_args,
     phase2_context_from_induced, pointer_parts, public_transition_projection, read_ledger,
     score_event_plan_materialization, strict_json_validate,
 };
@@ -29,9 +33,11 @@ pub use shared::{
     FrozenClosure, FrozenRun, Gap, HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256,
     MATERIALIZATION_CONTRACT_ID, PINNED_PUBLIC_SCHEMA_SHA256, PROTOCOL, PairedComparison,
     PublicCase, SCORE_METRIC_NULLABILITY_CONTRACT_ID, SourceFile, TargetSelector, bind_receipt,
-    canonical_json_bytes, compare_production_result, compare_result_pair, freeze_case, freeze_run,
-    freeze_source_closure, json_diff_paths, load_family_map, materialization_hash,
-    serialize_recipe_case, sha256_bytes, sha256_json, strict_json_loads, strict_jsonl_loads,
-    validate_case_bijection, validate_evaluator_result, validate_public_case, verify_case_index,
-    verify_complete_coverage, verify_frozen_run,
+    canonical_json_bytes, compare_native_production_result, compare_native_result_pair,
+    compare_production_result, compare_result_pair, freeze_case, freeze_run, freeze_source_closure,
+    json_diff_paths, load_family_map, materialization_hash, serialize_recipe_case, sha256_bytes,
+    sha256_json, strict_json_loads, strict_jsonl_loads, validate_case_bijection,
+    validate_evaluator_result, validate_native_evaluator_result, validate_public_case,
+    verify_case_index, verify_complete_coverage, verify_frozen_run,
+    verify_native_complete_coverage,
 };

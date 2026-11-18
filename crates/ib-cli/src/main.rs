@@ -1,5 +1,6 @@
 //! Native Rust executable for the IdentityBench v5 benchmark.
 mod artifacts;
+mod conformance;
 mod offline;
 mod paths;
 mod run;
@@ -66,6 +67,11 @@ enum V5Command {
     Run(run::RunArgs),
     /// Recompute an offline report from raw run artifacts.
     Report(ReportArgs),
+    /// Freeze, execute, bind, and verify native conformance evidence.
+    Conformance {
+        #[command(subcommand)]
+        command: conformance::ConformanceCommand,
+    },
 }
 
 fn suite_arg(value: &str) -> std::result::Result<String, String> {
@@ -148,6 +154,7 @@ async fn execute(cli: Cli) -> Result<(Value, u8)> {
         }
         V5Command::Score(args) => Ok((offline::score(&root, args).await?, 0)),
         V5Command::Report(args) => Ok((offline::report(&root, args)?, 0)),
+        V5Command::Conformance { command } => Ok((conformance::execute(&root, command)?, 0)),
         V5Command::Run(args) => {
             // Deliberately do not even stat an environment file on any offline path.
             let env_file = if cli.no_env_file {

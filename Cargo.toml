@@ -38,14 +38,13 @@ nix = { version = "0.32", features = ["signal", "user"] }
 # `serde_json::Value`; `preserve_order` mirrors Python dict insertion order for non-sorted dumps.
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "float_roundtrip"] }
-serde_yaml_ng = "0.10"
+serde_norway = "0.9.42"
 indexmap = { version = "2", features = ["serde"] }
 base64 = "0.23"
 
 # Hashing
 sha2 = "0.10"
 hex = "0.4"
-hmac = "0.12"
 md-5 = "0.11"
 
 # Errors / CLI

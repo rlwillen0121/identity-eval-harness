@@ -303,6 +303,85 @@ async fn agy_recovers_completed_action_response_on_empty_function_call_only_on_d
     );
 }
 
+#[tokio::test]
+async fn agy_error_diagnostics_do_not_prove_an_unanswered_request() {
+    for message in [
+        None,
+        Some("malformed function call"),
+        Some("503 at capacity"),
+        Some("quota exhausted"),
+    ] {
+        let stdout = message.map_or_else(String::new, |message| {
+            json!({"event": "result", "result": {
+                "status": "ERROR", "error": message, "response": "partial answer",
+                "usage": {"input_tokens": 11, "output_tokens": 7, "thinking_tokens": 2}
+            }})
+            .to_string()
+                + "\n"
+        });
+        let runner = FakeRunner::single(move |_| ProcessResult {
+            returncode: 1,
+            stdout: stdout.clone(),
+            stderr: String::new(),
+            duration_s: 0.1,
+            timed_out: false,
+            launch_error: None,
+        });
+        let mut config = CliConfig::new("offline-model", "never-executed", 1.0);
+        config.runner = Arc::clone(&runner) as Arc<dyn ProcessRunner>;
+        config.version = Some("offline-test".to_owned());
+        config.max_retries = 0;
+        let provider = AgyCliProvider::new(AgyAdapter, config);
+        let response = provider.complete(&make_request("x", "SYS", None)).await;
+        assert!(response.error.is_some());
+        assert_eq!(runner.commands().len(), 1);
+        let raw = response.raw.as_ref().unwrap();
+        assert_ne!(raw.get("proven_unanswered"), Some(&json!(true)));
+        if message.is_some() {
+            assert_eq!(response.usage.input_tokens, 11);
+            assert_eq!(response.usage.output_tokens, 7);
+            assert_eq!(response.usage.reasoning_tokens, 2);
+            assert_eq!(response.text.as_deref(), Some("partial answer"));
+        } else {
+            assert_eq!(raw["error_class"], json!("AMBIGUOUS_FAILURE"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn cli_timeout_preserves_buffered_usage_and_cost_without_claiming_completion() {
+    let runner = FakeRunner::single(|_| ProcessResult {
+        returncode: -9,
+        stdout: json!({
+            "type": "result", "subtype": "success", "is_error": false,
+            "result": "buffered answer", "stop_reason": "end_turn",
+            "usage": {"input_tokens": 11, "output_tokens": 7},
+            "total_cost_usd": 0.00123
+        })
+        .to_string(),
+        stderr: String::new(),
+        duration_s: 1.0,
+        timed_out: true,
+        launch_error: None,
+    });
+    let mut config = CliConfig::new("offline-model", "never-executed", 1.0);
+    config.runner = Arc::clone(&runner) as Arc<dyn ProcessRunner>;
+    config.version = Some("offline-test".to_owned());
+    config.max_retries = 0;
+    let provider = ClaudeCliProvider::new(ClaudeAdapter, config);
+    let response = provider.complete(&make_request("x", "SYS", None)).await;
+    assert!(response.error.is_some());
+    assert_eq!(runner.commands().len(), 1);
+    assert_eq!(response.text.as_deref(), Some("buffered answer"));
+    assert_eq!(response.usage.input_tokens, 11);
+    assert_eq!(response.usage.output_tokens, 7);
+    assert_eq!(response.reported_cost_usd, Some(0.00123));
+    let raw = response.raw.as_ref().unwrap();
+    assert_eq!(raw["error_class"], json!("AMBIGUOUS_FAILURE"));
+    assert_eq!(raw["proven_unanswered"], json!(false));
+    assert_eq!(raw["resumable"], json!(false));
+}
+
 // --------------------------------------------------------------------------- codex_cli
 
 #[tokio::test]

@@ -46,6 +46,9 @@ fn find_header_end(bytes: &[u8]) -> Option<usize> {
 
 fn read_request(stream: &mut TcpStream) -> Result<(String, bool, Value), String> {
     stream
+        .set_nonblocking(false)
+        .map_err(|_| "could not make mock request reads blocking".to_owned())?;
+    stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .map_err(|_| "could not bound mock request read".to_owned())?;
     let mut bytes = Vec::new();

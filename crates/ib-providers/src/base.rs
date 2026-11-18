@@ -299,6 +299,14 @@ pub trait Provider: Send + Sync {
         None
     }
 
+    /// Whether this adapter can resume an interrupted native decode by consuming the exact
+    /// opaque checkpoint from the previous physical request. A generic passthrough field or a
+    /// provider's unverified `resumable` claim is not sufficient; implementations opting in must
+    /// preserve the checkpoint, logical response, effort, cap, and reservation as one chain.
+    fn supports_opaque_continuation(&self) -> bool {
+        false
+    }
+
     /// Whether this adapter explicitly guarantees aggregate usage includes its upstream retries.
     /// This is false unless an adapter or injected test double makes the declaration itself.
     fn usage_includes_retries(&self) -> bool {

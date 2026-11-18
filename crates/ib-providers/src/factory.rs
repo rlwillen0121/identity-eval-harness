@@ -172,7 +172,7 @@ impl ModelSpec {
     }
 
     pub fn from_yaml_str(yaml_text: &str) -> Result<Self, FactoryError> {
-        let spec: Self = serde_yaml_ng::from_str(yaml_text)
+        let spec: Self = serde_norway::from_str(yaml_text)
             .map_err(|e| FactoryError::Validation(e.to_string()))?;
         spec.validate()?;
         Ok(spec)

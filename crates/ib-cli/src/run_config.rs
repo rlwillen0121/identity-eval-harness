@@ -28,7 +28,7 @@ pub struct LoadedRunConfig {
 pub fn load(path: &Path) -> Result<LoadedRunConfig> {
     let raw = std::fs::read(path).context("model config read failed")?;
     let text = std::str::from_utf8(&raw).context("model config must be UTF-8")?;
-    let mut payload: Value = serde_yaml_ng::from_str(text)
+    let mut payload: Value = serde_norway::from_str(text)
         .map_err(|_| anyhow::anyhow!("model config must be valid YAML"))?;
     let object = payload
         .as_object_mut()
@@ -51,6 +51,7 @@ pub fn load(path: &Path) -> Result<LoadedRunConfig> {
         .and_then(Value::as_object_mut)
         .ok_or_else(|| anyhow::anyhow!("model config must contain a model mapping"))?;
     normalize_model_value(model_value);
+    reject_enabled_local_retries(model_value)?;
     let model_spec = ModelSpec::from_json_value(Value::Object(model_value.clone()))
         .map_err(|_| anyhow::anyhow!("model config is invalid"))?;
     let has_explicit_output_limit = model_value_has_explicit_output_limit(model_value);
@@ -91,6 +92,35 @@ pub fn load(path: &Path) -> Result<LoadedRunConfig> {
         run_config,
         model_tier,
     })
+}
+
+fn reject_enabled_local_retries(model: &Map<String, Value>) -> Result<()> {
+    let provider = model.get("provider").and_then(Value::as_str);
+    let provider_supports_retries = matches!(
+        provider,
+        Some(
+            "anthropic"
+                | "anthropic_compatible"
+                | "openai_compatible"
+                | "claude_cli"
+                | "codex_cli"
+                | "grok_cli"
+                | "agy_cli"
+                | "cursor_cli"
+                | "muse_cli"
+        )
+    );
+    if provider_supports_retries
+        && model
+            .get("extra")
+            .and_then(Value::as_object)
+            .and_then(|extra| extra.get("max_retries"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0)
+    {
+        bail!("model local retries must be zero for v5 request accounting");
+    }
+    Ok(())
 }
 
 fn model_value_has_explicit_output_limit(model: &Map<String, Value>) -> bool {
@@ -351,6 +381,60 @@ mod tests {
         assert_ne!(digest(&absent), digest(&first));
         assert_ne!(digest(&first), digest(&replacement));
         assert_ne!(digest(&absent), digest(&replacement));
+    }
+
+    #[test]
+    fn load_preserves_yaml_duplicate_alias_and_scalar_behavior() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("model.yaml");
+        std::fs::write(
+            &path,
+            "model:\n  provider: openai_compatible\n  model: first\n  model: &model_name claude-test\n  cache_namespace: *model_name\n  label: null\nmodel_tier: null\nrun_config:\n  max_transient_retries: &retry_count 1\n  max_recovery_continuations: *retry_count\n  allow_request_policy_rejection_map: false\n",
+        )
+        .unwrap();
+
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.model_spec.model, "claude-test");
+        assert_eq!(
+            loaded.model_spec.cache_namespace.as_deref(),
+            Some("claude-test")
+        );
+        assert_eq!(loaded.model_spec.label, None);
+        assert_eq!(loaded.model_tier, None);
+        assert_eq!(loaded.run_config.max_transient_retries, 1);
+        assert_eq!(loaded.run_config.max_recovery_continuations, 1);
+        assert!(!loaded.run_config.allow_request_policy_rejection_map);
+    }
+
+    #[test]
+    fn load_rejects_nonzero_provider_local_retries() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("model.yaml");
+        for provider in ["openai_compatible", "anthropic", "codex_cli"] {
+            std::fs::write(
+                &path,
+                format!(
+                    "model:\n  provider: {provider}\n  model: mock\n  extra:\n    max_retries: 1\n"
+                ),
+            )
+            .unwrap();
+            let error = load(&path).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("model local retries must be zero")
+            );
+        }
+
+        std::fs::write(
+            &path,
+            "model:\n  provider: openai_compatible\n  model: mock\n  extra:\n    max_retries: 0\n",
+        )
+        .unwrap();
+        assert_eq!(
+            load(&path).unwrap().model_spec.extra["max_retries"],
+            Value::from(0)
+        );
     }
 
     #[test]

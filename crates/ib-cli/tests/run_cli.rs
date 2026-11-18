@@ -110,6 +110,23 @@ fn run_cli_executes_only_the_local_replay_provider_and_persists_artifacts() {
     assert!(source_hashes.contains_key("crates/ib-providers/src/replay.rs"));
     assert!(manifest["config"].get("prompt_sha256").is_some());
 
+    // The empty replay produces infrastructure-incomplete attempts. Resume must fail closed,
+    // and generating a report must not rewrite the recorded evidence.
+    let report = run_cli(
+        temp.path(),
+        &["v5", "report", "--run", output_dir.to_str().unwrap()],
+    );
+    assert!(
+        report.status.success(),
+        "{}",
+        String::from_utf8_lossy(&report.stderr)
+    );
+    let report_before = ["summary.json", "report.md"].map(|name| {
+        std::fs::read(output_dir.join("report").join(name)).expect("interim report artifact")
+    });
+    let episodes_before = std::fs::read(output_dir.join("episodes.jsonl")).unwrap();
+    let manifest_before = std::fs::read(output_dir.join("manifest.json")).unwrap();
+
     let resumed = run_cli(
         temp.path(),
         &[
@@ -128,15 +145,28 @@ fn run_cli_executes_only_the_local_replay_provider_and_persists_artifacts() {
             "--resume",
         ],
     );
-    assert!(
-        resumed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&resumed.stderr)
-    );
+    assert!(!resumed.status.success());
+    assert!(String::from_utf8_lossy(&resumed.stderr).contains("infrastructure-incomplete slot"));
     assert_eq!(
         std::fs::read(output_dir.join("dataset/SEAL.json")).unwrap(),
         std::fs::read(dataset.join("SEAL.json")).unwrap()
     );
+    assert_eq!(
+        std::fs::read(output_dir.join("episodes.jsonl")).unwrap(),
+        episodes_before,
+        "incomplete attempt rows are preserved"
+    );
+    assert_eq!(
+        std::fs::read(output_dir.join("manifest.json")).unwrap(),
+        manifest_before,
+        "refused resume does not promote an incomplete run"
+    );
+    for (index, name) in ["summary.json", "report.md"].iter().enumerate() {
+        assert_eq!(
+            std::fs::read(output_dir.join("report").join(name)).unwrap(),
+            report_before[index]
+        );
+    }
 }
 
 #[test]

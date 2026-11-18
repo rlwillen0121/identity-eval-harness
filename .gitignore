@@ -22,6 +22,7 @@ htmlcov/
 runs/
 reports/scratch/
 audit/scratch/
+.tmp/
 
 # OS / editors
 .DS_Store

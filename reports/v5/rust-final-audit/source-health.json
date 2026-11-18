@@ -1,0 +1,99 @@
+{
+  "audit_base": "8c87f1c7239274b238244e7c838d3a29271cfc69",
+  "created_utc": "2026-11-18T03:04:53.181567+00:00",
+  "hosted_ci": "Exact published head and terminal results are recorded on PR #8; local proof does not substitute for hosted CI.",
+  "live_provider_calls": 0,
+  "logs": {
+    "doc-tests": {
+      "local_log": "/tmp/identitybench-final-doc-tests.log",
+      "sha256": "b5be831346e5440e3bef6a4d0024d9d97ca7985aa9b489d669dfce938b05f4bd"
+    },
+    "python-static": {
+      "local_log": "/tmp/identitybench-final-python-static.log",
+      "sha256": "6416ff7e62bc32ad556c6ea028ad55f0d329e31face6c4a149b123baecbbbefd"
+    },
+    "python-tests": {
+      "local_log": "/tmp/identitybench-final-python-tests.log",
+      "sha256": "dc60d89da05156443ba18d3ead9fc53229bde2c5bdc4d37fd88ac3e03402b496"
+    },
+    "release-build": {
+      "local_log": "/tmp/identitybench-final-release-build.log",
+      "sha256": "c2bcbe9da036e70d4c3d56d55e67b3f3ec03db43e7f837ec80e603dd95d4f1e3"
+    },
+    "rust-format": {
+      "local_log": "/tmp/identitybench-final-rust-format.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "rust-msrv": {
+      "local_log": "/tmp/identitybench-final-rust-msrv.log",
+      "sha256": "65b7c0722772ae45f2e45e0706f550e2fec6ef83e4b3ec2f61e1dfe2fd89c249"
+    },
+    "rust-static": {
+      "local_log": "/tmp/identitybench-final-rust-static.log",
+      "sha256": "7cf7bd96dcdd2b5c9ab394236b1874044fd01986e839817321f8603ee04b58ef"
+    },
+    "validation-integration": {
+      "local_log": "/tmp/identitybench-final-validation-integration.log",
+      "sha256": "732196e6295a274f30c8c81a72641138fdbf1064998d24e3bfe3b5f3ec77e94f"
+    },
+    "workspace": {
+      "local_log": "/tmp/identitybench-final-workspace.log",
+      "sha256": "b85f8357e0fc20f3ca795eb041e094b965945b14d17978871beee25ec61a9f90"
+    }
+  },
+  "native_dev_validation": {
+    "double_build": true,
+    "exit_code": 1,
+    "fail_entries": 1,
+    "pass_entries": 14,
+    "stale_gate": "G-SPEC-01",
+    "suite": "v5_dev",
+    "unknown_entries": 4,
+    "unknown_gates": [
+      "G-ECON-01",
+      "G-CAL-01",
+      "G-CAL-02",
+      "G-CAL-03"
+    ]
+  },
+  "production_source_count": 151,
+  "production_source_identity": "historical/native-source-identity.json",
+  "python": {
+    "mypy_exit_code": 0,
+    "mypy_source_files": 75,
+    "non_live_exit_code": 0,
+    "non_live_tests_passed": 2736,
+    "pyright_bound_reference_files": 27,
+    "pyright_known_diagnostics": 25,
+    "pyright_reference_baseline_exit_code": 0,
+    "raw_pyright_zero_error_claim": false,
+    "ruff_format_files": 383,
+    "ruff_lint_exit_code": 0
+  },
+  "qualification": "Synthetic conformance mechanics and historical offline regrading do not establish fresh independent blind certification or live calibration/economics evidence.",
+  "release_binary_sha256": "6414624e392c64afd1f714b5000bda66564584c2eda507fac17bb71b9a91583a",
+  "rust": {
+    "clippy_exit_code": 0,
+    "clippy_warning_policy": "Existing nonfatal style warnings retained; no warning-free claim.",
+    "corrected_full_fixture_seconds": 383.25,
+    "corrected_validation_integration_exit_code": 0,
+    "corrected_validation_integration_passed": 5,
+    "corrected_validation_integration_targets": 2,
+    "correction": "Test expectations updated to actual G-SPEC-01 scope and integer counters; final validation uses --double-build with baseline gates enabled. Production source unchanged.",
+    "coverage_kind": "successful workspace targets plus corrected validation integration targets",
+    "doc_test_count": 0,
+    "doc_tests_exit_code": 0,
+    "excluded_failed_target": "native_full_gate_plumbing",
+    "format_exit_code": 0,
+    "full_native_cli_hook_enabled": true,
+    "historical_pilot_tests_enabled": true,
+    "msrv": "1.90.0",
+    "msrv_workspace_check_exit_code": 0,
+    "passed_tests": 462,
+    "successful_targets": 70,
+    "workspace_initial_exit_code": 101,
+    "workspace_successful_target_tests": 457,
+    "workspace_successful_targets": 68
+  },
+  "schema_version": "identitybench-source-health-v1"
+}

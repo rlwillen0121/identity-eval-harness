@@ -194,14 +194,7 @@ fn endpoint_helpers_and_temperature_tables() {
 }
 
 #[tokio::test]
-async fn openai_chat_completions_byok_cost_routing_headers_and_retries() {
-    let mut err_reply = MockReply::json(
-        429,
-        json!({"error": {"code": "rate_limit_exceeded", "message": "slow down"}}),
-    );
-    err_reply
-        .headers
-        .push(("x-request-id".to_string(), "req_429".to_string()));
+async fn openai_chat_completions_byok_cost_routing_headers_and_usage() {
     let ok_reply = MockReply::json(
         200,
         json!({
@@ -233,7 +226,7 @@ async fn openai_chat_completions_byok_cost_routing_headers_and_retries() {
         }),
     );
 
-    let (base, recorded) = spawn_mock_server(vec![err_reply, ok_reply]).await;
+    let (base, recorded) = spawn_mock_server(vec![ok_reply]).await;
     let env = BTreeMap::from([
         ("OPENROUTER_BASE_URL".to_string(), format!("{base}/v1")),
         (
@@ -289,7 +282,7 @@ async fn openai_chat_completions_byok_cost_routing_headers_and_retries() {
     assert_eq!(raw["system_fingerprint"], json!("fp_1"));
 
     let reqs = recorded.lock().unwrap();
-    assert_eq!(reqs.len(), 2);
+    assert_eq!(reqs.len(), 1);
     assert_eq!(reqs[0].path, "/v1/chat/completions");
     assert_eq!(
         reqs[0].headers["authorization"],
@@ -298,6 +291,88 @@ async fn openai_chat_completions_byok_cost_routing_headers_and_retries() {
     assert_eq!(reqs[0].headers["x-opencode-session"], "ib");
     assert_eq!(reqs[0].body["provider"]["order"], json!(["Baidu"]));
     assert_eq!(reqs[0].body["max_tokens"], json!(4096));
+}
+
+#[tokio::test]
+async fn openai_rate_limit_without_explicit_no_response_proof_is_not_retried() {
+    let mut rate_limited = MockReply::json(
+        429,
+        json!({"error": {"code": "rate_limit_exceeded", "message": "slow down"}}),
+    );
+    rate_limited
+        .headers
+        .push(("x-request-id".to_string(), "req_429".to_string()));
+    let success = MockReply::json(
+        200,
+        json!({
+            "id":"chatcmpl_1",
+            "model":"test-model",
+            "choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]
+        }),
+    );
+    let (base, recorded) = spawn_mock_server(vec![rate_limited, success]).await;
+    let mut config = OpenAICompatConfig::new("test-model");
+    config.base_url_env = Some("OPENAI_TEST_URL".to_string());
+    config.api_key_env = Some("OPENAI_TEST_KEY".to_string());
+    config.retry_base_delay_s = 0.0;
+    config.env_override = Some(BTreeMap::from([
+        ("OPENAI_TEST_URL".to_string(), format!("{base}/v1")),
+        ("OPENAI_TEST_KEY".to_string(), "test-key".to_string()),
+    ]));
+
+    let provider = OpenAICompatProvider::new(config).unwrap();
+    let response = provider.complete(&ModelRequest::default()).await;
+    assert!(response.error.is_some());
+    let raw = response.raw.as_ref().unwrap();
+    assert_eq!(raw["http_status"], json!(429));
+    assert!(!raw.contains_key("proven_unanswered"));
+    assert_eq!(recorded.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn anthropic_rate_limit_without_explicit_no_response_proof_is_not_retried() {
+    let mut rate_limited = MockReply::json(
+        429,
+        json!({"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}),
+    );
+    rate_limited
+        .headers
+        .push(("request-id".to_string(), "req_429".to_string()));
+    let success = MockReply::json(
+        200,
+        json!({
+            "id":"msg_1",
+            "type":"message",
+            "role":"assistant",
+            "model":"test-model",
+            "stop_reason":"end_turn",
+            "content":[{"type":"text","text":"done"}],
+            "usage":{"input_tokens":1,"output_tokens":1}
+        }),
+    );
+    let (base, recorded) = spawn_mock_server(vec![rate_limited, success]).await;
+    let mut config = AnthropicConfig::new("test-model");
+    config.base_url_env = Some("ANTHROPIC_TEST_URL".into());
+    config.api_key_env = Some("ANTHROPIC_TEST_KEY".into());
+    config.retry_base_delay_s = 0.0;
+    config.env_override = Some(BTreeMap::from([
+        ("ANTHROPIC_TEST_URL".into(), base),
+        ("ANTHROPIC_TEST_KEY".into(), "test-key".into()),
+    ]));
+
+    let provider = AnthropicProvider::new(config).unwrap();
+    let response = provider.complete(&ModelRequest::default()).await;
+    assert!(response.error.is_some());
+    assert!(
+        response
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("RateLimitError 429")
+    );
+    let raw = response.raw.as_ref().unwrap();
+    assert!(!raw.contains_key("proven_unanswered"));
+    assert_eq!(recorded.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

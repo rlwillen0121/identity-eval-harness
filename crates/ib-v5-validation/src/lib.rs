@@ -2,6 +2,9 @@
 
 pub mod acceptance_gates;
 pub mod blind_receipt;
+pub mod native_corpus;
+pub mod native_prepare;
+pub mod native_receipt;
 mod offline_proofs;
 pub mod reference_receipt;
 pub mod report;
@@ -26,6 +29,9 @@ pub struct ValidationOptions {
     pub blind_proof_path: Option<PathBuf>,
     pub iga_review_manifest_path: Option<PathBuf>,
     pub run_baselines: bool,
+    /// Build identity compiled into `identitybench`, supplied only by the native CLI.
+    /// Native blind receipts fail closed when this trusted context is unavailable.
+    pub native_build_identity: Option<serde_json::Value>,
 }
 
 impl Default for ValidationOptions {
@@ -37,6 +43,7 @@ impl Default for ValidationOptions {
             blind_proof_path: None,
             iga_review_manifest_path: None,
             run_baselines: true,
+            native_build_identity: None,
         }
     }
 }
@@ -132,8 +139,12 @@ pub fn validate_v5_dataset(
         )
     });
     let inventory_gate = acceptance_gates::inventory_gate();
-    let blind_gate =
-        blind_receipt::blind_gate(options.blind_proof_path.as_deref(), &artifacts, &repo_root);
+    let blind_gate = blind_receipt::blind_gate_with_context(
+        options.blind_proof_path.as_deref(),
+        &artifacts,
+        &repo_root,
+        options.native_build_identity.as_ref(),
+    );
     let iga_gate = acceptance_gates::iga_review_gate(
         &artifacts,
         &suite_id,

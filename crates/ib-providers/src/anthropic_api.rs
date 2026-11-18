@@ -14,6 +14,9 @@ use crate::base::{
     hash_endpoint,
 };
 use crate::env::paired_api_key_env;
+use crate::http::{
+    MAX_PROVIDER_RESPONSE_BYTES, read_bounded_response_body, redirect_provider_error,
+};
 use crate::json::{bounded_token_count, load_object, raw_usage_payload, sanitize_response};
 use crate::subprocess::{redact, redact_diagnostics_map};
 
@@ -395,6 +398,7 @@ impl AnthropicProvider {
 
                 reqwest::Client::builder()
                     .timeout(Duration::from_secs_f64(self.config.timeout_s.max(0.001)))
+                    .redirect(reqwest::redirect::Policy::none())
                     .default_headers(headers)
                     .build()
                     .map_err(|e| format!("failed to build HTTP client: {e}"))
@@ -458,7 +462,19 @@ impl AnthropicProvider {
                         .and_then(|v| v.to_str().ok())
                         .unwrap_or("")
                         .to_lowercase();
-                    let text_body = resp.text().await.unwrap_or_default();
+                    if (300..400).contains(&status) {
+                        let error = redirect_provider_error(status, req_id);
+                        return self.fail(&error.message, error.to_raw_map());
+                    }
+                    let response_body =
+                        match read_bounded_response_body(resp, MAX_PROVIDER_RESPONSE_BYTES).await {
+                            Ok(body) => body,
+                            Err(body_error) => {
+                                let error = body_error.into_provider_error(status, req_id.clone());
+                                return self.fail(&error.message, error.to_raw_map());
+                            }
+                        };
+                    let text_body = String::from_utf8_lossy(&response_body).into_owned();
 
                     if status >= 400 {
                         let parsed_err = load_object(&text_body);
@@ -482,7 +498,13 @@ impl AnthropicProvider {
                                 Some(err_raw)
                             },
                         );
-                        let retryable = should_retry_hdr.as_deref() != Some("false")
+                        let proven_unanswered = failed
+                            .raw
+                            .as_ref()
+                            .and_then(|raw| raw.get("proven_unanswered"))
+                            == Some(&Value::Bool(true));
+                        let retryable = proven_unanswered
+                            && should_retry_hdr.as_deref() != Some("false")
                             && (matches!(status, 408 | 409 | 429) || status >= 500);
                         last_resp = Some(failed);
                         if !retryable || attempt_idx + 1 >= max_attempts {
@@ -539,8 +561,13 @@ impl AnthropicProvider {
                         "APIConnectionError"
                     };
                     let failed = self.fail(&format!("{cls}: {err}"), None);
+                    let proven_unanswered = failed
+                        .raw
+                        .as_ref()
+                        .and_then(|raw| raw.get("proven_unanswered"))
+                        == Some(&Value::Bool(true));
                     last_resp = Some(failed);
-                    if attempt_idx + 1 >= max_attempts {
+                    if !proven_unanswered || attempt_idx + 1 >= max_attempts {
                         return last_resp.expect("set");
                     }
                 }

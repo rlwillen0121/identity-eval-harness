@@ -40,7 +40,8 @@ uv run identitybench v41 validate --suite <v41_dev|v41_lite|v41_full> --double-b
 Only after current-turn authorization, run the requested Rust v5 configuration:
 
 ```sh
-target/release/identitybench v5 run --config experiments/<config>.yaml --out runs/<config-name>
+target/release/identitybench v5 run --config experiments/<config>.yaml \
+  --pricing pricing/<frozen-pricing>.json --out runs/<config-name>
 ```
 
 Use `--resume` only for an authorized, interrupted configuration in its existing output directory. For an explicitly requested v4.1 run, use its matching `uv run identitybench v41 run` command and a separate output directory. Never substitute another version or the Python v5 reference.

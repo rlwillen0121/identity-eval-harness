@@ -17,6 +17,7 @@ ib-core.workspace = true
 ib-providers.workspace = true
 ib-v5-accounting.workspace = true
 ib-v5-baselines.workspace = true
+ib-v5-conformance.workspace = true
 ib-v5-generator.workspace = true
 ib-v5-report.workspace = true
 ib-v5-runner.workspace = true
@@ -26,9 +27,12 @@ ib-v5-scoring.workspace = true
 ib-v5-validation.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml_ng.workspace = true
+serde_norway.workspace = true
 tokio.workspace = true
 tempfile.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 async-trait.workspace = true

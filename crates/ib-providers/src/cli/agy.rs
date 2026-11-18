@@ -282,9 +282,8 @@ impl CliAdapter for AgyAdapter {
             );
             meta.insert(
                 "error_class".to_string(),
-                Value::String("TRANSIENT_FAILURE".to_string()),
+                Value::String("AMBIGUOUS_FAILURE".to_string()),
             );
-            meta.insert("proven_unanswered".to_string(), Value::Bool(true));
             failed.raw = Some(meta);
             return failed;
         }
@@ -376,7 +375,6 @@ impl CliAdapter for AgyAdapter {
                     "error_code".to_string(),
                     Value::String("CLI_MALFORMED_FUNCTION_CALL".to_string()),
                 );
-                meta.insert("proven_unanswered".to_string(), Value::Bool(true));
             } else if [
                 "429",
                 "rate limit",
@@ -397,7 +395,6 @@ impl CliAdapter for AgyAdapter {
                     "error_class".to_string(),
                     Value::String("TRANSIENT_FAILURE".to_string()),
                 );
-                meta.insert("proven_unanswered".to_string(), Value::Bool(true));
             } else if haystack.contains("quota") || haystack.contains("billing") {
                 meta.insert(
                     "error_code".to_string(),
@@ -407,7 +404,6 @@ impl CliAdapter for AgyAdapter {
                     "error_class".to_string(),
                     Value::String("QUOTA_INTERRUPTION".to_string()),
                 );
-                meta.insert("proven_unanswered".to_string(), Value::Bool(true));
             } else {
                 meta.insert(
                     "error_code".to_string(),

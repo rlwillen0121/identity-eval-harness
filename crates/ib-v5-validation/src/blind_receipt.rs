@@ -5,6 +5,7 @@
 //! proof and evidence that cannot currently be inspected.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use ib_v5_conformance::shared::{
@@ -64,21 +65,31 @@ const SHARED_EVALUATOR_FIELDS: [&str; 12] = [
 ];
 const SHA256_HEX_LEN: usize = 64;
 
-struct SharedCorpus {
-    cases: Vec<FrozenCase>,
-    family_map: BTreeMap<String, BTreeMap<String, String>>,
-    family_map_sha256: String,
-    coverage: CoverageRequirement,
-    case_manifest_sha256: String,
-    case_index_sha256: String,
-    coverage_sha256: String,
+pub(crate) struct SharedCorpus {
+    pub(crate) cases: Vec<FrozenCase>,
+    pub(crate) family_map: BTreeMap<String, BTreeMap<String, String>>,
+    pub(crate) family_map_sha256: String,
+    pub(crate) coverage: CoverageRequirement,
+    pub(crate) case_manifest_sha256: String,
+    pub(crate) case_index_sha256: String,
+    pub(crate) coverage_sha256: String,
 }
 
 /// Validate the optional G-SPEC-01 proof artifact.
+#[cfg(test)]
 pub(crate) fn blind_gate(
     path: Option<&Path>,
     artifacts: &DatasetArtifactsV5,
     repository_root: &Path,
+) -> GateResultV5 {
+    blind_gate_with_context(path, artifacts, repository_root, None)
+}
+
+pub(crate) fn blind_gate_with_context(
+    path: Option<&Path>,
+    artifacts: &DatasetArtifactsV5,
+    repository_root: &Path,
+    native_build_identity: Option<&Value>,
 ) -> GateResultV5 {
     let Some(path) = path else {
         return GateResultV5::with_evidence(
@@ -137,6 +148,25 @@ pub(crate) fn blind_gate(
         );
     }
 
+    // Apply the same bounded, no-symlink entry boundary to every receipt schema.
+    // Schema dispatch must never read a native receipt through a weaker path.
+    let mut current = root.clone();
+    for component in lexical_relative.components() {
+        let Component::Normal(part) = component else {
+            continue;
+        };
+        current.push(part);
+        if let Ok(metadata) = std::fs::symlink_metadata(&current)
+            && metadata.file_type().is_symlink()
+        {
+            return gate(
+                GateStatusV5::Fail,
+                json!({"proof_artifact": path.to_string_lossy()}),
+                vec!["proof artifact path contains a symlink".to_owned()],
+            );
+        }
+    }
+
     let resolved_path = match lexical_path.canonicalize() {
         Ok(value) => value,
         Err(error) => {
@@ -175,7 +205,22 @@ pub(crate) fn blind_gate(
         );
     }
 
-    let raw = match std::fs::read(&resolved_path) {
+    const MAX_RECEIPT_BYTES: u64 = 64 * 1024 * 1024;
+    if let Ok(metadata) = std::fs::symlink_metadata(&resolved_path)
+        && (!metadata.is_file() || metadata.len() > MAX_RECEIPT_BYTES)
+    {
+        return gate(
+            GateStatusV5::Fail,
+            json!({"proof_artifact": path.to_string_lossy()}),
+            vec!["proof artifact must be a regular file no larger than 64 MiB".to_owned()],
+        );
+    }
+    let read_result = std::fs::File::open(&resolved_path).and_then(|file| {
+        let mut bytes = Vec::new();
+        file.take(MAX_RECEIPT_BYTES + 1).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    });
+    let raw = match read_result {
         Ok(value) => value,
         Err(error) => {
             return gate(
@@ -185,6 +230,13 @@ pub(crate) fn blind_gate(
             );
         }
     };
+    if raw.len() as u64 > MAX_RECEIPT_BYTES {
+        return gate(
+            GateStatusV5::Fail,
+            json!({"proof_artifact": path.to_string_lossy()}),
+            vec!["proof artifact exceeds the 64 MiB receipt limit".to_owned()],
+        );
+    }
     let receipt = match strict_json_loads(&raw) {
         Ok(Value::Object(value)) => value,
         Ok(_) => {
@@ -209,6 +261,26 @@ pub(crate) fn blind_gate(
                 Ok(result) => result,
                 Err(error) => (
                     vec![format!("shared proof validation failed closed: {error}")],
+                    Vec::new(),
+                    json!({"receipt_sha256": sha256_bytes(&raw)}),
+                ),
+            }
+        } else if receipt.get("schema_version").and_then(Value::as_str)
+            == Some("identitybench.v5.native-shared-proof-receipt.v1")
+        {
+            match crate::native_receipt::validate_native_gspec_receipt(
+                &resolved_path,
+                &raw,
+                &receipt,
+                artifacts,
+                &root,
+                native_build_identity,
+            ) {
+                Ok(result) => result,
+                Err(error) => (
+                    vec![format!(
+                        "native shared proof validation failed closed: {error}"
+                    )],
                     Vec::new(),
                     json!({"receipt_sha256": sha256_bytes(&raw)}),
                 ),
@@ -531,43 +603,16 @@ pub(crate) fn shared_jsonl_rows(
     Some(values)
 }
 
-fn validate_shared_proof_receipt(
-    path: &Path,
-    raw: &[u8],
+/// Reconstruct the complete public shared corpus against all exact sealed datasets.
+/// Native and archival receipts deliberately share one coverage and binding contract.
+pub(crate) fn reconstruct_native_gspec_corpus(
     receipt: &Map<String, Value>,
     artifacts: &DatasetArtifactsV5,
     root: &Path,
-) -> Result<(Vec<String>, Vec<String>, Value), String> {
-    let mut errors = Vec::new();
-    let mut gaps = Vec::new();
-    let mut evidence = json!({
-        "receipt_sha256": sha256_bytes(raw),
-        "shared_proof_schema": SHARED_PROOF_SCHEMA,
-        "tool_history_cryptographically_proven": false,
-    });
-    let (missing, extra) = exact_fields(receipt, &SHARED_PROOF_FIELDS);
-    if !missing.is_empty() {
-        gaps.push(format!("shared receipt omits fields {missing:?}"));
-    }
-    if !extra.is_empty() {
-        errors.push(format!("shared receipt has unexpected fields {extra:?}"));
-    }
-    match receipt.get("proof_scope").and_then(Value::as_str) {
-        Some(SHARED_PROOF_SCOPE) => {}
-        Some("diagnostic_phase_checkpoint" | "diagnostic_phase_batch" | "phase_checkpoint") => {
-            gaps.push("phase-only diagnostic proof cannot establish full G-SPEC-01".to_owned());
-        }
-        _ => errors.push("shared receipt proof_scope is unsupported".to_owned()),
-    }
-    if receipt.get("suite_id") != artifacts.seal.get("suite") {
-        errors.push("shared receipt suite_id does not match the requested dataset".to_owned());
-    }
-    if receipt.get("spec_sha256").and_then(Value::as_str) != Some(V5_BASE_SPEC_SHA256) {
-        errors.push("shared receipt normative SPEC-v5.md digest is stale or incorrect".to_owned());
-    }
-
-    // The shared proof is a conjunction of the corpus, freeze, and all three evaluator
-    // streams. Missing parts are explicit gaps; a partial proof can never be promoted.
+    errors: &mut Vec<String>,
+    gaps: &mut Vec<String>,
+    evidence: &mut Value,
+) -> Result<Option<SharedCorpus>, String> {
     let mut dataset_bindings = BTreeMap::new();
     if let Some(rows) = receipt.get("dataset_bindings").and_then(Value::as_array) {
         for (index, row) in rows.iter().enumerate() {
@@ -642,8 +687,8 @@ fn validate_shared_proof_receipt(
                     root,
                     Some(reference),
                     &format!("{suite} {name}"),
-                    &mut errors,
-                    &mut gaps,
+                    errors,
+                    gaps,
                     false,
                     false,
                 ) else {
@@ -753,7 +798,7 @@ fn validate_shared_proof_receipt(
     let corpus = receipt.get("corpus").and_then(Value::as_object);
     let Some(corpus) = corpus else {
         gaps.push("shared receipt corpus descriptors are unavailable".to_owned());
-        return Ok((errors, gaps, evidence));
+        return Ok(None);
     };
     let (missing, extra) = exact_fields(corpus, &SHARED_CORPUS_FIELDS);
     if !missing.is_empty() {
@@ -770,8 +815,8 @@ fn validate_shared_proof_receipt(
             root,
             corpus.get(label),
             &format!("corpus {label}"),
-            &mut errors,
-            &mut gaps,
+            errors,
+            gaps,
             false,
             false,
         ) {
@@ -785,14 +830,56 @@ fn validate_shared_proof_receipt(
         );
     }
     if corpus_files.len() != SHARED_CORPUS_FIELDS.len() {
-        return Ok((errors, gaps, evidence));
+        return Ok(None);
     }
-    let Some(corpus_data) = validate_shared_corpus(
-        &corpus_files,
-        &dataset_bindings,
+    let corpus_data = validate_shared_corpus(&corpus_files, &dataset_bindings, root, errors, gaps)?;
+    Ok(corpus_data)
+}
+
+fn validate_shared_proof_receipt(
+    path: &Path,
+    raw: &[u8],
+    receipt: &Map<String, Value>,
+    artifacts: &DatasetArtifactsV5,
+    root: &Path,
+) -> Result<(Vec<String>, Vec<String>, Value), String> {
+    let mut errors = Vec::new();
+    let mut gaps = Vec::new();
+    let mut evidence = json!({
+        "receipt_sha256": sha256_bytes(raw),
+        "shared_proof_schema": SHARED_PROOF_SCHEMA,
+        "tool_history_cryptographically_proven": false,
+    });
+    let (missing, extra) = exact_fields(receipt, &SHARED_PROOF_FIELDS);
+    if !missing.is_empty() {
+        gaps.push(format!("shared receipt omits fields {missing:?}"));
+    }
+    if !extra.is_empty() {
+        errors.push(format!("shared receipt has unexpected fields {extra:?}"));
+    }
+    match receipt.get("proof_scope").and_then(Value::as_str) {
+        Some(SHARED_PROOF_SCOPE) => {}
+        Some("diagnostic_phase_checkpoint" | "diagnostic_phase_batch" | "phase_checkpoint") => {
+            gaps.push("phase-only diagnostic proof cannot establish full G-SPEC-01".to_owned());
+        }
+        _ => errors.push("shared receipt proof_scope is unsupported".to_owned()),
+    }
+    if receipt.get("suite_id") != artifacts.seal.get("suite") {
+        errors.push("shared receipt suite_id does not match the requested dataset".to_owned());
+    }
+    if receipt.get("spec_sha256").and_then(Value::as_str) != Some(V5_BASE_SPEC_SHA256) {
+        errors.push("shared receipt normative SPEC-v5.md digest is stale or incorrect".to_owned());
+    }
+
+    // The shared proof is a conjunction of the corpus, freeze, and all three evaluator
+    // streams. Missing parts are explicit gaps; a partial proof can never be promoted.
+    let Some(corpus_data) = reconstruct_native_gspec_corpus(
+        receipt,
+        artifacts,
         root,
         &mut errors,
         &mut gaps,
+        &mut evidence,
     )?
     else {
         return Ok((errors, gaps, evidence));
@@ -3292,7 +3379,7 @@ fn core_tables_for_phase(phase_index: i64) -> BTreeSet<&'static str> {
     }
 }
 
-fn shared_case_manifest_sha(cases: &[FrozenCase]) -> Result<String, String> {
+pub(crate) fn shared_case_manifest_sha(cases: &[FrozenCase]) -> Result<String, String> {
     let case_rows: Vec<Value> = cases
         .iter()
         .map(|case| {
@@ -3311,7 +3398,7 @@ fn shared_case_manifest_sha(cases: &[FrozenCase]) -> Result<String, String> {
     Ok(sha256_bytes(&raw))
 }
 
-fn shared_case_index_sha(cases: &[FrozenCase]) -> Result<String, String> {
+pub(crate) fn shared_case_index_sha(cases: &[FrozenCase]) -> Result<String, String> {
     let index: Vec<Value> = cases
         .iter()
         .map(|case| {
@@ -3325,7 +3412,7 @@ fn shared_case_index_sha(cases: &[FrozenCase]) -> Result<String, String> {
     Ok(sha256_bytes(&raw))
 }
 
-fn expected_coverage(
+pub(crate) fn expected_coverage(
     cases: &[FrozenCase],
     datasets_by_suite: &BTreeMap<String, DatasetArtifactsV5>,
     family_map: &BTreeMap<String, BTreeMap<String, String>>,
@@ -3517,7 +3604,7 @@ fn all_violation_categories() -> [ViolationCategoryV5; 43] {
     ]
 }
 
-fn parse_coverage_requirement(
+pub(crate) fn parse_coverage_requirement(
     value: &Map<String, Value>,
     errors: &mut Vec<String>,
 ) -> Option<CoverageRequirement> {
@@ -3692,6 +3779,83 @@ mod tests {
         std::fs::create_dir_all(path.parent().expect("parent")).expect("create receipt dir");
         std::fs::write(&path, bytes).expect("write receipt");
         path
+    }
+
+    #[test]
+    fn native_subset_receipt_is_consumed_but_cannot_certify_a_suite() {
+        let root = tempfile::tempdir().expect("temp root");
+        let receipt = json!({
+            "schema_version": "identitybench.v5.native-shared-proof-receipt.v1",
+            "proof_scope": "G-SPEC-01",
+            "suite_id": "v5_dev",
+            "spec_sha256": V5_BASE_SPEC_SHA256,
+            "dataset_bindings": [],
+            "corpus": {},
+            "freeze": {},
+            "evaluators": {},
+        });
+        write_receipt(
+            root.path(),
+            "reports/v5/conformance/native.json",
+            &serde_json::to_vec(&receipt).unwrap(),
+        );
+        let result = blind_gate(
+            Some(Path::new("reports/v5/conformance/native.json")),
+            &empty_artifacts(),
+            root.path(),
+        );
+        assert_ne!(result.status, GateStatusV5::Pass);
+        assert!(
+            !result
+                .errors
+                .iter()
+                .any(|error| error.contains("bound reference receipt schema is unsupported")),
+            "native proof must enter its dedicated validator: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn receipt_entry_rejects_oversize_before_parsing() {
+        let root = tempfile::tempdir().unwrap();
+        let relative = "reports/v5/conformance/oversize.json";
+        let path = write_receipt(root.path(), relative, b"{}");
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_len(64 * 1024 * 1024 + 1)
+            .unwrap();
+        let result = blind_gate(Some(Path::new(relative)), &empty_artifacts(), root.path());
+        assert_eq!(result.status, GateStatusV5::Fail);
+        assert!(result.errors.iter().any(|error| error.contains("64 MiB")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_entry_rejects_symlink_components_before_dispatch() {
+        let root = tempfile::tempdir().unwrap();
+        let actual = write_receipt(
+            root.path(),
+            "reports/v5/conformance/actual/receipt.json",
+            b"{}",
+        );
+        let base = root.path().join("reports/v5/conformance");
+        std::os::unix::fs::symlink(&actual, base.join("link.json")).unwrap();
+        std::os::unix::fs::symlink(base.join("actual"), base.join("alias")).unwrap();
+        for relative in [
+            "reports/v5/conformance/link.json",
+            "reports/v5/conformance/alias/receipt.json",
+        ] {
+            let result = blind_gate(Some(Path::new(relative)), &empty_artifacts(), root.path());
+            assert_eq!(result.status, GateStatusV5::Fail);
+            assert!(
+                result
+                    .errors
+                    .iter()
+                    .any(|error| error.contains("contains a symlink"))
+            );
+        }
     }
 
     #[test]

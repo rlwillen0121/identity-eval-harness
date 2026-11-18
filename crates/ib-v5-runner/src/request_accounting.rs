@@ -213,9 +213,6 @@ pub fn has_decode_progress(response: &ModelResponse, segment: i64) -> bool {
         return true;
     }
     let m = raw(response);
-    if response.error.is_some() && m.get("cli_buffered_error") == Some(&Value::Bool(true)) {
-        return false;
-    }
     response.text.as_ref().is_some_and(|s| !s.is_empty())
         || response.parsed.as_ref().is_some_and(|p| !p.is_empty())
         || !response.tool_calls.is_empty()
@@ -231,6 +228,24 @@ pub fn has_decode_progress(response: &ModelResponse, segment: i64) -> bool {
         ]
         .iter()
         .any(|k| truthy(m.get(*k)))
+}
+
+fn has_opaque_checkpoint(opaque: &Map<String, Value>) -> bool {
+    opaque.values().any(|value| truthy(Some(value)))
+}
+
+fn opaque_checkpoint_from_response(response_raw: &Map<String, Value>) -> Map<String, Value> {
+    let mut checkpoint = Map::new();
+    for key in OPAQUE
+        .iter()
+        .copied()
+        .chain(std::iter::once("checkpoint_id"))
+    {
+        if let Some(value) = response_raw.get(key) {
+            checkpoint.insert(key.to_owned(), value.clone());
+        }
+    }
+    checkpoint
 }
 
 pub fn normalized_decode_status(response: &ModelResponse) -> Decode {
@@ -503,6 +518,74 @@ fn record(
     Ok(row)
 }
 
+fn account_response(outcome: &mut LogicalRequestOutcomeV5, response: &ModelResponse) {
+    if let Some(cost) = response.reported_cost_usd {
+        if let Ok((sum, _)) = safe_nonnegative_float_add(outcome.reported_cost_sum, cost) {
+            outcome.reported_cost_count += 1;
+            outcome.reported_cost_sum = sum;
+        } else {
+            outcome.usage_problem_detected = true;
+        }
+    }
+    if usage_problem(response).is_none() {
+        outcome.usage_sum.add(&response.usage)
+    } else {
+        outcome.usage_problem_detected = true
+    }
+}
+
+fn preserve_missing_retrieved_accounting(
+    prior: &ModelResponse,
+    mut retrieved: ModelResponse,
+) -> ModelResponse {
+    if matches!(
+        usage_problem(&retrieved),
+        Some("usage_missing_input" | "usage_missing_output")
+    ) && usage_problem(prior).is_none()
+    {
+        retrieved.usage = prior.usage;
+    }
+    if retrieved.reported_cost_usd.is_none() {
+        retrieved.reported_cost_usd = prior.reported_cost_usd;
+    }
+    retrieved
+}
+
+fn add_prior_failure_diagnostic(
+    retrieved: &mut ProviderRequestUsageV5,
+    prior: &ProviderRequestUsageV5,
+) -> Result<(), RunnerError> {
+    let prior_raw_usage = prior
+        .raw_usage_fields_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .unwrap_or(Value::Null);
+    let diagnostic = json_safe_usage_value(
+        &json!({
+            "contribution": "diagnostic_only_nonadditive",
+            "request_status": prior.request_status,
+            "normalized_decode_status": prior.normalized_decode_status,
+            "provider_http_status": prior.provider_http_status,
+            "provider_error_code": prior.provider_error_code,
+            "provider_reported_cost_micros": prior.provider_reported_cost_micros,
+            "estimated_cost_micros": prior.estimated_cost_micros,
+            "raw_usage_fields": prior_raw_usage,
+        }),
+        OPAQUE,
+    );
+    let mut raw_usage: Value = retrieved
+        .raw_usage_fields_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str(raw).ok())
+        .unwrap_or_else(|| json!({}));
+    if !raw_usage.is_object() {
+        raw_usage = json!({});
+    }
+    raw_usage["same_request_prior_failure_nonadditive"] = diagnostic;
+    retrieved.raw_usage_fields_json = Some(compact(&raw_usage)?);
+    Ok(())
+}
+
 pub async fn execute_logical_request_v5(
     provider: &dyn Provider,
     config: &RunConfigV5,
@@ -510,6 +593,18 @@ pub async fn execute_logical_request_v5(
     context: RequestContextV5,
     mut params: RequestParametersV5,
 ) -> Result<LogicalRequestOutcomeV5, RunnerError> {
+    if provider.local_retry_limit().is_some_and(|limit| limit > 0) {
+        return Err(RunnerError::Configuration(
+            "provider-local retries must be disabled for v5 request accounting".into(),
+        ));
+    }
+    if config.segment_continuation_capability == "SUPPORTED"
+        && !provider.supports_opaque_continuation()
+    {
+        return Err(RunnerError::Configuration(
+            "configured native continuation requires a provider adapter that consumes exact opaque checkpoints".into(),
+        ));
+    }
     let mut outcome = LogicalRequestOutcomeV5::default();
     if params.effective_output_allowance_tokens < config.effort_minimum_output_tokens as i64 {
         outcome.context_limit_cause = Some(ContextLimitCauseV5::AllowanceBelowEffortMin);
@@ -524,9 +619,7 @@ pub async fn execute_logical_request_v5(
     let mut state = PhysicalState::default();
     let (mut next_retry, mut next_quota, mut next_recovery, mut next_segment) = (1, 0, 0, 0);
     let mut any_progress = false;
-    let mut malformed_reminder = false;
     let mut opaque = Map::new();
-    let mut last_request_id = None;
     let mut texts = Vec::new();
     let mut calls = Vec::new();
     loop {
@@ -550,9 +643,6 @@ pub async fn execute_logical_request_v5(
                 .extra
                 .insert("native_numeric_budget_tokens".into(), json!(budget));
         }
-        if malformed_reminder {
-            req.system.push_str("\n\nCRITICAL REMINDER: Do NOT invoke native function/tool calls; emit ONLY the plain-text JSON object {\"actions\":[...]}.");
-        }
         let mut native = params.native_params.clone().unwrap_or_default();
         native.extend(json!({"effort":config.effort,"native_effort_policy":config.native_effort_policy,
             "max_output_tokens":params.effective_output_allowance_tokens,"decode_segment_index":state.segment}).as_object().unwrap().clone());
@@ -569,31 +659,16 @@ pub async fn execute_logical_request_v5(
         outcome.physical_latency_s =
             (outcome.physical_latency_s + response.latency_s).min(MAX_LATENCY);
         let m = raw(&response);
-        if let Some(id) = m.get("provider_request_id").and_then(Value::as_str) {
-            last_request_id = Some(id.to_owned());
-        }
-        for key in OPAQUE
-            .iter()
-            .copied()
-            .chain(std::iter::once("checkpoint_id"))
-        {
-            if let Some(value) = m.get(key) {
-                opaque.insert(key.to_owned(), value.clone());
-            }
-        }
-        if let Some(cost) = response.reported_cost_usd {
-            if let Ok((sum, _)) = safe_nonnegative_float_add(outcome.reported_cost_sum, cost) {
-                outcome.reported_cost_count += 1;
-                outcome.reported_cost_sum = sum;
-            } else {
-                outcome.usage_problem_detected = true;
-            }
-        }
-        if usage_problem(&response).is_none() {
-            outcome.usage_sum.add(&response.usage)
-        } else {
-            outcome.usage_problem_detected = true
-        }
+        opaque = opaque_checkpoint_from_response(&m);
+        let current_provider_request_id = m
+            .get("provider_request_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let usage_sum_before_response = outcome.usage_sum;
+        let usage_problem_before_response = outcome.usage_problem_detected;
+        let reported_cost_sum_before_response = outcome.reported_cost_sum;
+        let reported_cost_count_before_response = outcome.reported_cost_count;
+        account_response(&mut outcome, &response);
         let progress = has_decode_progress(&response, 0);
         any_progress |= progress;
         let class = m.get("error_class").and_then(Value::as_str).unwrap_or("");
@@ -635,7 +710,6 @@ pub async fn execute_logical_request_v5(
         let transient = is_error
             && (class == "TRANSIENT_FAILURE"
                 || m.get("transient") == Some(&json!(true))
-                || code == "CLI_MALFORMED_FUNCTION_CALL"
                 || m.get("http_status")
                     .and_then(Value::as_i64)
                     .is_some_and(|n| [408, 429, 500, 502, 503, 504].contains(&n)));
@@ -659,6 +733,7 @@ pub async fn execute_logical_request_v5(
         } else {
             normalized_decode_status(&response)
         };
+        let physical_request_row_index = outcome.physical_requests.len();
         outcome.physical_requests.push(record(
             &context,
             &params,
@@ -715,6 +790,15 @@ pub async fn execute_logical_request_v5(
                     ));
                 }
                 Some("RECONCILED_RESUMABLE") => {
+                    if m.get("proven_unanswered") != Some(&json!(true)) {
+                        return Ok(outcome.terminal(
+                            AttemptStatusV5::IncompleteProviderFailure,
+                            "UNANSWERED_REQUEST_NOT_PROVEN",
+                            "context allowance correction cannot retry without explicit proof no response was generated",
+                            true,
+                            true,
+                        ));
+                    }
                     if state.segment >= 1 || any_progress {
                         return Ok(outcome.terminal(
                             AttemptStatusV5::IncompleteHarnessFailure,
@@ -779,11 +863,13 @@ pub async fn execute_logical_request_v5(
             ));
         }
         let resumable = m.get("resumable") == Some(&json!(true));
+        let checkpoint_resumable = resumable
+            && config.segment_continuation_capability == "SUPPORTED"
+            && provider.supports_opaque_continuation()
+            && has_opaque_checkpoint(&opaque);
         if quota {
-            let unanswered = m
-                .get("proven_unanswered")
-                .map_or(!progress, |v| v == &json!(true));
-            if (((!progress || resumable) && unanswered) || resumable)
+            let proven_unanswered = m.get("proven_unanswered") == Some(&json!(true));
+            if ((proven_unanswered && !any_progress) || checkpoint_resumable)
                 && next_quota < config.max_quota_continuations
             {
                 state.transition(Kind::QuotaContinuation, next_quota as i64);
@@ -799,31 +885,42 @@ pub async fn execute_logical_request_v5(
             ));
         }
         if ambiguous {
-            let retrieved = if let Some(id) = last_request_id.as_deref() {
+            let retrieved = if let Some(id) = current_provider_request_id.as_deref() {
                 provider.retrieve_response(id).await
             } else {
                 None
             };
             if let Some(retrieved) = retrieved.filter(|r| r.error.is_none()) {
-                response = retrieved;
+                let prior_response = response;
+                let prior_row = outcome.physical_requests[physical_request_row_index].clone();
+                response = preserve_missing_retrieved_accounting(&prior_response, retrieved);
+                opaque = opaque_checkpoint_from_response(&raw(&response));
+                any_progress |= has_decode_progress(&response, state.segment);
+                // Retrieval resolves the same physical model request. Replace its one
+                // accounting contribution with the best recovered evidence; do not add the
+                // original failure and retrieved result as two billed generations.
+                outcome.usage_sum = usage_sum_before_response;
+                outcome.usage_problem_detected = usage_problem_before_response;
+                outcome.reported_cost_sum = reported_cost_sum_before_response;
+                outcome.reported_cost_count = reported_cost_count_before_response;
+                account_response(&mut outcome, &response);
                 // Match Python: retrieval resolves the same physical response, never starts
                 // another decode or increments generation/retry reservations.
-                outcome.physical_requests.push(record(
+                let mut reconciled_row = record(
                     &context,
                     &params,
                     &state,
-                    req_id,
+                    req_id.clone(),
                     &response,
                     Status::Completed,
                     normalized_decode_status(&response),
                     config.pricing.as_ref(),
                     provider.capabilities().reports_usage,
                     &native,
-                )?);
-            } else if resumable
-                && !opaque.is_empty()
-                && next_recovery < config.max_recovery_continuations
-            {
+                )?;
+                add_prior_failure_diagnostic(&mut reconciled_row, &prior_row)?;
+                outcome.physical_requests[physical_request_row_index] = reconciled_row;
+            } else if checkpoint_resumable && next_recovery < config.max_recovery_continuations {
                 state.transition(Kind::RecoveryContinuation, next_recovery as i64);
                 next_recovery += 1;
                 continue;
@@ -839,9 +936,8 @@ pub async fn execute_logical_request_v5(
                 ));
             }
         } else if transient {
-            let unanswered = m.get("proven_unanswered").is_none_or(|v| v == &json!(true));
-            if unanswered && !any_progress {
-                malformed_reminder |= code == "CLI_MALFORMED_FUNCTION_CALL";
+            let proven_unanswered = m.get("proven_unanswered") == Some(&json!(true));
+            if proven_unanswered && !any_progress {
                 if next_retry <= config.max_transient_retries {
                     state.transition(Kind::TransientRetry, next_retry as i64);
                     next_retry += 1;
@@ -852,19 +948,26 @@ pub async fn execute_logical_request_v5(
                     next_recovery += 1;
                     continue;
                 }
-            } else if unanswered
-                && resumable
-                && !opaque.is_empty()
-                && next_recovery < config.max_recovery_continuations
-            {
+            } else if checkpoint_resumable && next_recovery < config.max_recovery_continuations {
                 state.transition(Kind::RecoveryContinuation, next_recovery as i64);
                 next_recovery += 1;
                 continue;
             }
+            let (cause, message) = if !proven_unanswered && !checkpoint_resumable {
+                (
+                    "UNANSWERED_REQUEST_NOT_PROVEN",
+                    "transient provider failure cannot be retried without proof it generated no response",
+                )
+            } else {
+                (
+                    "TRANSIENT_OR_RECOVERY_RETRIES_EXHAUSTED",
+                    "provider returned transient errors past retry/recovery budget",
+                )
+            };
             return Ok(outcome.terminal(
                 AttemptStatusV5::IncompleteProviderFailure,
-                "TRANSIENT_OR_RECOVERY_RETRIES_EXHAUSTED",
-                "provider returned transient errors past retry/recovery budget",
+                cause,
+                message,
                 true,
                 true,
             ));
@@ -887,11 +990,22 @@ pub async fn execute_logical_request_v5(
         }
         calls.extend(response.tool_calls.iter().cloned());
         if decode == Decode::SegmentRequiresContinuation {
-            if config.segment_continuation_capability != "SUPPORTED" {
+            if config.segment_continuation_capability != "SUPPORTED"
+                || !provider.supports_opaque_continuation()
+            {
                 return Ok(outcome.terminal(
                     AttemptStatusV5::IncompleteProviderFailure,
                     "SEGMENT_CONTINUATION_UNSUPPORTED",
                     "provider hit segment boundary without supported continuation",
+                    true,
+                    true,
+                ));
+            }
+            if !has_opaque_checkpoint(&opaque) {
+                return Ok(outcome.terminal(
+                    AttemptStatusV5::IncompleteProviderFailure,
+                    "SEGMENT_CONTINUATION_CHECKPOINT_MISSING",
+                    "provider segment boundary omitted its opaque continuation checkpoint",
                     true,
                     true,
                 ));

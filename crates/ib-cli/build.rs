@@ -2,10 +2,13 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=RUSTC");
+    println!("cargo:rerun-if-env-changed=TARGET");
     let manifest_dir = PathBuf::from(
         std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"),
     );
@@ -70,6 +73,23 @@ fn main() {
     generated.push_str("];\n");
     fs::write(out_dir.join("source_identity.rs"), generated)
         .expect("write embedded source identity module");
+
+    let rustc = std::env::var_os("RUSTC").expect("Cargo sets RUSTC");
+    let output = Command::new(rustc)
+        .arg("-vV")
+        .output()
+        .expect("run the compiler selected by Cargo for toolchain identity");
+    assert!(output.status.success(), "rustc -vV must succeed");
+    let rustc_verbose_version = String::from_utf8(output.stdout)
+        .expect("rustc -vV output must be UTF-8")
+        .trim_end()
+        .to_owned();
+    let target = std::env::var("TARGET").expect("Cargo sets TARGET");
+    let toolchain = format!(
+        "pub static EMBEDDED_TOOLCHAIN_IDENTITY: &[(&str, &str)] = &[\n    (\"rustc_verbose_version\", {rustc_verbose_version:?}),\n    (\"target\", {target:?}),\n];\n"
+    );
+    fs::write(out_dir.join("toolchain_identity.rs"), toolchain)
+        .expect("write embedded toolchain identity module");
 }
 
 fn collect_source_files(

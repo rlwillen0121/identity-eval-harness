@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +18,19 @@ env:
   UV_FROZEN: "1"
 
 jobs:
+  rust-msrv:
+    name: Rust minimum version (1.90.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install minimum supported Rust toolchain
+        run: rustup toolchain install 1.90.0 --profile minimal
+      - name: Check workspace on minimum supported Rust
+        run: cargo +1.90.0 check --workspace --locked
+
   rust:
     name: Rust v5 (${{ matrix.os }})
     strategy:
@@ -40,6 +55,8 @@ jobs:
 
       # Uses deterministic fixtures, mock endpoints and offline replay. No credentials.
       - name: Rust tests and executable workflows
+        env:
+          IDENTITYBENCH_CLI: ${{ github.workspace }}/target/debug/identitybench
         run: cargo test --workspace --locked
 
       - name: Validate sealed Draft 5 dev dataset and gate projection

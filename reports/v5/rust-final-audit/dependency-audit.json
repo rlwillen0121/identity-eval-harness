@@ -1,0 +1,16 @@
+{
+  "advisory_database_git_commit": "233155b4025b854c68a4b199c0e32d7fd53291a2",
+  "audit_json_sha256": "e2cf63c2af2e61851ccdcd8d2eb28c080682f374610f9306442cc7bc598e32c6",
+  "command": "cargo-audit audit --no-fetch --json",
+  "created_utc": "2026-11-18T02:02:32.125575+00:00",
+  "dependency_count": 232,
+  "exit_code": 0,
+  "lockfile_path": "Cargo.lock",
+  "lockfile_sha256_after": "a820b07fd7bad232e3913de6842d751a4d885969fbb0fe17a29a63d62a94b6f5",
+  "lockfile_sha256_before": "a820b07fd7bad232e3913de6842d751a4d885969fbb0fe17a29a63d62a94b6f5",
+  "schema_version": "identitybench-rustsec-audit-v1",
+  "stderr_bytes": 0,
+  "tool_version": "cargo-audit 0.23.0",
+  "vulnerability_count": 0,
+  "warning_count": 0
+}

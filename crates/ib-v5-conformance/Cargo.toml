@@ -14,6 +14,7 @@ ib-v5-runtime.workspace = true
 ib-v5-schemas.workspace = true
 ib-v5-scoring.workspace = true
 indexmap.workspace = true
+nix.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true

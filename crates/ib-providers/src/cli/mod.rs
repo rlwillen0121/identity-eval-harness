@@ -1369,12 +1369,15 @@ impl<A: CliAdapter> CliProvider<A> {
                 let mut resp = if let Some(ref launch_err) = res.launch_error {
                     self.fail(launch_err, None, Some(request))
                 } else if res.timed_out {
-                    let mut r = self.fail(
+                    // A timeout does not prove that the CLI generated no response. Retain
+                    // any buffered usage/output while refusing to call it a completed turn.
+                    let mut r = self.adapter.parse(&self.config, &res, request, &io_dir);
+                    r.error = Some(self.error_text(
                         &format!("no result within the {}s timeout", self.config.timeout_s),
                         None,
                         Some(request),
-                    );
-                    let mut meta = Map::new();
+                    ));
+                    let mut meta = r.raw.take().unwrap_or_default();
                     meta.insert("cli_buffered_error".to_string(), Value::Bool(true));
                     meta.insert(
                         "error_code".to_string(),
@@ -1382,9 +1385,10 @@ impl<A: CliAdapter> CliProvider<A> {
                     );
                     meta.insert(
                         "error_class".to_string(),
-                        Value::String("TRANSIENT_FAILURE".to_string()),
+                        Value::String("AMBIGUOUS_FAILURE".to_string()),
                     );
-                    meta.insert("proven_unanswered".to_string(), Value::Bool(true));
+                    meta.insert("proven_unanswered".to_string(), Value::Bool(false));
+                    meta.insert("resumable".to_string(), Value::Bool(false));
                     r.raw = Some(meta);
                     r
                 } else {

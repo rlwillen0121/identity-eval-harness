@@ -394,6 +394,21 @@ async fn run_provider_round(
             Some(p) => p.clone(),
             None => provider_input.for_role(&spec.role)?,
         };
+        if role_provider
+            .local_retry_limit()
+            .is_some_and(|limit| limit > 0)
+        {
+            return Err(RunnerError::Configuration(
+                "provider-local retries must be disabled for v5 request accounting".into(),
+            ));
+        }
+        if config.segment_continuation_capability == "SUPPORTED"
+            && !role_provider.supports_opaque_continuation()
+        {
+            return Err(RunnerError::Configuration(
+                "configured native continuation requires a provider adapter that consumes exact opaque checkpoints".into(),
+            ));
+        }
         let mut request = make_request(
             Some(role_provider.as_ref()),
             config,

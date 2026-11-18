@@ -54,6 +54,12 @@ pub fn validate(root: &Path, args: ValidateArgs) -> Result<(Value, u8)> {
         .as_deref()
         .map(|p| paths::provenance_input(root, p))
         .transpose()?;
+    // Native receipts require a trusted identity from this compiled executable.
+    // If capture fails, the native G-SPEC gate receives no trusted identity and fails
+    // closed; archival Python receipt validation does not depend on this value.
+    let native_build_identity = proof
+        .as_ref()
+        .and_then(|_| crate::conformance::current_native_build_identity(root).ok());
     let options = ValidationOptions {
         repository_root: Some(root.to_path_buf()),
         suite: Some(args.suite),
@@ -61,6 +67,7 @@ pub fn validate(root: &Path, args: ValidateArgs) -> Result<(Value, u8)> {
         blind_proof_path: proof,
         iga_review_manifest_path: iga,
         run_baselines: !args.skip_baselines,
+        native_build_identity,
         ..Default::default()
     };
     let report = validate_v5_dataset(&dataset, &options)?;

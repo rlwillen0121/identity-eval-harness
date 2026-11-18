@@ -12,6 +12,7 @@ use ib_v5_conformance::shared::{
     json_diff_paths, load_family_map, serialize_recipe_case, sha256_bytes, sha256_json,
     strict_json_loads, strict_jsonl_loads, validate_case_bijection, validate_evaluator_result,
     validate_public_case, verify_case_index, verify_complete_coverage,
+    verify_native_complete_coverage,
 };
 use serde_json::{Map, Value, json};
 
@@ -428,4 +429,102 @@ fn reduced_coverage_contract_is_rejected_and_normative_contract_is_full_spec_onl
     };
     assert!(freeze_source_closure(&closure).is_err());
     let _ = sha256_json(&json!({"a": 1})).unwrap();
+}
+
+#[test]
+fn native_coverage_binds_declared_targets_to_trusted_dynamic_universe() {
+    let trusted = CoverageRequirement {
+        families: (1..=12).map(|i| format!("F{i:02}")).collect(),
+        anchor_labels: (1..=39).map(|i| format!("A{i:02}")).collect(),
+        phase_targets: BTreeSet::from([(
+            "v5_dev".to_owned(),
+            "ep_01".to_owned(),
+            1,
+            "NHI_GOVERNANCE_MUTATION".to_owned(),
+            "nhi_01".to_owned(),
+        )]),
+        diagnostics: (1..=43).map(|i| format!("D{i:02}")).collect(),
+        rules: (1..=26).map(|i| format!("RULE-{i:02}")).collect(),
+        safety_cases: BTreeSet::new(),
+        safety_kinds: (1..=12).map(|i| format!("SAFETY-{i:02}")).collect(),
+        safety_truth_pairs: BTreeSet::from([
+            (false, false),
+            (false, true),
+            (true, false),
+            (true, true),
+        ]),
+        trace_case_ids: BTreeSet::new(),
+        snapshot_cells: [1_i64, 2_i64]
+            .into_iter()
+            .flat_map(|phase| {
+                ["FIRST_STAGE", "LAST_STAGE", "COMMIT"]
+                    .into_iter()
+                    .map(move |boundary| (phase, boundary.to_owned()))
+            })
+            .collect(),
+    };
+
+    let mut reduced = trusted.clone();
+    reduced.phase_targets.clear();
+    let mismatch = verify_native_complete_coverage(&[], &[], &reduced, &trusted, &BTreeMap::new())
+        .unwrap_err();
+    assert!(
+        mismatch
+            .to_string()
+            .contains("declared coverage requirement differs")
+    );
+
+    let mut substituted = trusted.clone();
+    substituted.phase_targets = BTreeSet::from([(
+        "v5_dev".to_owned(),
+        "ep_01".to_owned(),
+        1,
+        "NHI_GOVERNANCE_MUTATION".to_owned(),
+        "nhi_02".to_owned(),
+    )]);
+    let mismatch =
+        verify_native_complete_coverage(&[], &[], &substituted, &trusted, &BTreeMap::new())
+            .unwrap_err();
+    assert!(
+        mismatch
+            .to_string()
+            .contains("declared coverage requirement differs")
+    );
+
+    // With an exactly matching seal-derived requirement, a native target
+    // universe of size one passes the contract-size gate. The later mismatch
+    // is the empty fixture's observed coverage, rather than the archival 3,435
+    // target count.
+    let incomplete =
+        verify_native_complete_coverage(&[], &[], &trusted, &trusted, &BTreeMap::new())
+            .unwrap_err();
+    assert!(
+        incomplete
+            .to_string()
+            .contains("incomplete or extra declared coverage")
+    );
+    assert!(incomplete.to_string().contains("phase_targets"));
+    assert!(!incomplete.to_string().contains("reduced coverage contract"));
+}
+
+#[test]
+fn generic_blind_freeze_rejects_rust_oracle_before_reading_it() {
+    let closure = EvaluatorClosure {
+        evaluator_id: "full_spec".to_owned(),
+        source_root: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        entrypoint_module: "independent.worker".to_owned(),
+        files: vec![SourceFile::new(
+            "crates/ib-v5-oracle/src/lib.rs",
+            "a".repeat(64),
+        )],
+        import_roots: vec!["src".to_owned()],
+        python_executable: "python3".to_owned(),
+        dependency_lock_sha256: String::new(),
+        normative_contract_id: None,
+        python_version: None,
+        cache_tag: None,
+    };
+    let error = freeze_source_closure(&closure).unwrap_err();
+    assert!(matches!(error, ConformanceProtocolError::Isolation(_)));
+    assert!(error.to_string().contains("forbidden benchmark source"));
 }
