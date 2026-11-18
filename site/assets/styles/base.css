@@ -25,6 +25,9 @@ svg { vertical-align: middle; }
 .site-nav { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .site-nav a { border-radius: 999px; padding: 6px 12px; color: var(--ink-2); font-size: 13.5px; text-decoration: none; }
 .site-nav a:hover { background: var(--wash); color: var(--ink); }
+.site-nav a.nav-pill { border: 1px solid var(--axis); color: var(--ink); font-family: var(--mono); font-size: 11.5px; padding: 4px 11px; }
+.site-nav a.nav-pill:hover { border-color: var(--ink); }
+.site-nav a.nav-pill[aria-current="page"] { background: var(--ink); border-color: var(--ink); color: var(--page); }
 .theme-toggle { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-left: -6px; border: 0; border-radius: 999px; padding: 0; color: var(--ink-2); line-height: 1; }
 .theme-toggle:hover { background: var(--wash); color: var(--ink); }
 .theme-toggle svg { width: 17px; height: 17px; }
@@ -43,6 +46,8 @@ h1 { font: 400 clamp(30px, 3.5vw, 44px)/1.1 var(--serif); letter-spacing: -.02em
 .text-link::after { content: ' →'; }
 .text-link:hover { color: var(--ink); }
 .study-note { margin: 12px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; max-width: 96ch; text-wrap: pretty; }
+.preview-pointer { margin: 8px 0 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; max-width: 96ch; }
+.preview-pointer a { color: var(--accent-ink); text-decoration: underline; }
 .board { margin-top: 20px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); scroll-margin-top: 16px; }
 
 /* Sections */

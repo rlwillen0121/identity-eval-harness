@@ -24,11 +24,21 @@ The published, frozen benchmark is Python `identitybench v41`, defined by [SPEC-
 | `datasets/v41_dev`, `datasets/v41_lite`, `datasets/v41_full` | Released episode/oracle JSONL and seals; see the [dataset card](../datasets/README.md) |
 | `tests/conformance/v41/` | Blind conformance fixtures and ambiguity tracking |
 | `reports/v41-full/`, `reports/v41-lite/` | Published v4.1 results and chart tooling |
+| `src/identitybench/v5/` | Frozen Python v5 compatibility and differential reference (hash-pinned by `scripts/check_reference_pyright.py`; `v5 run` refuses live execution) |
+| `crates/` | Native Rust v5 workspace (14 crates; active `identitybench v5` execution path) |
+| `datasets/v5_draft5/` | Sealed Draft 5 v5 splits (`v5_dev`, `v5_lite`, `v5_core`, `v5_full`); see the [dataset card](../datasets/README.md) |
+| `reports/v5/` | v5 Draft 5 conformance receipts, transition/Daybreak audits, and [preliminary `v5_core` preview](../reports/v5/preliminary-core/report.md) |
 | `archive/` | Historical specifications, notes, and published outputs; no live legacy runtime |
 
 ## Native Rust v5 execution path
 
-The Rust workspace in `crates/` implements the active v5 CLI and runtime. It reads the same v5 datasets and normative specifications as the retained Python reference. The crate responsibilities and v5 proof boundaries are listed in the [native Rust guide](RUST.md). Native implementation and offline validation status do not establish blind conformance, live calibration, publication, or benchmark milestone acceptance.
+The Rust workspace in `crates/` (minimum toolchain Rust 1.90, development toolchain Rust 1.100.0) implements the active v5 CLI (`ib-cli`) and runtime without Python bindings or a Python subprocess fallback. It implements the seven-category v5 scope—including structured, deterministic `agent_governance`, which belongs exclusively to v5 and is never folded into v4.1—and reads the Draft 5 datasets under `datasets/v5_draft5/` against [SPEC-v5.0-draft.5.md](../SPEC-v5.0-draft.5.md) and its unsuperseded normative documents.
+
+Key runtime and security boundaries in the native v5 path (following PR #8 and the Daybreak Blue hardening pass):
+- HTTP adapters refuse redirects and enforce an incremental `20 MiB` response body cap; CLI adapters isolate child environments, cap auxiliary files at `16 MiB` (`64 KiB` on version probes), and retain bounded timeout stdout/stderr with process-group cleanup.
+- The dataset loader caps total reads across `SEAL.json`, `episodes.jsonl`, and `oracles.jsonl` at `512 MiB` with regular-file/Unix descriptor checks and atomic copy publication.
+- Runs acquire an exclusive `.identitybench-run.lock`, record a synced `started_slots.jsonl` journal prior to dispatch, and fail closed on ambiguous or infrastructure-incomplete history rather than replacing slots.
+- See [RUST.md](RUST.md) for the crate map and commands, [RUST-CONFORMANCE.md](RUST-CONFORMANCE.md) for native conformance provenance, and [AUDIT.md](../reports/v5/rust-final-audit/historical/AUDIT.md) for the offline historical regrading audit. Native implementation and offline validation status do not establish blind conformance (`G-SPEC-01`), practitioner review (`G-IGA-REVIEW-01`), live calibration/economics (`G-ECON-01`, `G-CAL-01..03`), or formal v5.0 publication acceptance.
 
 ## Python v4.1 execution and verification
 

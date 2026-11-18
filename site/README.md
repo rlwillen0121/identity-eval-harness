@@ -1,8 +1,18 @@
 # IdentityBench leaderboard
 
 The public leaderboard at <https://identitybench.ai>: a zero-dependency static site (plain HTML,
-CSS and ES modules, hand-built SVG charts, no external requests) generated from
-`reports/v41-full/summary.json`.
+CSS and ES modules, hand-built SVG charts, no external requests) serving:
+
+- **`index.html` (`v4.1 · full`)** — the canonical published leaderboard generated from
+  `reports/v41-full/summary.json` into `site/data/leaderboard.json`.
+- **`v5.html` (`v5 · preview`)** — preliminary Draft 5 (`v5_core`) preview generated from the
+  offline Rust-audited historical artifacts in
+  `reports/v5/rust-final-audit/historical/inventory.json`,
+  `reports/v5/rust-final-audit/historical/native/*/summary.json`, and
+  `datasets/v5_draft5/v5_core/SEAL.json` into `site/data/v5-preliminary.json`. It strictly
+  separates the 18 `protocol_complete` configurations from the 6 `provider_incomplete`
+  configurations and tracks provider errors, parse failures, and turn-limit terminations
+  separately.
 
 ## Preview
 
@@ -25,12 +35,14 @@ with the report update:
 
 ```sh
 python site/build.py history   # first-published dates, from the summary's git history
-python site/build.py           # site/data/leaderboard.json
+python site/build.py           # site/data/leaderboard.json and site/data/v5-preliminary.json
 ```
 
 A model from a vendor that is new to the leaderboard also needs a mark in
 `site/assets/scripts/logos.js`: a single-colour 24 by 24 path, keyed by the vendor id used in
-`leaderboard.json`. The JavaScript tests fail until every listed vendor has one. Existing marks
+`leaderboard.json` and `v5-preliminary.json`. Hosted-inference variants (such as
+`cerebras-qwen3.8-27b-t0-high`) map cleanly to their model maker (`qwen`) in `V5_MODEL_CATALOG`.
+The JavaScript tests fail until every listed vendor has a mark. Existing marks
 come from [`@lobehub/icons-static-svg`](https://github.com/lobehub/lobe-icons) (MIT) and
 [Simple Icons](https://simpleicons.org) (CC0); they are trademarks of their owners and identify
 each model's provider only.
