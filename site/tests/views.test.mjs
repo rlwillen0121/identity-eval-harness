@@ -27,7 +27,7 @@ test('leaderboard.json contains only complete 144/144 models, all 7 baselines, a
   assert.equal(data.suite.slots_per_run, 144);
   assert.equal(data.categories.length, 7);
   assert.equal(data.families.length, 12);
-  assert.equal(data.models.length, 18);
+  assert.equal(data.models.length, 19);
   assert.equal(data.baselines.length, 7);
   for (const model of data.models) {
     assert.equal(model.is_complete, true);

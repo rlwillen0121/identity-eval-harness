@@ -19,7 +19,7 @@ htmlcov/
 
 # Harness working state
 .cache/
-runs/
+/runs/
 reports/scratch/
 audit/scratch/
 .tmp/
