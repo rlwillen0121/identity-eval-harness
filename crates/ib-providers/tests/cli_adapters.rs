@@ -17,7 +17,9 @@ use ib_providers::cli::codex::{
 use ib_providers::cli::cursor::{CursorAdapter, CursorCliProvider, chat_dir, cursor_config_dir};
 use ib_providers::cli::grok::{GrokAdapter, GrokCliProvider};
 use ib_providers::cli::muse::{MuseAdapter, MuseCliProvider, trace_events};
-use ib_providers::cli::{ACTION_SCHEMA_NAME, CliConfig, NEUTRAL_SYSTEM};
+use ib_providers::cli::{
+    ACTION_SCHEMA_NAME, CliConfig, MAX_SIDECAR_BYTES, NEUTRAL_SYSTEM, read_sidecar_text,
+};
 use ib_providers::subprocess::{Command, ProcessResult, ProcessRunner};
 use serde_json::{Map, Value, json};
 use tempfile::TempDir;
@@ -219,6 +221,45 @@ async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
     );
     assert_eq!(served_model(log).as_deref(), Some("gemini-4-argon-medium"));
     assert!(agent_definition("SYS", true).contains("tools: [finish]"));
+}
+
+#[tokio::test]
+async fn agy_rejects_oversized_log_without_discarding_completed_response_or_usage() {
+    let runner = FakeRunner::single(|cmd: &Command| {
+        fs::File::create(flag_value(&cmd.argv, "--log-file"))
+            .unwrap()
+            .set_len(MAX_SIDECAR_BYTES as u64 + 1)
+            .unwrap();
+        ProcessResult {
+            returncode: 0,
+            stdout: json!({"event": "result", "result": {
+                "status": "SUCCESS", "response": "completed answer",
+                "usage": {"input_tokens": 31, "output_tokens": 7, "cache_read_tokens": 11}
+            }})
+            .to_string(),
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        }
+    });
+    let mut config = CliConfig::new("offline-model", "never-executed", 1.0);
+    config.runner = runner;
+    config.version = Some("offline-test".to_owned());
+    config.max_retries = 0;
+    let provider = AgyCliProvider::new(AgyAdapter, config);
+
+    let response = provider.complete(&make_request("x", "SYS", None)).await;
+    assert!(response.ok(), "unexpected error: {:?}", response.error);
+    assert_eq!(response.text.as_deref(), Some("completed answer"));
+    assert_eq!(response.usage.input_tokens, 20);
+    assert_eq!(response.usage.cache_read_tokens, 11);
+    assert_eq!(response.usage.output_tokens, 7);
+    assert!(response.served_model.is_none());
+    assert_eq!(
+        response.raw.as_ref().unwrap()["provider_log_rejected"],
+        json!(true)
+    );
 }
 
 #[tokio::test]
@@ -460,6 +501,118 @@ async fn codex_cli_flags_usage_and_empty_completed_action_turn() {
     assert_eq!(r2.text.as_deref(), Some(""));
     assert!(r2.parsed.is_none());
     assert_eq!(r2.stop_reason.as_deref(), Some("completed"));
+}
+
+#[tokio::test]
+async fn codex_rejects_oversized_sidecar_and_preserves_streamed_response_and_usage() {
+    let runner = FakeRunner::single(|cmd: &Command| {
+        fs::File::create(flag_value(&cmd.argv, "-o"))
+            .unwrap()
+            .set_len(MAX_SIDECAR_BYTES as u64 + 1)
+            .unwrap();
+        let stdout = [
+            json!({"type": "item.completed", "item": {"type": "agent_message", "text": "streamed answer"}}),
+            json!({"type": "turn.completed", "usage": {"input_tokens": 29, "cached_input_tokens": 9, "output_tokens": 6, "reasoning_output_tokens": 2}}),
+        ]
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+        ProcessResult {
+            returncode: 0,
+            stdout,
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        }
+    });
+    let mut config = CliConfig::new("offline-model", "never-executed", 1.0);
+    config.runner = runner;
+    config.version = Some("offline-test".to_owned());
+    config.max_retries = 0;
+    let provider = CodexCliProvider::new(CodexAdapter, config);
+
+    let response = provider.complete(&make_request("x", "SYS", None)).await;
+    assert!(response.ok(), "unexpected error: {:?}", response.error);
+    assert_eq!(response.text.as_deref(), Some("streamed answer"));
+    assert_eq!(response.usage.input_tokens, 20);
+    assert_eq!(response.usage.cache_read_tokens, 9);
+    assert_eq!(response.usage.output_tokens, 6);
+    assert_eq!(response.usage.reasoning_tokens, 2);
+    assert_eq!(
+        response.raw.as_ref().unwrap()["output_file_rejected"],
+        json!(true)
+    );
+}
+
+#[tokio::test]
+async fn codex_rejected_sidecar_without_streamed_fallback_is_not_an_empty_success() {
+    let runner = FakeRunner::single(|cmd: &Command| {
+        fs::File::create(flag_value(&cmd.argv, "-o"))
+            .unwrap()
+            .set_len(MAX_SIDECAR_BYTES as u64 + 1)
+            .unwrap();
+        ProcessResult {
+            returncode: 0,
+            stdout: json!({"type": "turn.completed", "usage": {
+                "input_tokens": 5, "cached_input_tokens": 0, "output_tokens": 1
+            }})
+            .to_string(),
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        }
+    });
+    let mut config = CliConfig::new("offline-model", "never-executed", 1.0);
+    config.runner = runner;
+    config.version = Some("offline-test".to_owned());
+    config.max_retries = 0;
+    let provider = CodexCliProvider::new(CodexAdapter, config);
+    let mut request = make_request("x", "SYS", Some(decision_schema()));
+    request.schema_name = ACTION_SCHEMA_NAME.to_owned();
+
+    let response = provider.complete(&request).await;
+    assert!(!response.ok());
+    assert!(response.text.is_none());
+    assert_eq!(response.usage.input_tokens, 5);
+    assert!(
+        response
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("final output sidecar was rejected")
+    );
+    assert_eq!(
+        response.raw.as_ref().unwrap()["output_file_rejected"],
+        json!(true)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn sidecar_reader_rejects_links_and_oversized_files() {
+    let temp = TempDir::new().unwrap();
+    let ordinary = temp.path().join("ordinary.txt");
+    fs::write(&ordinary, "ok").unwrap();
+    assert_eq!(read_sidecar_text(&ordinary).unwrap(), "ok");
+
+    let symlink = temp.path().join("symlink.txt");
+    std::os::unix::fs::symlink(&ordinary, &symlink).unwrap();
+    assert!(read_sidecar_text(&symlink).is_err());
+
+    let hardlink = temp.path().join("hardlink.txt");
+    fs::hard_link(&ordinary, &hardlink).unwrap();
+    assert!(read_sidecar_text(&ordinary).is_err());
+    assert!(read_sidecar_text(&hardlink).is_err());
+
+    let oversized = temp.path().join("oversized.txt");
+    fs::File::create(&oversized)
+        .unwrap()
+        .set_len(MAX_SIDECAR_BYTES as u64 + 1)
+        .unwrap();
+    assert!(read_sidecar_text(&oversized).is_err());
 }
 
 // --------------------------------------------------------------------------- claude, cursor, grok, muse

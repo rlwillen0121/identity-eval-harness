@@ -8,10 +8,9 @@ pub mod grok;
 pub mod muse;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::fs;
-use std::io::ErrorKind;
+use std::fs::{self, OpenOptions};
+use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -31,13 +30,15 @@ use crate::json::{
     bounded_token_count, load_object, safe_nonnegative_float_add, sanitize_response,
 };
 use crate::subprocess::{
-    Command, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BASE_DELAY_S, ProcessResult, ProcessRunner,
-    SystemProcessRunner, is_transient_error, redact, retry_transient, tail,
+    Command, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BASE_DELAY_S, MAX_CAPTURE_BYTES, ProcessResult,
+    ProcessRunner, SystemProcessRunner, is_transient_error, redact, retry_transient,
+    run_command_with_cap, tail,
 };
 
 pub const SYSTEM_BEGIN: &str = "===== SYSTEM INSTRUCTIONS =====";
 pub const SYSTEM_END: &str = "===== END SYSTEM INSTRUCTIONS =====";
 pub const MAX_ARG_BYTES: usize = 100_000;
+pub const MAX_SIDECAR_BYTES: usize = MAX_CAPTURE_BYTES;
 pub const SYSTEM_POINTER: &str = "Your instructions are at the start of the user message, between the lines '===== SYSTEM INSTRUCTIONS =====' and '===== END SYSTEM INSTRUCTIONS ====='. Treat them as your system prompt.";
 pub const NEUTRAL_SYSTEM: &str = "You are a helpful assistant.";
 pub const ACTION_SCHEMA_NAME: &str = "tool_action";
@@ -109,6 +110,80 @@ pub const COMMON_ENV_DROP_PREFIXES: &[&str] =
     &["NODE_", "SSL_CERT_", "GIT_", "PYTHON", "DYLD_", "LD_"];
 pub const COMMON_ENV_DROP_SUFFIXES: &[&str] = &["_PROXY"];
 pub const HOME_RELATIVE_VARS: &[&str] = &["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"];
+
+/// Read a CLI-produced sidecar without allowing it to bypass the subprocess capture limit.
+///
+/// Sidecars are generated in a private per-call directory, but they are still controlled by the
+/// child process. Require a single-link regular file, open it without following links or blocking
+/// on special files, and enforce the same 16 MiB limit used for captured stdout and stderr.
+pub fn read_sidecar_text(path: &Path) -> std::io::Result<String> {
+    let before = fs::symlink_metadata(path)?;
+    validate_sidecar_metadata(&before)?;
+
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    let mut file = options.open(path)?;
+    let opened = file.metadata()?;
+    validate_sidecar_metadata(&opened)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if before.dev() != opened.dev() || before.ino() != opened.ino() {
+            return Err(std::io::Error::other(
+                "CLI sidecar changed while it was opened",
+            ));
+        }
+    }
+
+    let mut bytes = Vec::with_capacity(
+        usize::try_from(opened.len())
+            .unwrap_or(MAX_SIDECAR_BYTES)
+            .min(MAX_SIDECAR_BYTES),
+    );
+    file.by_ref()
+        .take(MAX_SIDECAR_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_SIDECAR_BYTES {
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidData,
+            "CLI sidecar exceeds the 16 MiB limit",
+        ));
+    }
+    validate_sidecar_metadata(&file.metadata()?)?;
+    String::from_utf8(bytes).map_err(|error| std::io::Error::new(ErrorKind::InvalidData, error))
+}
+
+fn validate_sidecar_metadata(metadata: &fs::Metadata) -> std::io::Result<()> {
+    if !metadata.file_type().is_file() {
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidData,
+            "CLI sidecar is not a regular file",
+        ));
+    }
+    if metadata.len() > MAX_SIDECAR_BYTES as u64 {
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidData,
+            "CLI sidecar exceeds the 16 MiB limit",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if metadata.nlink() != 1 {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "CLI sidecar must have exactly one link",
+            ));
+        }
+    }
+    Ok(())
+}
 
 const ALLOWED_SYNC_BACK_KEYS: &[&str] = &[
     "claudeAiOauth",
@@ -351,6 +426,8 @@ pub fn base_child_env(base: Option<&BTreeMap<String, String>>) -> BTreeMap<Strin
 }
 
 static VERSION_CACHE: OnceLock<Mutex<HashMap<(String, EnvItems), String>>> = OnceLock::new();
+const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+const VERSION_PROBE_CAPTURE_BYTES: usize = 64 * 1024;
 
 /// `<binary> --version` (first non-empty line), cached per binary and environment.
 #[must_use]
@@ -375,44 +452,59 @@ pub fn probe_version(binary: &str, env: Option<&BTreeMap<String, String>>) -> St
 }
 
 fn probe_version_uncached(binary: &str, env: &BTreeMap<String, String>) -> String {
+    probe_version_uncached_with_limits(
+        binary,
+        env,
+        VERSION_PROBE_TIMEOUT,
+        VERSION_PROBE_CAPTURE_BYTES,
+    )
+}
+
+fn probe_version_uncached_with_limits(
+    binary: &str,
+    env: &BTreeMap<String, String>,
+    timeout: Duration,
+    max_capture_bytes: usize,
+) -> String {
     let Ok(dir) = CallDirGuard::new("identitybench-probe-") else {
         return "unknown".to_string();
     };
-    let mut cmd = std::process::Command::new(binary);
-    cmd.arg("--version")
-        .current_dir(dir.path())
-        .env_clear()
-        .envs(env)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(err) if err.kind() == ErrorKind::NotFound => return "not-installed".to_string(),
-        Err(_) => return "unknown".to_string(),
+    let command = Command {
+        argv: vec![binary.to_string(), "--version".to_string()],
+        cwd: dir.path().to_path_buf(),
+        env: env.clone(),
+        timeout_s: timeout.as_secs_f64(),
+        stdin: None,
     };
-
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return "unknown".to_string();
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(_) => return "unknown".to_string(),
-        }
-    }
-
-    let Ok(output) = child.wait_with_output() else {
+    let Ok(worker) = std::thread::Builder::new()
+        .name("identitybench-version-probe".to_string())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()?;
+            Some(runtime.block_on(run_command_with_cap(&command, max_capture_bytes)))
+        })
+    else {
         return "unknown".to_string();
     };
-    for bytes in [output.stdout, output.stderr] {
-        let text = String::from_utf8_lossy(&bytes);
+    let Ok(Some(result)) = worker.join() else {
+        return "unknown".to_string();
+    };
+    if let Some(error) = result.launch_error {
+        return if error.contains("No such file or directory") {
+            "not-installed".to_string()
+        } else {
+            "unknown".to_string()
+        };
+    }
+    // A direct child can exit successfully while a helper keeps its inherited pipes open. The
+    // supervised runner then reaches its deadline to reap the process group, but preserves the
+    // direct child's zero status and bounded output. Accept that completed probe result.
+    if result.returncode != 0 {
+        return "unknown".to_string();
+    }
+    for text in [result.stdout, result.stderr] {
         for line in text.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
@@ -421,6 +513,77 @@ fn probe_version_uncached(binary: &str, env: &BTreeMap<String, String>) -> Strin
         }
     }
     "unknown".to_string()
+}
+
+#[cfg(test)]
+mod version_probe_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn version_probe_bounds_output_and_reaps_a_pipe_holding_descendant() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let binary = temp.path().join("mock-version.sh");
+        fs::write(
+            &binary,
+            concat!(
+                "#!/bin/sh\n",
+                "[ \"$1\" = \"--version\" ] || exit 2\n",
+                "[ \"$PROBE_MARKER\" = \"visible\" ] || exit 3\n",
+                "printf 'mock-version 1.2.3\\n'\n",
+                "head -c 131072 /dev/zero | tr '\\0' 'x'\n",
+                "sleep 30 &\n",
+                "exit 0\n",
+            ),
+        )
+        .expect("write mock version binary");
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
+            .expect("make mock executable");
+        let env = BTreeMap::from([
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+            ("PROBE_MARKER".to_string(), "visible".to_string()),
+        ]);
+        let started = Instant::now();
+        let version = probe_version_uncached_with_limits(
+            &binary.to_string_lossy(),
+            &env,
+            Duration::from_millis(250),
+            64,
+        );
+
+        assert_eq!(version, "mock-version 1.2.3");
+        assert!(started.elapsed() < Duration::from_secs(5));
+
+        let failed_binary = temp.path().join("failed-version.sh");
+        fs::write(&failed_binary, "#!/bin/sh\nexit 7\n").expect("write failing mock binary");
+        fs::set_permissions(&failed_binary, fs::Permissions::from_mode(0o755))
+            .expect("make failing mock executable");
+        assert_eq!(
+            probe_version_uncached_with_limits(
+                &failed_binary.to_string_lossy(),
+                &env,
+                Duration::from_secs(1),
+                64,
+            ),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn version_probe_keeps_not_installed_fallback_for_missing_binary() {
+        let env = BTreeMap::new();
+        assert_eq!(
+            probe_version_uncached_with_limits(
+                "/definitely/missing/identitybench-provider",
+                &env,
+                Duration::from_millis(100),
+                64,
+            ),
+            "not-installed"
+        );
+    }
 }
 
 // --------------------------------------------------------------------------- stderr excerpts

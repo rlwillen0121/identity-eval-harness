@@ -322,6 +322,7 @@ impl MaxTokensParam {
 }
 
 pub struct OpenAICompatProvider {
+    timeout: Duration,
     config: OpenAICompatConfig,
     resolved_api_key_env: Option<String>,
     routing_json: Option<String>,
@@ -333,6 +334,8 @@ pub struct OpenAICompatProvider {
 
 impl OpenAICompatProvider {
     pub fn new(config: OpenAICompatConfig) -> Result<Self, String> {
+        let timeout =
+            crate::base::provider_timeout(config.timeout_s)?.max(Duration::from_millis(1));
         if config.api == OpenAiApi::Responses
             && config.max_tokens_param != MaxTokensParam::MaxCompletionTokens
         {
@@ -387,6 +390,7 @@ impl OpenAICompatProvider {
             is_vendor_endpoint(base_url.as_deref()) && !accepts_temperature(&config.model);
 
         Ok(Self {
+            timeout,
             config,
             resolved_api_key_env,
             routing_json,
@@ -809,7 +813,7 @@ impl OpenAICompatProvider {
                     }
                 }
                 reqwest::Client::builder()
-                    .timeout(Duration::from_secs_f64(self.config.timeout_s.max(0.001)))
+                    .timeout(self.timeout)
                     .redirect(reqwest::redirect::Policy::none())
                     .default_headers(headers)
                     .build()

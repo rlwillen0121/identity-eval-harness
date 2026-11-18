@@ -759,6 +759,7 @@ dependencies = [
  "ib-v5-runtime",
  "ib-v5-schemas",
  "indexmap",
+ "nix",
  "regex",
  "serde",
  "serde_json",

@@ -54,6 +54,11 @@ checks are stale; finding the receipt does not establish conformance.
 `build` retains its separate `datasets/<suite>` default and refuses to overwrite existing
 dataset artifacts. Use `--out` for a new directory; held-out suites also require `--freeze`.
 
+The native dataset loader accepts up to 512 MiB across the seal and its two JSONL files.
+A source alias must resolve to a regular file inside the dataset directory. Existing
+dataset copies in run directories must be regular files containing the exact sealed
+bytes. The CLI checks all three before starting a run.
+
 Validation reports missing conformance evidence as `UNKNOWN`, and its exit status remains
 nonzero if required offline gates do not pass. It reports live calibration/economics gates
 separately; an offline result cannot establish a full benchmark milestone.

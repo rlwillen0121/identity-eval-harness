@@ -321,3 +321,16 @@ fn python_type_identities_and_retry_limits_match_v5_provider_accounting() {
     assert_eq!(muse.local_retry_limit(), Some(0));
     assert_eq!(replay.local_retry_limit(), None);
 }
+
+#[test]
+fn unrepresentable_provider_deadlines_are_rejected_before_dispatch() {
+    let mut spec = ModelSpec::new(ProviderKind::OpenaiCompatible, "offline-fixture");
+    spec.timeout_s = Some(f64::MAX);
+    assert!(spec.validate().is_err());
+    let mut anthropic = AnthropicConfig::new("offline-fixture");
+    anthropic.timeout_s = f64::MAX;
+    assert!(AnthropicProvider::new(anthropic).is_err());
+    let mut compatible = OpenAICompatConfig::new("offline-fixture");
+    compatible.timeout_s = f64::MAX;
+    assert!(OpenAICompatProvider::new(compatible).is_err());
+}

@@ -113,6 +113,81 @@ async fn timeout_kills_process_group_including_grandchild() {
 }
 
 #[tokio::test]
+async fn timeout_preserves_captured_output_with_the_configured_cap() {
+    let _guard = LIVE_GROUP_RWLOCK.read().await;
+    let tmp = TempDir::new().unwrap();
+    let stdout = "o".repeat(2048);
+    let stderr = "e".repeat(2048);
+    let script = format!("printf '%s' '{stdout}'; printf '%s' '{stderr}' >&2; sleep 30");
+    let cap = 128;
+    let res =
+        run_command_with_cap(&sh_cmd(&script, None, 0.25, tmp.path().to_path_buf()), cap).await;
+
+    assert!(res.timed_out);
+    assert_eq!(
+        res.stdout,
+        format!("{}{TRUNCATION_MARKER}", "o".repeat(cap))
+    );
+    assert_eq!(
+        res.stderr,
+        format!("{}{TRUNCATION_MARKER}", "e".repeat(cap))
+    );
+}
+
+#[tokio::test]
+async fn timeout_kills_group_when_direct_child_exited_but_descendant_holds_pipes() {
+    let _guard = LIVE_GROUP_RWLOCK.read().await;
+    let tmp = TempDir::new().unwrap();
+    let pid_file = tmp.path().join("grandchild.pid");
+    let script = format!("sleep 30 & echo $! > '{}'; exit 0", pid_file.display());
+    let res = run_command(&sh_cmd(&script, None, 0.25, tmp.path().to_path_buf())).await;
+    assert!(res.timed_out);
+
+    let grandchild: i32 = fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let mut dead = false;
+    for _ in 0..50 {
+        let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(grandchild), None).is_ok();
+        if !alive {
+            dead = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(
+        dead,
+        "grandchild survived timeout after direct child exited"
+    );
+}
+
+#[tokio::test]
+async fn malformed_and_unrepresentable_timeouts_are_rejected_before_launch() {
+    let _guard = LIVE_GROUP_RWLOCK.read().await;
+    let tmp = TempDir::new().unwrap();
+    let marker = tmp.path().join("command-started");
+    let script = format!("printf ran > '{}'", marker.display());
+    for timeout_s in [f64::NAN, f64::INFINITY, f64::MAX] {
+        let res = run_command(&sh_cmd(&script, None, timeout_s, tmp.path().to_path_buf())).await;
+        assert_eq!(res.returncode, -1);
+        assert!(
+            res.launch_error
+                .as_deref()
+                .unwrap()
+                .contains("invalid process timeout")
+        );
+        assert!(!res.timed_out);
+        assert!(!marker.exists());
+    }
+
+    let negative_timeout =
+        run_command(&sh_cmd("sleep 30", None, -1.0, tmp.path().to_path_buf())).await;
+    assert!(negative_timeout.timed_out);
+}
+
+#[tokio::test]
 async fn helpers_left_running_after_normal_exit_are_killed() {
     let _guard = LIVE_GROUP_RWLOCK.read().await;
     let tmp = TempDir::new().unwrap();

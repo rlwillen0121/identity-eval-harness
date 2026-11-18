@@ -185,11 +185,11 @@ impl Drop for LiveGroupGuard {
 }
 
 fn kill_group(pgid: i32, child: &mut Child) {
+    #[cfg(unix)]
+    if pgid > 0 {
+        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
+    }
     if child.try_wait().ok().flatten().is_none() {
-        #[cfg(unix)]
-        if pgid > 0 {
-            let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
-        }
         let _ = child.start_kill();
     }
 }
@@ -205,6 +205,7 @@ fn kill_stragglers(pgid: i32) {
     }
 }
 
+#[derive(Default)]
 struct Capture {
     data: Vec<u8>,
     truncated: bool,
@@ -221,37 +222,47 @@ impl Capture {
     }
 }
 
-async fn drain_stream<R: AsyncRead + Unpin>(stream: Option<R>, limit: usize) -> Capture {
+async fn drain_stream<R: AsyncRead + Unpin>(
+    stream: Option<R>,
+    limit: usize,
+    capture: &Mutex<Capture>,
+) {
     let Some(mut reader) = stream else {
-        return Capture {
-            data: Vec::new(),
-            truncated: false,
-        };
+        return;
     };
-    let mut kept = Vec::new();
     let mut buf = vec![0u8; READ_CHUNK];
-    let mut truncated = false;
     loop {
         match reader.read(&mut buf).await {
             Ok(0) | Err(_) => break,
             Ok(n) => {
-                if kept.len() >= limit {
-                    truncated = true;
-                    continue;
+                let mut capture = capture.lock().unwrap_or_else(|e| e.into_inner());
+                if capture.data.len() >= limit {
+                    capture.truncated = true;
+                } else {
+                    let remaining = limit - capture.data.len();
+                    let keep_n = n.min(remaining);
+                    if keep_n < n {
+                        capture.truncated = true;
+                    }
+                    capture.data.extend_from_slice(&buf[..keep_n]);
                 }
-                let remaining = limit - kept.len();
-                let keep_n = n.min(remaining);
-                if keep_n < n {
-                    truncated = true;
-                }
-                kept.extend_from_slice(&buf[..keep_n]);
             }
         }
     }
-    Capture {
-        data: kept,
-        truncated,
+}
+
+fn take_capture(capture: &Mutex<Capture>) -> Capture {
+    std::mem::take(&mut *capture.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+fn command_timeout(timeout_s: f64) -> Result<Duration, &'static str> {
+    if !timeout_s.is_finite() {
+        return Err("timeout must be finite");
     }
+    if timeout_s <= 0.0 {
+        return Ok(Duration::ZERO);
+    }
+    crate::base::provider_timeout(timeout_s)
 }
 
 async fn feed_stdin(mut stdin: Option<tokio::process::ChildStdin>, data: &[u8]) {
@@ -278,6 +289,20 @@ pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -
             launch_error: Some("could not start '': empty argv".to_string()),
         };
     }
+
+    let timeout = match command_timeout(command.timeout_s) {
+        Ok(timeout) => timeout,
+        Err(error) => {
+            return ProcessResult {
+                returncode: -1,
+                stdout: String::new(),
+                stderr: String::new(),
+                duration_s: start.elapsed().as_secs_f64(),
+                timed_out: false,
+                launch_error: Some(format!("invalid process timeout: {error}")),
+            };
+        }
+    };
 
     let mut cmd = TokioCommand::new(&command.argv[0]);
     cmd.args(&command.argv[1..])
@@ -329,11 +354,12 @@ pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -
     let stdin_pipe = child.stdin.take();
     let stdin_bytes = command.stdin.as_deref().map(str::as_bytes);
 
-    let timeout = Duration::from_secs_f64(command.timeout_s.max(0.0));
+    let stdout_capture = Mutex::new(Capture::default());
+    let stderr_capture = Mutex::new(Capture::default());
     let work = async {
-        let (out_cap, err_cap, ()) = tokio::join!(
-            drain_stream(stdout_pipe, max_capture_bytes),
-            drain_stream(stderr_pipe, max_capture_bytes),
+        let ((), (), ()) = tokio::join!(
+            drain_stream(stdout_pipe, max_capture_bytes, &stdout_capture),
+            drain_stream(stderr_pipe, max_capture_bytes, &stderr_capture),
             async {
                 if let Some(bytes) = stdin_bytes {
                     feed_stdin(stdin_pipe, bytes).await;
@@ -342,11 +368,11 @@ pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -
         );
         let status = child.wait().await;
         kill_stragglers(pgid);
-        (out_cap, err_cap, status)
+        status
     };
 
     match tokio::time::timeout(timeout, work).await {
-        Ok((out_cap, err_cap, status_res)) => {
+        Ok(status_res) => {
             kill_stragglers(pgid);
             if let Some(g) = guard.as_mut() {
                 g.disarm_kill();
@@ -354,8 +380,8 @@ pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -
             let returncode = status_res.ok().and_then(|s| s.code()).unwrap_or(-1);
             ProcessResult {
                 returncode,
-                stdout: out_cap.into_text(TRUNCATION_MARKER),
-                stderr: err_cap.into_text(TRUNCATION_MARKER),
+                stdout: take_capture(&stdout_capture).into_text(TRUNCATION_MARKER),
+                stderr: take_capture(&stderr_capture).into_text(TRUNCATION_MARKER),
                 duration_s: start.elapsed().as_secs_f64(),
                 timed_out: false,
                 launch_error: None,
@@ -369,8 +395,8 @@ pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -
             }
             ProcessResult {
                 returncode: status.unwrap_or(-9),
-                stdout: String::new(),
-                stderr: String::new(),
+                stdout: take_capture(&stdout_capture).into_text(TRUNCATION_MARKER),
+                stderr: take_capture(&stderr_capture).into_text(TRUNCATION_MARKER),
                 duration_s: start.elapsed().as_secs_f64(),
                 timed_out: true,
                 launch_error: None,

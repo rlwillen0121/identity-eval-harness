@@ -214,12 +214,8 @@ impl ModelSpec {
                 "max_output_tokens must be greater than 0".to_string(),
             ));
         }
-        if let Some(t) = self.timeout_s
-            && (!t.is_finite() || t <= 0.0)
-        {
-            return Err(FactoryError::Validation(
-                "timeout_s must be greater than 0".to_string(),
-            ));
+        if let Some(t) = self.timeout_s {
+            crate::base::provider_timeout(t).map_err(|err| FactoryError::Validation(err.into()))?;
         }
         if let Some(c) = self.concurrency
             && c == 0

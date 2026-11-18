@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use ib_core::pyjson::{DumpOptions, dumps};
@@ -10,7 +11,7 @@ use serde_json::{Map, Value};
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
     ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int,
-    link_credentials, parse_jsonl, prepend_system, render_transcript,
+    link_credentials, parse_jsonl, prepend_system, read_sidecar_text, render_transcript,
 };
 use crate::json::load_object;
 use crate::subprocess::{ProcessResult, user_home_dir};
@@ -257,17 +258,19 @@ impl CliAdapter for CodexAdapter {
             }
         }
 
-        let mut text: Option<String> =
-            fs::read_to_string(io_dir.join(OUTPUT_FILE))
-                .ok()
-                .and_then(|s| {
-                    let t = s.trim();
-                    if t.is_empty() {
-                        None
-                    } else {
-                        Some(t.to_string())
-                    }
-                });
+        let (mut text, output_file_rejected) = match read_sidecar_text(&io_dir.join(OUTPUT_FILE)) {
+            Ok(sidecar) => {
+                let trimmed = sidecar.trim();
+                let text = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                };
+                (text, false)
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => (None, false),
+            Err(_) => (None, true),
+        };
         if text.is_none()
             && let Some(ref st) = streamed_text
         {
@@ -277,6 +280,7 @@ impl CliAdapter for CodexAdapter {
             }
         }
         if text.is_none()
+            && !output_file_rejected
             && turn_completed
             && !turn_failed
             && result.returncode == 0
@@ -287,6 +291,9 @@ impl CliAdapter for CodexAdapter {
 
         if !raw_usage.is_empty() {
             raw.insert("raw_usage".to_string(), Value::Array(raw_usage));
+        }
+        if output_file_rejected {
+            raw.insert("output_file_rejected".to_string(), Value::Bool(true));
         }
 
         let mut response = ModelResponse {
@@ -302,10 +309,14 @@ impl CliAdapter for CodexAdapter {
         };
 
         let Some(ref final_text) = text else {
-            let reason = errors
-                .last()
-                .map(String::as_str)
-                .unwrap_or("no final message");
+            let reason = if output_file_rejected {
+                "final output sidecar was rejected"
+            } else {
+                errors
+                    .last()
+                    .map(String::as_str)
+                    .unwrap_or("no final message")
+            };
             response.error = Some(helper.error_text(reason, Some(result), Some(request)));
             return response;
         };

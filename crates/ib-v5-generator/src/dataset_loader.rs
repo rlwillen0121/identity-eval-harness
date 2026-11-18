@@ -4,6 +4,8 @@
 //! `src/identitybench/v5/validation.py` lines 1-533.
 
 use std::collections::HashSet;
+use std::fs::{File, OpenOptions};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -24,6 +26,7 @@ pub const EPISODES_FILENAME_V5: &str = "episodes.jsonl";
 pub const ORACLES_FILENAME_V5: &str = "oracles.jsonl";
 
 const ACCEPTED_SEAL_SPEC_SHA256_V5: [&str; 2] = [V5_BASE_SPEC_SHA256, V5_DRAFT5_SPEC_SHA256];
+const MAX_V5_DATASET_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 
 const SEAL_REQUIRED_KEYS_V5: [&str; 8] = [
     "suite",
@@ -85,6 +88,79 @@ fn is_sensitive_provenance_path(path: &Path) -> bool {
             || lower.contains("secret")
             || lower.contains("token")
     })
+}
+
+fn open_dataset_artifact(path: &Path, root: &Path) -> Result<(File, u64), V5ArtifactError> {
+    let incomplete = |error: std::io::Error| {
+        V5ArtifactError::new(format!(
+            "incomplete v5 dataset at {}: {error}",
+            root.display()
+        ))
+    };
+    let before = std::fs::symlink_metadata(path).map_err(incomplete)?;
+    if before.file_type().is_symlink() || !before.file_type().is_file() {
+        return Err(V5ArtifactError::new(
+            "dataset artifact is not a regular file",
+        ));
+    }
+
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(incomplete)?;
+    let after = file.metadata().map_err(incomplete)?;
+    if !after.file_type().is_file() {
+        return Err(V5ArtifactError::new(
+            "dataset artifact is not a regular file",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if before.dev() != after.dev() || before.ino() != after.ino() {
+            return Err(V5ArtifactError::new(
+                "dataset artifact changed while it was opened",
+            ));
+        }
+    }
+    if before.len() != after.len() {
+        return Err(V5ArtifactError::new(
+            "dataset artifact changed while it was opened",
+        ));
+    }
+    Ok((file, after.len()))
+}
+
+fn read_opened_dataset_artifact(
+    mut file: File,
+    expected_len: u64,
+    root: &Path,
+) -> Result<Vec<u8>, V5ArtifactError> {
+    let incomplete = |error: std::io::Error| {
+        V5ArtifactError::new(format!(
+            "incomplete v5 dataset at {}: {error}",
+            root.display()
+        ))
+    };
+    let capacity = usize::try_from(expected_len)
+        .map_err(|_| V5ArtifactError::new("dataset artifact is too large"))?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(capacity)
+        .map_err(|error| V5ArtifactError::new(format!("dataset artifact is too large: {error}")))?;
+    bytes.resize(capacity, 0);
+    file.read_exact(&mut bytes).map_err(incomplete)?;
+    let mut extra = [0_u8; 1];
+    if file.read(&mut extra).map_err(incomplete)? != 0 {
+        return Err(V5ArtifactError::new(
+            "dataset artifact changed while it was read",
+        ));
+    }
+    Ok(bytes)
 }
 
 fn skip_ws(bytes: &[u8], pos: &mut usize) {
@@ -277,6 +353,8 @@ pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5Artifact
     })?;
     let artifact_names = [SEAL_FILENAME_V5, EPISODES_FILENAME_V5, ORACLES_FILENAME_V5];
     let mut resolved_paths = Vec::with_capacity(3);
+    // Resolve leaf aliases before containment checks. This intentionally permits an
+    // in-root symlink alias; the resolved target is opened below as a regular file.
     for name in artifact_names {
         let artifact_path = root.join(name);
         let resolved = std::fs::canonicalize(&artifact_path).map_err(|err| {
@@ -298,24 +376,28 @@ pub fn load_v5_dataset(dataset_dir: &Path) -> Result<LoadedV5Dataset, V5Artifact
         resolved_paths.push(resolved);
     }
 
-    let seal_bytes = std::fs::read(&resolved_paths[0]).map_err(|err| {
-        V5ArtifactError::new(format!(
-            "incomplete v5 dataset at {}: {err}",
-            root.display()
-        ))
-    })?;
-    let episodes_bytes = std::fs::read(&resolved_paths[1]).map_err(|err| {
-        V5ArtifactError::new(format!(
-            "incomplete v5 dataset at {}: {err}",
-            root.display()
-        ))
-    })?;
-    let oracles_bytes = std::fs::read(&resolved_paths[2]).map_err(|err| {
-        V5ArtifactError::new(format!(
-            "incomplete v5 dataset at {}: {err}",
-            root.display()
-        ))
-    })?;
+    let mut opened_artifacts = Vec::with_capacity(resolved_paths.len());
+    let mut total_bytes = 0_u64;
+    for path in &resolved_paths {
+        let (file, len) = open_dataset_artifact(path, &root)?;
+        total_bytes = total_bytes
+            .checked_add(len)
+            .ok_or_else(|| V5ArtifactError::new("dataset artifacts are too large"))?;
+        if total_bytes > MAX_V5_DATASET_TOTAL_BYTES {
+            return Err(V5ArtifactError::new(
+                "dataset artifacts exceed the supported total size",
+            ));
+        }
+        opened_artifacts.push((file, len));
+    }
+
+    let mut opened_artifacts = opened_artifacts.into_iter();
+    let (seal_file, seal_len) = opened_artifacts.next().expect("three artifact paths");
+    let (episodes_file, episodes_len) = opened_artifacts.next().expect("three artifact paths");
+    let (oracles_file, oracles_len) = opened_artifacts.next().expect("three artifact paths");
+    let seal_bytes = read_opened_dataset_artifact(seal_file, seal_len, &root)?;
+    let episodes_bytes = read_opened_dataset_artifact(episodes_file, episodes_len, &root)?;
+    let oracles_bytes = read_opened_dataset_artifact(oracles_file, oracles_len, &root)?;
 
     let seal_value = strict_json(&seal_bytes, SEAL_FILENAME_V5)?;
     let Value::Object(seal) = seal_value else {

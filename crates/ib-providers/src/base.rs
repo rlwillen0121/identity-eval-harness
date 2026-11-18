@@ -6,11 +6,24 @@
 //! auth, and parse problems come back as a [`ModelResponse`] with `error` set.
 
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+
+/// Validate a configured timeout before handing it to an HTTP or process timer.
+pub(crate) fn provider_timeout(seconds: f64) -> Result<Duration, &'static str> {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return Err("timeout_s must be greater than 0 and finite");
+    }
+    let duration = Duration::try_from_secs_f64(seconds).map_err(|_| "timeout_s is too large")?;
+    Instant::now()
+        .checked_add(duration)
+        .ok_or("timeout_s is too large")?;
+    Ok(duration)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

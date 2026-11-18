@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
     ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, NEUTRAL_SYSTEM,
-    as_dict, as_int, parse_jsonl, render_transcript, structured_text,
+    as_dict, as_int, parse_jsonl, read_sidecar_text, render_transcript, structured_text,
 };
 use crate::subprocess::{ProcessResult, user_home_dir};
 
@@ -309,7 +309,14 @@ impl CliAdapter for AgyAdapter {
         }
 
         let log_path = io_dir.join(LOG_FILE);
-        let log_text = fs::read_to_string(&log_path).unwrap_or_default();
+        let (log_text, provider_log_rejected) = match read_sidecar_text(&log_path) {
+            Ok(text) => (text, false),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
+            Err(_) => (String::new(), true),
+        };
+        if provider_log_rejected {
+            raw.insert("provider_log_rejected".to_string(), Value::Bool(true));
+        }
 
         let mut response = ModelResponse {
             text,

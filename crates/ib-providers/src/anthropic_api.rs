@@ -137,6 +137,7 @@ impl AnthropicConfig {
 }
 
 pub struct AnthropicProvider {
+    timeout: Duration,
     config: AnthropicConfig,
     kind: &'static str,
     resolved_api_key_env: Option<String>,
@@ -147,6 +148,8 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     pub fn new(config: AnthropicConfig) -> Result<Self, String> {
+        let timeout =
+            crate::base::provider_timeout(config.timeout_s)?.max(Duration::from_millis(1));
         let kind = if config.base_url_env.is_some() {
             "anthropic_compatible"
         } else {
@@ -172,6 +175,7 @@ impl AnthropicProvider {
             );
         }
         Ok(Self {
+            timeout,
             config,
             kind,
             resolved_api_key_env,
@@ -397,7 +401,7 @@ impl AnthropicProvider {
                 }
 
                 reqwest::Client::builder()
-                    .timeout(Duration::from_secs_f64(self.config.timeout_s.max(0.001)))
+                    .timeout(self.timeout)
                     .redirect(reqwest::redirect::Policy::none())
                     .default_headers(headers)
                     .build()

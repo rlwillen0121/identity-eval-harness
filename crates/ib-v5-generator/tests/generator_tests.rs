@@ -771,3 +771,53 @@ fn test_load_v5_dataset_rejects_corrupt_or_tampered_artifacts() {
     let err = load_v5_dataset(&secret_dir).expect_err("must reject sensitive path");
     assert!(err.to_string().contains("sensitive location"));
 }
+
+#[cfg(unix)]
+#[test]
+fn test_load_v5_dataset_accepts_an_in_root_artifact_alias() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let dir = tmp.path().join("dev");
+    write_v5_dataset(V5Suite::V5Dev, &dir, DEFAULT_V5_DRAFT5_SEED, false).expect("write");
+    let seal = dir.join("SEAL.json");
+    let target = dir.join("seal-payload.json");
+    fs::rename(&seal, &target).expect("move in-root seal payload");
+    symlink(&target, &seal).expect("create in-root seal alias");
+
+    let loaded = load_v5_dataset(&dir).expect("in-root alias remains supported");
+    assert_eq!(
+        loaded.seal_bytes,
+        fs::read(target).expect("read seal target")
+    );
+}
+
+#[test]
+fn test_load_v5_dataset_rejects_a_nonregular_artifact_leaf() {
+    let tmp = TempDir::new().expect("tempdir");
+    let dir = tmp.path().join("dev");
+    write_v5_dataset(V5Suite::V5Dev, &dir, DEFAULT_V5_DRAFT5_SEED, false).expect("write");
+    let episodes = dir.join("episodes.jsonl");
+    fs::remove_file(&episodes).expect("remove episodes file");
+    fs::create_dir(&episodes).expect("replace episodes with directory");
+
+    let error = load_v5_dataset(&dir).expect_err("directory artifact must be rejected");
+    assert!(error.to_string().contains("not a regular file"));
+}
+
+#[test]
+fn test_load_v5_dataset_rejects_oversized_artifact_sets_before_reading() {
+    let tmp = TempDir::new().expect("tempdir");
+    let dir = tmp.path().join("dev");
+    write_v5_dataset(V5Suite::V5Dev, &dir, DEFAULT_V5_DRAFT5_SEED, false).expect("write");
+    let episodes = fs::OpenOptions::new()
+        .write(true)
+        .open(dir.join("episodes.jsonl"))
+        .expect("open episodes");
+    episodes
+        .set_len(512 * 1024 * 1024 + 1)
+        .expect("extend sparse episodes file");
+
+    let error = load_v5_dataset(&dir).expect_err("oversized dataset must be rejected");
+    assert!(error.to_string().contains("supported total size"));
+}

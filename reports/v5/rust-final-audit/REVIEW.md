@@ -11,6 +11,10 @@ actionable findings remain in the reviewed migration scope. Exact-head hosted CI
 publication status are recorded on [PR #8](https://github.com/rlwillen0121/identity-eval-harness/pull/8).
 This document is not a release or benchmark milestone approval.
 
+The [Daybreak Blue follow-up](DAYBREAK.md) records the subsequent provider and
+dataset file-handling repairs and the validation of the rebuilt executable. The
+source and binary digests below identify the original audit at commit `0bdd288`.
+
 ## Review lanes and authority
 
 Native collaboration workers used Sol medium for orchestration and technical review,
