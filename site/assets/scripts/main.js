@@ -1,4 +1,4 @@
-import { END_TO_END_INTERVAL_METHOD, int, date, safetyScreenLabels } from './format.js';
+import { END_TO_END_INTERVAL_METHOD, endToEndPct, int, date } from './format.js';
 import { createStore } from './store.js';
 import { setupTheme, fontsReady, reveal } from './page.js';
 import { mount as mountTable } from './table.js';
@@ -9,36 +9,39 @@ export { createStore };
 function fillSummary(data) {
   const models = data.models;
   document.getElementById('interval-method').textContent = END_TO_END_INTERVAL_METHOD;
-  const checks = safetyScreenLabels(data.screen);
-  document.getElementById('method-screen-count').textContent = int(checks.length);
-  const checkList = document.getElementById('method-screen-checks');
-  for (const label of checks) {
-    const item = document.createElement('li');
-    item.textContent = label;
-    checkList.append(item);
-  }
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
+  const topModel = models.reduce((best, item) => ((item.g_srr || 0) > (best?.g_srr || -1) ? item : best), models[0]);
+  const zeroOvergrant = models.filter((m) => (Number(m.overgrant_count) || 0) === 0).length;
   const figures = [
     [int(models.length), 'models'],
-    [int(data.suite.scenarios), 'scenarios'],
-    [int(data.suite.decisions), 'decisions checked per run'],
-    [`${int(models.filter((m) => m.screen_clear).length)} of ${int(models.length)}`, 'clear the safety screen'],
+    [`${int(data.suite.episodes)} × ${int(data.suite.repeats)}`, `slots per run (${int(data.suite.slots_per_run)})`],
+    [int(data.categories.length), 'governance categories'],
+    [`${endToEndPct(topModel?.g_srr ?? 0)} top`, `${int(zeroOvergrant)} with 0 overgrants`],
   ];
   const root = document.getElementById('hero-figures');
+  root.replaceChildren();
   for (const [value, label] of figures) {
     const group = document.createElement('div');
-    const dt = document.createElement('dt'), dd = document.createElement('dd');
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
     dt.textContent = label;
     dd.textContent = value;
     group.append(dt, dd);
     root.append(group);
   }
   const provenance = document.getElementById('provenance');
+  provenance.replaceChildren();
   for (const [label, value] of [
-    ['Suite', data.suite.id], ['Seed', String(data.suite.seed)], ['Published', date(data.suite.published)],
-    ['Episodes SHA-256', data.suite.episodes_sha256], ['Oracles SHA-256', data.suite.oracles_sha256],
+    ['Suite', data.suite.id],
+    ['Seed', String(data.suite.seed)],
+    ['Normative contract', data.suite.normative_contract],
+    ['Published', date(data.suite.published)],
+    ['Seal SHA-256', data.suite.seal_sha256],
+    ['Episodes SHA-256', data.suite.episodes_sha256],
+    ['Oracles SHA-256', data.suite.oracles_sha256],
   ]) {
-    const dt = document.createElement('dt'), dd = document.createElement('dd');
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
     dt.textContent = label;
     dd.textContent = value;
     provenance.append(dt, dd);
@@ -48,10 +51,10 @@ function fillSummary(data) {
 }
 
 export function leaderboardLede(data) {
-  return `Ranked by the ${int(data.suite.scenarios)} scenarios each resolves end to end: every wave correct, nothing unsafe, nothing missed.`;
+  return `Ranked across ${int(data.suite.slots_per_run)} slots (${int(data.suite.episodes)} scenarios × ${int(data.suite.repeats)} repeats) by strict two-phase resolution, committed state accuracy, and safety.`;
 }
 
-async function boot() {
+export async function boot() {
   setupTheme();
   const response = await fetch(new URL('../../data/leaderboard.json', import.meta.url));
   if (!response.ok) throw new Error(`Data request failed (${response.status})`);
@@ -116,6 +119,6 @@ if (typeof document !== 'undefined' && document.getElementById?.('leaderboard-ro
     reveal();
     status.hidden = false;
     status.classList.add('is-error');
-    status.textContent = 'Results could not be loaded. Please reload the page or use the full report linked in Method.';
+    status.textContent = 'Results could not be loaded. Please reload the page or use the methodology links below.';
   });
 }

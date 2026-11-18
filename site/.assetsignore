@@ -1,4 +1,5 @@
-# Tests and docs live beside the site but are not part of the deployed assets.
+# Tests, data generator, and docs live beside the site but are not part of the deployed assets.
+build.mjs
 tests
 README.md
 wrangler.jsonc

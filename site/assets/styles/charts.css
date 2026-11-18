@@ -23,6 +23,7 @@
   font: 400 13.5px/1.55 var(--sans);
 }
 .chart-caption, .chart-legend { margin: 12px 0 0; }
+.chart-family-key { margin: 12px 0 0; color: var(--muted); font: 400 11.5px/1.55 var(--sans); }
 .chart-canvas { width: 100%; min-width: 0; }
 .chart-svg { display: block; max-width: 100%; height: auto; overflow: visible; }
 .chart-text, .chart-direct-label, .chart-row-label {
@@ -128,6 +129,7 @@
 .chart-scale-key > span:last-child { margin-left: 5px; }
 .chart-scale-swatch { width: 14px; height: 10px; border-radius: 1px; }
 @media (max-width: 639px) {
+  .chart-family-key { display: none; }
   .chart-header { align-items: flex-start; }
   .chart-title { font-size: 21px; }
   .chart-sub, .chart-caption, .chart-legend { font-size: 12px; }

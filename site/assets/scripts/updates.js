@@ -25,7 +25,7 @@ export const VISIBLE_UPDATE_COUNT = 6;
 export function mount(root, data, store) {
   const { groups, earliestDate } = groupUpdates(data);
   root.innerHTML = `
-    <p class="section-lede">When each model's ${int(data.suite.scenarios)}-scenario run was first published.</p>
+    <p class="section-lede">When each model's ${int(data.suite.slots_per_run ?? data.suite.scenarios)}-slot run was first published.</p>
     <div class="updates-ledger">
       ${groups.map((group, index) => {
         const listId = `updates-models-${index}`;

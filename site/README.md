@@ -1,9 +1,26 @@
-# IdentityBench leaderboard
+# IdentityBench v5 Leaderboard Site
 
 The public leaderboard at <https://identitybench.ai>: a zero-dependency static site (plain HTML,
-CSS and ES modules, hand-built SVG charts, no external requests) displaying the archived
-`v4.1 · full` leaderboard from committed `site/data/leaderboard.json` and `site/data/history.json`
-(derived from `archive/reports/v41-full/summary.json`).
+CSS, and ES modules, hand-built SVG charts, no external requests) displaying the live
+**IdentityBench v5 (`v5 · core`)** leaderboard from committed `site/data/leaderboard.json` and
+`site/data/history.json`.
+
+## Data generation
+
+`site/build.mjs` is a zero-dependency Node ES module that builds `site/data/leaderboard.json` from:
+
+- `archive/reports/v5-python-draft5/rust-final-audit/historical/native/*/summary.json`
+- `reports/v5/runs/*/summary.json` (when present; overrides matching `model_id` entries)
+- `reports/v5/baselines/*/summary.json` (the 7 deterministic `v5_core` baselines)
+- `datasets/v5_draft5/v5_core/SEAL.json` and `site/data/history.json`
+
+Only protocol-complete runs (`is_complete === true` and `observed_slots === planned_slots`, `144/144`)
+are included; provider-incomplete runs are strictly excluded.
+
+```sh
+node site/build.mjs
+node site/build.mjs --check
+```
 
 ## Preview
 
@@ -27,25 +44,22 @@ identify each model's provider only.
 The page uses three open-licence typefaces, self-hosted from `site/assets/fonts/` so the site
 still makes no outside requests: Newsreader for headings and figures, Inter for text and tables,
 Geist Mono for labels. All are Latin subsets under the SIL Open Font License
-(`site/assets/fonts/LICENSE.txt`). The Newsreader file is trimmed to its display optical size and
-weights 300 to 600. Chart labels are measured on a canvas, so `main.js` waits briefly for the
-fonts before drawing charts.
+(`site/assets/fonts/LICENSE.txt`).
 
 ## Checks
 
 ```sh
+node site/build.mjs --check
 node --test "site/tests/*.test.mjs"
 ```
 
-The `Site checks` workflow (`.github/workflows/site.yml`) runs the JavaScript tests on every push
-and pull request that touches `site/`.
+Both `Site checks` (`.github/workflows/site.yml`) and `CI` (`.github/workflows/ci.yml`) verify
+`build.mjs --check` and the JavaScript test suite on pushes and pull requests.
 
 ## Deploy
 
 The site is a Cloudflare Worker with static assets only (`site/wrangler.jsonc`). Workers Builds,
 connected to this GitHub repository with `site` as its root directory and `site/*` as its build
-watch path, deploys on every push to `main` and posts a preview URL on other branches. Branch
-builds run `npx wrangler preview`, which needs the `previews` block in `wrangler.jsonc` (an empty
-block is enough); without it the preview build fails. There is no build step: the data files are
-committed, and `site/.assetsignore` keeps `tests/` and this README out of the upload.
-`site/_headers` sets the content security policy and cache lifetimes.
+watch path, deploys on every push to `main` and posts a preview URL on other branches. `site/.assetsignore`
+keeps `build.mjs`, `tests/`, and this README out of the deployed upload. `site/_headers` sets the
+content security policy and cache lifetimes.

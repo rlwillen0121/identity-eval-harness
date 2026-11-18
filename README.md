@@ -1,7 +1,8 @@
 # IdentityBench
 
 The native **v5 Rust harness** (`crates/`, `identitybench v5`) is the sole live benchmark
-harness. See [Rust build, commands, and verification](docs/RUST.md) for CLI usage and
+harness, and the live **v5 (`v5 · core`)** leaderboard is published at <https://identitybench.ai>
+(built from [`site/build.mjs`](site/build.mjs)). See [Rust build, commands, and verification](docs/RUST.md) for CLI usage and
 validation gates. Earlier Python generations (`v1–v4` at `legacy-v1-v4`, and `v4.1` plus
 legacy Python `v5` at `legacy-v4.1`) are retired, with published `v4.1` and historical
 Python `v5_core` results preserved under [`archive/`](archive/README.md).
