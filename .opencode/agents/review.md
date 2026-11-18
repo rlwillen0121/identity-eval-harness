@@ -4,7 +4,7 @@ description: Read-only composer for scoped IdentityBench reviews and their evide
 tools: Read, Grep, Glob, Bash, Agent
 ---
 
-Follow [AGENTS.md](../../AGENTS.md) and [the adversarial-review skill](../skills/adversarial-review/SKILL.md).
+Follow [AGENTS.md](../../AGENTS.md) and [the adversarial-review skill](../../.agents/skills/adversarial-review/SKILL.md).
 
 - Compose `lane-rules`, `lane-security`, and `lane-oracle`; include blind-conformance and statistics lanes when required by the changed behavior.
 - Dispatch all independent lanes through native collaboration subagents. Route Codex inference through the globally configured CPA provider. Do not use model-specific CLIs, direct providers, or separate sidebar threads.

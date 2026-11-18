@@ -13,7 +13,8 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use crate::shared::{
-    canonical_json_bytes, is_sha256, sha256_bytes, strict_json_loads, validate_public_case,
+    canonical_json_bytes, is_pinned_public_schema_sha256, is_sha256, sha256_bytes,
+    strict_json_loads, validate_public_case,
 };
 
 pub const WIRE_PROTOCOL_V1: &str = "identitybench.v5.shared-conformance.v1";
@@ -556,7 +557,7 @@ fn validate_receipt(
             "receipt schema digest differs from the public case".to_owned(),
         ));
     }
-    if receipt.schema.sha256 != PINNED_SCHEMA_SHA256_V1 {
+    if !is_pinned_public_schema_sha256(&receipt.schema.sha256) {
         return Err(MaterializationGapError(
             "receipt schema digest is not the pinned wire-v1 schema".to_owned(),
         ));
@@ -1545,7 +1546,7 @@ pub fn inspect_stage2_domain_v1(
     };
     let selected_candidate_sha256 = sha256_bytes(candidate_atomic_json);
 
-    if schema_hash != PINNED_SCHEMA_SHA256_V1 {
+    if !is_pinned_public_schema_sha256(&schema_hash) {
         return Ok(unknown_observation(
             public_case_json,
             candidate_atomic_json,

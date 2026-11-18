@@ -15,9 +15,24 @@ concurrency:
 
 env:
   IDENTITYBENCH_LIVE: "0"
-  UV_FROZEN: "1"
 
 jobs:
+  hygiene:
+    name: Repository hygiene & site tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Assert zero tracked Python files
+        run: test -z "$(git ls-files '*.py')"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Site JavaScript tests
+        run: node --test "site/tests/*.test.mjs"
+
   rust-msrv:
     name: Rust minimum version (1.90.0)
     runs-on: ubuntu-latest
@@ -44,6 +59,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy
 
@@ -52,6 +71,9 @@ jobs:
 
       - name: Rust static checks
         run: cargo clippy --workspace --all-targets --locked
+
+      - name: Build native ib-cli binary
+        run: cargo build --locked -p ib-cli
 
       # Uses deterministic fixtures, mock endpoints and offline replay. No credentials.
       - name: Rust tests and executable workflows
@@ -66,96 +88,42 @@ jobs:
           cargo run --locked -p ib-cli -- v5 validate --suite v5_dev --double-build > "$validation"
           validation_status=$?
           set -e
-          python3 - "$validation" "$validation_status" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          status = int(sys.argv[2])
-          if status != 1:
-              raise SystemExit(f"expected exit 1 while G-SPEC-01 is stale; got {status}")
-
-          from collections import Counter
-
-          pass_ids = [
-              "G-SEAL-01", "FIXTURE-CLOSURE-V5", "G-SLICE-EXCLUSIVITY-01",
-              "G-QUERY-01", "G-TOK-01", "G-DET-01", "G-ORACLE-REPLAY-V5",
-              "SCHEMA-INVENTORY-V5", "G-IGA-REVIEW-01", "NEGATIVE-MUTATION-V5",
-              "G-BASE-01", "G-TURN-01", "G-NONINTERFERENCE-V5", "G-DET-01",
-          ]
-          live_ids = {"G-ECON-01", "G-CAL-01", "G-CAL-02", "G-CAL-03"}
-          expected_ids = Counter(pass_ids + ["G-SPEC-01"] + sorted(live_ids))
-          gates = report["gate_results"]
-          if Counter(gate["gate_id"] for gate in gates) != expected_ids:
-              raise SystemExit("missing, extra, or duplicated validation gates")
-          # G-DET-01 appears twice with distinct evidence. Check both entries.
-          for gate in gates:
-              gate_id = gate["gate_id"]
-              expected = "UNKNOWN" if gate_id in live_ids else (
-                  "FAIL" if gate_id == "G-SPEC-01" else "PASS"
-              )
-              if gate["status"] != expected:
-                  raise SystemExit(f"{gate_id} must {expected}: {gate}")
-              if gate_id == "G-SPEC-01" and (
-                  "receipt is stale or unrelated" not in " ".join(gate["errors"])
-              ):
-                  raise SystemExit(f"unexpected conformance failure: {gate}")
-          print("v5_dev seal and offline source gates pass; stale G-SPEC-01 remains FAIL")
-          print(f"live-evidence gates remain UNKNOWN: {', '.join(sorted(live_ids))}")
-          PY
-
-  test:
-    name: lint, format, types, tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-        with:
-          python-version: "3.12"
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --frozen
-
-      - name: Ruff lint
-        run: uv run ruff check
-
-      - name: Ruff format
-        run: uv run ruff format --check
-
-      - name: Mypy
-        run: uv run mypy --strict src
-
-      - name: Pyright
-        run: uv run python scripts/check_reference_pyright.py
-
-      - name: Pytest
-        run: uv run pytest -p no:cacheprovider -q
-
-  dataset:
-    name: validate committed dataset
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-        with:
-          python-version: "3.12"
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --frozen
-
-      - name: Validate v4.1 sealed datasets and double-build
-        run: |
-          uv run identitybench v41 validate --suite v41_dev --double-build
-          uv run identitybench v41 validate --suite v41_lite --double-build
-          uv run identitybench v41 validate --suite v41_full --double-build
+          node - "$validation" "$validation_status" <<'JS'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const status = Number(process.argv[3]);
+          if (status !== 1) {
+            throw new Error(`expected exit 1 while G-SPEC-01 is stale; got ${status}`);
+          }
+          const passIds = [
+            'G-SEAL-01', 'FIXTURE-CLOSURE-V5', 'G-SLICE-EXCLUSIVITY-01',
+            'G-QUERY-01', 'G-TOK-01', 'G-DET-01', 'G-ORACLE-REPLAY-V5',
+            'SCHEMA-INVENTORY-V5', 'G-IGA-REVIEW-01', 'NEGATIVE-MUTATION-V5',
+            'G-BASE-01', 'G-TURN-01', 'G-NONINTERFERENCE-V5', 'G-DET-01',
+          ];
+          const liveIds = new Set(['G-ECON-01', 'G-CAL-01', 'G-CAL-02', 'G-CAL-03']);
+          const expectedCounts = new Map();
+          for (const id of [...passIds, 'G-SPEC-01', ...[...liveIds].sort()]) {
+            expectedCounts.set(id, (expectedCounts.get(id) ?? 0) + 1);
+          }
+          const actualCounts = new Map();
+          for (const gate of report.gate_results) {
+            actualCounts.set(gate.gate_id, (actualCounts.get(gate.gate_id) ?? 0) + 1);
+          }
+          if (expectedCounts.size !== actualCounts.size ||
+              [...expectedCounts].some(([k, v]) => actualCounts.get(k) !== v)) {
+            throw new Error('missing, extra, or duplicated validation gates');
+          }
+          for (const gate of report.gate_results) {
+            const id = gate.gate_id;
+            const expected = liveIds.has(id) ? 'UNKNOWN' : (id === 'G-SPEC-01' ? 'FAIL' : 'PASS');
+            if (gate.status !== expected) {
+              throw new Error(`${id} must ${expected}: ${JSON.stringify(gate)}`);
+            }
+            if (id === 'G-SPEC-01' && !(gate.errors || []).join(' ').includes('receipt is stale or unrelated')) {
+              throw new Error(`unexpected conformance failure: ${JSON.stringify(gate)}`);
+            }
+          }
+          console.log('v5_dev seal and offline source gates pass; stale G-SPEC-01 remains FAIL');
+          console.log(`live-evidence gates remain UNKNOWN: ${[...liveIds].sort().join(', ')}`);
+          JS

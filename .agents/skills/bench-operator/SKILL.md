@@ -8,7 +8,7 @@ description: >-
 
 # IdentityBench Operator (`bench-operator`)
 
-You operate authorized runs and their artifacts. Do not edit source code, tests, or frozen datasets. Use the native Rust v5 CLI for v5 evaluation. Use the Python `identitybench v41` CLI only for the published, frozen v4.1 benchmark. Never run a live evaluation through the preserved Python v5 reference.
+You operate authorized runs and their artifacts using the native Rust `identitybench v5` CLI. Do not edit source code, tests, or sealed datasets. Never create live runs for retired `v1–v4` or `v4.1` generations.
 
 ## Hard rules
 
@@ -20,7 +20,7 @@ You operate authorized runs and their artifacts. Do not edit source code, tests,
 
 ## Preflight
 
-For native Rust v5, build and validate the exact suite without model calls:
+Build the native Rust CLI and validate the exact Draft 5 suite without model calls:
 
 ```sh
 cargo build --release --locked -p ib-cli
@@ -29,29 +29,23 @@ target/release/identitybench v5 validate --suite <v5_dev|v5_lite|v5_core|v5_full
 git status -sb
 ```
 
-For the frozen public v4.1 benchmark, use its matching Python validation command:
-
-```sh
-uv run identitybench v41 validate --suite <v41_dev|v41_lite|v41_full> --double-build
-```
-
 ## Run, score, and report
 
-Only after current-turn authorization, run the requested Rust v5 configuration:
+Only after current-turn authorization, run the requested Rust v5 configuration with its model YAML and frozen pricing JSON (see `examples/rust-v5/`):
 
 ```sh
-target/release/identitybench v5 run --config experiments/<config>.yaml \
-  --pricing pricing/<frozen-pricing>.json --out runs/<config-name>
+target/release/identitybench v5 run --config examples/rust-v5/<config>.yaml \
+  --pricing examples/rust-v5/<frozen-pricing>.json --out runs/<config-name>
 ```
 
-Use `--resume` only for an authorized, interrupted configuration in its existing output directory. For an explicitly requested v4.1 run, use its matching `uv run identitybench v41 run` command and a separate output directory. Never substitute another version or the Python v5 reference.
+Use `--resume` only for an authorized, interrupted configuration in its existing output directory.
 
-Deterministic scoring and report generation do not call a model. Use the matching version's CLI and retain version-specific raw artifacts:
+Deterministic scoring and report generation do not call a model. Retain raw artifacts:
 
 ```sh
 target/release/identitybench v5 score --suite <suite> --dataset datasets/v5_draft5/<suite> \
   --baseline oracle_team_replay --out runs/<suite>-baseline
-target/release/identitybench v5 report --run runs/<run-name> --out reports/<version>/
+target/release/identitybench v5 report --run runs/<run-name> --out reports/<release-name>/
 ```
 
 ## Run integrity

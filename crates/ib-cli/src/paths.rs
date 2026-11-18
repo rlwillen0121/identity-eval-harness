@@ -105,15 +105,11 @@ pub fn find_root(explicit: Option<&Path>) -> Result<PathBuf> {
     }
     let cwd = std::env::current_dir()?;
     for directory in cwd.ancestors() {
-        // Installed binaries can use an explicit --root; source builds find either tree.
+        // Installed binaries can use an explicit --root; source builds find the workspace root.
         let manifest = directory.join("Cargo.toml");
-        if manifest.is_file() && directory.join("crates/ib-v5-generator").is_dir() {
-            return Ok(directory.to_path_buf());
-        }
-        if let Ok(text) = std::fs::read_to_string(directory.join("pyproject.toml"))
-            && text
-                .lines()
-                .any(|line| line.trim() == "name = \"identitybench\"")
+        if manifest.is_file()
+            && directory.join("crates/ib-v5-generator").is_dir()
+            && std::fs::read_to_string(&manifest).is_ok_and(|text| text.contains("[workspace]"))
         {
             return Ok(directory.to_path_buf());
         }

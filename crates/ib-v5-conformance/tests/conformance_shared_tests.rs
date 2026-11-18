@@ -410,13 +410,15 @@ fn reduced_coverage_contract_is_rejected_and_normative_contract_is_full_spec_onl
         .to_path_buf();
     let spec_sha = sha256_bytes(&std::fs::read(root.join("SPEC-v5.md")).unwrap());
     assert_eq!(spec_sha, FROZEN_SPEC_SHA256);
+    let native_schema_sha =
+        sha256_bytes(&std::fs::read(root.join("crates/ib-v5-schemas/src/lib.rs")).unwrap());
     let closure = EvaluatorClosure {
         evaluator_id: "agent_view".to_owned(),
         source_root: root,
         entrypoint_module: "tests.conformance.v5.fresh_card_only_v2.worker".to_owned(),
         files: vec![SourceFile::new(
-            "src/identitybench/v5/schemas.py",
-            PINNED_PUBLIC_SCHEMA_SHA256,
+            "crates/ib-v5-schemas/src/lib.rs",
+            native_schema_sha,
         )],
         import_roots: vec!["src".to_owned()],
         python_executable: "python3".to_owned(),

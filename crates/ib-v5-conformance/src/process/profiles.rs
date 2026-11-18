@@ -248,7 +248,7 @@ pub fn resolve_source_profile(
             source_files: concat_slices(&[
                 &COMMON_SOURCE,
                 &[
-                    "src/identitybench/v5/scope_algebra.py",
+                    "crates/ib-v5-schemas/src/scope_algebra.rs",
                     "SPEC-v5.md",
                     V5_APPROVED_ADDENDUM_PATH,
                     V5_APPROVED_DIRECTIVE_PATH,
@@ -263,8 +263,8 @@ pub fn resolve_source_profile(
             entrypoint_module: Some("tests.conformance.v5.approved_full_spec_v1.reference"),
             normative_contract_id: Some(V5_APPROVED_CONFORMANCE_CONTRACT_ID),
             pinned_source_sha256: vec![(
-                "src/identitybench/v5/scope_algebra.py",
-                "ea639f4c8061a6e911fe53ddb024d1ac904c5da10e01600c6c98fca8db264db7",
+                "crates/ib-v5-schemas/src/scope_algebra.rs",
+                "20ec1cfeee644e05a96856d5bc971a78341f21beb1b22c25d06defc416f32726",
             )],
         },
         ("full_spec", "bounded_full_spec_v1") => SourceProfile {
@@ -361,6 +361,16 @@ pub fn resolve_source_profile(
                 "tests/conformance/v5/promoted_draft5_card_only_v1/worker.py".to_owned(),
             ],
             entrypoint: "tests/conformance/v5/promoted_draft5_card_only_v1/worker.py",
+            entrypoint_module: None,
+            normative_contract_id: None,
+            pinned_source_sha256: Vec::new(),
+        },
+        ("agent_view", "native_card_only_v1") => SourceProfile {
+            evaluator_id: "agent_view",
+            profile_id: "native_card_only_v1",
+            author_origin: "native_independent_card_only_author_v1",
+            source_files: vec!["crates/ib-v5-schemas/src/lib.rs".to_owned()],
+            entrypoint: "crates/ib-v5-schemas/src/lib.rs",
             entrypoint_module: None,
             normative_contract_id: None,
             pinned_source_sha256: Vec::new(),

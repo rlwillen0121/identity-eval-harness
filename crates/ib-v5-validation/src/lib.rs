@@ -71,10 +71,12 @@ pub fn repository_root() -> PathBuf {
     candidates.push(Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf());
 
     for candidate in candidates {
-        if let Some(root) = candidate
-            .ancestors()
-            .find(|path| path.join("src/identitybench/v5/validation.py").is_file())
-        {
+        if let Some(root) = candidate.ancestors().find(|path| {
+            let manifest = path.join("Cargo.toml");
+            manifest.is_file()
+                && path.join("crates/ib-v5-schemas/src/lib.rs").is_file()
+                && std::fs::read_to_string(&manifest).is_ok_and(|text| text.contains("[workspace]"))
+        }) {
             return root.to_path_buf();
         }
     }
