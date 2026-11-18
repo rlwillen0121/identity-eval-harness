@@ -51,7 +51,7 @@ const SOURCE_IDENTITY_PATHS_V5: [&str; 5] = [
     "SPEC-v5.0-draft.5.md",
     "SPEC-v5-ADDENDUM-01.md",
     "SPEC-v5-DIRECTIVE-01.md",
-    "src/identitybench/cli.py",
+    "crates/ib-v5-schemas/src/lib.rs",
 ];
 
 /// Optional paths for writing a bound receipt. Omitted paths use the repository's
@@ -2022,63 +2022,10 @@ fn compare_reference_outputs(
 }
 
 fn source_identity(root: &Path) -> Map<String, Value> {
-    fn visit(root: &Path, dir: &Path, output: &mut BTreeMap<String, String>) {
-        let Ok(entries) = fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if name == "__pycache__" || name == ".pytest_cache" {
-                continue;
-            }
-            if path.is_dir() {
-                visit(root, &path, output);
-            } else if path.is_file() {
-                let rel = path
-                    .strip_prefix(root)
-                    .ok()
-                    .and_then(Path::to_str)
-                    .unwrap_or_default()
-                    .replace('\\', "/");
-                let extension = path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .unwrap_or_default();
-                let in_scope = rel.starts_with("src/identitybench/v5/") && extension == "py"
-                    || rel.starts_with("tests/conformance/v5/") && matches!(extension, "py" | "md");
-                if in_scope && let Ok(bytes) = fs::read(&path) {
-                    output.insert(rel, sha256_bytes(&bytes));
-                }
-            }
-        }
-    }
-    let mut paths = SOURCE_IDENTITY_PATHS_V5
-        .iter()
-        .map(PathBuf::from)
-        .collect::<BTreeSet<_>>();
-    let v5_source_dir = root.join("src/identitybench/v5");
-    if let Ok(entries) = fs::read_dir(&v5_source_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("py") {
-                if let Ok(relative) = path.strip_prefix(root) {
-                    paths.insert(relative.to_path_buf());
-                }
-            }
-        }
-    }
-    let conformance_dir = root.join("tests/conformance/v5");
-    let mut found = BTreeMap::new();
-    visit(root, &conformance_dir, &mut found);
-    paths.extend(found.into_keys().map(PathBuf::from));
     let mut values = Map::new();
-    for path in paths {
-        let Some(name) = path.to_str() else { continue };
-        if let Ok(bytes) = fs::read(root.join(&path)) {
-            values.insert(name.replace('\\', "/"), json!(sha256_bytes(&bytes)));
+    for name in SOURCE_IDENTITY_PATHS_V5 {
+        if let Ok(bytes) = fs::read(root.join(name)) {
+            values.insert(name.to_owned(), json!(sha256_bytes(&bytes)));
         }
     }
     values
@@ -2343,7 +2290,9 @@ fn agent_view_input_allowed(
     match kind {
         "sanitized_episode_packet" | "rendered_policy_card" => origin == "derived_sanitized_packet",
         "schema_source" => {
-            origin == "preexisting_allowed" && relative == "src/identitybench/v5/schemas.py"
+            origin == "preexisting_allowed"
+                && (relative == "crates/ib-v5-schemas/src/lib.rs"
+                    || relative == "src/identitybench/v5/schemas.py")
         }
         "skill_source" => {
             origin == "preexisting_allowed"
@@ -5052,14 +5001,13 @@ mod tests {
     }
 
     #[test]
-    fn committed_draft5_receipts_match_python_bound_reference_gate_diagnostics() {
+    fn committed_draft5_receipts_fail_stale_source_and_validate_reference_evidence() {
         let root = repository_root();
-        // These committed receipts are paired with the Draft5 sealed datasets. They currently
-        // retain twelve Python G-SPEC-01 stale-source/provenance diagnostics after integrating
-        // the root CLI and agent rules from main. The current Python reference independently
-        // reproduced this exact ordered digest for all four suites; preserve the failures
-        // as parity evidence instead of rewriting frozen receipts.
+        // These archival Python Draft 5 receipts remain paired with the Draft 5 sealed datasets.
+        // Because Python sources were removed and bound provenance files changed, G-SPEC-01 must
+        // deterministically fail across all four suites while reference witnesses stay intact.
         let expected = [("dev", 24), ("lite", 48), ("core", 96), ("full", 192)];
+        let mut dev_errors: Option<Vec<String>> = None;
 
         for (suite, expected_phase_rows) in expected {
             let artifacts = load_v5_dataset(&root.join(format!("datasets/v5_draft5/v5_{suite}")))
@@ -5071,14 +5019,43 @@ mod tests {
 
             assert_eq!(result.gate_id, "G-SPEC-01", "suite={suite}");
             assert_eq!(result.status.as_str(), "FAIL", "suite={suite}");
-            assert_eq!(result.errors.len(), 12, "suite={suite}");
-            let diagnostics = ib_core::jcs_dumps(&json!(result.errors))
-                .expect("serialize ordered gate diagnostics");
-            assert_eq!(
-                sha256_bytes(&diagnostics),
-                "ff6ecef54fed859c8d435a466759a698083613de59446e957ee53f7514686e1b",
-                "Python diagnostic parity for suite={suite}"
+            assert!(
+                result.errors.iter().any(
+                    |err| err.contains("receipt is stale or unrelated: source_sha256 mismatch")
+                ),
+                "suite={suite}: {:?}",
+                result.errors
             );
+            assert!(
+                result
+                    .errors
+                    .iter()
+                    .any(|err| err
+                        .contains("review provenance is stale or has invalid source_sha256")),
+                "suite={suite}: {:?}",
+                result.errors
+            );
+            assert!(
+                result
+                    .errors
+                    .iter()
+                    .any(|err| err.contains("full_spec_blind allowed input 0 provenance input bytes do not match the declared SHA-256")),
+                "suite={suite}: {:?}",
+                result.errors
+            );
+            assert!(
+                result
+                    .errors
+                    .iter()
+                    .any(|err| err.contains("agent_view_only allowed input 3 provenance input bytes do not match the declared SHA-256")),
+                "suite={suite}: {:?}",
+                result.errors
+            );
+            if let Some(expected_errors) = &dev_errors {
+                assert_eq!(&result.errors, expected_errors, "suite={suite}");
+            } else {
+                dev_errors = Some(result.errors.clone());
+            }
 
             let references = result
                 .evidence

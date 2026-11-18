@@ -715,7 +715,11 @@ pub fn verify_capture_manifest(
             ));
         }
     }
-    if manifest.get("schema_sha256").and_then(Value::as_str) != Some(SCHEMA_SHA256) {
+    let expected_schema_sha = captured_hashes
+        .get("crates/ib-v5-schemas/src/lib.rs")
+        .copied()
+        .unwrap_or(SCHEMA_SHA256);
+    if manifest.get("schema_sha256").and_then(Value::as_str) != Some(expected_schema_sha) {
         return Err(SharedRuntimeError(
             "captured schema hash differs from the frozen schema".to_owned(),
         ));

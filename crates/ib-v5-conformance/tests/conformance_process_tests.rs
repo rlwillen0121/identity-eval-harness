@@ -97,7 +97,7 @@ fn validate_relative_source_rejects_forbidden_and_traversing_paths() {
     assert!(validate_relative_source("/etc/passwd", Some("full_spec")).is_err());
     assert!(validate_relative_source("datasets/v5_dev/oracles.jsonl", Some("agent_view")).is_err());
     assert!(validate_relative_source("tests/conformance/v5/x.py", Some("production")).is_err());
-    validate_relative_source("src/identitybench/v5/schemas.py", Some("agent_view")).unwrap();
+    validate_relative_source("crates/ib-v5-schemas/src/lib.rs", Some("agent_view")).unwrap();
 }
 
 #[test]
@@ -107,16 +107,21 @@ fn capture_source_closure_roundtrips_and_verifies_readonly_snapshot() {
     remove_readonly_tree(&tmp);
     let res = capture_source_closure(
         "agent_view",
-        Some("fresh_card_only_v2"),
+        Some("native_card_only_v1"),
         None,
         &root,
         Some(&tmp),
     )
     .expect("capture_source_closure");
-    assert_eq!(res["schema_sha256"].as_str(), Some(SCHEMA_SHA256));
+    let expected_schema_sha =
+        sha256_bytes(&std::fs::read(root.join("crates/ib-v5-schemas/src/lib.rs")).unwrap());
+    assert_eq!(
+        res["schema_sha256"].as_str(),
+        Some(expected_schema_sha.as_str())
+    );
     assert_eq!(res["capture_status"].as_str(), Some("verified_source_copy"));
 
-    let prof = resolve_source_profile("agent_view", Some("fresh_card_only_v2")).unwrap();
+    let prof = resolve_source_profile("agent_view", Some("native_card_only_v1")).unwrap();
     verify_capture_manifest("agent_view", &tmp, &prof.source_files, Some(&prof))
         .expect("verify_capture_manifest");
     remove_readonly_tree(&tmp);

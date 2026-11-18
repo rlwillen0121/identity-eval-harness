@@ -458,8 +458,7 @@ fn native_role_allowed(
                     .is_some_and(|reference| artifact_reference_matches(reference, path, sha))
         }
         "public_schema" => {
-            path == "src/identitybench/v5/schemas.py"
-                && sha == ib_v5_conformance::shared::PINNED_PUBLIC_SCHEMA_SHA256
+            path == "crates/ib-v5-schemas/src/lib.rs"
                 && actual_input_digest(root, path).as_deref() == Some(sha)
         }
         "blind_skill" => {

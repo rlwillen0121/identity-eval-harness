@@ -2074,7 +2074,7 @@ fn make_synthetic_reference(
             .expect("canonical synthetic source closure"),
     );
     let schema_bytes =
-        fs::read(root.join("src/identitybench/v5/schemas.py")).expect("read current public schema");
+        fs::read(root.join("crates/ib-v5-schemas/src/lib.rs")).expect("read current public schema");
     let skill_bytes = fs::read(root.join(".agents/skills/blind-conformance/SKILL.md"))
         .expect("read blind-conformance skill contract");
     let mut allowed = vec![input_row(
@@ -2090,7 +2090,7 @@ fn make_synthetic_reference(
     allowed.push(input_row(
         "public-schema",
         "public_schema",
-        "src/identitybench/v5/schemas.py",
+        "crates/ib-v5-schemas/src/lib.rs",
         &sha256_bytes(&schema_bytes),
     ));
     allowed.push(input_row(

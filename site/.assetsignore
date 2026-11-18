@@ -1,8 +1,6 @@
-# Build tooling and docs live beside the site but are not part of it.
-build.py
+# Tests and docs live beside the site but are not part of the deployed assets.
+tests
 README.md
 wrangler.jsonc
-__pycache__
-*.pyc
 .DS_Store
 .wrangler

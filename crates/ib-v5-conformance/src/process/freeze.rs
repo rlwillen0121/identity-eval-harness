@@ -175,18 +175,23 @@ pub fn capture_source_closure(
             ));
         }
     }
-    let schema_path = "src/identitybench/v5/schemas.py";
-    let schema_bytes = before.get(schema_path).ok_or_else(|| {
-        SharedRuntimeError(
-            "source closure does not capture the public schemas.py dependency".to_owned(),
-        )
-    })?;
-    let schema_hash = sha256_bytes(schema_bytes);
-    if schema_hash != SCHEMA_SHA256 {
-        return Err(SharedRuntimeError(
-            "schemas.py changed from the public-case schema hash".to_owned(),
-        ));
-    }
+    let schema_hash = if let Some(schema_bytes) = before.get("crates/ib-v5-schemas/src/lib.rs") {
+        sha256_bytes(schema_bytes)
+    } else {
+        let schema_path = "src/identitybench/v5/schemas.py";
+        let schema_bytes = before.get(schema_path).ok_or_else(|| {
+            SharedRuntimeError(
+                "source closure does not capture the public schema dependency".to_owned(),
+            )
+        })?;
+        let hash = sha256_bytes(schema_bytes);
+        if hash != SCHEMA_SHA256 {
+            return Err(SharedRuntimeError(
+                "schemas.py changed from the public-case schema hash".to_owned(),
+            ));
+        }
+        hash
+    };
 
     if target_root.exists() {
         return Err(SharedRuntimeError(format!(

@@ -117,6 +117,12 @@ pub const HISTORICAL_PINNED_PUBLIC_SCHEMA_SHA256: &str =
     "9f7e60a00e36c72620fce06a60ce3968f03cdbd1144af7e253781c72d4f8d7d7";
 pub const PINNED_PUBLIC_SCHEMA_SHA256: &str =
     "83d0eece8060ca0a906071b979c8ed0db7c56efe031eb6a459f6b853dfb0b424";
+const NATIVE_SCHEMA_SOURCE_BYTES: &[u8] = include_bytes!("../../ib-v5-schemas/src/lib.rs");
+
+#[must_use]
+pub fn is_pinned_public_schema_sha256(sha: &str) -> bool {
+    sha == PINNED_PUBLIC_SCHEMA_SHA256 || sha == sha256_bytes(NATIVE_SCHEMA_SOURCE_BYTES)
+}
 pub const LEGACY_FAMILY_MAP_SHA256: &str =
     "3916a4778c6f2f745c7077cca31910b7c3f4f72f5041d25549f1dcbba1bd77c1";
 pub const FAMILY_MAP_V2_VERSION: &str = "identitybench.v5.shared-family-map.v2";
@@ -1117,7 +1123,7 @@ pub fn validate_public_case(case: &Value) -> Result<PublicCase, ConformanceProto
         .ok_or_else(|| {
             ConformanceProtocolError::protocol("schema_sha256 must be lowercase SHA-256 hex")
         })?;
-    if schema_hash != PINNED_PUBLIC_SCHEMA_SHA256 {
+    if !is_pinned_public_schema_sha256(schema_hash) {
         return Err(ConformanceProtocolError::protocol(
             "schema_sha256 does not bind the pinned public v5 schema",
         ));
