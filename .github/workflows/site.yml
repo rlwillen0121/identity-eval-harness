@@ -6,10 +6,16 @@ on:
   push:
     paths:
       - "site/**"
+      - "reports/v5/runs/**"
+      - "reports/v5/baselines/**"
+      - "datasets/v5_draft5/v5_core/SEAL.json"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
       - "site/**"
+      - "reports/v5/runs/**"
+      - "reports/v5/baselines/**"
+      - "datasets/v5_draft5/v5_core/SEAL.json"
       - ".github/workflows/site.yml"
 
 permissions:
@@ -28,5 +34,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
+      - name: Verify generated leaderboard data
+        run: node site/build.mjs --check
       - name: Site JavaScript tests
         run: node --test "site/tests/*.test.mjs"

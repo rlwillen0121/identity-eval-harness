@@ -1,54 +1,66 @@
-import {int} from '../format.js';
-import {bindMark, chart, el, markPosition, modelRow, nameColumn, svgCanvas} from './svg.js';
+import { int } from '../format.js';
+import { bindMark, chart, el, markPosition, modelRow, nameColumn, svgCanvas } from './svg.js';
 
-const segments = [
-  ['perfect', 'All three waves', 6], ['two_waves', 'Two', 4],
-  ['one_wave', 'One', 2], ['none', 'None', 0]
+export const OUTCOME_SEGMENTS = [
+  ['end_to_end', 'End-to-end pass', 'var(--seq-6)'],
+  ['state_only', 'State-correct only', 'var(--seq-4)'],
+  ['completed_other', 'Completed (other fail)', 'var(--seq-2)'],
+  ['turn_limit', 'Turn limit', 'var(--seq-1)'],
+  ['output_budget', 'Output budget', 'var(--axis)'],
+  ['parse_failure', 'Parse failure', 'var(--critical)'],
+  ['context_limit', 'Context limit', 'var(--muted)'],
 ];
 
 export function mount(root, data, store) {
   const models = data.models.slice().sort((a, b) => a.rank - b.rank);
-  const subtitle = `Each model's ${int(data.suite.scenarios)} scenarios, by how many of the three waves it solved.`;
-  const view = chart(root, 'How far do models get?', subtitle, store, ({width, canvas, tip}) => {
+  const slots = Number(data.suite?.slots_per_run) || 144;
+  const subtitle = `Each model's ${int(slots)} slots, by resolution and protocol termination outcome.`;
+  const view = chart(root, 'How far do models get?', subtitle, store, ({ width, canvas, tip }) => {
     const left = nameColumn(width, models);
     const top = 6;
-    const pitch = 17;
+    const pitch = 19;
     const height = top + models.length * pitch + 4;
     const barWidth = width - left - 4;
     const svg = svgCanvas(canvas, width, height,
-      `${int(models.length)} models in rank order. Each bar divides ${int(data.suite.scenarios)} scenarios into all three waves, two waves, one wave, or none solved.`);
+      `${int(models.length)} models in rank order. Each bar divides ${int(slots)} slots into End-to-end pass, State-correct only, Completed (other fail), Turn limit, Output budget, Parse failure, and Context limit.`);
     const rows = models.map((model, i) => {
       const rowTop = top + i * pitch;
-      const frame = modelRow(svg, model, {left, width, top: rowTop, pitch, height: 8});
-      const visible = segments.filter(([id]) => model.outcomes[id] > 0);
-      const available = barWidth - Math.max(0, visible.length - 1) * 2;
+      const frame = modelRow(svg, model, { left, width, top: rowTop, pitch, height: 9 });
+      const visible = OUTCOME_SEGMENTS.filter(([id]) => (model.outcomes?.[id] || 0) > 0);
+      const available = barWidth - Math.max(0, visible.length - 1) * 1.5;
       let x = left;
-      const bars = visible.map(([id, , step]) => {
-        const segmentWidth = model.outcomes[id] / data.suite.scenarios * available;
-        const bar = el('rect', {x, y: rowTop, width: segmentWidth, height: 8,
-          fill: `var(--seq-${step})`, 'data-outcome': id});
+      const bars = visible.map(([id, , color]) => {
+        const segmentWidth = ((model.outcomes?.[id] || 0) / slots) * available;
+        const bar = el('rect', {
+          x,
+          y: rowTop,
+          width: segmentWidth,
+          height: 9,
+          fill: color,
+          'data-outcome': id,
+        });
         frame.row.append(bar);
-        x += segmentWidth + 2;
+        x += segmentWidth + 1.5;
         return bar;
       });
       // The whole row remains easy to point at even when a segment is very small.
-      frame.row.append(el('rect', {x: 0, y: rowTop - 3, width, height: pitch, fill: 'transparent'}));
-      const lines = segments.map(([id, label]) => [label, int(model.outcomes[id])]);
+      frame.row.append(el('rect', { x: 0, y: rowTop - 3, width, height: pitch, fill: 'transparent' }));
+      const lines = OUTCOME_SEGMENTS.map(([id, label]) => [label, int(model.outcomes?.[id] || 0)]);
       const events = bindMark(frame.row, model, lines, store, tip,
         () => markPosition(svg, root, left + barWidth / 2, rowTop + 4));
       frame.row.addEventListener('pointermove', events.move);
       frame.row.addEventListener('pointerleave', events.leave);
-      return {frame, bars};
+      return { frame, bars };
     });
-    return state => { for (const {frame, bars} of rows) frame.sync(state, bars); };
+    return (state) => { for (const { frame, bars } of rows) frame.sync(state, bars); };
   });
   const legend = document.createElement('div');
   legend.className = 'chart-outcome-key';
-  for (const [, label, step] of segments) {
+  for (const [, label, color] of OUTCOME_SEGMENTS) {
     const item = document.createElement('span');
     const swatch = document.createElement('span');
     swatch.className = 'chart-scale-swatch';
-    swatch.style.background = `var(--seq-${step})`;
+    swatch.style.background = color;
     swatch.setAttribute('aria-hidden', 'true');
     item.append(swatch, document.createTextNode(label));
     legend.append(item);
@@ -56,8 +68,8 @@ export function mount(root, data, store) {
   view.header.append(legend);
   const caption = document.createElement('p');
   caption.className = 'chart-caption';
-  const count = models.filter(m => m.outcomes.perfect > data.suite.scenarios / 4).length;
-  caption.textContent = `Only ${int(count)} of ${int(models.length)} models solve all three waves in more than a quarter of scenarios.`;
+  const count = models.filter((m) => (m.outcomes?.end_to_end || 0) > slots / 2).length;
+  caption.textContent = `Only ${int(count)} of ${int(models.length)} models resolve more than half of the ${int(slots)} slots end to end.`;
   root.append(caption);
   return () => view.destroy();
 }
