@@ -69,7 +69,7 @@ function figures(items, className = '') {
 }
 
 export function stateAccuracySummary(model, total) {
-  return `${int(model.sem_srr_slots)} of ${int(total)} slots (${pct(model.sem_srr_commit)})`;
+  return `${int(model.sem_srr_slots)} of ${int(total)} trials (${pct(model.sem_srr_commit)})`;
 }
 
 function formatCostDetail(model) {
@@ -91,6 +91,17 @@ function formatSourceKind(sourceKind) {
   return sourceKind || 'Not recorded';
 }
 
+function formatRunSetup(provenance) {
+  const topology = provenance?.topology === 'T0_SINGLE_MONOLITH' || !provenance?.topology
+    ? 'Single model'
+    : provenance.topology.toLowerCase().replace(/_/g, ' ');
+  const steering = (provenance?.steering_mode || 'UNSTEERED').toLowerCase();
+  const execution = provenance?.wave_execution_mode === 'COUPLED' || !provenance?.wave_execution_mode
+    ? 'coupled two-phase'
+    : provenance.wave_execution_mode.toLowerCase().replace(/_/g, ' ');
+  return `${topology} · ${steering} · ${execution}`;
+}
+
 export function mount(rootEl, data, store) {
   const medians = cachedFieldMedians(data);
   let previous;
@@ -104,20 +115,24 @@ export function mount(rootEl, data, store) {
     const failures = model.failures || {};
     const outcomes = model.outcomes || {};
     const families = Array.isArray(data.families) ? data.families : [];
+    const hasDecisions = (Number(model.unsafe_targets) || 0) > 0;
+    const unsafeSummary = hasDecisions
+      ? `${pct(model.unsafe_rate)} · ${int(model.unsafe_count)} of ${int(model.unsafe_targets)} decisions`
+      : 'No decisions committed';
 
     rootEl.innerHTML = `
       <div class="detail-heading"><h3>${vendorLogo(model.vendor, model.vendor_label, 'vendor-logo detail-logo')}${esc(model.name)} <span class="muted">· ${esc(model.vendor_label)} · ${esc(model.effort)} effort</span></h3><button type="button" class="text-button copy-link">Copy link</button></div>
       <p class="model-id">${esc(model.id)}</p>
       <p class="copy-status muted" role="status"></p>
       ${figures([
-        ['End to end (G-SRR)', `${endToEndPct(model.g_srr)} (${int(model.g_srr_slots)}/${int(total)} · 95% CI ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])})`],
-        ['State accuracy (Sem-SRR@commit)', `${pct(model.sem_srr_commit)} (${int(model.sem_srr_slots)}/${int(total)})`],
-        ['Safety (OG / AB)', `${pct(model.overgrant_rate)} OG (${int(model.overgrant_count)}) · ${pct(model.avail_breach_rate)} AB (${int(model.avail_breach_count)})`],
+        ['End to end', `${endToEndPct(model.g_srr)} (${int(model.g_srr_slots)}/${int(total)} · 95% interval ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])})`],
+        ['State accuracy', `${pct(model.sem_srr_commit)} (${int(model.sem_srr_slots)}/${int(total)})`],
+        ['Unsafe actions', unsafeSummary],
         ['Total output tokens', `${tokens(model.output_tokens)} (${int(model.output_tokens)})`],
       ], 'mobile-figures')}
       <div class="detail-columns">
         <div>
-          <h4>7 Governance categories</h4>
+          <h4>Governance categories</h4>
           <p class="detail-median-key muted"><span class="field-median-key" aria-hidden="true"></span> Field median across all ${int(data.models.length)} models</p>
           ${bars((data.categories || []).map((category) => {
             const cat = model.categories?.[category.id] || { pass_count: 0, planned_slots: total };
@@ -129,18 +144,19 @@ export function mount(rootEl, data, store) {
               median: medians.categories[category.id],
             };
           }))}
-          <h4>Resolution &amp; safety metrics</h4>
+          <h4>Resolution &amp; safety</h4>
           ${figures([
-            ['G-SRR (strict 2-phase)', `${endToEndPct(model.g_srr)} · 95% CI ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])}`],
-            ['Sem-SRR@commit', `${pct(model.sem_srr_commit)} · 95% CI ${pct(model.sem_srr_ci[0])}–${pct(model.sem_srr_ci[1])}`],
-            ['G-PROP (Phase 1 -> 2)', `${pct(model.g_prop)} (reset ${pct(model.g_prop_reset)})`],
-            ['OVERGRANT@commit', `${pct(model.overgrant_rate)} mean (${int(model.overgrant_count)} committed)`],
-            ['AVAIL_BREACH@commit', `${pct(model.avail_breach_rate)} mean (${int(model.avail_breach_count)} committed)`],
-            ['Execution-valid rate', `${pct(model.execution_valid_rate)} (${int(model.observed_slots)}/${int(total)} observed)`],
+            ['End to end', `${endToEndPct(model.g_srr)} · 95% interval ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])}`],
+            ['State accuracy', `${pct(model.sem_srr_commit)} · 95% interval ${pct(model.sem_srr_ci[0])}–${pct(model.sem_srr_ci[1])}`],
+            ['Cross-phase carry-through', `${pct(model.g_prop)} (baseline ${pct(model.g_prop_reset)})`],
+            ['Unsafe actions', unsafeSummary],
+            ['Unauthorized grants', `${int(model.overgrant_count)} committed (${pct(model.overgrant_rate)} per trial)`],
+            ['Wrongful revocations & halts', `${int(model.avail_breach_count)} committed (${pct(model.avail_breach_rate)} per trial)`],
+            ['Valid execution', `${pct(model.execution_valid_rate)} (${int(model.observed_slots)}/${int(total)} trials)`],
           ])}
         </div>
         <div>
-          <h4>144-slot outcomes &amp; distinct terminations</h4>
+          <h4>Trial outcomes &amp; terminations</h4>
           <div class="outcome-bar" role="img" aria-label="${esc(outcomeOrder.map(([key, label]) => `${label}: ${int(outcomes[key] || 0)}`).join('; '))}">
             ${outcomeOrder.filter(([key]) => (outcomes[key] || 0) > 0).map(([key, label, color]) => `<span style="flex:${outcomes[key]};background:${color}" title="${esc(label)}: ${int(outcomes[key])} of ${int(total)}"></span>`).join('')}
           </div>
@@ -151,8 +167,8 @@ export function mount(rootEl, data, store) {
             <div><dt>Output-budget stops</dt><dd>${int(failures.output_limits || 0)}</dd></div>
             <div><dt>Context-limit stops</dt><dd>${int(failures.context_limits || 0)}</dd></div>
           </dl>
-          <h4>12 Coupling families (F01–F12)</h4>
-          <p class="detail-caption">Mean G-SRR across 4 compound policy regimes × 3 repeats (12 slots per family).</p>
+          <h4>Scenario families (F01–F12)</h4>
+          <p class="detail-caption">End-to-end resolution across 4 policy regimes × 3 repeats (12 trials per family).</p>
           <div class="family-grid">${(model.families || []).map((rate, i) => {
             const family = families[i] || { id: `F${String(i + 1).padStart(2, '0')}`, label: '' };
             const title = `${family.id}${family.label ? ` · ${family.label}` : ''}: ${pct(rate)}`;
@@ -160,12 +176,11 @@ export function mount(rootEl, data, store) {
           }).join('')}</div>
           <div class="scale-key"><span>0%</span>${Array.from({ length: 8 }, (_, i) => `<span style="background:var(--seq-${i})" aria-hidden="true"></span>`).join('')}<span>100%</span></div>
           ${figures([
-            ['State accuracy', stateAccuracySummary(model, total)],
             ['Output & reasoning tokens', `${tokens(model.output_tokens)} (${int(model.output_tokens)} total · ${tokens(model.reasoning_tokens)} reasoning)`],
             ['Input tokens', `${tokens(model.input_tokens)} (${tokens(model.cached_input_tokens)} cached)`],
             ['Run cost', formatCostDetail(model)],
             ['Elapsed wall time', seconds((Number(model.wall_time_ms) || 0) / 1000)],
-            ['Protocol & topology', `${model.provenance?.topology || 'T0_SINGLE_MONOLITH'} · ${model.provenance?.steering_mode || 'UNSTEERED'} · ${model.provenance?.wave_execution_mode || 'COUPLED'}`],
+            ['Run setup', formatRunSetup(model.provenance)],
             ['Provenance', formatSourceKind(model.provenance?.source_kind)],
             ['Run manifest SHA-256', model.provenance?.run_manifest_sha256 || 'Not recorded'],
             ['First published', date(model.first_published)],

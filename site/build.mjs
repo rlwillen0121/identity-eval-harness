@@ -320,6 +320,12 @@ function transformModel({ runDir, sourceKind, summary }, historyByModel, default
   const reasoningTokens = Number(usage.reasoning_tokens_subset) || 0;
   const cachedTokens = Number(usage.cached_input_tokens) || 0;
 
+  const overgrantCount = Math.round(Number(metrics['OVERGRANT_commit_count']) || 0);
+  const availBreachCount = Math.round(Number(metrics['AVAIL_BREACH_commit_count']) || 0);
+  const unsafeCount = overgrantCount + availBreachCount;
+  const unsafeTargets = Math.round(Number(metrics.safety_valid_commit_target_count) || 0);
+  const unsafeRate = unsafeTargets > 0 ? round4(unsafeCount / unsafeTargets) : 0;
+
   return {
     _sort: {
       g_srr: gSrrRaw,
@@ -351,9 +357,12 @@ function transformModel({ runDir, sourceKind, summary }, historyByModel, default
       g_prop: round4(metrics['G-PROP'] ?? 0),
       g_prop_reset: round4(metrics['G-PROP_reset'] ?? 0),
       overgrant_rate: round4(overgrantRaw),
-      overgrant_count: Math.round(Number(metrics['OVERGRANT_commit_count']) || 0),
+      overgrant_count: overgrantCount,
       avail_breach_rate: round4(availBreachRaw),
-      avail_breach_count: Math.round(Number(metrics['AVAIL_BREACH_commit_count']) || 0),
+      avail_breach_count: availBreachCount,
+      unsafe_count: unsafeCount,
+      unsafe_targets: unsafeTargets,
+      unsafe_rate: unsafeRate,
       execution_valid_rate: round4(metrics.execution_valid_rate ?? 0),
       categories,
       families,
@@ -402,6 +411,12 @@ function transformBaseline(baselineId, summary) {
     };
   }
 
+  const overgrantCount = Math.round(Number(metrics['OVERGRANT_commit_count']) || 0);
+  const availBreachCount = Math.round(Number(metrics['AVAIL_BREACH_commit_count']) || 0);
+  const unsafeCount = overgrantCount + availBreachCount;
+  const unsafeTargets = Math.round(Number(metrics.safety_valid_commit_target_count) || 0);
+  const unsafeRate = unsafeTargets > 0 ? round4(unsafeCount / unsafeTargets) : 0;
+
   return {
     id: baselineId,
     name: meta.name,
@@ -416,9 +431,12 @@ function transformBaseline(baselineId, summary) {
     sem_srr_slots: semSrrSlots,
     g_prop: round4(metrics['G-PROP'] ?? 0),
     overgrant_rate: round4(metrics['OVERGRANT@commit_mean'] ?? 0),
-    overgrant_count: Math.round(Number(metrics['OVERGRANT_commit_count']) || 0),
+    overgrant_count: overgrantCount,
     avail_breach_rate: round4(metrics['AVAIL_BREACH@commit_mean'] ?? 0),
-    avail_breach_count: Math.round(Number(metrics['AVAIL_BREACH_commit_count']) || 0),
+    avail_breach_count: availBreachCount,
+    unsafe_count: unsafeCount,
+    unsafe_targets: unsafeTargets,
+    unsafe_rate: unsafeRate,
     categories,
   };
 }
@@ -487,6 +505,9 @@ export function buildLeaderboardData() {
     throw new Error(`Expected ${expectedBaselineIds.length} v5_core baselines in ${BASELINES_DIR}, found ${baselines.length}`);
   }
 
+  const oracleBaseline = baselines.find((b) => b.id === 'oracle_team_replay');
+  const suiteDecisions = oracleBaseline?.unsafe_targets || 0;
+
   return {
     schema: 2,
     benchmark: 'IdentityBench v5',
@@ -498,6 +519,7 @@ export function buildLeaderboardData() {
       episodes: seal.episode_count,
       repeats: 3,
       slots_per_run: seal.episode_count * 3,
+      decisions: suiteDecisions,
       families: seal.family_count,
       regimes: 4,
       categories: CATEGORIES.length,

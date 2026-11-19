@@ -152,7 +152,13 @@ test('full DOM boot hides #load-status, mounts 4 SVG charts, populates provenanc
   try {
     await boot();
     assert.equal(byId.get('load-status').hidden, true);
-    assert.equal(byId.get('hero-figures').children.length, 4);
+    const figures = byId.get('hero-figures').children.map((group) => group.children.map((node) => node.textContent));
+    assert.deepEqual(figures, [
+      ['models', String(data.models.length)],
+      ['trials (48 × 3)', '144'],
+      ['decisions checked per run', '2,748'],
+      ['top end-to-end', '76.4%'],
+    ]);
     assert.ok(byId.get('provenance').children.length >= 10);
     assert.match(byId.get('updated-date').textContent, /^Updated /);
     assert.match(byId.get('leaderboard-root').innerHTML, /Show reference &amp; baselines/);

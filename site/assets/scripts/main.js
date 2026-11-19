@@ -11,12 +11,11 @@ function fillSummary(data) {
   document.getElementById('interval-method').textContent = END_TO_END_INTERVAL_METHOD;
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
   const topModel = models.reduce((best, item) => ((item.g_srr || 0) > (best?.g_srr || -1) ? item : best), models[0]);
-  const zeroOvergrant = models.filter((m) => (Number(m.overgrant_count) || 0) === 0).length;
   const figures = [
     [int(models.length), 'models'],
-    [`${int(data.suite.episodes)} × ${int(data.suite.repeats)}`, `slots per run (${int(data.suite.slots_per_run)})`],
-    [int(data.categories.length), 'governance categories'],
-    [`${endToEndPct(topModel?.g_srr ?? 0)} top`, `${int(zeroOvergrant)} with 0 overgrants`],
+    [int(data.suite.slots_per_run), `trials (${int(data.suite.episodes)} × ${int(data.suite.repeats)})`],
+    [int(data.suite.decisions), 'decisions checked per run'],
+    [endToEndPct(topModel?.g_srr ?? 0), 'top end-to-end'],
   ];
   const root = document.getElementById('hero-figures');
   root.replaceChildren();
@@ -51,7 +50,7 @@ function fillSummary(data) {
 }
 
 export function leaderboardLede(data) {
-  return `Ranked across ${int(data.suite.slots_per_run)} slots (${int(data.suite.episodes)} scenarios × ${int(data.suite.repeats)} repeats) by strict two-phase resolution, committed state accuracy, and safety.`;
+  return `Ranked by the ${int(data.suite.slots_per_run)} trials each resolves end to end: both phases correct, nothing unsafe, nothing missed.`;
 }
 
 export async function boot() {

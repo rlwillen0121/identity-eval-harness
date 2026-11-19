@@ -25,7 +25,7 @@ const wrapLabel = (label, maxWidth) => {
 };
 
 export function mount(root, data, store) {
-  const subtitle = 'Pass rate by category (144 slots) and coupling family (F01–F12).';
+  const subtitle = 'Pass rate by category (144 trials) and scenario family (F01–F12).';
   const models = data.models.slice().sort((a, b) => a.rank - b.rank);
   const slots = Number(data.suite?.slots_per_run) || 144;
   const families = Array.isArray(data.families) ? data.families : [];
@@ -83,7 +83,7 @@ export function mount(root, data, store) {
         } else {
           rate = Number(model.families?.[column.index]) || 0;
           tipLabel = `${column.id} · ${column.label}`;
-          detailValue = `${pct(rate, 1)} G-SRR`;
+          detailValue = `${pct(rate, 1)} end-to-end`;
         }
         const cell = el('rect', {
           x: cx(j),

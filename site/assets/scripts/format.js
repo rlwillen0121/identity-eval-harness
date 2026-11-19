@@ -11,7 +11,7 @@ export function pct(rate, digits = 1) {
   return known(rate) ? number({ style: 'percent', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(rate) : 'Not recorded';
 }
 export function endToEndPct(rate) { return pct(rate, rate === 0 ? 0 : 1); }
-export const END_TO_END_INTERVAL_METHOD = '12-family cluster percentile bootstrap (10,000 resamples, PCG64 seed 20261111) carrying all four policy regimes and three repeats together';
+export const END_TO_END_INTERVAL_METHOD = '12-family cluster percentile bootstrap (10,000 resamples, seed 20261111) carrying all four policy regimes and three repeats together';
 export function safetyScreenLabels(screen) {
   return Array.isArray(screen)
     ? screen.map((check) => String(check?.label ?? '').trim()).filter(Boolean)

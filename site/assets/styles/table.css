@@ -72,6 +72,7 @@
 .ci-whisker line:not(.ci-baseline) { stroke: var(--ink-2); stroke-width: 1; }
 .ci-whisker .ci-baseline { stroke: var(--grid); stroke-width: 1; }
 .ci-whisker circle { fill: var(--ink); }
+.unsafe-cell { white-space: nowrap; }
 .unsafe-measure { display: flex; justify-content: flex-start; align-items: center; gap: 8px; }
 .unsafe-number { flex: 0 0 5ch; text-align: right; }
 .unsafe-track { flex: 0 0 48px; width: 48px; display: block; }
