@@ -31,12 +31,12 @@ function plotHeight(root, peer) {
 }
 
 export function mount(root, data, store) {
-  const subtitle = 'Committed overgrant and availability-breach means per slot across 144 slots.';
+  const subtitle = 'Committed unsafe actions per trial across 144 trials.';
   const legend = document.createElement('p');
   legend.className = 'chart-legend';
-  legend.textContent = 'Shaded region: overgrant ≤ 5% and availability breach ≤ 20% · Compressed scale on overgrants';
+  legend.textContent = 'Shaded: ≤ 5% unauthorized grants and ≤ 20% wrongful revocations per trial · Compressed vertical scale';
   const peer = outcomesPeer(root);
-  const view = chart(root, 'Overgrant vs. availability breaches', subtitle, store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Unauthorized grants vs. wrongful revocations', subtitle, store, ({ width, canvas, tip }) => {
     canvas.append(legend);
     const height = plotHeight(root, peer);
     const plot = { left: 48, right: width - 18, top: 26, bottom: height - 54 };
@@ -46,7 +46,7 @@ export function mount(root, data, store) {
     const y = power([0, maxOG], [plot.bottom, plot.top], 0.45);
     const lowBreach = data.models.filter((m) => m.g_srr >= 0.35 || (m.overgrant_count === 0 && m.g_srr > 0));
     const svg = svgCanvas(canvas, width, height,
-      `Scatter plot of committed overgrant mean vs. availability-breach mean across ${int(data.models.length)} complete models.`);
+      `Scatter plot of unauthorized grants vs. wrongful revocations and halts across ${int(data.models.length)} complete models.`);
     svg.append(el('rect', {
       x: x(0),
       y: y(0.05),
@@ -60,12 +60,12 @@ export function mount(root, data, store) {
       svg.append(text(x(value), plot.bottom + 20, pct(value, 0), { 'text-anchor': 'middle', class: 'chart-tick' }));
     }
     svg.append(
-      text(plot.left, 13, 'Overgrants (OG) · compressed scale', { class: 'chart-axis-title' }),
-      text((plot.left + plot.right) / 2, height - 10, 'Availability breaches (AB)', { 'text-anchor': 'middle', class: 'chart-axis-title' }),
+      text(plot.left, 13, 'Unauthorized grants · compressed scale', { class: 'chart-axis-title' }),
+      text((plot.left + plot.right) / 2, height - 10, 'Wrongful revocations & halts', { 'text-anchor': 'middle', class: 'chart-axis-title' }),
       el('line', { x1: x(0.2), x2: x(0.2), y1: plot.top, y2: plot.bottom, class: 'chart-threshold' }),
       el('line', { x1: plot.left, x2: plot.right, y1: y(0.05), y2: y(0.05), class: 'chart-threshold' }),
-      text(x(0.2) + 5, plot.top + 13, '20% AB', { class: 'chart-safety-threshold' }),
-      text(plot.right - 4, y(0.05) - 7, '5% OG', { 'text-anchor': 'end', class: 'chart-safety-threshold' }),
+      text(x(0.2) + 5, plot.top + 13, '20% revocations', { class: 'chart-safety-threshold' }),
+      text(plot.right - 4, y(0.05) - 7, '5% grants', { 'text-anchor': 'end', class: 'chart-safety-threshold' }),
     );
     const labelIds = new Set(lowBreach.map((m) => m.id));
     const sync = scatter(svg, data.models.map((m) => {
@@ -77,17 +77,17 @@ export function mount(root, data, store) {
         y: y(m.overgrant_rate),
         color: inLowZone ? 'var(--good)' : zeroOgResolving ? 'var(--accent)' : 'var(--ink-2)',
         lines: [
-          ['OG', `${pct(m.overgrant_rate, 1)} (${int(m.overgrant_count)})`],
-          ['AB', `${pct(m.avail_breach_rate, 1)} (${int(m.avail_breach_count)})`],
+          ['Unauthorized grants', `${pct(m.overgrant_rate, 1)} (${int(m.overgrant_count)})`],
+          ['Wrongful revocations', `${pct(m.avail_breach_rate, 1)} (${int(m.avail_breach_count)})`],
+          ['Unsafe rate', (m.unsafe_targets || 0) > 0 ? `${pct(m.unsafe_rate, 1)} (${int(m.unsafe_count)}/${int(m.unsafe_targets)})` : 'No commits'],
           ['End to end', endToEndPct(m.g_srr)],
-          ['State accuracy', pct(m.sem_srr_commit, 1)],
         ],
       };
     }), plot, store, tip, root, labelIds, {
       labelMode: 'safety',
       obstacles: [
-        { x: x(0.2) + 3, y: plot.top + 1, width: 48, height: 14 },
-        { x: plot.right - 50, y: y(0.05) - 17, width: 48, height: 13 },
+        { x: x(0.2) + 3, y: plot.top + 1, width: 92, height: 14 },
+        { x: plot.right - 64, y: y(0.05) - 17, width: 62, height: 13 },
       ],
     });
     canvas.append(legend);
