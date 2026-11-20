@@ -25,8 +25,9 @@ pub const CONFIG_FILE_PATHS_V51: [&str; 9] = [
     "config/golive_plan.json",
 ];
 
-pub const DEFAULT_READ_LINE_WINDOW: usize = 250;
+pub const DEFAULT_READ_LINE_WINDOW: usize = 200;
 pub const MAX_READ_LINES_PER_CALL: usize = 300;
+pub const DEFAULT_PREVIEW_CUBES: usize = 8;
 pub const MAX_PREVIEW_CUBES: usize = 12;
 
 /// Deterministic in-memory virtual engagement workspace for a single v5.1 episode.
@@ -380,6 +381,12 @@ impl<'a> VirtualWorkspaceRuntimeV51<'a> {
             }
         };
 
+        let cube_cap = if keys_opt.is_some() {
+            MAX_PREVIEW_CUBES
+        } else {
+            DEFAULT_PREVIEW_CUBES
+        };
+
         match self.engine.preview_identities(
             &self.episode.world,
             &self.config,
@@ -387,8 +394,8 @@ impl<'a> VirtualWorkspaceRuntimeV51<'a> {
             keys_opt.as_deref(),
         ) {
             Ok(mut preview) => {
-                if preview.cubes.len() > MAX_PREVIEW_CUBES {
-                    preview.cubes.truncate(MAX_PREVIEW_CUBES);
+                if preview.cubes.len() > cube_cap {
+                    preview.cubes.truncate(cube_cap);
                     preview.preview_count = preview.cubes.len();
                 }
                 serde_json::to_value(preview).unwrap_or_else(|e| {
@@ -494,27 +501,49 @@ impl<'a> VirtualWorkspaceRuntimeV51<'a> {
 
     fn serialize_config_file(&self, path: &str) -> Option<String> {
         let res = match path {
-            "config/transforms.json" => serde_json::to_string_pretty(&self.config.transforms),
+            "config/transforms.json" => serialize_config_compact(&self.config.transforms),
             "config/identity_profile.json" => {
-                serde_json::to_string_pretty(&self.config.identity_profile)
+                serialize_config_compact(&self.config.identity_profile)
             }
-            "config/username_policy.json" => {
-                serde_json::to_string_pretty(&self.config.username_policy)
-            }
+            "config/username_policy.json" => serialize_config_compact(&self.config.username_policy),
             "config/lifecycle_states.json" => {
-                serde_json::to_string_pretty(&self.config.lifecycle_states)
+                serialize_config_compact(&self.config.lifecycle_states)
             }
-            "config/connectors.json" => serde_json::to_string_pretty(&self.config.connectors),
-            "config/attribute_sync.json" => {
-                serde_json::to_string_pretty(&self.config.attribute_sync)
-            }
-            "config/role_model.json" => serde_json::to_string_pretty(&self.config.role_model),
-            "config/workflows.json" => serde_json::to_string_pretty(&self.config.workflows),
-            "config/golive_plan.json" => serde_json::to_string_pretty(&self.config.golive_plan),
+            "config/connectors.json" => serialize_config_compact(&self.config.connectors),
+            "config/attribute_sync.json" => serialize_config_compact(&self.config.attribute_sync),
+            "config/role_model.json" => serialize_config_compact(&self.config.role_model),
+            "config/workflows.json" => serialize_config_compact(&self.config.workflows),
+            "config/golive_plan.json" => serialize_config_compact(&self.config.golive_plan),
             _ => return None,
         };
         res.ok()
     }
+}
+
+/// Serialize a config object with one compact JSON line per top-level field to avoid blowing up
+/// line windows and provider context budgets while remaining scannable.
+fn serialize_config_compact<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Error> {
+    let json_val = serde_json::to_value(value)?;
+    let Some(obj) = json_val.as_object() else {
+        return serde_json::to_string(&json_val);
+    };
+    if obj.is_empty() {
+        return Ok("{}".to_owned());
+    }
+    let mut out = String::from("{\n");
+    let total = obj.len();
+    for (idx, (key, val)) in obj.iter().enumerate() {
+        out.push_str("  ");
+        out.push_str(&serde_json::to_string(key)?);
+        out.push_str(": ");
+        out.push_str(&serde_json::to_string(val)?);
+        if idx + 1 < total {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push('}');
+    Ok(out)
 }
 
 /// Return the 7 strict tool definitions exposed to `ib-providers`.
@@ -533,7 +562,7 @@ pub fn tool_definitions_v51() -> Vec<ToolSpec> {
         ),
         tool_spec(
             "read_workspace_file",
-            "Read a read-only engagement artifact or current config/*.json file. Pass start_line and end_line (or null for default lines 1..=250, max 300 lines per call).",
+            "Read a read-only engagement artifact or current config/*.json file. Pass start_line and end_line (or null for default lines 1..=200, max 300 lines per call).",
             json!({
                 "type": "object",
                 "properties": {
