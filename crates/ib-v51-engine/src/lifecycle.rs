@@ -1,0 +1,175 @@
+//! Deterministic lifecycle state machine evaluation and per-spoke disposition resolution.
+
+use std::collections::BTreeSet;
+
+use ib_v51_schemas::{
+    AffiliationTypeV51, DateCompareOpV51, EnterpriseBrownfieldWorldV51, IgaDeploymentConfigV51,
+    LifecycleStateIdV51, LifecycleStateRuleV51, SpokeStateDispositionV51,
+};
+use indexmap::IndexMap;
+
+use crate::coalescence::CoalescedIdentity;
+use crate::transforms::{affiliation_to_str, eval_compare_op, eval_date_compare};
+
+/// Resolved lifecycle state and operational flags for a single identity.
+#[derive(Debug, Clone)]
+pub struct EvaluatedLifecycle {
+    pub lifecycle_state: LifecycleStateIdV51,
+    pub sso_enabled: bool,
+    pub vpn_enabled: bool,
+    pub tokens_revoked: bool,
+    pub preserve_mailbox_and_drive: bool,
+    pub block_purge: bool,
+    pub keep_hr_payroll_untouched: bool,
+    pub spoke_dispositions: IndexMap<String, SpokeStateDispositionV51>,
+}
+
+/// Evaluate lifecycle state and spoke dispositions for every coalesced identity.
+#[must_use]
+pub fn evaluate_lifecycle_states(
+    world: &EnterpriseBrownfieldWorldV51,
+    config: &IgaDeploymentConfigV51,
+    cubes: &IndexMap<String, CoalescedIdentity<'_>>,
+    cutover_date: &str,
+) -> IndexMap<String, EvaluatedLifecycle> {
+    let all_spokes: BTreeSet<String> = world
+        .spoke_accounts
+        .keys()
+        .chain(world.mock_endpoints.keys())
+        .cloned()
+        .collect();
+
+    let mut out = IndexMap::with_capacity(cubes.len());
+    for (person_key, cube) in cubes {
+        let eval = evaluate_single_lifecycle(cube, config, cutover_date, &all_spokes);
+        out.insert(person_key.clone(), eval);
+    }
+    out
+}
+
+/// Evaluate the lifecycle state for a single identity cube.
+#[must_use]
+pub fn evaluate_single_lifecycle(
+    cube: &CoalescedIdentity<'_>,
+    config: &IgaDeploymentConfigV51,
+    cutover_date: &str,
+    all_spokes: &BTreeSet<String>,
+) -> EvaluatedLifecycle {
+    let primary_aff_str = affiliation_to_str(&cube.primary_affiliation);
+    let active_affs_str = cube
+        .active_affiliations
+        .iter()
+        .map(affiliation_to_str)
+        .collect::<Vec<_>>()
+        .join(",");
+    let is_contingent_expired_str = if is_contingent_expired(cube, cutover_date) {
+        "true"
+    } else {
+        "false"
+    };
+
+    let order = &config.lifecycle_states.evaluation_order;
+    let mut matched: Option<(LifecycleStateIdV51, &LifecycleStateRuleV51)> = None;
+
+    for (idx, state_id) in order.iter().enumerate() {
+        let Some(rule) = config.lifecycle_states.states.get(state_id) else {
+            continue;
+        };
+        let is_last = idx + 1 == order.len();
+        let rule_matches = if rule.all_of.is_empty() {
+            is_last
+        } else {
+            rule.all_of.iter().all(|clause| {
+                let actual = match clause.identity_attribute.as_str() {
+                    "primary_affiliation" => primary_aff_str,
+                    "active_affiliations" => active_affs_str.as_str(),
+                    "is_contingent_expired" => is_contingent_expired_str,
+                    "person_key" => cube.person_key.as_str(),
+                    other => cube.attributes.get(other).map(String::as_str).unwrap_or(""),
+                };
+                eval_compare_op(actual, clause.cmp, clause.value.as_deref())
+            })
+        };
+
+        if rule_matches {
+            matched = Some((*state_id, rule));
+            break;
+        }
+    }
+
+    match matched {
+        Some((state_id, rule)) => {
+            let mut spoke_dispositions = IndexMap::with_capacity(all_spokes.len());
+            for spoke_id in all_spokes {
+                let disp = rule
+                    .spoke_disposition_overrides
+                    .get(spoke_id)
+                    .copied()
+                    .unwrap_or(rule.default_spoke_disposition);
+                spoke_dispositions.insert(spoke_id.clone(), disp);
+            }
+            EvaluatedLifecycle {
+                lifecycle_state: state_id,
+                sso_enabled: rule.sso_enabled,
+                vpn_enabled: rule.vpn_enabled,
+                tokens_revoked: rule.revoke_active_tokens_immediately,
+                preserve_mailbox_and_drive: rule.preserve_mailbox_and_drive_data,
+                block_purge: rule.block_account_purge,
+                keep_hr_payroll_untouched: rule.keep_hr_payroll_untouched,
+                spoke_dispositions,
+            }
+        }
+        None => {
+            let mut spoke_dispositions = IndexMap::with_capacity(all_spokes.len());
+            for spoke_id in all_spokes {
+                spoke_dispositions.insert(
+                    spoke_id.clone(),
+                    SpokeStateDispositionV51::DisableAuthPreserveAccountAndData,
+                );
+            }
+            EvaluatedLifecycle {
+                lifecycle_state: LifecycleStateIdV51::InactiveOrphan,
+                sso_enabled: false,
+                vpn_enabled: false,
+                tokens_revoked: true,
+                preserve_mailbox_and_drive: false,
+                block_purge: false,
+                keep_hr_payroll_untouched: true,
+                spoke_dispositions,
+            }
+        }
+    }
+}
+
+fn is_contingent_expired(cube: &CoalescedIdentity<'_>, cutover_date: &str) -> bool {
+    let is_contingent = cube
+        .active_affiliations
+        .contains(&AffiliationTypeV51::ContingentWorker);
+    if !is_contingent {
+        return false;
+    }
+    let contract_end = cube
+        .attributes
+        .get("contract_end_date")
+        .map(String::as_str)
+        .unwrap_or("")
+        .trim();
+    if contract_end.is_empty() {
+        return false;
+    }
+    let hr_status = cube
+        .attributes
+        .get("hr_payroll_status")
+        .map(String::as_str)
+        .unwrap_or("")
+        .trim();
+    if hr_status == "TERMINATED" {
+        return false;
+    }
+    eval_date_compare(
+        contract_end,
+        DateCompareOpV51::Lt,
+        cutover_date,
+        cutover_date,
+    )
+}
