@@ -92,6 +92,7 @@ pub enum TransformExprV51 {
         max_len: usize,
     },
     /// Normalize full country names or ISO-3 codes (`"United States"`, `"USA"`, `"Germany"`, `"DEU"`, etc.) to 2-char ISO-3166-1 alpha-2 (`"US"`, `"DE"`).
+    #[serde(alias = "iso_country_2")]
     IsoCountry2 { input: Box<TransformExprV51> },
     /// Conditional branch comparing `left` and `right` (for `in_list`, `right` is pipe-delimited `"A|B|C"`).
     Conditional {
@@ -114,4 +115,23 @@ pub enum TransformExprV51 {
 
 const fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_country2_accepts_canonical_and_underscored_alias() {
+        let canonical: TransformExprV51 =
+            serde_json::from_str(r#"{"op":"iso_country2","input":{"op":"literal","value":"USA"}}"#)
+                .expect("canonical iso_country2");
+        let aliased: TransformExprV51 = serde_json::from_str(
+            r#"{"op":"iso_country_2","input":{"op":"literal","value":"USA"}}"#,
+        )
+        .expect("aliased iso_country_2");
+        assert_eq!(canonical, aliased);
+        let serialized = serde_json::to_string(&aliased).expect("serialize");
+        assert!(serialized.contains(r#""op":"iso_country2""#));
+    }
 }

@@ -1788,23 +1788,23 @@ fn next_day_iso(cutover_date: &str, add_days: u32) -> String {
 
 fn build_client_parameters(spec: &FamilyRegimeSpecV51, rng: &mut PyRandom) -> ClientParametersV51 {
     let prefix = COMPANY_PREFIXES[rng.randbelow_usize(COMPANY_PREFIXES.len())];
-    let suffix = match spec.secondary_source {
-        SecondarySourceKindV51::BannerSis => {
-            COMPANY_SUFFIXES_EDU[rng.randbelow_usize(COMPANY_SUFFIXES_EDU.len())]
-        }
-        SecondarySourceKindV51::Credentialing => {
-            COMPANY_SUFFIXES_HEALTH[rng.randbelow_usize(COMPANY_SUFFIXES_HEALTH.len())]
-        }
-        SecondarySourceKindV51::AcquiredHr => {
-            COMPANY_SUFFIXES_CORP[rng.randbelow_usize(COMPANY_SUFFIXES_CORP.len())]
-        }
+    let is_academic_org =
+        spec.secondary_source == SecondarySourceKindV51::BannerSis && spec.family_id == "F01";
+    let is_health_org = spec.secondary_source == SecondarySourceKindV51::Credentialing
+        && matches!(spec.family_id, "F04" | "F12");
+    let suffix = if is_academic_org {
+        COMPANY_SUFFIXES_EDU[rng.randbelow_usize(COMPANY_SUFFIXES_EDU.len())]
+    } else if is_health_org {
+        COMPANY_SUFFIXES_HEALTH[rng.randbelow_usize(COMPANY_SUFFIXES_HEALTH.len())]
+    } else {
+        COMPANY_SUFFIXES_CORP[rng.randbelow_usize(COMPANY_SUFFIXES_CORP.len())]
     };
     let company_name = format!("{prefix} {suffix}");
     let company_short: String = prefix.chars().take(3).collect::<String>().to_uppercase();
     let slug = prefix.to_lowercase();
-    let tld = if spec.secondary_source == SecondarySourceKindV51::BannerSis {
+    let tld = if is_academic_org {
         "edu"
-    } else if spec.secondary_source == SecondarySourceKindV51::Credentialing {
+    } else if is_health_org {
         "org"
     } else {
         "com"
@@ -2118,7 +2118,7 @@ fn build_group_blueprints(
         format!("GG_{pfx}_{reg}_PRD_CLIN_EHR_VIEW"),
         if spec.has_epic { "epic" } else { "ad" },
         "Clinical EHR Baseline Viewer",
-        "Production clinical department baseline view template",
+        "Production Clinical Operations birthright EHR view template",
         vec![],
         "PROD",
         SpokeEnvKindV51::Prod,
@@ -2166,7 +2166,7 @@ fn build_group_blueprints(
         format!("GG_{pfx}_{reg}_PRD_CWK_PORTAL"),
         "ad",
         "Contingent Workforce Time & Portal Baseline",
-        "Production contingent worker non-privileged portal baseline",
+        "Production contingent worker birthright non-privileged portal baseline",
         vec![],
         "PROD",
         SpokeEnvKindV51::Prod,
