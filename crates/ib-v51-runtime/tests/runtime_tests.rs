@@ -585,11 +585,12 @@ fn virtual_workspace_all_seven_tools_and_guards() {
     );
     assert_eq!(write_str["status"], "VALIDATED");
 
-    // 4. preview_identity_profile defaults to 8 cubes when person_keys is None, and caps explicit person_keys to <= 12
+    // 4. preview_identity_profile defaults to 5 cubes when person_keys is None, and caps explicit person_keys to <= 5
+    assert_eq!(ib_v51_runtime::MAX_PREVIEW_CUBES, 5);
     let preview_all = rt.execute_tool_call(3, "preview_identity_profile", json!({}));
-    assert_eq!(preview_all["preview_count"], 8);
+    assert_eq!(preview_all["preview_count"], 5);
     assert_eq!(preview_all["total_identities"], 20);
-    assert_eq!(preview_all["cubes"].as_array().unwrap().len(), 8);
+    assert_eq!(preview_all["cubes"].as_array().unwrap().len(), 5);
 
     let many_keys: Vec<String> = (1..=15).map(|i| format!("pers_{i:02}")).collect();
     let preview_many = rt.execute_tool_call(
@@ -597,7 +598,7 @@ fn virtual_workspace_all_seven_tools_and_guards() {
         "preview_identity_profile",
         json!({"person_keys": many_keys}),
     );
-    assert_eq!(preview_many["preview_count"], 12);
+    assert_eq!(preview_many["preview_count"], 5);
 
     // 5. test_connector_sandbox
     let conn = rt.execute_tool_call(
@@ -1664,4 +1665,260 @@ async fn corrective_retry_appends_user_notice_on_function_call_and_token_limit_e
             .content
             .contains("RETRY NOTICE")
     );
+}
+
+#[test]
+fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sources_and_config() {
+    let system_prompt = "s".repeat(3_000);
+    let workshop_notes = format!("WORKSHOP_NOTES_SENTINEL: {}", "n".repeat(12_000));
+    let legacy_iiq_rule = format!("LEGACY_IIQ_SENTINEL: {}", "b".repeat(12_000));
+    let target_spec_doc = format!("TARGET_SPEC_SENTINEL: {}", "t".repeat(10_000));
+    let ldif_page = "dn: CN=User,OU=Users,DC=corp,DC=example\n".repeat(1_100); // ~44 KB per page
+    let config_dump = format!(
+        "{{\"schema_version\":\"v5.1\",\"blob\":\"{}\"}}",
+        "c".repeat(25_000)
+    );
+    let preview_blob = "p".repeat(25_000);
+
+    // 1. !native_tools transcript: Turn 1 mixes engagement/workshop_notes.md + sources/ad_directory.ldif
+    //    in the SAME `## Tool Execution Results` block; Turn 2 reads legacy_iiq/rule.bsh + config/identity_profile.json;
+    //    Turn 3 reads target_specs/ad.md + sources/ad_directory.ldif page 2 + preview_identity_profile;
+    //    Turns 4-5 are recent turns kept completely intact.
+    let mut text_messages = vec![Message::user("opening".repeat(2_000))];
+
+    // Turn 1 (mixed engagement + sources in ONE multi-call Tool Execution Results block)
+    text_messages.push(Message::assistant(
+        serde_json::to_string(&json!({
+            "actions": [
+                {"action": "read_workspace_file", "arguments": {"path": "engagement/workshop_notes.md"}},
+                {"action": "read_workspace_file", "arguments": {"path": "sources/ad_directory.ldif", "start_line": 1, "end_line": 300}}
+            ]
+        }))
+        .unwrap(),
+        vec![],
+    ));
+    text_messages.push(Message::user(format!(
+        "## Tool Execution Results\n{}",
+        serde_json::to_string(&json!([
+            {
+                "tool_call_id": "t1_eng",
+                "name": "read_workspace_file",
+                "result": {"status": "OK", "path": "engagement/workshop_notes.md", "content": workshop_notes}
+            },
+            {
+                "tool_call_id": "t1_ldif1",
+                "name": "read_workspace_file",
+                "result": {"status": "OK", "path": "sources/ad_directory.ldif", "content": ldif_page}
+            }
+        ]))
+        .unwrap()
+    )));
+
+    // Turn 2 (legacy_iiq + config in same block; omit result.path on config to test assistant fallback too)
+    text_messages.push(Message::assistant(
+        serde_json::to_string(&json!({
+            "actions": [
+                {"action": "read_workspace_file", "arguments": {"path": "legacy_iiq/correlation.bsh"}},
+                {"action": "read_workspace_file", "arguments": {"path": "config/identity_profile.json"}}
+            ]
+        }))
+        .unwrap(),
+        vec![],
+    ));
+    text_messages.push(Message::user(format!(
+        "## Tool Execution Results\n{}",
+        serde_json::to_string(&json!([
+            {
+                "tool_call_id": "t2_iiq",
+                "name": "read_workspace_file",
+                "result": {"status": "OK", "path": "legacy_iiq/correlation.bsh", "content": legacy_iiq_rule}
+            },
+            {
+                "tool_call_id": "t2_cfg",
+                "name": "read_workspace_file",
+                "result": {"status": "OK", "content": config_dump}
+            }
+        ]))
+        .unwrap()
+    )));
+
+    // Turn 3 (target_specs + sources page 2 + preview_identity_profile)
+    text_messages.push(Message::assistant(
+        serde_json::to_string(&json!({
+            "actions": [
+                {"action": "read_workspace_file", "arguments": {"path": "target_specs/ad.md"}},
+                {"action": "read_workspace_file", "arguments": {"path": "sources/ad_directory.ldif", "start_line": 301, "end_line": 600}},
+                {"action": "preview_identity_profile", "arguments": {"person_keys": null}}
+            ]
+        }))
+        .unwrap(),
+        vec![],
+    ));
+    text_messages.push(Message::user(format!(
+        "## Tool Execution Results\n{}",
+        serde_json::to_string(&json!([
+            {
+                "tool_call_id": "t3_spec",
+                "name": "read_workspace_file",
+                "result": {"status": "OK", "path": "target_specs/ad.md", "content": target_spec_doc}
+            },
+            {
+                "tool_call_id": "t3_ldif2",
+                "name": "read_workspace_file",
+                "result": {"status": "OK", "path": "sources/ad_directory.ldif", "content": ldif_page}
+            },
+            {
+                "tool_call_id": "t3_prev",
+                "name": "preview_identity_profile",
+                "result": {"preview_count": 5, "total_identities": 140, "blob": preview_blob}
+            }
+        ]))
+        .unwrap()
+    )));
+
+    // Turns 4 & 5 (recent turns preserved)
+    for turn in 4..=5 {
+        text_messages.push(Message::assistant(
+            r#"{"actions":[{"action":"list_workspace","arguments":{}}]}"#,
+            vec![],
+        ));
+        text_messages.push(Message::user(format!(
+            "## Tool Execution Results\n{}",
+            serde_json::to_string(&json!([{
+                "tool_call_id": format!("t{turn}_list"),
+                "name": "list_workspace",
+                "result": {"status": "OK"}
+            }]))
+            .unwrap()
+        )));
+    }
+
+    let compacted_text = compact_historical_messages(&system_prompt, &text_messages, false);
+    let total_text_bytes: usize = system_prompt.len()
+        + compacted_text
+            .iter()
+            .map(|m| m.content.len() + 32)
+            .sum::<usize>();
+    assert!(
+        total_text_bytes < 145_000,
+        "two-pass !native_tools compaction must bring payload < 145_000 bytes, got {total_text_bytes}"
+    );
+    // Core artifacts MUST remain intact in Pass 1!
+    assert!(
+        compacted_text[2]
+            .content
+            .contains("WORKSHOP_NOTES_SENTINEL"),
+        "engagement/workshop_notes.md must remain intact in Pass 1"
+    );
+    assert!(
+        compacted_text[4].content.contains("LEGACY_IIQ_SENTINEL"),
+        "legacy_iiq/correlation.bsh must remain intact in Pass 1"
+    );
+    assert!(
+        compacted_text[6].content.contains("TARGET_SPEC_SENTINEL"),
+        "target_specs/ad.md must remain intact in Pass 1"
+    );
+    // Bulky sources/ad_directory.ldif page 1 in Turn 1 MUST be selectively compacted!
+    assert!(
+        compacted_text[2].content.contains("compacted_prior_turn"),
+        "sources/ad_directory.ldif entry in Turn 1 must be compacted"
+    );
+    assert!(
+        !compacted_text[2].content.contains("dn: CN=User"),
+        "sources/ad_directory.ldif body must be replaced in Turn 1"
+    );
+    // Config dump in Turn 2 (resolved via preceding assistant action path) MUST be compacted!
+    assert!(
+        compacted_text[4].content.contains("compacted_prior_turn"),
+        "config/identity_profile.json entry in Turn 2 must be compacted"
+    );
+
+    // 2. native_tools transcript with identical two-pass behavior
+    let mut native_messages = vec![Message::user("opening".repeat(2_000))];
+    let make_read_call = |id: &str, path: &str| {
+        let mut args = Map::new();
+        args.insert("path".to_owned(), Value::String(path.to_owned()));
+        ToolCall {
+            id: id.to_owned(),
+            name: "read_workspace_file".to_owned(),
+            arguments: args,
+        }
+    };
+    native_messages.push(Message::assistant(
+        " ",
+        vec![
+            make_read_call("n1_eng", "engagement/workshop_notes.md"),
+            make_read_call("n1_ldif1", "sources/ad_directory.ldif"),
+        ],
+    ));
+    native_messages.push(Message::tool(
+        "n1_eng",
+        json!({"status": "OK", "path": "engagement/workshop_notes.md", "content": workshop_notes})
+            .to_string(),
+    ));
+    native_messages.push(Message::tool(
+        "n1_ldif1",
+        json!({"status": "OK", "path": "sources/ad_directory.ldif", "content": ldif_page})
+            .to_string(),
+    ));
+
+    native_messages.push(Message::assistant(
+        " ",
+        vec![
+            make_read_call("n2_iiq", "legacy_iiq/correlation.bsh"),
+            make_read_call("n2_ldif2", "sources/ad_directory.ldif"),
+            make_read_call("n2_cfg", "config/identity_profile.json"),
+        ],
+    ));
+    native_messages.push(Message::tool(
+        "n2_iiq",
+        json!({"status": "OK", "path": "legacy_iiq/correlation.bsh", "content": legacy_iiq_rule})
+            .to_string(),
+    ));
+    native_messages.push(Message::tool(
+        "n2_ldif2",
+        json!({"status": "OK", "path": "sources/ad_directory.ldif", "content": ldif_page})
+            .to_string(),
+    ));
+    native_messages.push(Message::tool(
+        "n2_cfg",
+        json!({"status": "OK", "path": "config/identity_profile.json", "content": config_dump})
+            .to_string(),
+    ));
+
+    // Recent 2 turns
+    for turn in 3..=4 {
+        let id = format!("n{turn}_list");
+        native_messages.push(Message::assistant(
+            " ",
+            vec![ToolCall {
+                id: id.clone(),
+                name: "list_workspace".to_owned(),
+                arguments: Map::new(),
+            }],
+        ));
+        native_messages.push(Message::tool(id, r#"{"status":"OK"}"#));
+    }
+
+    let compacted_native = compact_historical_messages(&system_prompt, &native_messages, true);
+    let total_native_bytes: usize = system_prompt.len()
+        + compacted_native
+            .iter()
+            .map(|m| {
+                m.content.len() + serde_json::to_string(&m.tool_calls).map_or(0, |s| s.len()) + 32
+            })
+            .sum::<usize>();
+    assert!(
+        total_native_bytes < 145_000,
+        "two-pass native_tools compaction must bring payload < 145_000 bytes, got {total_native_bytes}"
+    );
+    // engagement/workshop_notes.md (idx 2) and legacy_iiq/correlation.bsh (idx 5) stay intact
+    assert!(
+        compacted_native[2]
+            .content
+            .contains("WORKSHOP_NOTES_SENTINEL")
+    );
+    assert!(compacted_native[5].content.contains("LEGACY_IIQ_SENTINEL"));
+    // sources/ad_directory.ldif page 1 (idx 3) was compacted
+    assert!(compacted_native[3].content.contains("compacted_prior_turn"));
 }

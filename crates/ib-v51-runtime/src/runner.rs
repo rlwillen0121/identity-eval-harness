@@ -716,11 +716,16 @@ pub fn compact_historical_messages(
         .unwrap_or(len);
     let write_compact_cutoff = len.saturating_sub(2).min(last_assistant_idx);
 
-    let mut tool_names_by_id: BTreeMap<String, String> = BTreeMap::new();
+    let mut tool_meta_by_id: BTreeMap<String, (String, Option<String>)> = BTreeMap::new();
     for msg in &compacted {
         if msg.role == Role::Assistant {
             for call in &msg.tool_calls {
-                tool_names_by_id.insert(call.id.clone(), call.name.clone());
+                let path = call
+                    .arguments
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                tool_meta_by_id.insert(call.id.clone(), (call.name.clone(), path));
             }
         }
     }
@@ -749,43 +754,54 @@ pub fn compact_historical_messages(
         return compacted;
     }
 
-    // Safety valve: compact older read_workspace_file / preview_identity_profile tool results
-    // (preserving the most recent 2 turns / at least the last 4 messages) until total < 145_000 bytes.
+    // Two-pass safety valve over `0..read_compact_cutoff` (preserving the most recent 2 turns /
+    // at least the last 4 messages):
+    // - Pass 1 (`bulky_only = true`): compact only bulky data-exploration outputs
+    //   (`preview_identity_profile` and `read_workspace_file` under `sources/` or `config/`),
+    //   keeping core requirement/code artifacts (`engagement/*`, `legacy_iiq/*`, `target_specs/*`) intact.
+    // - Pass 2 (`bulky_only = false`): only if still >= 145_000 bytes after Pass 1, compact
+    //   remaining older `read_workspace_file` outputs until total < 145_000 bytes.
     let second_last_assistant_idx = compacted[..last_assistant_idx]
         .iter()
         .rposition(|m| m.role == Role::Assistant)
         .unwrap_or(0);
     let read_compact_cutoff = len.saturating_sub(4).min(second_last_assistant_idx);
 
-    for idx in 0..read_compact_cutoff {
-        let modified = {
-            let msg = &mut compacted[idx];
-            match msg.role {
-                Role::Tool => {
-                    let tool_name = msg
-                        .tool_call_id
-                        .as_deref()
-                        .and_then(|id| tool_names_by_id.get(id))
-                        .map(String::as_str);
-                    if matches!(
-                        tool_name,
-                        Some("read_workspace_file" | "preview_identity_profile")
-                    ) && msg.content != COMPACTED_READ_BODY
-                    {
-                        msg.content = COMPACTED_READ_BODY.to_owned();
-                        true
-                    } else {
-                        false
-                    }
-                }
-                Role::User => compact_user_tool_results_message(&mut msg.content),
-                Role::Assistant => false,
-            }
-        };
-        if modified
-            && total_serialized_bytes(system_prompt, &compacted) < MAX_REQUEST_BYTES_FOR_COMPACTION
-        {
+    for bulky_only in [true, false] {
+        if total_serialized_bytes(system_prompt, &compacted) < MAX_REQUEST_BYTES_FOR_COMPACTION {
             break;
+        }
+        for idx in 0..read_compact_cutoff {
+            let prev_assistant_paths: Option<Vec<Option<String>>> = if compacted[idx].role
+                == Role::User
+                && compacted[idx].content.starts_with(TOOL_RESULTS_HEADER)
+                && idx > 0
+                && compacted[idx - 1].role == Role::Assistant
+            {
+                Some(extract_assistant_action_paths(&compacted[idx - 1].content))
+            } else {
+                None
+            };
+            let modified = {
+                let msg = &mut compacted[idx];
+                match msg.role {
+                    Role::Tool => {
+                        compact_native_tool_result_message(msg, &tool_meta_by_id, bulky_only)
+                    }
+                    Role::User => compact_user_tool_results_message(
+                        &mut msg.content,
+                        prev_assistant_paths.as_deref(),
+                        bulky_only,
+                    ),
+                    Role::Assistant => false,
+                }
+            };
+            if modified
+                && total_serialized_bytes(system_prompt, &compacted)
+                    < MAX_REQUEST_BYTES_FOR_COMPACTION
+            {
+                break;
+            }
         }
     }
 
@@ -903,7 +919,118 @@ fn compact_single_action(map: &mut Map<String, Value>) -> bool {
     changed
 }
 
-fn compact_user_tool_results_message(content: &mut String) -> bool {
+fn normalize_compaction_path(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    trimmed
+        .strip_prefix("./")
+        .or_else(|| trimmed.strip_prefix('/'))
+        .unwrap_or(trimmed)
+}
+
+fn is_bulky_exploration_path(path: &str) -> bool {
+    let normalized = normalize_compaction_path(path);
+    normalized.starts_with("sources/") || normalized.starts_with("config/")
+}
+
+fn compact_native_tool_result_message(
+    msg: &mut Message,
+    tool_meta_by_id: &BTreeMap<String, (String, Option<String>)>,
+    bulky_only: bool,
+) -> bool {
+    if msg.content == COMPACTED_READ_BODY {
+        return false;
+    }
+    let meta = msg
+        .tool_call_id
+        .as_deref()
+        .and_then(|id| tool_meta_by_id.get(id));
+    let Some((tool_name, arg_path)) = meta else {
+        return false;
+    };
+    let should_compact = match tool_name.as_str() {
+        "preview_identity_profile" => true,
+        "read_workspace_file" => {
+            if !bulky_only {
+                true
+            } else if let Some(path) = arg_path.as_deref() {
+                is_bulky_exploration_path(path)
+            } else {
+                serde_json::from_str::<Value>(&msg.content)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("path")
+                            .and_then(Value::as_str)
+                            .map(is_bulky_exploration_path)
+                    })
+                    .unwrap_or(false)
+            }
+        }
+        _ => false,
+    };
+    if should_compact {
+        msg.content = COMPACTED_READ_BODY.to_owned();
+        true
+    } else {
+        false
+    }
+}
+
+fn extract_assistant_action_paths(text: &str) -> Vec<Option<String>> {
+    let stripped = strip_markdown_fences(&strip_reasoning(text));
+    let parsed = serde_json::from_str::<Value>(&stripped).ok().or_else(|| {
+        if stripped.contains('[')
+            && !stripped.contains("\"actions\"")
+            && !stripped.contains("\"tool_calls\"")
+            && let Some(items) = extract_json_array(&stripped)
+        {
+            return Some(Value::Array(items));
+        }
+        extract_json_object(
+            Some(&stripped),
+            Some(&["actions"]),
+            Some(&["actions", "tool_calls", "action", "name"]),
+        )
+        .map(Value::Object)
+    });
+    let Some(value) = parsed else {
+        return Vec::new();
+    };
+    let items: Vec<&Value> = match &value {
+        Value::Array(arr) => arr.iter().collect(),
+        Value::Object(map) => {
+            if let Some(Value::Array(arr)) = map.get("actions").or_else(|| map.get("tool_calls")) {
+                arr.iter().collect()
+            } else {
+                vec![&value]
+            }
+        }
+        _ => return Vec::new(),
+    };
+    items
+        .into_iter()
+        .map(|item| {
+            let obj = item.as_object()?;
+            if let Some(Value::Object(args)) = obj.get("arguments") {
+                return args.get("path").and_then(Value::as_str).map(str::to_owned);
+            }
+            if let Some(Value::String(args_json)) = obj.get("arguments_json")
+                && let Ok(parsed_args) = serde_json::from_str::<Map<String, Value>>(args_json)
+            {
+                return parsed_args
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+            }
+            None
+        })
+        .collect()
+}
+
+fn compact_user_tool_results_message(
+    content: &mut String,
+    prev_assistant_paths: Option<&[Option<String>]>,
+    bulky_only: bool,
+) -> bool {
     let Some(rest) = content.strip_prefix(TOOL_RESULTS_HEADER) else {
         return false;
     };
@@ -919,15 +1046,36 @@ fn compact_user_tool_results_message(content: &mut String) -> bool {
     };
 
     let mut changed = false;
-    for entry in &mut entries {
+    for (entry_idx, entry) in entries.iter_mut().enumerate() {
         let Some(map) = entry.as_object_mut() else {
             continue;
         };
-        let is_compactable_tool = matches!(
-            map.get("name").and_then(Value::as_str),
-            Some("read_workspace_file" | "preview_identity_profile")
-        );
-        if !is_compactable_tool {
+        let tool_name = map
+            .get("name")
+            .or_else(|| map.get("action"))
+            .and_then(Value::as_str);
+        let should_compact = match tool_name {
+            Some("preview_identity_profile") => true,
+            Some("read_workspace_file") => {
+                if !bulky_only {
+                    true
+                } else {
+                    let path = map
+                        .get("result")
+                        .and_then(|r| r.get("path"))
+                        .and_then(Value::as_str)
+                        .or_else(|| map.get("path").and_then(Value::as_str))
+                        .or_else(|| {
+                            prev_assistant_paths
+                                .and_then(|paths| paths.get(entry_idx))
+                                .and_then(Option::as_deref)
+                        });
+                    path.is_some_and(is_bulky_exploration_path)
+                }
+            }
+            _ => false,
+        };
+        if !should_compact {
             continue;
         }
         let already_compacted = map

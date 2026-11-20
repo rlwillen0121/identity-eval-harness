@@ -81,7 +81,7 @@ pub fn coalesce_identities<'a>(
                 if is_ignored_record(rec, &rule.ignore_records_with_status) {
                     continue;
                 }
-                if !record_matches_person(rec, &person_key, rule, &known_keys) {
+                if !record_matches_person(rec, rule, &known_keys) {
                     continue;
                 }
                 best = match best {
@@ -114,8 +114,9 @@ pub fn coalesce_identities<'a>(
                 matched_sources.push(rule.source_id.clone());
                 matched_records.insert(rule.source_id.clone(), rec);
                 for (k, v) in &rec.attributes {
-                    if !v.trim().is_empty() && !known_keys.contains_key(k) {
-                        known_keys.insert(k.clone(), v.clone());
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() && !known_keys.contains_key(k) {
+                        known_keys.insert(k.clone(), trimmed.to_owned());
                     }
                 }
             }
@@ -168,30 +169,28 @@ fn is_ignored_record(rec: &RawSourceRecordV51, ignore_statuses: &[String]) -> bo
 
 fn record_matches_person(
     rec: &RawSourceRecordV51,
-    person_key: &str,
     rule: &AuthoritativeSourceRuleV51,
     known_keys: &IndexMap<String, String>,
 ) -> bool {
-    if rec.attributes.get("person_key").map(String::as_str) == Some(person_key) {
-        return true;
-    }
     for mk in &rule.match_keys {
         let Some(expected_val) = known_keys.get(&mk.identity_key_name) else {
             continue;
         };
-        if expected_val.trim().is_empty() {
+        let exp = expected_val.trim();
+        if exp.is_empty() {
             continue;
         }
         let Some(rec_val) = rec.attributes.get(&mk.source_field) else {
             continue;
         };
-        if rec_val.trim().is_empty() {
+        let rv = rec_val.trim();
+        if rv.is_empty() {
             continue;
         }
         let matched = if mk.case_insensitive {
-            expected_val.eq_ignore_ascii_case(rec_val)
+            exp.eq_ignore_ascii_case(rv)
         } else {
-            expected_val == rec_val
+            exp == rv
         };
         if matched {
             return true;
