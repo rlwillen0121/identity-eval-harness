@@ -15,7 +15,9 @@ use ib_v51_schemas::{
 };
 use indexmap::IndexMap;
 
-use crate::archetypes::{FamilyRegimeSpecV51, SecondarySourceKindV51, resolve_family_regime_spec};
+use crate::archetypes::{
+    DifficultyTierV51, FamilyRegimeSpecV51, SecondarySourceKindV51, resolve_family_regime_spec,
+};
 use crate::cells::V51Cell;
 
 /// Client-specific randomized naming, domain, lookup tables, and target API quirks.
@@ -286,6 +288,9 @@ struct PersonPlan {
     ad_force_sam: Option<String>,
     /// Blank out VMS dept/office while AD already has populated values (null wipeout test!).
     blank_vms_dept_and_office: bool,
+    /// Blank out Workday dept_code while secondary has `LEGACY-UNMAPPED` and VMS holds valid dept_code
+    /// (tests per-source `first_valid([lookup(wd), lookup(sec), lookup(vms)])` fallback!).
+    blank_workday_dept_fallback_to_vms: bool,
     has_sap_account: bool,
     has_epic_account: bool,
     has_aws_account: bool,
@@ -593,6 +598,7 @@ pub fn generate_scenario_blueprint(cell: &V51Cell) -> ScenarioBlueprintV51 {
         let mut ad_use_acquired_domain = false;
         let mut ad_force_sam: Option<String> = None;
         let mut blank_vms_dept_and_office = false;
+        let mut blank_workday_dept_fallback_to_vms = false;
         let mut has_sap_account = spec.has_sap && (slot_idx % 2 == 0);
         let mut has_epic_account = spec.has_epic && (slot_idx % 3 == 0);
         let mut has_aws_account = spec.has_aws
@@ -865,6 +871,31 @@ pub fn generate_scenario_blueprint(cell: &V51Cell) -> ScenarioBlueprintV51 {
                 if slot_idx == 30 {
                     // Existing AD holder of the 20-char longname handle so longname_collision_newhire collides!
                     ad_force_sam = Some(long_base_sam.clone());
+                } else if (slot_idx == 31 || slot_idx == 35)
+                    && (spec.tier == DifficultyTierV51::FullStack
+                        || matches!(spec.family_id, "F02" | "F09"))
+                {
+                    // Contingent-converting worker with blank Workday dept_code, `LEGACY-UNMAPPED` in secondary,
+                    // and valid dept_code in Fieldglass VMS — discriminates `first_valid(lookup(...))` vs `lookup(first_valid(...))`!
+                    in_workday = true;
+                    in_secondary = true;
+                    in_vms = true;
+                    workday_status_code = "ACT".to_owned();
+                    vms_status_code = "ACT".to_owned();
+                    workday_aff_code = "FTE".to_owned();
+                    sec_aff_code.clear();
+                    vms_aff_code = "CWK".to_owned();
+                    contract_end_date = "2027-06-30".to_owned();
+                    sponsor_key = active_dir_1.clone();
+                    blank_vms_dept_and_office = false;
+                    blank_workday_dept_fallback_to_vms = true;
+                    if slot_idx == 31 {
+                        (dept_code, dept_canonical) = dept_code_for("Engineering");
+                        job_code_raw = "eng_sr".to_owned();
+                    } else {
+                        (dept_code, dept_canonical) = dept_code_for("Finance");
+                        job_code_raw = "fin_analyst".to_owned();
+                    }
                 } else if slot_idx % 4 == 0 {
                     // Active contractor with valid future end date + blank VMS dept/office (tests skip_if_null_or_blank)
                     in_workday = false;
@@ -930,7 +961,19 @@ pub fn generate_scenario_blueprint(cell: &V51Cell) -> ScenarioBlueprintV51 {
             person_idx + 1
         );
         let work_email = format!("{email_local}@{email_domain}");
-        let personal_email = format!("{email_local}@personal-mail.example");
+        let personal_local = format!(
+            "{}{}{}",
+            sanitize_sam_token(&legal_first)
+                .chars()
+                .take(1)
+                .collect::<String>(),
+            sanitize_sam_token(&legal_last)
+                .chars()
+                .take(8)
+                .collect::<String>(),
+            person_idx + 1
+        );
+        let personal_email = format!("{personal_local}@mail.org");
 
         plans_by_key.insert(
             pkey.clone(),
@@ -971,6 +1014,7 @@ pub fn generate_scenario_blueprint(cell: &V51Cell) -> ScenarioBlueprintV51 {
                 ad_use_acquired_domain,
                 ad_force_sam,
                 blank_vms_dept_and_office,
+                blank_workday_dept_fallback_to_vms,
                 has_sap_account,
                 has_epic_account,
                 has_aws_account,
@@ -1009,7 +1053,14 @@ pub fn generate_scenario_blueprint(cell: &V51Cell) -> ScenarioBlueprintV51 {
             };
             attrs.insert("email".to_owned(), raw_email);
             attrs.insert("personal_email".to_owned(), p.personal_email.clone());
-            attrs.insert("dept_code".to_owned(), p.dept_code.clone());
+            attrs.insert(
+                "dept_code".to_owned(),
+                if p.blank_workday_dept_fallback_to_vms {
+                    String::new()
+                } else {
+                    p.dept_code.clone()
+                },
+            );
             attrs.insert("job_code".to_owned(), format!(" {} ", p.job_code_raw));
             attrs.insert("cost_center".to_owned(), p.cost_center_raw.clone());
             attrs.insert("country".to_owned(), p.raw_country.clone());
@@ -1489,7 +1540,16 @@ pub fn generate_scenario_blueprint(cell: &V51Cell) -> ScenarioBlueprintV51 {
         ),
     ];
 
-    for (acct_id, dn, has_spn, desc) in ad_service_accounts {
+    // Collect any department-specific service-account daemon twin groups so they appear on `svc_*` in AD LDIF.
+    let svc_daemon_twins: Vec<String> = groups
+        .iter()
+        .filter(|g| {
+            g.role_tag == GroupRoleTagV51::ServiceAccountOnly && g.record.group_id.ends_with("_SVC")
+        })
+        .map(|g| g.record.group_id.clone())
+        .collect();
+
+    for (svc_idx, (acct_id, dn, has_spn, desc)) in ad_service_accounts.into_iter().enumerate() {
         let mut attrs = IndexMap::new();
         attrs.insert("sAMAccountName".to_owned(), acct_id.clone());
         attrs.insert(
@@ -1508,13 +1568,17 @@ pub fn generate_scenario_blueprint(cell: &V51Cell) -> ScenarioBlueprintV51 {
                 format!("HTTP/{acct_id}.{}", client.primary_domain),
             );
         }
+        let mut svc_ents = vec![svc_only_group.clone(), nonprod_group.clone()];
+        if let Some(twin_gid) = svc_daemon_twins.get(svc_idx) {
+            svc_ents.push(twin_gid.clone());
+        }
         ad_accounts.push(BrownfieldSpokeAccountV51 {
             account_id: acct_id,
             spoke_id: "ad".to_owned(),
             native_dn_or_key: dn,
             enabled: true,
             attributes: attrs,
-            entitlement_ids: vec![svc_only_group.clone(), nonprod_group.clone()],
+            entitlement_ids: svc_ents,
             has_service_principal_name: has_spn,
             sap_uflag: None,
             sap_gltgb: None,
@@ -2416,7 +2480,154 @@ fn build_group_blueprints(
         GroupRoleTagV51::ServiceAccountOnly,
     );
 
-    // Pad up to target_count (32 for MultiSystem, 36 for FullStack) with extra realistic groups.
+    // 8. Decoy Twin AD Groups on FullStack (F05, F10, F11, F12) + F02 + F06 + F09:
+    //    For Finance, Engineering, IT, and Clinical, plant lookalike UAT/STAGE NonProd twins,
+    //    deprecated v1 PROD orphaned twins, and service-account daemon twins alongside the true
+    //    active PROD birthright group so superficial name matching fails!
+    let include_decoy_twins = spec.tier == DifficultyTierV51::FullStack
+        || matches!(spec.family_id, "F02" | "F06" | "F09");
+    if include_decoy_twins {
+        // Lookalike NON_PROD (UAT / STAGE) twins
+        push_group(
+            format!("GG_{pfx}_{reg}_UAT_FIN_LEDGER_RO"),
+            "ad",
+            "Finance ERP Ledger Read-Only (UAT)",
+            "Non-prod UAT Finance ledger validation",
+            vec![],
+            "UAT",
+            SpokeEnvKindV51::NonProd,
+            GroupDispositionV51::ApplicationEntitlement,
+            Some("app_erp_fin_uat"),
+            GroupRoleTagV51::NonProdDevNoise,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_STAGE_ENG_GIT_USER"),
+            "ad",
+            "Engineering Source Control & CI User (STAGE)",
+            "Non-prod staging Engineering CI test",
+            vec![],
+            "STAGE",
+            SpokeEnvKindV51::NonProd,
+            GroupDispositionV51::ApplicationEntitlement,
+            Some("app_git_ci_stg"),
+            GroupRoleTagV51::NonProdDevNoise,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_UAT_IT_DESK_RO"),
+            "ad",
+            "IT Service Desk Ticket Viewer (UAT)",
+            "Non-prod UAT IT service desk preview",
+            vec![],
+            "UAT",
+            SpokeEnvKindV51::NonProd,
+            GroupDispositionV51::ApplicationEntitlement,
+            Some("app_snow_uat"),
+            GroupRoleTagV51::NonProdDevNoise,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_STAGE_CLIN_EHR_VIEW"),
+            if spec.has_epic { "epic" } else { "ad" },
+            "Clinical EHR Baseline Viewer (STAGE)",
+            "Non-prod staging Clinical EHR training",
+            vec![],
+            "STAGE",
+            SpokeEnvKindV51::NonProd,
+            GroupDispositionV51::ApplicationEntitlement,
+            Some("app_ehr_stg"),
+            GroupRoleTagV51::NonProdDevNoise,
+        );
+
+        // Deprecated v1 PROD orphaned twins
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_FIN_LEDGER_V1"),
+            "ad",
+            "Finance ERP Ledger Read-Only v1",
+            "Deprecated 2023 legacy share — superseded, do not provision",
+            vec![],
+            "PROD",
+            SpokeEnvKindV51::Prod,
+            GroupDispositionV51::OrphanedDeprecatedDoNotAssign,
+            None,
+            GroupRoleTagV51::Orphaned,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_ENG_GIT_V1"),
+            "ad",
+            "Engineering Source Control & CI User v1",
+            "Deprecated 2023 legacy share — superseded, do not provision",
+            vec![],
+            "PROD",
+            SpokeEnvKindV51::Prod,
+            GroupDispositionV51::OrphanedDeprecatedDoNotAssign,
+            None,
+            GroupRoleTagV51::Orphaned,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_IT_DESK_V1"),
+            "ad",
+            "IT Service Desk Ticket Viewer v1",
+            "Deprecated 2023 legacy share — superseded, do not provision",
+            vec![],
+            "PROD",
+            SpokeEnvKindV51::Prod,
+            GroupDispositionV51::OrphanedDeprecatedDoNotAssign,
+            None,
+            GroupRoleTagV51::Orphaned,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_CLIN_EHR_V1"),
+            if spec.has_epic { "epic" } else { "ad" },
+            "Clinical EHR Baseline Viewer v1",
+            "Deprecated 2023 legacy share — superseded, do not provision",
+            vec![],
+            "PROD",
+            SpokeEnvKindV51::Prod,
+            GroupDispositionV51::OrphanedDeprecatedDoNotAssign,
+            None,
+            GroupRoleTagV51::Orphaned,
+        );
+
+        // Service-account daemon twins (populated on `svc_*` accounts in AD LDIF!)
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_FIN_LEDGER_SVC"),
+            "ad",
+            "Finance ERP Ledger Sync Daemons",
+            "SERVICE-ACCOUNT-ONLY: Finance feed daemons (svc_*)",
+            vec![],
+            "PROD",
+            SpokeEnvKindV51::Prod,
+            GroupDispositionV51::ServiceAccountOnlyDoNotAssign,
+            Some("infra_fin_sync"),
+            GroupRoleTagV51::ServiceAccountOnly,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_ENG_GIT_SVC"),
+            "ad",
+            "Engineering Git/CI Runner Daemons",
+            "SERVICE-ACCOUNT-ONLY: CI runner daemons (svc_*)",
+            vec![],
+            "PROD",
+            SpokeEnvKindV51::Prod,
+            GroupDispositionV51::ServiceAccountOnlyDoNotAssign,
+            Some("infra_ci_runners"),
+            GroupRoleTagV51::ServiceAccountOnly,
+        );
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_IT_DESK_SVC"),
+            "ad",
+            "IT Service Desk Polling Daemons",
+            "SERVICE-ACCOUNT-ONLY: ITSM poller daemons (svc_*)",
+            vec![],
+            "PROD",
+            SpokeEnvKindV51::Prod,
+            GroupDispositionV51::ServiceAccountOnlyDoNotAssign,
+            Some("infra_snow_sync"),
+            GroupRoleTagV51::ServiceAccountOnly,
+        );
+    }
+
+    // Pad up to target_count (32 for MultiSystem, 36 for FullStack) with extra realistic groups
+    // when decoy twins were not already added.
     type ExtraGroupSpec<'a> = (
         &'a str,
         &'a str,

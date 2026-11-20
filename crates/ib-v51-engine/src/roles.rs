@@ -152,6 +152,7 @@ pub fn role_mixes_prod_and_nonprod(
                         || hint.contains("QA")
                         || hint.contains("UAT")
                         || hint.contains("STG")
+                        || hint.contains("STAGE")
                     {
                         SpokeEnvKindV51::NonProd
                     } else {
