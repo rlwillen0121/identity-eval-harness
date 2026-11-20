@@ -153,14 +153,19 @@ impl IgaEngineBackendV51 for IgaEngineV51 {
         let live_collisions =
             detect_live_directory_collisions(world, &state.usernames, &state.correlation);
 
+        const MAX_PREVIEW_CUBES_ENGINE: usize = 5;
         let selected_keys: Vec<String> = match person_keys {
             Some(requested) if !requested.is_empty() => requested
                 .iter()
                 .filter(|k| state.cubes.contains_key(*k))
-                .take(12)
+                .take(MAX_PREVIEW_CUBES_ENGINE)
                 .cloned()
                 .collect(),
-            _ => select_representative_keys(&state.cubes, &state.lifecycles, 10),
+            _ => select_representative_keys(
+                &state.cubes,
+                &state.lifecycles,
+                MAX_PREVIEW_CUBES_ENGINE,
+            ),
         };
 
         let mut previews = Vec::with_capacity(selected_keys.len());
