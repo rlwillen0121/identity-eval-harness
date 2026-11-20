@@ -65,7 +65,7 @@ Root: `{"schema_version":"v5.1","transforms":{"<name>":<TransformExprV51>}}`
 }
 ```
 - `priority_rank`: `u32` (`1` = highest priority).
-- Canonical `attribute_mappings` keys: `legal_first_name`, `legal_last_name`, `preferred_first_name`, `work_email`, `personal_email`, `department`, `job_code`, `cost_center`, `country_iso2`, `office_location`, `manager_person_key`, `sponsor_person_key`, `hr_payroll_status`, `leave_type`, `legal_hold`, `contract_end_date`, `clinical_license_status`, `academic_status`, `affiliations_csv`.
+- Canonical `attribute_mappings` keys: `legal_first_name`, `legal_last_name`, `preferred_first_name`, `middle_name`, `work_email`, `personal_email`, `department`, `job_code`, `cost_center`, `country_iso2`, `office_location`, `manager_person_key`, `sponsor_person_key`, `hr_payroll_status`, `leave_type`, `legal_hold`, `contract_end_date`, `clinical_license_status`, `academic_status`, `affiliations_csv`.
 - `AffiliationTypeV51`: `"fte"`, `"part_time_staff"`, `"faculty_full_time"`, `"adjunct_faculty"`, `"seasonal_worker"`, `"student_worker"`, `"student"`, `"clinical_provider"`, `"clinical_resident"`, `"contingent_worker"`, `"vendor"`, `"affiliate"`.
 - `ServiceAccountClassifierV51` defaults: `account_prefixes`, `ou_substrings`, `require_spn_present`, `description_keywords` are optional (`#[serde(default)]`).
 

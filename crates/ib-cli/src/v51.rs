@@ -104,8 +104,7 @@ fn default_v51_dataset(root: &Path, suite: &str) -> PathBuf {
 }
 
 fn engine_backend() -> Result<Arc<dyn IgaEngineBackendV51>> {
-    // Coordinator wires `ib_v51_engine::IgaEngineV51::default()` here after parallel merge.
-    bail!("ib-v51-engine backend not yet wired in ib-cli")
+    Ok(Arc::new(ib_v51_engine::IgaEngineV51))
 }
 
 pub async fn execute(
@@ -153,12 +152,20 @@ fn build(root: &Path, args: V51BuildArgs) -> Result<Value> {
             bail!("output already contains dataset artifacts; use a new output directory");
         }
     }
-    // Coordinator wires `ib_v51_generator::write_v51_dataset(suite, &target, args.seed, args.freeze)` here.
-    let _ = (suite, args.seed, target);
-    bail!("ib-v51-generator dataset builder not yet wired in ib-cli")
+    let spec_path = root.join("SPEC-v5.1.md");
+    let engine = ib_v51_engine::IgaEngineV51;
+    let generated = ib_v51_generator::build_v51_dataset_with_engine(suite, args.seed, &engine)
+        .context("failed to generate v5.1 dataset")?;
+    let seal = ib_v51_generator::write_v51_dataset(&generated, &target, &spec_path)
+        .context("failed to write sealed v5.1 dataset")?;
+    Ok(json!({
+        "dataset_dir": target,
+        "seal": seal,
+    }))
 }
 
 fn validate(root: &Path, args: V51ValidateArgs) -> Result<(Value, u8)> {
+    let suite = args.suite.parse::<V51Suite>().map_err(usage_error)?;
     let dataset = args
         .dataset
         .as_deref()
@@ -166,8 +173,39 @@ fn validate(root: &Path, args: V51ValidateArgs) -> Result<(Value, u8)> {
         .unwrap_or_else(|| default_v51_dataset(root, &args.suite));
     let spec_path = root.join("SPEC-v5.1.md");
     let engine = engine_backend()?;
-    let _double_build = args.double_build;
-    let report = validate_v51_dataset(&dataset, &spec_path, engine.as_ref())?;
+    let mut report = validate_v51_dataset(&dataset, &spec_path, engine.as_ref())?;
+    if args.double_build {
+        let loaded = ib_v51_generator::load_v51_dataset(&dataset, Some(&spec_path))
+            .context("failed to load v5.1 dataset for --double-build check")?;
+        let rebuilt = ib_v51_generator::build_v51_dataset_with_engine(
+            suite,
+            loaded.seal.master_seed,
+            engine.as_ref(),
+        )
+        .context("failed to rebuild v5.1 dataset for --double-build check")?;
+        let reb_ep_bytes = ib_v51_generator::serialize_jsonl(&rebuilt.episodes)?;
+        let reb_or_bytes = ib_v51_generator::serialize_jsonl(&rebuilt.oracles)?;
+        let ep_eq = reb_ep_bytes == loaded.episodes_bytes;
+        let or_eq = reb_or_bytes == loaded.oracles_bytes;
+        let seeds = ib_v51_generator::all_base_v51_seeds(loaded.seal.master_seed);
+        let unique_seeds: std::collections::HashSet<u64> = seeds.iter().copied().collect();
+        let disjoint_ok = unique_seeds.len() == seeds.len() && seeds.len() == 108;
+        let det_passed = ep_eq && or_eq && disjoint_ok;
+        let mut details = Vec::new();
+        details.push(format!("episodes_byte_exact={ep_eq}"));
+        details.push(format!("oracles_byte_exact={or_eq}"));
+        details.push(format!(
+            "unique_base_seeds={}/{}",
+            unique_seeds.len(),
+            seeds.len()
+        ));
+        report.gates.push(ib_v51_runtime::GateResultV51 {
+            gate_id: "G-DET-V51".to_owned(),
+            passed: det_passed,
+            details,
+        });
+        report.passed = report.passed && det_passed;
+    }
     let code = if report.passed { 0 } else { 1 };
     Ok((serde_json::to_value(&report)?, code))
 }
