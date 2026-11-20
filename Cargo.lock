@@ -652,6 +652,10 @@ dependencies = [
  "ib-v5-schemas",
  "ib-v5-scoring",
  "ib-v5-validation",
+ "ib-v51-engine",
+ "ib-v51-generator",
+ "ib-v51-runtime",
+ "ib-v51-schemas",
  "libc",
  "serde",
  "serde_json",
@@ -888,6 +892,73 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "ib-v51-engine"
+version = "5.0.0"
+dependencies = [
+ "hex",
+ "ib-core",
+ "ib-v51-schemas",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "ib-v51-generator"
+version = "5.0.0"
+dependencies = [
+ "hex",
+ "ib-core",
+ "ib-v51-engine",
+ "ib-v51-schemas",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "ib-v51-runtime"
+version = "5.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "hex",
+ "ib-core",
+ "ib-providers",
+ "ib-v5-accounting",
+ "ib-v51-schemas",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_norway",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tiktoken-rs",
+ "tokio",
+]
+
+[[package]]
+name = "ib-v51-schemas"
+version = "5.0.0"
+dependencies = [
+ "ib-core",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
