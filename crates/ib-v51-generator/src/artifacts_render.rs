@@ -1,6 +1,6 @@
 //! Renders realistic, practitioner-grade engagement workspace files (`readonly_files`)
 //! directly from [`ScenarioBlueprintV51`], maintaining 100% consistency with `world` and `gold_config`
-//! while keeping total workspace size comfortably inside `< 55,000` bytes across all 108 cells.
+//! while keeping total workspace size cleanly inside `85,000..=142,000` bytes across all 108 cells.
 
 use std::fmt::Write as _;
 
@@ -155,8 +155,8 @@ fn render_workshop_notes_md(bp: &ScenarioBlueprintV51) -> String {
         out,
         "## 1. HRIS & Identity Data ({hr})\n\
         - **Sources:** `1`=`workday`, `2`=`{sec_id}`, `3`=`fieldglass_vms`; ignore `record_status` in `CANCELLED_DUPLICATE`, `WITHDRAWN`.\n\
-        - **Keys & Normalization:** Match `person_key` (exact) and `badge_or_univ_id` (case-insensitive); map `employee_id` from `badge_or_univ_id` (`workday`->`{sec_id}`->`fieldglass_vms`). Normalize `job_code` to trimmed uppercase (e.g. `ENG_SR`). Map `dept_code` & `office_code` per source before falling through `workday`->`{sec_id}`->`fieldglass_vms` so unmapped codes (`LEGACY-UNMAPPED`, `SITE-UNMAPPED`) fall through. Filter `\"TBD\"` on `manager_key` before fallback.\n\
-        - **Spoke Correlation:** Immutable `employee_id` first (`ad`/`entra`: `employeeId`, `sap`: `PERNR`, `epic`: `employee_badge`, `aws`: `employee_id`, `custom_rest`: `badge_id`), fallback case-insensitive `work_email` (`ad`/`entra`: `mail`, `sap`: `SMTP_ADDR`, `epic`/`aws`/`custom_rest`: `email`). Acquired `{acq}` accounts retain legacy mail.\n\
+        - **Keys & Normalization:** Configure all three authoritative match keys on every source: `person_key` (exact), `badge_or_univ_id` (case-insensitive), and `personal_email` (case-insensitive — required to bridge M&A and contractor-to-FTE dual-source rows whose `{sec_id}`/`fieldglass_vms` record uses a source-local key and legacy badge). Map `employee_id` from `badge_or_univ_id` (`workday`->`{sec_id}`->`fieldglass_vms`). Normalize `job_code` to trimmed uppercase (e.g. `ENG_SR`). Map `dept_code` & `office_code` per source before falling through `workday`->`{sec_id}`->`fieldglass_vms` so unmapped codes (`LEGACY-UNMAPPED`, `SITE-UNMAPPED`) fall through. Filter `\"TBD\"` on `manager_key` before fallback.\n\
+        - **Spoke Correlation:** Immutable `employee_id` first (`ad`/`entra`: `employeeId`, `sap`: `PERNR`, `epic`: `employee_badge`, `aws`: `employee_id`, `custom_rest`: `badge_id`), fallback case-insensitive `work_email` (`ad`/`entra`: `mail`, `sap`: `SMTP_ADDR`, `epic`/`aws`/`custom_rest`: `email`) for brownfield spoke accounts missing badge IDs. Acquired `{acq}` accounts retain legacy mail.\n\
         - **CMDB Retirement:** In `ad_and_spoke_groups.json`, empty `cmdb_app` (`\"\"`) or `CMDB-LEGACY-DECOMM` marks decommissioned apps (do not assign).\n",
         hr = bp.stakeholder_names.hr_lead,
         sec_id = sec_id,
@@ -272,11 +272,7 @@ fn render_security_charter_md(bp: &ScenarioBlueprintV51) -> String {
             spoke_notes.join("; ")
         )
     };
-    let sap_svc = if bp.spec.has_sap {
-        ", plus SAP prefix `svc_`/`sa_`"
-    } else {
-        ""
-    };
+    let sap_svc = if bp.spec.has_sap { ", and SAP" } else { "" };
     let additive_prose = if bp.spec.allow_additive_affiliations {
         "Retain all concurrent active affiliations (additive model)."
     } else {
@@ -310,7 +306,7 @@ fn render_security_charter_md(bp: &ScenarioBlueprintV51) -> String {
         {spoke_clause}\n\
         ## 3. Anti-Recycling, Service Accounts & Attribute Sync\n\
         - **7-Year Handle Lock:** Strip diacritics to ASCII, reserve numeric suffix space inside 20-char `sAMAccountName` (incl. 2-digit counters), check all five namespaces: live directory, disabled directory, legal-hold accounts, 7-year tombstone archive, reserved aliases.\n\
-        - **Service Accounts:** Non-human accounts sit in `OU=ServiceAccounts` and `OU=Users` (some non-prefixed). Exempt uncorrelated AD accounts via three independent rules: prefix `svc_`/`sa_`, under `OU=ServiceAccounts`, OR Kerberos SPN present{sap_svc}. Never exempt human orphans.\n\
+        - **Service Accounts:** Non-human accounts sit in `OU=ServiceAccounts` and `OU=Users` (some non-prefixed). Exempt uncorrelated AD accounts via three independent rules: prefix `svc_`/`sa_`, under `OU=ServiceAccounts`, OR Kerberos SPN present; also exempt prefix `svc_`/`sa_` on Entra, Custom REST{sap_svc}. Never exempt human orphans.\n\
         - **Attribute Sync:** Exclude service accounts, `0` null/blank overwrites, max {blast_pct} modified accounts. Sync `ad.department` (max 64), `ad.c` (strict ISO-2, max 2), `ad.l` (office, max 64), `ad.manager` (AD DN), `ad.mail` (max 256), `entra.department` (max 64), `entra.usageLocation` (strict ISO-2, max 2). Skip blank/null on every mapping; sync Active & Seasonal Furlough only.\n\n\
         ## 4. Role Hygiene, SoD & Day-2 Workflows\n\
         - **Role Hygiene & SoD:** Exclude service accounts from mining, never mix prod/non-prod (`DEV`/`QA`/`UAT`/`STAGE`), classify all groups in `ad_and_spoke_groups.json`, never assign decommissioned/unmapped or service-account-only groups. Block role co-bundling & Day-2 co-provisioning for **`SOD-FIN-01`** (SAP AP Invoice Posting vs. SAP Vendor Master Maintenance) and **`SOD-ENG-02`** (Prod Release Deployment Approver vs. Prod Mainline Code Committer).\n\
@@ -320,7 +316,7 @@ fn render_security_charter_md(bp: &ScenarioBlueprintV51) -> String {
         - **Headless Intake:** Active requesters only, bar contractors/vendors from privileged admin, require live-manager + app-owner approvals, block SoD. Callback `{wh_ep}` with HMAC-SHA256 header `{wh_hdr}` + idempotency key, verifying post-ticket-close aggregation.\n\n\
         ## 5. Cutover Dependencies & Abort Gates\n\
         - **Dependencies:** Ingest authoritative sources read-only first, then validate identity profiles & UID/UPN collisions. Aggregate target spokes read-only next, then correlate accounts & classify service accounts. Verify blast-radius & schema dry-run gates only after validation and correlation finish, then run Pilot OU sync & lifecycle validation. Enable global prod attribute sync & lifecycle automation strictly after Pilot OU passes, and activate Day-2 workflows & headless access intake last.\n\
-        - **Abort Gates:** Abort if planned null overwrites > `0`, uncorrelated human disables > `0`, any service account targeted for disable, schema errors > `0`, or global enablement precedes Pilot OU validation.",
+        - **Abort Gates:** Configure the automated cutover abort threshold to `0` uncorrelated human disables (`zero` tolerance — the dry-run gate MUST flag and halt if any uncorrelated human orphan accounts remain un-remediated prior to global enablement), `0` planned null overwrites, `0` schema errors, abort if any service account is targeted for disable, and require Pilot OU validation before global enablement.",
         company = bp.client.company_name,
         ciso = bp.stakeholder_names.ciso_lead,
         reg = bp.spec.regime_id,
@@ -391,6 +387,7 @@ fn render_iiq_transforms_xml(bp: &ScenarioBlueprintV51) -> String {
         String resolveContractEndDate(Link wd,Link sec,Link vms){{return fv(vms,wd,sec,\"contract_end_date\").trim();}}\n\
         String resolveClinicalLicense(Link wd,Link sec){{return firstVal(attr(sec,\"license_status\"),attr(wd,\"license_status\"),\"\").trim().toUpperCase();}}\n\
         String resolveAcademicStatus(Link wd,Link sec){{return firstVal(attr(sec,\"academic_status\"),attr(wd,\"academic_status\"),\"\").trim().toUpperCase();}}\n\
+        boolean correlateAuthoritative(Map known,Link rec){{String pk=attr(rec,\"person_key\").trim(),bg=attr(rec,\"badge_or_univ_id\").trim(),pe=attr(rec,\"personal_email\").trim();return (!pk.isEmpty()&&pk.equals(known.get(\"person_key\")))||(!bg.isEmpty()&&bg.equalsIgnoreCase((String)known.get(\"badge_or_univ_id\")))||(!pe.isEmpty()&&pe.equalsIgnoreCase((String)known.get(\"personal_email\")));}}\n\
         // `sec` = `{sec_id}`; `affiliations_csv` in Rule-Username-And-Lifecycle.xml\n\
         ]]></Source>\n\
         </Rule>\n",
@@ -537,7 +534,7 @@ fn render_vms_csv(records: &[RawSourceRecordV51]) -> String {
 }
 
 fn render_ad_ldif(bp: &ScenarioBlueprintV51) -> String {
-    let mut out = String::with_capacity(6500);
+    let mut out = String::with_capacity(28_000);
     let _ = writeln!(
         out,
         "# Active Directory LDIF Extract ({})",
@@ -545,52 +542,61 @@ fn render_ad_ldif(bp: &ScenarioBlueprintV51) -> String {
     );
     if let Some(ad_accounts) = bp.world.spoke_accounts.get("ad") {
         for acct in ad_accounts {
+            let emp_id = acct
+                .attributes
+                .get("employeeId")
+                .map(String::as_str)
+                .unwrap_or("");
+            let mail = acct
+                .attributes
+                .get("mail")
+                .map(String::as_str)
+                .unwrap_or("");
             let is_acquired = acct
                 .attributes
                 .get("userPrincipalName")
-                .is_some_and(|u| u.ends_with(&bp.client.acquired_domain));
-            let is_contractor = acct.native_dn_or_key.contains("OU=Contractors");
+                .is_some_and(|u| u.ends_with(&bp.client.acquired_domain))
+                || mail.ends_with(&bp.client.acquired_domain);
             let is_svc_or_orphan = acct.has_service_principal_name
                 || acct.account_id.starts_with("svc_")
                 || acct.account_id.starts_with("sa_")
                 || acct.native_dn_or_key.contains("OU=ServiceAccounts")
-                || acct.account_id == "jorphan_legacy";
+                || (emp_id.is_empty() && mail.is_empty());
             let is_legal_hold =
                 acct.attributes.get("legal_hold").map(String::as_str) == Some("true");
-            let is_special =
-                is_svc_or_orphan || is_legal_hold || !acct.enabled || is_acquired || is_contractor;
 
             let _ = writeln!(out, "dn: {}", acct.native_dn_or_key);
-            let keys: &[&str] = if is_legal_hold {
-                &[
-                    "sAMAccountName",
-                    "userPrincipalName",
-                    "employeeId",
-                    "legal_hold",
-                    "description",
-                ]
-            } else if is_svc_or_orphan {
-                &["sAMAccountName", "servicePrincipalName", "description"]
-            } else if is_acquired {
-                &["sAMAccountName", "userPrincipalName", "employeeId", "mail"]
-            } else if is_special {
-                &[
-                    "sAMAccountName",
-                    "userPrincipalName",
-                    "employeeId",
-                    "department",
-                    "c",
-                    "l",
-                ]
-            } else {
-                &["sAMAccountName", "employeeId"]
-            };
-            for &key in keys {
-                if let Some(val) = acct.attributes.get(key)
-                    && !val.is_empty()
-                {
-                    let _ = writeln!(out, "{key}: {val}");
-                }
+            let _ = writeln!(out, "sAMAccountName: {}", acct.account_id);
+            if (is_legal_hold || is_acquired || !acct.enabled)
+                && let Some(upn) = acct.attributes.get("userPrincipalName")
+                && !upn.is_empty()
+            {
+                let _ = writeln!(out, "userPrincipalName: {upn}");
+            }
+            if !emp_id.is_empty() {
+                let _ = writeln!(out, "employeeId: {emp_id}");
+            }
+            if (emp_id.is_empty() || is_acquired) && !mail.is_empty() {
+                let _ = writeln!(out, "mail: {mail}");
+            }
+            if let Some(dept) = acct.attributes.get("department")
+                && !dept.is_empty()
+            {
+                let _ = writeln!(out, "department: {dept}");
+            }
+            if let Some(spn) = acct.attributes.get("servicePrincipalName")
+                && !spn.is_empty()
+            {
+                let _ = writeln!(out, "servicePrincipalName: {spn}");
+            }
+            if is_legal_hold {
+                out.push_str("legal_hold: true\n");
+            }
+            if (is_legal_hold || is_svc_or_orphan)
+                && let Some(desc) = acct.attributes.get("description")
+                && !desc.is_empty()
+            {
+                let _ = writeln!(out, "description: {desc}");
             }
             if !acct.enabled {
                 out.push_str("userAccountControl: 514\n");
@@ -618,7 +624,7 @@ fn render_non_ad_spokes_json(bp: &ScenarioBlueprintV51) -> String {
             "\"{spoke_id}\":{{\"cols\":[\"id\",\"en\",\"corr\",\"ents\",\"meta\"],\"rows\":["
         );
         for (a_idx, acct) in accts.iter().enumerate() {
-            let corr = acct
+            let badge = acct
                 .attributes
                 .get("employeeId")
                 .or_else(|| acct.attributes.get("PERNR"))
@@ -626,7 +632,15 @@ fn render_non_ad_spokes_json(bp: &ScenarioBlueprintV51) -> String {
                 .or_else(|| acct.attributes.get("employee_id"))
                 .or_else(|| acct.attributes.get("badge_id"))
                 .map(String::as_str)
-                .unwrap_or("");
+                .filter(|s| !s.is_empty());
+            let email_fallback = acct
+                .attributes
+                .get("mail")
+                .or_else(|| acct.attributes.get("SMTP_ADDR"))
+                .or_else(|| acct.attributes.get("email"))
+                .map(String::as_str)
+                .filter(|s| !s.is_empty());
+            let corr = badge.or(email_fallback).unwrap_or("");
             let ents = acct.entitlement_ids.join("|");
             let mut extra = Vec::new();
             if let Some(uflag) = acct.sap_uflag {
@@ -801,7 +815,7 @@ fn render_connector_specs_md(bp: &ScenarioBlueprintV51) -> String {
             out,
             "## `aws` — AWS IAM Identity Center (SSO API)\n\
             - `POST /identitystore/ListUsers {{\"MaxResults\":{ps},\"NextToken\":null}}` (`MaxResults > {ps}` -> `HTTP 400`; cursor-token paging via `NextToken`).\n\
-            - `200 OK`: `{{\"Users\":[{{\"user_name\":\"aws_pers_01\",\"state\":\"ACTIVE\",\"employee_id\":\"{badge}\",\"email\":\"j.doe@{dom}\",\"permission_sets\":[\"GG_...\"]}}],\"NextToken\":\"aws_tok_2\"}}`.\n\
+            - `200 OK`: `{{\"Users\":[{{\"user_name\":\"aws_pers_001\",\"state\":\"ACTIVE\",\"employee_id\":\"{badge}\",\"email\":\"j.doe@{dom}\",\"permission_sets\":[\"GG_...\"]}}],\"NextToken\":\"aws_tok_2\"}}`.\n\
             - Page 2: `HTTP/1.1 429 Too Many Requests` (`ThrottlingException`) — retry required.\n",
             ps = aws.max_page_size,
         );
@@ -823,7 +837,7 @@ fn render_connector_specs_md(bp: &ScenarioBlueprintV51) -> String {
             out,
             "## `custom_rest` — Proprietary App (Custom REST)\n\
             - `GET /v1/accounts?limit={ps}&{c_param}=` (`limit > {ps}` -> `HTTP 400`; cursor-token paging passing `{c_resp}` in `{c_param}`).\n\
-            - `200 OK`: `{{\"items\":[{{\"{aid}\":\"usr_pers_01\",\"{st}\":\"ENABLED\",\"badge_id\":\"{badge}\",\"email\":\"j.doe@{dom}\",\"{ent}\":[\"{verb}{sample_rest_g}\"]}}],{cursor_frag}}}`.\n\
+            - `200 OK`: `{{\"items\":[{{\"{aid}\":\"usr_pers_001\",\"{st}\":\"ENABLED\",\"badge_id\":\"{badge}\",\"email\":\"j.doe@{dom}\",\"{ent}\":[\"{verb}{sample_rest_g}\"]}}],{cursor_frag}}}`.\n\
             - Raw entitlements prepend verb prefix `\"{verb}\"` (strip to match catalog IDs).",
             ps = rest.max_page_size,
             aid = rest.expected_account_id_field,
@@ -844,7 +858,7 @@ fn render_connector_specs_md(bp: &ScenarioBlueprintV51) -> String {
         if rest.injects_http_207_partial_on_write {
             let _ = writeln!(
                 out,
-                "- Batch write: `POST /v1/accounts/batch` -> `HTTP/1.1 207 Multi-Status` `{{\"results\":[{{\"id\":\"usr_pers_04\",\"status\":200}},{{\"id\":\"usr_pers_07\",\"status\":409,\"error\":\"role_locked\"}}]}}` — inspect per-item errors."
+                "- Batch write: `POST /v1/accounts/batch` -> `HTTP/1.1 207 Multi-Status` `{{\"results\":[{{\"id\":\"usr_pers_004\",\"status\":200}},{{\"id\":\"usr_pers_007\",\"status\":409,\"error\":\"role_locked\"}}]}}` — inspect per-item errors."
             );
         } else {
             let _ = writeln!(
