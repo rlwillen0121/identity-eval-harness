@@ -27,7 +27,10 @@ use crate::config::{DEFAULT_V51_MAX_OUTPUT_TOKENS, PricingRatesV51};
 use crate::workspace::{VirtualWorkspaceRuntimeV51, tool_definitions_v51};
 
 const ACTION_SCHEMA_NAME: &str = "tool_action";
-const MAX_REQUEST_BYTES_FOR_COMPACTION: usize = 145_000;
+/// Safe request-byte ceiling for `agy_cli` (safely below its 192 KB single-`USER_INPUT` stdin truncation wall).
+pub const MAX_REQUEST_BYTES_AGY_CLI: usize = 176_000;
+/// Request-byte ceiling for `codex_cli` and direct API providers without a 192 KB stdin limit.
+pub const MAX_REQUEST_BYTES_DEFAULT: usize = 450_000;
 const MAX_TRANSIENT_RETRIES: u64 = 2;
 const TRANSIENT_RETRY_BASE_MS: u64 = 750;
 const TOOL_RESULTS_HEADER: &str = "## Tool Execution Results\n";
@@ -35,8 +38,7 @@ const NON_NATIVE_ACTION_REMINDER: &str = "\n\nIMPORTANT: Reply in plain text wit
 const COMPACTED_WRITE_NATIVE_NOTE: &str =
     "[validated & stored in workspace; call read_workspace_file to inspect]";
 const COMPACTED_WRITE_TEXT_NOTE: &str = "[stored in workspace]";
-const COMPACTED_READ_BODY: &str =
-    r#"{"status":"OK","compacted_prior_turn":true,"note":"re-read file if still needed"}"#;
+const COMPACTED_READ_BODY: &str = r#"{"status":"OK","compacted_earlier_turn":true,"note":"prior output omitted for context budget; proceed with extracted notes"}"#;
 
 /// Execution options for a single v5.1 episode.
 #[derive(Debug, Clone)]
@@ -206,10 +208,20 @@ pub async fn run_v51_episode(
     let mut error_message: Option<String> = None;
     let mut last_turn_parse_error: Option<String> = None;
 
+    let max_compaction_bytes = if provider.kind() == "agy_cli" {
+        MAX_REQUEST_BYTES_AGY_CLI
+    } else {
+        MAX_REQUEST_BYTES_DEFAULT
+    };
+
     for turn_idx in 1..=max_turns {
         turns_used = turn_idx;
-        let compacted_messages =
-            compact_historical_messages(&system_prompt, &messages, native_tools);
+        let compacted_messages = compact_historical_messages_with_limit(
+            &system_prompt,
+            &messages,
+            native_tools,
+            max_compaction_bytes,
+        );
         let request = build_model_request(
             &system_prompt,
             &compacted_messages,
@@ -693,14 +705,32 @@ fn needs_corrective_retry_notice(err: &str) -> bool {
     .any(|needle| lower.contains(needle))
 }
 
-/// Compact older historical messages in a request copy so multi-turn transcripts stay
-/// well below CLI single-`USER_INPUT` limits (e.g., `agy_cli`'s 192 KB truncation wall)
-/// while keeping the immediately preceding turn intact.
+/// Compact older historical messages in a request copy using the `agy_cli` byte ceiling
+/// (`MAX_REQUEST_BYTES_AGY_CLI`) so multi-turn transcripts stay safely below `agy_cli`'s
+/// 192 KB truncation wall while keeping the immediately preceding turn intact.
 #[must_use]
 pub fn compact_historical_messages(
     system_prompt: &str,
     messages: &[Message],
     native_tools: bool,
+) -> Vec<Message> {
+    compact_historical_messages_with_limit(
+        system_prompt,
+        messages,
+        native_tools,
+        MAX_REQUEST_BYTES_AGY_CLI,
+    )
+}
+
+/// Compact older historical messages in a request copy until serialized bytes fall below
+/// `max_bytes`, preserving the immediately preceding turn intact and prioritizing
+/// `config/*` reads and verification outputs before `sources/*` and core requirement files.
+#[must_use]
+pub fn compact_historical_messages_with_limit(
+    system_prompt: &str,
+    messages: &[Message],
+    native_tools: bool,
+    max_bytes: usize,
 ) -> Vec<Message> {
     let mut compacted = messages.to_vec();
     let len = compacted.len();
@@ -750,25 +780,29 @@ pub fn compact_historical_messages(
         }
     }
 
-    if total_serialized_bytes(system_prompt, &compacted) <= MAX_REQUEST_BYTES_FOR_COMPACTION {
+    if total_serialized_bytes(system_prompt, &compacted) <= max_bytes {
         return compacted;
     }
 
-    // Two-pass safety valve over `0..read_compact_cutoff` (preserving the most recent 2 turns /
+    // Three-tier safety valve over `0..read_compact_cutoff` (preserving the most recent 2 turns /
     // at least the last 4 messages):
-    // - Pass 1 (`bulky_only = true`): compact only bulky data-exploration outputs
-    //   (`preview_identity_profile` and `read_workspace_file` under `sources/` or `config/`),
-    //   keeping core requirement/code artifacts (`engagement/*`, `legacy_iiq/*`, `target_specs/*`) intact.
-    // - Pass 2 (`bulky_only = false`): only if still >= 145_000 bytes after Pass 1, compact
-    //   remaining older `read_workspace_file` outputs until total < 145_000 bytes.
+    // - Tier 1: `preview_identity_profile`, `simulate_golive_dry_run`, `test_connector_sandbox`,
+    //   and `read_workspace_file` under `config/`.
+    // - Tier 2 (only if still >= `max_bytes`): `read_workspace_file` under `sources/`.
+    // - Tier 3 (only if still >= `max_bytes`): remaining older `read_workspace_file` outputs
+    //   (`engagement/*`, `legacy_iiq/*`, `target_specs/*`).
     let second_last_assistant_idx = compacted[..last_assistant_idx]
         .iter()
         .rposition(|m| m.role == Role::Assistant)
         .unwrap_or(0);
     let read_compact_cutoff = len.saturating_sub(4).min(second_last_assistant_idx);
 
-    for bulky_only in [true, false] {
-        if total_serialized_bytes(system_prompt, &compacted) < MAX_REQUEST_BYTES_FOR_COMPACTION {
+    for tier in [
+        CompactionTier::ConfigAndDiagnostics,
+        CompactionTier::Sources,
+        CompactionTier::RemainingReads,
+    ] {
+        if total_serialized_bytes(system_prompt, &compacted) < max_bytes {
             break;
         }
         for idx in 0..read_compact_cutoff {
@@ -785,21 +819,16 @@ pub fn compact_historical_messages(
             let modified = {
                 let msg = &mut compacted[idx];
                 match msg.role {
-                    Role::Tool => {
-                        compact_native_tool_result_message(msg, &tool_meta_by_id, bulky_only)
-                    }
+                    Role::Tool => compact_native_tool_result_message(msg, &tool_meta_by_id, tier),
                     Role::User => compact_user_tool_results_message(
                         &mut msg.content,
                         prev_assistant_paths.as_deref(),
-                        bulky_only,
+                        tier,
                     ),
                     Role::Assistant => false,
                 }
             };
-            if modified
-                && total_serialized_bytes(system_prompt, &compacted)
-                    < MAX_REQUEST_BYTES_FOR_COMPACTION
-            {
+            if modified && total_serialized_bytes(system_prompt, &compacted) < max_bytes {
                 break;
             }
         }
@@ -927,15 +956,34 @@ fn normalize_compaction_path(raw: &str) -> &str {
         .unwrap_or(trimmed)
 }
 
-fn is_bulky_exploration_path(path: &str) -> bool {
-    let normalized = normalize_compaction_path(path);
-    normalized.starts_with("sources/") || normalized.starts_with("config/")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompactionTier {
+    ConfigAndDiagnostics,
+    Sources,
+    RemainingReads,
+}
+
+fn should_compact_tool_output(tool_name: &str, path: Option<&str>, tier: CompactionTier) -> bool {
+    match (tier, tool_name) {
+        (
+            CompactionTier::ConfigAndDiagnostics,
+            "preview_identity_profile" | "simulate_golive_dry_run" | "test_connector_sandbox",
+        ) => true,
+        (CompactionTier::ConfigAndDiagnostics, "read_workspace_file") => path
+            .map(normalize_compaction_path)
+            .is_some_and(|p| p.starts_with("config/")),
+        (CompactionTier::Sources, "read_workspace_file") => path
+            .map(normalize_compaction_path)
+            .is_some_and(|p| p.starts_with("sources/")),
+        (CompactionTier::RemainingReads, "read_workspace_file") => true,
+        _ => false,
+    }
 }
 
 fn compact_native_tool_result_message(
     msg: &mut Message,
     tool_meta_by_id: &BTreeMap<String, (String, Option<String>)>,
-    bulky_only: bool,
+    tier: CompactionTier,
 ) -> bool {
     if msg.content == COMPACTED_READ_BODY {
         return false;
@@ -947,27 +995,15 @@ fn compact_native_tool_result_message(
     let Some((tool_name, arg_path)) = meta else {
         return false;
     };
-    let should_compact = match tool_name.as_str() {
-        "preview_identity_profile" => true,
-        "read_workspace_file" => {
-            if !bulky_only {
-                true
-            } else if let Some(path) = arg_path.as_deref() {
-                is_bulky_exploration_path(path)
-            } else {
-                serde_json::from_str::<Value>(&msg.content)
-                    .ok()
-                    .and_then(|v| {
-                        v.get("path")
-                            .and_then(Value::as_str)
-                            .map(is_bulky_exploration_path)
-                    })
-                    .unwrap_or(false)
-            }
-        }
-        _ => false,
+    let parsed_path = if tool_name == "read_workspace_file" && arg_path.is_none() {
+        serde_json::from_str::<Value>(&msg.content)
+            .ok()
+            .and_then(|v| v.get("path").and_then(Value::as_str).map(str::to_owned))
+    } else {
+        None
     };
-    if should_compact {
+    let effective_path = arg_path.as_deref().or(parsed_path.as_deref());
+    if should_compact_tool_output(tool_name, effective_path, tier) {
         msg.content = COMPACTED_READ_BODY.to_owned();
         true
     } else {
@@ -1029,7 +1065,7 @@ fn extract_assistant_action_paths(text: &str) -> Vec<Option<String>> {
 fn compact_user_tool_results_message(
     content: &mut String,
     prev_assistant_paths: Option<&[Option<String>]>,
-    bulky_only: bool,
+    tier: CompactionTier,
 ) -> bool {
     let Some(rest) = content.strip_prefix(TOOL_RESULTS_HEADER) else {
         return false;
@@ -1050,37 +1086,32 @@ fn compact_user_tool_results_message(
         let Some(map) = entry.as_object_mut() else {
             continue;
         };
-        let tool_name = map
+        let Some(tool_name) = map
             .get("name")
             .or_else(|| map.get("action"))
-            .and_then(Value::as_str);
-        let should_compact = match tool_name {
-            Some("preview_identity_profile") => true,
-            Some("read_workspace_file") => {
-                if !bulky_only {
-                    true
-                } else {
-                    let path = map
-                        .get("result")
-                        .and_then(|r| r.get("path"))
-                        .and_then(Value::as_str)
-                        .or_else(|| map.get("path").and_then(Value::as_str))
-                        .or_else(|| {
-                            prev_assistant_paths
-                                .and_then(|paths| paths.get(entry_idx))
-                                .and_then(Option::as_deref)
-                        });
-                    path.is_some_and(is_bulky_exploration_path)
-                }
-            }
-            _ => false,
+            .and_then(Value::as_str)
+        else {
+            continue;
         };
-        if !should_compact {
+        let path = map
+            .get("result")
+            .and_then(|r| r.get("path"))
+            .and_then(Value::as_str)
+            .or_else(|| map.get("path").and_then(Value::as_str))
+            .or_else(|| {
+                prev_assistant_paths
+                    .and_then(|paths| paths.get(entry_idx))
+                    .and_then(Option::as_deref)
+            });
+        if !should_compact_tool_output(tool_name, path, tier) {
             continue;
         }
         let already_compacted = map
             .get("result")
-            .and_then(|r| r.get("compacted_prior_turn"))
+            .and_then(|r| {
+                r.get("compacted_earlier_turn")
+                    .or_else(|| r.get("compacted_prior_turn"))
+            })
             .and_then(Value::as_bool)
             == Some(true);
         if !already_compacted {

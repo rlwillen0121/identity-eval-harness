@@ -6,7 +6,10 @@ use ib_core::hashing::sha256_hex;
 use ib_providers::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall, Usage,
 };
-use ib_v51_runtime::runner::compact_historical_messages;
+use ib_v51_runtime::runner::{
+    MAX_REQUEST_BYTES_AGY_CLI, MAX_REQUEST_BYTES_DEFAULT, compact_historical_messages,
+    compact_historical_messages_with_limit,
+};
 use ib_v51_runtime::{
     CONFIG_FILE_PATHS_V51, PLATFORM_REFERENCE_V51, PricingRatesV51, RunV51EpisodeOptions,
     RunV51SuiteOptions, VirtualWorkspaceRuntimeV51, load_pricing_v51, load_run_config_v51,
@@ -1221,10 +1224,10 @@ async fn mid_episode_parse_error_recovers_on_next_turn_and_completes() {
 }
 
 #[test]
-fn historical_compaction_keeps_18_turn_heavy_episode_under_145kb() {
+fn historical_compaction_keeps_18_turn_heavy_episode_under_agy_cli_limit() {
     let system_prompt = "x".repeat(3_500);
     let big_write_payload = "w".repeat(15_360);
-    let big_read_payload = "r".repeat(15_360);
+    let big_read_payload = "r".repeat(20_000);
 
     // Build an 18-turn !native_tools transcript with 10x 15KB writes + 10x 15KB reads
     let mut text_messages = vec![Message::user("opening".repeat(2_000))];
@@ -1297,8 +1300,8 @@ fn historical_compaction_keeps_18_turn_heavy_episode_under_145kb() {
             .map(|m| m.content.len() + 32)
             .sum::<usize>();
     assert!(
-        total_text_bytes < 145_000,
-        "compacted !native_tools transcript must be < 145_000 bytes, got {total_text_bytes}"
+        total_text_bytes < MAX_REQUEST_BYTES_AGY_CLI,
+        "compacted !native_tools transcript must be < {MAX_REQUEST_BYTES_AGY_CLI} bytes, got {total_text_bytes}"
     );
     // Last 2 messages must remain 100% intact
     let len = text_messages.len();
@@ -1369,8 +1372,8 @@ fn historical_compaction_keeps_18_turn_heavy_episode_under_145kb() {
             })
             .sum::<usize>();
     assert!(
-        total_native_bytes < 145_000,
-        "compacted native_tools transcript must be < 145_000 bytes, got {total_native_bytes}"
+        total_native_bytes < MAX_REQUEST_BYTES_AGY_CLI,
+        "compacted native_tools transcript must be < {MAX_REQUEST_BYTES_AGY_CLI} bytes, got {total_native_bytes}"
     );
     let nlen = native_messages.len();
     assert_eq!(compacted_native[nlen - 2], native_messages[nlen - 2]);
@@ -1570,7 +1573,7 @@ async fn non_native_prompt_avoids_input_schema_sets_action_schema_and_appends_re
         )));
     }
     let compacted = compact_historical_messages("sys", &msgs, false);
-    assert!(compacted[2].content.contains("compacted_prior_turn"));
+    assert!(compacted[2].content.contains("compacted_earlier_turn"));
     assert!(compacted[2].content.ends_with(expected_reminder));
 }
 
@@ -1668,7 +1671,7 @@ async fn corrective_retry_appends_user_notice_on_function_call_and_token_limit_e
 }
 
 #[test]
-fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sources_and_config() {
+fn three_tier_compaction_compacts_config_and_diagnostics_before_sources_and_engagement() {
     let system_prompt = "s".repeat(3_000);
     let workshop_notes = format!("WORKSHOP_NOTES_SENTINEL: {}", "n".repeat(12_000));
     let legacy_iiq_rule = format!("LEGACY_IIQ_SENTINEL: {}", "b".repeat(12_000));
@@ -1679,11 +1682,13 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
         "c".repeat(25_000)
     );
     let preview_blob = "p".repeat(25_000);
+    let dry_run_blob = "d".repeat(15_000);
+    let sandbox_blob = "x".repeat(15_000);
 
-    // 1. !native_tools transcript: Turn 1 mixes engagement/workshop_notes.md + sources/ad_directory.ldif
-    //    in the SAME `## Tool Execution Results` block; Turn 2 reads legacy_iiq/rule.bsh + config/identity_profile.json;
-    //    Turn 3 reads target_specs/ad.md + sources/ad_directory.ldif page 2 + preview_identity_profile;
-    //    Turns 4-5 are recent turns kept completely intact.
+    // 1. !native_tools transcript (~219 KB total):
+    //    Tier 1 compacts config/*, preview_identity_profile, simulate_golive_dry_run, and
+    //    test_connector_sandbox (~80 KB), bringing total to ~139 KB (< 176_000) so BOTH
+    //    sources/* and engagement/*/legacy_iiq/*/target_specs/* remain intact!
     let mut text_messages = vec![Message::user("opening".repeat(2_000))];
 
     // Turn 1 (mixed engagement + sources in ONE multi-call Tool Execution Results block)
@@ -1742,13 +1747,15 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
         .unwrap()
     )));
 
-    // Turn 3 (target_specs + sources page 2 + preview_identity_profile)
+    // Turn 3 (target_specs + sources page 2 + Tier 1 diagnostics)
     text_messages.push(Message::assistant(
         serde_json::to_string(&json!({
             "actions": [
                 {"action": "read_workspace_file", "arguments": {"path": "target_specs/ad.md"}},
                 {"action": "read_workspace_file", "arguments": {"path": "sources/ad_directory.ldif", "start_line": 301, "end_line": 600}},
-                {"action": "preview_identity_profile", "arguments": {"person_keys": null}}
+                {"action": "preview_identity_profile", "arguments": {"person_keys": null}},
+                {"action": "simulate_golive_dry_run", "arguments": {}},
+                {"action": "test_connector_sandbox", "arguments": {"connector_id": "ad"}}
             ]
         }))
         .unwrap(),
@@ -1771,6 +1778,16 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
                 "tool_call_id": "t3_prev",
                 "name": "preview_identity_profile",
                 "result": {"preview_count": 5, "total_identities": 140, "blob": preview_blob}
+            },
+            {
+                "tool_call_id": "t3_dry",
+                "name": "simulate_golive_dry_run",
+                "result": {"ok": true, "blob": dry_run_blob}
+            },
+            {
+                "tool_call_id": "t3_sbx",
+                "name": "test_connector_sandbox",
+                "result": {"ok": true, "blob": sandbox_blob}
             }
         ]))
         .unwrap()
@@ -1800,40 +1817,97 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
             .map(|m| m.content.len() + 32)
             .sum::<usize>();
     assert!(
-        total_text_bytes < 145_000,
-        "two-pass !native_tools compaction must bring payload < 145_000 bytes, got {total_text_bytes}"
+        total_text_bytes < MAX_REQUEST_BYTES_AGY_CLI,
+        "three-tier !native_tools compaction must bring payload < {MAX_REQUEST_BYTES_AGY_CLI} bytes, got {total_text_bytes}"
     );
-    // Core artifacts MUST remain intact in Pass 1!
+    // Core artifacts AND sources/* MUST remain intact when Tier 1 alone suffices!
     assert!(
         compacted_text[2]
             .content
             .contains("WORKSHOP_NOTES_SENTINEL"),
-        "engagement/workshop_notes.md must remain intact in Pass 1"
+        "engagement/workshop_notes.md must remain intact"
+    );
+    assert!(
+        compacted_text[2].content.contains("dn: CN=User"),
+        "sources/ad_directory.ldif page 1 must stay intact when Tier 1 gets under limit"
     );
     assert!(
         compacted_text[4].content.contains("LEGACY_IIQ_SENTINEL"),
-        "legacy_iiq/correlation.bsh must remain intact in Pass 1"
+        "legacy_iiq/correlation.bsh must remain intact"
     );
     assert!(
         compacted_text[6].content.contains("TARGET_SPEC_SENTINEL"),
-        "target_specs/ad.md must remain intact in Pass 1"
-    );
-    // Bulky sources/ad_directory.ldif page 1 in Turn 1 MUST be selectively compacted!
-    assert!(
-        compacted_text[2].content.contains("compacted_prior_turn"),
-        "sources/ad_directory.ldif entry in Turn 1 must be compacted"
+        "target_specs/ad.md must remain intact"
     );
     assert!(
-        !compacted_text[2].content.contains("dn: CN=User"),
-        "sources/ad_directory.ldif body must be replaced in Turn 1"
+        compacted_text[6].content.contains("dn: CN=User"),
+        "sources/ad_directory.ldif page 2 must stay intact when Tier 1 gets under limit"
     );
-    // Config dump in Turn 2 (resolved via preceding assistant action path) MUST be compacted!
+    // Tier 1 targets MUST be compacted and never instruct re-reading!
     assert!(
-        compacted_text[4].content.contains("compacted_prior_turn"),
-        "config/identity_profile.json entry in Turn 2 must be compacted"
+        compacted_text[4].content.contains("compacted_earlier_turn"),
+        "config/identity_profile.json entry in Turn 2 must be compacted in Tier 1"
+    );
+    assert!(
+        compacted_text[4]
+            .content
+            .contains("proceed with extracted notes")
+            && !compacted_text[4].content.contains("re-read"),
+        "compacted body must direct proceeding with extracted notes, never re-reading"
+    );
+    assert!(
+        compacted_text[6].content.contains("compacted_earlier_turn"),
+        "Tier 1 diagnostics in Turn 3 must be compacted"
+    );
+    assert!(
+        !compacted_text[6].content.contains(&preview_blob)
+            && !compacted_text[6].content.contains(&dry_run_blob)
+            && !compacted_text[6].content.contains(&sandbox_blob),
+        "preview_identity_profile, simulate_golive_dry_run, and test_connector_sandbox must all be compacted in Tier 1"
     );
 
-    // 2. native_tools transcript with identical two-pass behavior
+    // 2. When sources/* pushes post-Tier-1 size >= MAX_REQUEST_BYTES_AGY_CLI, Tier 2 compacts
+    //    sources/* while still preserving engagement/*, legacy_iiq/*, and target_specs/*.
+    let mut heavy_sources_messages = text_messages.clone();
+    let hr_dump = format!("{{\"employees\":\"{}\"}}", "h".repeat(50_000));
+    heavy_sources_messages.insert(
+        3,
+        Message::assistant(
+            r#"{"actions":[{"action":"read_workspace_file","arguments":{"path":"sources/workday_hr.json"}}]}"#,
+            vec![],
+        ),
+    );
+    heavy_sources_messages.insert(
+        4,
+        Message::user(format!(
+            "## Tool Execution Results\n{}",
+            serde_json::to_string(&json!([{
+                "tool_call_id": "t1b_hr",
+                "name": "read_workspace_file",
+                "result": {"status": "OK", "path": "sources/workday_hr.json", "content": hr_dump}
+            }]))
+            .unwrap()
+        )),
+    );
+    let compacted_tier2 =
+        compact_historical_messages(&system_prompt, &heavy_sources_messages, false);
+    assert!(
+        compacted_tier2[2]
+            .content
+            .contains("WORKSHOP_NOTES_SENTINEL")
+    );
+    assert!(compacted_tier2[6].content.contains("LEGACY_IIQ_SENTINEL"));
+    assert!(compacted_tier2[8].content.contains("TARGET_SPEC_SENTINEL"));
+    assert!(
+        !compacted_tier2[2].content.contains("dn: CN=User")
+            && compacted_tier2[2]
+                .content
+                .contains("compacted_earlier_turn"),
+        "Tier 2 must compact sources/ad_directory.ldif when still >= max_bytes after Tier 1"
+    );
+
+    // 3. native_tools transcript verifies Tier 1 compacts config/* and diagnostics BEFORE sources/*
+    let native_ldif_page = "dn: CN=User,OU=Users,DC=corp,DC=example\n".repeat(1_550); // ~62 KB per page -> ~165 KB base without Tier 1
     let mut native_messages = vec![Message::user("opening".repeat(2_000))];
     let make_read_call = |id: &str, path: &str| {
         let mut args = Map::new();
@@ -1858,7 +1932,7 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
     ));
     native_messages.push(Message::tool(
         "n1_ldif1",
-        json!({"status": "OK", "path": "sources/ad_directory.ldif", "content": ldif_page})
+        json!({"status": "OK", "path": "sources/ad_directory.ldif", "content": native_ldif_page})
             .to_string(),
     ));
 
@@ -1868,6 +1942,21 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
             make_read_call("n2_iiq", "legacy_iiq/correlation.bsh"),
             make_read_call("n2_ldif2", "sources/ad_directory.ldif"),
             make_read_call("n2_cfg", "config/identity_profile.json"),
+            ToolCall {
+                id: "n2_prev".to_owned(),
+                name: "preview_identity_profile".to_owned(),
+                arguments: Map::new(),
+            },
+            ToolCall {
+                id: "n2_dry".to_owned(),
+                name: "simulate_golive_dry_run".to_owned(),
+                arguments: Map::new(),
+            },
+            ToolCall {
+                id: "n2_sbx".to_owned(),
+                name: "test_connector_sandbox".to_owned(),
+                arguments: Map::new(),
+            },
         ],
     ));
     native_messages.push(Message::tool(
@@ -1877,13 +1966,25 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
     ));
     native_messages.push(Message::tool(
         "n2_ldif2",
-        json!({"status": "OK", "path": "sources/ad_directory.ldif", "content": ldif_page})
+        json!({"status": "OK", "path": "sources/ad_directory.ldif", "content": native_ldif_page})
             .to_string(),
     ));
     native_messages.push(Message::tool(
         "n2_cfg",
         json!({"status": "OK", "path": "config/identity_profile.json", "content": config_dump})
             .to_string(),
+    ));
+    native_messages.push(Message::tool(
+        "n2_prev",
+        json!({"status": "OK", "blob": preview_blob}).to_string(),
+    ));
+    native_messages.push(Message::tool(
+        "n2_dry",
+        json!({"status": "OK", "blob": dry_run_blob}).to_string(),
+    ));
+    native_messages.push(Message::tool(
+        "n2_sbx",
+        json!({"status": "OK", "blob": sandbox_blob}).to_string(),
     ));
 
     // Recent 2 turns
@@ -1909,16 +2010,118 @@ fn two_pass_compaction_preserves_engagement_and_legacy_iiq_while_compacting_sour
             })
             .sum::<usize>();
     assert!(
-        total_native_bytes < 145_000,
-        "two-pass native_tools compaction must bring payload < 145_000 bytes, got {total_native_bytes}"
+        total_native_bytes < MAX_REQUEST_BYTES_AGY_CLI,
+        "three-tier native_tools compaction must bring payload < {MAX_REQUEST_BYTES_AGY_CLI} bytes, got {total_native_bytes}"
     );
-    // engagement/workshop_notes.md (idx 2) and legacy_iiq/correlation.bsh (idx 5) stay intact
+    // engagement/workshop_notes.md (idx 2), sources/ad_directory.ldif (idx 3, 6), and
+    // legacy_iiq/correlation.bsh (idx 5) stay intact because Tier 1 alone dropped below 176 KB
     assert!(
         compacted_native[2]
             .content
             .contains("WORKSHOP_NOTES_SENTINEL")
     );
+    assert!(compacted_native[3].content.contains("dn: CN=User"));
     assert!(compacted_native[5].content.contains("LEGACY_IIQ_SENTINEL"));
-    // sources/ad_directory.ldif page 1 (idx 3) was compacted
-    assert!(compacted_native[3].content.contains("compacted_prior_turn"));
+    assert!(compacted_native[6].content.contains("dn: CN=User"));
+    // config/* (idx 7) and diagnostics (idx 8, 9, 10) were compacted in Tier 1
+    for (idx, msg) in compacted_native.iter().enumerate().take(11).skip(7) {
+        assert!(
+            msg.content.contains("compacted_earlier_turn"),
+            "native_tools Tier 1 msg idx {idx} must be compacted"
+        );
+        assert!(!msg.content.contains("re-read"));
+    }
+
+    // 4. Verify codex_cli / default ceiling (450_000) leaves a ~200 KB transcript uncompacted
+    let compacted_codex = compact_historical_messages_with_limit(
+        &system_prompt,
+        &text_messages,
+        false,
+        MAX_REQUEST_BYTES_DEFAULT,
+    );
+    assert_eq!(MAX_REQUEST_BYTES_DEFAULT, 450_000);
+    assert_eq!(
+        compacted_codex, text_messages,
+        "200+ KB transcript must remain completely uncompacted under MAX_REQUEST_BYTES_DEFAULT (450_000)"
+    );
+}
+
+#[tokio::test]
+async fn run_v51_episode_uses_provider_aware_compaction_ceilings() {
+    let mut ep = sample_episode("ep_01", "F01");
+    ep.max_assistant_generations = 6;
+    ep.max_calls_per_turn = 3;
+    // Populate readonly_files and canonical_person_keys so preview_identity_profile (~48 KB, Tier 1)
+    // plus sources/* (~140 KB, Tier 2) reach ~202 KB (> 176 KB, < 450 KB).
+    ep.world.canonical_person_keys = (1..=25)
+        .map(|i| format!("pers_{i:04}_{}", "p".repeat(1_800)))
+        .collect();
+    ep.readonly_files.insert(
+        "sources/workday_hr.json".to_owned(),
+        format!("{{\"records\":\"{}\"}}", "w".repeat(85_000)),
+    );
+    ep.readonly_files.insert(
+        "sources/ad_directory.ldif".to_owned(),
+        format!("dn: CN=Test\n# {}", "a".repeat(55_000)),
+    );
+    let oracle = sample_oracle("ep_01", "F01");
+
+    let msg = |text: &str| ModelResponse {
+        text: Some(text.to_owned()),
+        ..ModelResponse::default()
+    };
+    let build_responses = || {
+        vec![
+            msg(
+                r#"{"actions":[{"action":"preview_identity_profile","arguments":{"person_keys":null}}]}"#,
+            ),
+            msg(
+                r#"{"actions":[{"action":"read_workspace_file","arguments":{"path":"sources/workday_hr.json"}}]}"#,
+            ),
+            msg(
+                r#"{"actions":[{"action":"read_workspace_file","arguments":{"path":"sources/ad_directory.ldif"}}]}"#,
+            ),
+            msg(r#"{"actions":[{"action":"list_workspace","arguments":{}}]}"#),
+            msg(
+                r#"{"actions":[{"action":"commit_deployment","arguments":{"summary_notes":"done"}}]}"#,
+            ),
+        ]
+    };
+
+    let agy_provider = CapturingScriptedProvider::new("agy_cli", false, build_responses());
+    let codex_provider = CapturingScriptedProvider::new("codex_cli", false, build_responses());
+    let engine = MockEngine::default();
+    let opts = RunV51EpisodeOptions::default();
+
+    let _ = run_v51_episode(&ep, Some(&oracle), &engine, &agy_provider, &opts)
+        .await
+        .unwrap();
+    let _ = run_v51_episode(&ep, Some(&oracle), &engine, &codex_provider, &opts)
+        .await
+        .unwrap();
+
+    let agy_reqs = agy_provider.requests.lock().unwrap();
+    let codex_reqs = codex_provider.requests.lock().unwrap();
+    assert_eq!(agy_reqs.len(), 5);
+    assert_eq!(codex_reqs.len(), 5);
+
+    // On Turn 5 (request index 4), agy_cli compacted Tier 1 (preview_identity_profile at msg 2)
+    // while keeping sources/workday_hr.json (msg 4) intact; codex_cli compacted neither!
+    let agy_final_msgs = &agy_reqs[4].messages;
+    assert!(agy_final_msgs[2].content.contains("compacted_earlier_turn"));
+    assert!(!agy_final_msgs[2].content.contains("re-read"));
+    assert!(
+        agy_final_msgs[4].content.contains(&"w".repeat(1_000)),
+        "agy_cli must preserve sources/workday_hr.json after Tier 1 compacts preview_identity_profile"
+    );
+
+    let codex_final_msgs = &codex_reqs[4].messages;
+    assert!(
+        codex_final_msgs[2].content.contains("pers_0001_"),
+        "codex_cli must leave preview_identity_profile uncompacted at ~200 KB"
+    );
+    assert!(
+        codex_final_msgs[4].content.contains(&"w".repeat(1_000)),
+        "codex_cli must leave sources/workday_hr.json uncompacted at ~200 KB"
+    );
 }
