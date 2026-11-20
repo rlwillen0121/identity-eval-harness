@@ -165,17 +165,45 @@ fn build_gold_transforms(bp: &ScenarioBlueprintV51, sec_id: &str) -> TransformsC
         },
     );
 
+    // Map each source through office_lookup BEFORE first_valid so unmapped `"SITE-UNMAPPED"`
+    // resolves to "" and falls through cleanly to lower-priority sources!
     t.insert(
         "normalize_office_location".to_owned(),
-        lookup(
-            trim(first_valid(vec![
-                src("workday", "office_code"),
-                src(sec_id, "office_code"),
-                src("fieldglass_vms", "office_code"),
-            ])),
-            &bp.client.office_lookup,
-            "",
-        ),
+        first_valid(vec![
+            lookup(
+                trim(src("workday", "office_code")),
+                &bp.client.office_lookup,
+                "",
+            ),
+            lookup(
+                trim(src(sec_id, "office_code")),
+                &bp.client.office_lookup,
+                "",
+            ),
+            lookup(
+                trim(src("fieldglass_vms", "office_code")),
+                &bp.client.office_lookup,
+                "",
+            ),
+        ]),
+    );
+
+    let filter_tbd_manager = |source_id: &str| -> TransformExprV51 {
+        TransformExprV51::Conditional {
+            left: Box::new(upper(trim(src(source_id, "manager_key")))),
+            cmp: CompareOpV51::Eq,
+            right: Some(Box::new(lit("TBD"))),
+            if_true: Box::new(lit("")),
+            if_false: Box::new(trim(src(source_id, "manager_key"))),
+        }
+    };
+    t.insert(
+        "normalize_manager_person_key".to_owned(),
+        first_valid(vec![
+            filter_tbd_manager("workday"),
+            filter_tbd_manager(sec_id),
+            filter_tbd_manager("fieldglass_vms"),
+        ]),
     );
 
     t.insert(
@@ -418,11 +446,7 @@ fn build_gold_identity_profile(
     );
     attrs.insert(
         "manager_person_key".to_owned(),
-        trim(first_valid(vec![
-            src("workday", "manager_key"),
-            src(sec_id, "manager_key"),
-            src("fieldglass_vms", "manager_key"),
-        ])),
+        tref("normalize_manager_person_key"),
     );
     attrs.insert(
         "sponsor_person_key".to_owned(),
@@ -1051,6 +1075,19 @@ fn build_gold_role_model(bp: &ScenarioBlueprintV51) -> RoleModelConfigV51 {
             .map(|g| g.record.group_id.clone())
             .expect("required group tag present")
     };
+    let find_opt = |tag: GroupRoleTagV51| -> Option<String> {
+        bp.groups
+            .iter()
+            .find(|g| g.role_tag == tag)
+            .map(|g| g.record.group_id.clone())
+    };
+    let pair_ents = |primary: GroupRoleTagV51, secondary: GroupRoleTagV51| -> Vec<String> {
+        let mut ents = vec![find(primary)];
+        if let Some(sec_gid) = find_opt(secondary) {
+            ents.push(sec_gid);
+        }
+        ents
+    };
 
     let all_emp_affs = vec![
         AffiliationTypeV51::Fte,
@@ -1070,7 +1107,10 @@ fn build_gold_role_model(bp: &ScenarioBlueprintV51) -> RoleModelConfigV51 {
             allowed_affiliations: all_emp_affs.clone(),
             match_departments: vec![],
             match_job_codes: vec![],
-            entitlement_ids: vec![find(GroupRoleTagV51::AllEmployeeBase)],
+            entitlement_ids: pair_ents(
+                GroupRoleTagV51::AllEmployeeBase,
+                GroupRoleTagV51::AllEmployeeBaseEntra,
+            ),
             requires_app_owner_approval: false,
         },
         MinedRoleV51 {
@@ -1079,7 +1119,10 @@ fn build_gold_role_model(bp: &ScenarioBlueprintV51) -> RoleModelConfigV51 {
             allowed_affiliations: vec![AffiliationTypeV51::Fte, AffiliationTypeV51::PartTimeStaff],
             match_departments: vec!["Finance".to_owned()],
             match_job_codes: vec![],
-            entitlement_ids: vec![find(GroupRoleTagV51::FinanceBirthright)],
+            entitlement_ids: pair_ents(
+                GroupRoleTagV51::FinanceBirthright,
+                GroupRoleTagV51::FinanceBirthrightSpoke,
+            ),
             requires_app_owner_approval: false,
         },
         MinedRoleV51 {
@@ -1088,7 +1131,10 @@ fn build_gold_role_model(bp: &ScenarioBlueprintV51) -> RoleModelConfigV51 {
             allowed_affiliations: vec![AffiliationTypeV51::Fte, AffiliationTypeV51::PartTimeStaff],
             match_departments: vec!["Engineering".to_owned()],
             match_job_codes: vec![],
-            entitlement_ids: vec![find(GroupRoleTagV51::EngineeringBirthright)],
+            entitlement_ids: pair_ents(
+                GroupRoleTagV51::EngineeringBirthright,
+                GroupRoleTagV51::EngineeringBirthrightSpoke,
+            ),
             requires_app_owner_approval: false,
         },
         MinedRoleV51 {
@@ -1097,7 +1143,10 @@ fn build_gold_role_model(bp: &ScenarioBlueprintV51) -> RoleModelConfigV51 {
             allowed_affiliations: vec![AffiliationTypeV51::Fte, AffiliationTypeV51::PartTimeStaff],
             match_departments: vec!["Information Technology".to_owned()],
             match_job_codes: vec![],
-            entitlement_ids: vec![find(GroupRoleTagV51::ItBirthright)],
+            entitlement_ids: pair_ents(
+                GroupRoleTagV51::ItBirthright,
+                GroupRoleTagV51::ItBirthrightSpoke,
+            ),
             requires_app_owner_approval: false,
         },
         MinedRoleV51 {
@@ -1755,6 +1804,15 @@ fn build_f11_staging_rescue_starter(
                 src(sec_id, "email"),
                 src("fieldglass_vms", "email"),
             ]),
+        );
+        // Missing "TBD" filter on manager_key (legacy BeanShell bug!)
+        s.transforms.transforms.insert(
+            "normalize_manager_person_key".to_owned(),
+            trim(first_valid(vec![
+                src("workday", "manager_key"),
+                src(sec_id, "manager_key"),
+                src("fieldglass_vms", "manager_key"),
+            ])),
         );
     }
 

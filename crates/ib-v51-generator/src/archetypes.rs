@@ -15,8 +15,8 @@ impl DifficultyTierV51 {
     #[must_use]
     pub const fn identity_count(self) -> usize {
         match self {
-            Self::Focused => 36,
-            Self::MultiSystem => 40,
+            Self::Focused => 38,
+            Self::MultiSystem => 42,
             Self::FullStack => 44,
         }
     }
