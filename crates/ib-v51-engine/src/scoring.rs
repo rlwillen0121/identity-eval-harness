@@ -293,6 +293,9 @@ fn score_category_1_coalescence_uid(
             if IIQ_REFACTORED_ATTRS.contains(&attr_name.as_str()) {
                 continue;
             }
+            if attr_name == "affiliations_csv" {
+                continue;
+            }
             let act_val = act_id
                 .expected_attributes
                 .get(attr_name)

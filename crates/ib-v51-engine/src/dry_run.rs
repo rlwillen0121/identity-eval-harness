@@ -390,15 +390,15 @@ pub fn build_dry_run_result(
         sample_null_overwrite_targets: sync
             .null_overwrite_targets
             .iter()
-            .take(20)
+            .take(5)
             .cloned()
             .collect(),
         schema_validation_error_count: sync.schema_errors.len(),
-        sample_schema_errors: sync.schema_errors.iter().take(20).cloned().collect(),
+        sample_schema_errors: sync.schema_errors.iter().take(5).cloned().collect(),
         live_directory_handle_collisions: sync
             .live_directory_handle_collisions
             .iter()
-            .take(20)
+            .take(5)
             .cloned()
             .collect(),
         attribute_modify_ratio_bps,

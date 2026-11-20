@@ -618,7 +618,7 @@ pub fn tool_definitions_v51() -> Vec<ToolSpec> {
         ),
         tool_spec(
             "simulate_golive_dry_run",
-            "Run a bounded Day-1 go-live dry run (consumes 1 credit; max 5 per episode) returning correlation, service-account, null-overwrite, schema, collision, and blast-radius telemetry.",
+            "Run a bounded Day-1 go-live dry run (consumes 1 credit; bounded by episode.max_golive_dry_runs) returning correlation, service-account, null-overwrite, schema, collision, and blast-radius telemetry.",
             json!({
                 "type": "object",
                 "properties": {},
