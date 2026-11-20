@@ -87,7 +87,8 @@ Root: `{"schema_version":"v5.1","transforms":{"<name>":<TransformExprV51>}}`
 }
 ```
 - `UsernameBasePatternV51` (alphabetical): `"first_dot_last"`, `"first_initial_last"`, `"first_initial_middle_initial_last"`, or `{"custom_transform_ref":{"transform_name":"..."}}`.
-- `allowed_sam_punctuation`: list of single-char strings (e.g. `[]`, `["."]`, `["-"]`); also filters the dot separator in `first_dot_last` for `sAMAccountName` while UPN retains the dot separator.
+- `allowed_sam_punctuation`: single-char list (e.g. `[]`,`["."]`,`["-"]`); filters `first_dot_last` dot on `sAMAccountName` only.
+- `preserve_correlated_identifiers`: keeps AD `sAMAccountName`/UPN only if UPN ends with target `@{upn_domain}` (else regenerates); `first_dot_last` checks `first.last@{upn_domain}` UPN collisions independently of `sAMAccountName`.
 - `CollisionSourceV51` (alphabetical): `"disabled_directory_accounts"`, `"legal_hold_accounts"`, `"live_directory_accounts"`, `"reserved_aliases"`, `"terminated_tombstone_archive"`.
 
 ### 3.4 `config/lifecycle_states.json`
