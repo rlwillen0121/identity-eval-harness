@@ -15,27 +15,27 @@ impl DifficultyTierV51 {
     #[must_use]
     pub const fn identity_count(self) -> usize {
         match self {
-            Self::Focused => 96,
-            Self::MultiSystem => 132,
-            Self::FullStack => 164,
+            Self::Focused => 90,
+            Self::MultiSystem => 108,
+            Self::FullStack => 116,
         }
     }
 
     #[must_use]
     pub const fn group_count(self) -> usize {
         match self {
-            Self::Focused => 60,
-            Self::MultiSystem => 82,
-            Self::FullStack => 104,
+            Self::Focused => 68,
+            Self::MultiSystem => 74,
+            Self::FullStack => 78,
         }
     }
 
     #[must_use]
     pub const fn tombstone_count(self) -> usize {
         match self {
-            Self::Focused => 22,
-            Self::MultiSystem => 30,
-            Self::FullStack => 38,
+            Self::Focused => 18,
+            Self::MultiSystem => 22,
+            Self::FullStack => 26,
         }
     }
 
@@ -103,6 +103,7 @@ pub struct FamilyRegimeSpecV51 {
     pub preserve_active_student_on_worker_end: bool,
     pub contingent_grace_days: u32,
     pub max_modify_blast_radius_bps: u32,
+    pub abort_if_cohort_disable_ratio_bps_gt: u32,
     pub base_username_pattern: UsernameBasePatternV51,
     pub use_preferred_first_name: bool,
     pub collision_counter_start: u32,
@@ -125,6 +126,11 @@ pub struct StarterDefectProfileV51 {
     pub break_role_mining_sod_and_env_mix: bool,
     pub break_workflows_manager_chain_and_sod: bool,
     pub break_golive_phase_order_and_gates: bool,
+    pub break_nhi_and_agents: bool,
+    pub break_cloud_ciem: bool,
+    pub break_uar_reviews: bool,
+    pub break_adm_correlation_and_sync: bool,
+    pub break_cohort_safety_gates: bool,
 }
 
 /// Resolve the engagement archetype specification for a `(family_id, regime_id)` pair.
@@ -175,6 +181,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: false,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F02" => (
@@ -201,6 +212,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F03" => (
@@ -227,6 +243,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F04" => (
@@ -253,6 +274,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: false,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F05" => (
@@ -279,6 +305,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F06" => (
@@ -305,6 +336,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F07" => (
@@ -331,6 +367,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: false,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: false,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F08" => (
@@ -357,6 +398,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: false,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: false,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F09" => (
@@ -383,6 +429,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: false,
                 break_workflows_manager_chain_and_sod: false,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F10" => (
@@ -409,6 +460,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         "F11" => (
@@ -435,6 +491,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
         _ => (
@@ -461,6 +522,11 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
                 break_role_mining_sod_and_env_mix: true,
                 break_workflows_manager_chain_and_sod: true,
                 break_golive_phase_order_and_gates: true,
+                break_nhi_and_agents: true,
+                break_cloud_ciem: true,
+                break_uar_reviews: true,
+                break_adm_correlation_and_sync: true,
+                break_cohort_safety_gates: true,
             },
         ),
     };
@@ -492,6 +558,12 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
         "R2" => 2500,
         "R3" => 2000,
         _ => 2500,
+    };
+    let abort_if_cohort_disable_ratio_bps_gt = match regime_id {
+        "R1" => 3000,
+        "R2" => 3500,
+        "R3" => 3000,
+        _ => 3500,
     };
 
     FamilyRegimeSpecV51 {
@@ -527,6 +599,7 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
         preserve_active_student_on_worker_end,
         contingent_grace_days,
         max_modify_blast_radius_bps,
+        abort_if_cohort_disable_ratio_bps_gt,
         base_username_pattern: base_pattern,
         use_preferred_first_name: base_use_pref,
         collision_counter_start: base_counter,
@@ -550,6 +623,7 @@ pub fn canonical_affiliation_precedence() -> Vec<AffiliationTypeV51> {
         AffiliationTypeV51::ContingentWorker,
         AffiliationTypeV51::Student,
         AffiliationTypeV51::Vendor,
+        AffiliationTypeV51::B2bGuest,
         AffiliationTypeV51::Affiliate,
     ]
 }

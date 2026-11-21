@@ -39,8 +39,8 @@ mod tests {
     use std::path::PathBuf;
 
     use ib_v51_schemas::{
-        ConnectorSandboxResultV51, DEFAULT_V51_SEED, Day2EventV51, DeploymentScoreV51,
-        EnterpriseBrownfieldWorldV51, EpisodeV51, ExpectedEngagementOutcomeV51,
+        CategoryIdV51, ConnectorSandboxResultV51, DEFAULT_V51_SEED, Day2EventV51,
+        DeploymentScoreV51, EnterpriseBrownfieldWorldV51, EpisodeV51, ExpectedEngagementOutcomeV51,
         GoLiveDryRunResultV51, IdentityPreviewResultV51, IgaDeploymentConfigV51,
         IgaEngineBackendV51, SealedEpisodeOracleV51, V51Suite,
     };
@@ -104,6 +104,9 @@ mod tests {
                 sample_schema_errors: vec![],
                 live_directory_handle_collisions: vec![],
                 attribute_modify_ratio_bps: 0,
+                max_cohort_disable_ratio_bps: 0,
+                max_cohort_name: None,
+                cohort_disable_ratios_bps: IndexMap::new(),
                 would_abort_on_configured_gates: false,
                 operational_warnings: vec![],
             })
@@ -126,9 +129,18 @@ mod tests {
             Ok(ExpectedEngagementOutcomeV51 {
                 identities: IndexMap::new(),
                 exempt_service_accounts: vec![],
+                admin_secondary_accounts_excluded_from_sync: vec![],
                 synced_spoke_attributes: IndexMap::new(),
                 group_dispositions,
                 day2_outcomes: IndexMap::new(),
+                nhi_outcomes: IndexMap::new(),
+                agent_outcomes: IndexMap::new(),
+                delegation_outcomes: IndexMap::new(),
+                cloud_ciem_outcomes: IndexMap::new(),
+                uar_outcomes: IndexMap::new(),
+                expected_max_cohort_disable_ratio_bps: 0,
+                expected_max_cohort_name: None,
+                expected_cohort_disable_ratios_bps: IndexMap::new(),
             })
         }
 
@@ -145,6 +157,9 @@ mod tests {
                 total_assertions: 1,
                 category_pass: IndexMap::new(),
                 category_assertion_rates: IndexMap::new(),
+                nhi_custody_pass: true,
+                agent_delegation_pass: true,
+                iiq_to_isc_pass: Some(true),
                 overgrant_count: 0,
                 availability_breach_count: 0,
                 safety_violations: vec![],
@@ -262,6 +277,27 @@ mod tests {
             grp_lines_range = (grp_lines_range.0.min(l_grp), grp_lines_range.1.max(l_grp));
 
             assert_eq!(
+                ep.readonly_files.len(),
+                16,
+                "expected 16 readonly_files on {}",
+                ep.episode_id
+            );
+            assert!(
+                ep.readonly_files
+                    .contains_key("sources/nhi_and_agents.json")
+            );
+            assert!(
+                ep.readonly_files
+                    .contains_key("sources/cloud_iam_graph.json")
+            );
+            assert!(ep.readonly_files.contains_key("sources/uar_campaigns.json"));
+            assert_eq!(
+                orc.sealed_day2_events.len(),
+                18,
+                "expected 18 sealed_day2_events on {}",
+                ep.episode_id
+            );
+            assert_eq!(
                 ep.max_golive_dry_runs, 3,
                 "max_golive_dry_runs must be 3 on {}",
                 ep.episode_id
@@ -369,6 +405,8 @@ mod tests {
                     Day2EventV51::EmergencyTermination { event_id, .. }
                     | Day2EventV51::GardenLeaveActivated { event_id, .. }
                     | Day2EventV51::ContingentContractExpired { event_id, .. }
+                    | Day2EventV51::B2bGuestSponsorExpired { event_id, .. }
+                    | Day2EventV51::StaleHrEventReplay { event_id, .. }
                     | Day2EventV51::HeadlessAccessRequest { event_id, .. } => event_id,
                 };
                 assert!(
@@ -487,8 +525,8 @@ mod tests {
             let (ep, orc) = build_v51_episode_with_engine(cell, &engine).expect("build episode");
             let gold = &orc.gold_config;
 
-            // Canonical person keys sorted ascending, 3-digit zero-padded (`pers_001..`), & in 96..=164 range.
-            assert!((96..=164).contains(&ep.world.canonical_person_keys.len()));
+            // Canonical person keys sorted ascending, 3-digit zero-padded (`pers_001..`), & in 88..=164 range.
+            assert!((88..=164).contains(&ep.world.canonical_person_keys.len()));
             assert_eq!(ep.world.canonical_person_keys[0], "pers_001");
             let mut sorted_keys = ep.world.canonical_person_keys.clone();
             sorted_keys.sort();
@@ -598,7 +636,9 @@ mod tests {
                 match ev {
                     Day2EventV51::EmergencyTermination { person_key, .. }
                     | Day2EventV51::GardenLeaveActivated { person_key, .. }
-                    | Day2EventV51::ContingentContractExpired { person_key, .. } => {
+                    | Day2EventV51::ContingentContractExpired { person_key, .. }
+                    | Day2EventV51::B2bGuestSponsorExpired { person_key, .. }
+                    | Day2EventV51::StaleHrEventReplay { person_key, .. } => {
                         assert!(pk_set.contains(person_key.as_str()));
                     }
                     Day2EventV51::HeadlessAccessRequest {
@@ -767,7 +807,7 @@ mod tests {
             let grp_json = &files["sources/ad_and_spoke_groups.json"];
             assert!(
                 grp_json.starts_with(
-                    "{\"cols\":[\"id\",\"spoke\",\"cmdb_app\",\"nested_in\",\"desc\"],\"rows\":[\n"
+                    "{\"cols\":[\"id\",\"spoke\",\"cmdb_app\",\"owner\",\"nested_in\",\"desc\"],\"rows\":[\n"
                 ),
                 "unexpected group catalog columns on {}",
                 cell.episode_id
@@ -881,6 +921,55 @@ mod tests {
             assert_eq!(gold_score.overgrant_count, 0);
             assert_eq!(gold_score.availability_breach_count, 0);
             assert!((gold_score.state_accuracy - 1.0).abs() < 1e-12);
+            for cat in CategoryIdV51::ALL {
+                assert_eq!(
+                    gold_score.category_pass.get(&cat),
+                    Some(&true),
+                    "category {cat:?} failed on {}: {:?}",
+                    ep.episode_id,
+                    gold_score.failures
+                );
+            }
+            assert!(
+                gold_score.nhi_custody_pass,
+                "nhi_custody_pass must be true on {}",
+                ep.episode_id
+            );
+            assert!(
+                gold_score.agent_delegation_pass,
+                "agent_delegation_pass must be true on {}",
+                ep.episode_id
+            );
+            assert_eq!(
+                gold_score.iiq_to_isc_pass,
+                Some(true),
+                "iiq_to_isc_pass must be Some(true) on {}",
+                ep.episode_id
+            );
+            let dry_run = engine
+                .simulate_dry_run(&ep.world, &orc.gold_config, &ep.cutover_date)
+                .expect("dry_run gold");
+            assert_eq!(
+                dry_run.null_attribute_overwrite_count, 0,
+                "gold dry-run must have 0 null overwrites on {}",
+                ep.episode_id
+            );
+            assert_eq!(
+                dry_run.schema_validation_error_count, 0,
+                "gold dry-run must have 0 schema errors on {}",
+                ep.episode_id
+            );
+            assert!(
+                dry_run.max_cohort_disable_ratio_bps
+                    <= orc
+                        .gold_config
+                        .golive_plan
+                        .safety_gates
+                        .abort_if_cohort_disable_ratio_bps_gt,
+                "gold max_cohort_disable_ratio_bps ({}) exceeded gate on {}",
+                dry_run.max_cohort_disable_ratio_bps,
+                ep.episode_id
+            );
 
             // 2. Starter config MUST fail G-SRR and trigger BOTH OG > 0 AND AB > 0!
             let starter_score = engine
@@ -1304,8 +1393,9 @@ mod tests {
                 .map(|(gid, _)| gid.as_str())
                 .collect();
 
-            // Gather normalized entitlements per correlated identity across ALL spokes (stripping custom_rest verb prefix).
-            let mut person_ents: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+            // Gather normalized entitlements per correlated identity across ALL spokes (stripping custom_rest verb prefix),
+            // preserving direct memberships and computing transitive expansions via group_catalog.
+            let mut direct_person_ents: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
             let mut correlated_persons: HashSet<&str> = HashSet::new();
             for (spoke_id, accts) in &ep.world.spoke_accounts {
                 let strip_pfx = gold
@@ -1319,7 +1409,7 @@ mod tests {
                         .get(&(spoke_id.clone(), acct.account_id.clone()))
                     {
                         correlated_persons.insert(pk.as_str());
-                        let set = person_ents.entry(pk.as_str()).or_default();
+                        let set = direct_person_ents.entry(pk.as_str()).or_default();
                         for raw_ent in &acct.entitlement_ids {
                             let clean = match strip_pfx {
                                 Some(pfx) => raw_ent.strip_prefix(pfx).unwrap_or(raw_ent),
@@ -1329,6 +1419,16 @@ mod tests {
                         }
                     }
                 }
+            }
+            let mut person_ents: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+            for (pk, direct) in &direct_person_ents {
+                person_ents.insert(
+                    *pk,
+                    ib_v51_engine::roles::expand_entitlements_transitively(
+                        direct.iter(),
+                        &ep.world,
+                    ),
+                );
             }
 
             let mut all_emp_mined: BTreeSet<String> = BTreeSet::new();
@@ -1383,6 +1483,28 @@ mod tests {
                                 ep.episode_id,
                                 cohort.len()
                             );
+                            if (role.role_id == "role_br_finance"
+                                || role.role_id == "role_br_engineering")
+                                && ep
+                                    .world
+                                    .group_catalog
+                                    .get(cand)
+                                    .is_some_and(|g| g.spoke_id == "ad")
+                            {
+                                let direct_holders = cohort
+                                    .iter()
+                                    .filter(|&&pk| {
+                                        direct_person_ents.get(pk).is_some_and(|s| s.contains(cand))
+                                    })
+                                    .count();
+                                assert!(
+                                    direct_holders * 100 < cohort.len() * 80,
+                                    "MultiSystem/FullStack nested birthright {cand} in {} on {} must have direct overlap < 80% before transitive expansion, got {direct_holders}/{}",
+                                    role.role_id,
+                                    ep.episode_id,
+                                    cohort.len()
+                                );
+                            }
                         }
                         mined.insert(cand.to_owned());
                     } else {
@@ -1543,9 +1665,10 @@ mod tests {
                 );
             }
 
-            // 6. Verify all 14 Wave 4 Day-2 events (including 3-hop Term->GLV->LOA->VP, CWK dead sponsor+GLV mgr,
-            //    CWK exhausted fallback, cross-spoke ENG SoD, and SeasonalFurlough headless denial)!
-            assert_eq!(orc.sealed_day2_events.len(), 14);
+            // 6. Verify all 18 v5.1 Day-2 events (including 3-hop Term->GLV->LOA->VP, CWK dead sponsor+GLV mgr,
+            //    CWK exhausted fallback, cross-spoke ENG SoD, SeasonalFurlough headless denial, B2B guest sponsor expiry,
+            //    stale HR event replay, and adm_* split-SoD headless denials)!
+            assert_eq!(orc.sealed_day2_events.len(), 18);
             assert!(
                 orc.expected_outcome
                     .day2_outcomes
