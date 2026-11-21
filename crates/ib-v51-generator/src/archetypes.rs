@@ -560,10 +560,8 @@ pub fn resolve_family_regime_spec(family_id: &str, regime_id: &str) -> FamilyReg
         _ => 2500,
     };
     let abort_if_cohort_disable_ratio_bps_gt = match regime_id {
-        "R1" => 3000,
-        "R2" => 3500,
-        "R3" => 3000,
-        _ => 3500,
+        "R1" | "R3" => 1800,
+        _ => 2200,
     };
 
     FamilyRegimeSpecV51 {

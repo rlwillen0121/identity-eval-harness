@@ -747,6 +747,21 @@ mod tests {
             "ORPHANED",
             "SVC_ONLY",
             "PRIV_ADMIN",
+            "subject_membership_paths",
+            "business_justification_valid",
+            "BUNDLE_SPLIT_REQUIRED",
+            "hop_excess",
+            "split_sod",
+            "bundle_owner_split",
+            "coi_self_revoke",
+            "expired_nonvault",
+            "shadow_exporter",
+            "glv_sponsor_bot",
+            "ext_sponsor_bot",
+            "passrole_01",
+            "aws_orphan_unused",
+            "phantom_closed",
+            "unscoped_07",
         ];
 
         for cell in &cells {
@@ -903,11 +918,118 @@ mod tests {
         let mut min_starter_ab = usize::MAX;
         let mut max_starter_ab = 0usize;
         let mut max_starter_acc = 0.0f64;
+        let mut max_cohort_bps_by_regime: BTreeMap<String, u32> = BTreeMap::new();
+        let mut emerg_badge_offsets: HashSet<i64> = HashSet::new();
 
         for cell in &cells {
             let bp = generate_scenario_blueprint(cell);
             let (ep, orc) =
                 build_v51_episode_with_engine(cell, &engine).expect("build episode with engine");
+
+            // Track badge randomization for emerg_term_2hop relative to min badge in workday.
+            let wd_badges: Vec<(String, i64)> = ep.world.identity_sources["workday"]
+                .iter()
+                .filter(|r| !r.attributes.contains_key("record_status"))
+                .filter_map(|r| {
+                    let pk = r.attributes.get("person_key")?.clone();
+                    let num = r
+                        .attributes
+                        .get("badge_or_univ_id")?
+                        .rsplit('-')
+                        .next()?
+                        .parse::<i64>()
+                        .ok()?;
+                    Some((pk, num))
+                })
+                .collect();
+            if let (Some(min_b), Some((_, emerg_b))) = (
+                wd_badges.iter().map(|(_, n)| *n).min(),
+                wd_badges
+                    .iter()
+                    .find(|(pk, _)| pk == &bp.key_persons.emerg_term_2hop),
+            ) {
+                emerg_badge_offsets.insert(emerg_b - min_b);
+            }
+
+            // Verify neutral governance ID prefixes & empty `subject_membership_paths`.
+            for nhi in &ep.world.nhi_workloads {
+                assert!(nhi.nhi_id.starts_with("nhi_workload_"));
+            }
+            for agt in &ep.world.ai_agents {
+                assert!(agt.agent_id.starts_with("agt_enterprise_"));
+            }
+            for req in &ep.world.agent_delegation_requests {
+                assert!(req.request_id.starts_with("dlreq_10"));
+            }
+            for p in &ep.world.cloud_principals {
+                assert!(
+                    p.principal_id.starts_with("cld_aws_")
+                        || p.principal_id.starts_with("cld_az_")
+                        || p.principal_id.starts_with("cld_gcp_")
+                );
+                if p.is_orphan_unused {
+                    let rem = &orc.gold_config.cloud_ciem.principals[&p.principal_id];
+                    assert_eq!(
+                        rem.escalation_vector,
+                        ib_v51_schemas::CloudEscalationVectorV51::None,
+                        "orphan principal {} must have escalation_vector=None on {}",
+                        p.principal_id,
+                        ep.episode_id
+                    );
+                    assert_eq!(
+                        rem.action,
+                        ib_v51_schemas::CloudRemediationActionV51::RevokeOrphanPrincipal
+                    );
+                    assert!(rem.retained_permissions.is_empty());
+                }
+            }
+            for camp in &ep.world.uar_campaigns {
+                for item in &camp.items {
+                    assert!(item.item_id.starts_with("uar_item_"));
+                    assert!(
+                        item.subject_membership_paths.is_empty(),
+                        "world UAR item {} must not embed subject_membership_paths on {}",
+                        item.item_id,
+                        ep.episode_id
+                    );
+                }
+            }
+            // Verify DEPT_BUNDLE_LOCKED is classified as ApplicationEntitlement (NOT BirthrightBundleCandidate).
+            let locked_gid = bp
+                .groups
+                .iter()
+                .find(|g| g.role_tag == GroupRoleTagV51::UarDeptBundleLocked)
+                .map(|g| g.record.group_id.as_str())
+                .expect("locked bundle group");
+            assert_eq!(
+                orc.gold_config.role_model.group_classifications[locked_gid].disposition,
+                ib_v51_schemas::GroupDispositionV51::ApplicationEntitlement,
+                "DEPT_BUNDLE_LOCKED must be ApplicationEntitlement on {}",
+                ep.episode_id
+            );
+            // Verify the 2-hop DenySplitSod OBO request has requested_tool_scope authorized on all actors!
+            for req in &ep.world.agent_delegation_requests {
+                let dec = &orc.gold_config.nhi_and_agents.delegation_decisions[&req.request_id];
+                if dec.decision == ib_v51_schemas::OboDelegationVerdictV51::DenySplitSod {
+                    for aid in &req.actor_chain {
+                        let adec = &orc.gold_config.nhi_and_agents.agent_decisions[aid];
+                        assert_eq!(
+                            adec.action,
+                            ib_v51_schemas::AgentGovernanceActionV51::AuthorizeActive
+                        );
+                        assert!(
+                            adec.approved_autonomous_scopes
+                                .contains(&req.requested_tool_scope)
+                                || adec
+                                    .approved_hitl_scopes
+                                    .contains(&req.requested_tool_scope),
+                            "split-SoD actor {aid} must authorize scope {} on {}",
+                            req.requested_tool_scope,
+                            ep.episode_id
+                        );
+                    }
+                }
+            }
 
             // 1. Gold config MUST pass 100% (G-SRR=1, state_accuracy=1.0, OG=0, AB=0).
             let gold_score = engine
@@ -949,6 +1071,18 @@ mod tests {
             let dry_run = engine
                 .simulate_dry_run(&ep.world, &orc.gold_config, &ep.cutover_date)
                 .expect("dry_run gold");
+            assert!(
+                !dry_run.would_abort_on_configured_gates,
+                "gold dry-run must advance cleanly (would_abort==false) on {}: warnings={:?}, max_cohort_bps={}, uncorr={}",
+                ep.episode_id,
+                dry_run.operational_warnings,
+                dry_run.max_cohort_disable_ratio_bps,
+                dry_run.uncorrelated_accounts_targeted_for_disable.len()
+            );
+            let reg_entry = max_cohort_bps_by_regime
+                .entry(cell.regime_id.clone())
+                .or_insert(0);
+            *reg_entry = (*reg_entry).max(dry_run.max_cohort_disable_ratio_bps);
             assert_eq!(
                 dry_run.null_attribute_overwrite_count, 0,
                 "gold dry-run must have 0 null overwrites on {}",
@@ -1063,9 +1197,10 @@ mod tests {
                 ep.episode_id,
                 dry.classified_service_account_count
             );
-            assert!(
-                (4..=6).contains(&dry.uncorrelated_accounts_targeted_for_disable.len()),
-                "expected 4..=6 uncorrelated human orphans on {}, got {}",
+            assert_eq!(
+                dry.uncorrelated_accounts_targeted_for_disable.len(),
+                3,
+                "expected exactly 3 uncorrelated human orphans on {}, got {}",
                 ep.episode_id,
                 dry.uncorrelated_accounts_targeted_for_disable.len()
             );
@@ -1265,8 +1400,13 @@ mod tests {
             }
         }
 
+        assert!(
+            emerg_badge_offsets.len() >= 20,
+            "badge offsets for emerg_term_2hop must vary across seeds, got {} distinct values",
+            emerg_badge_offsets.len()
+        );
         eprintln!(
-            "Verified 108/108 cells with real IgaEngineV51: gold=100% (OG=0, AB=0), starter OG=[{min_starter_og}, {max_starter_og}], starter AB=[{min_starter_ab}, {max_starter_ab}], max_starter_acc={max_starter_acc:.4}"
+            "Verified 108/108 cells with real IgaEngineV51: gold=100% (OG=0, AB=0, would_abort=false), max_cohort_bps_by_regime={max_cohort_bps_by_regime:?}, starter OG=[{min_starter_og}, {max_starter_og}], starter AB=[{min_starter_ab}, {max_starter_ab}], max_starter_acc={max_starter_acc:.4}"
         );
     }
 
@@ -1665,15 +1805,40 @@ mod tests {
                 );
             }
 
-            // 6. Verify all 18 v5.1 Day-2 events (including 3-hop Term->GLV->LOA->VP, CWK dead sponsor+GLV mgr,
-            //    CWK exhausted fallback, cross-spoke ENG SoD, SeasonalFurlough headless denial, B2B guest sponsor expiry,
-            //    stale HR event replay, and adm_* split-SoD headless denials)!
+            // 6. Verify all 18 v5.1 Day-2 events (including 2-hop, 3-hop GLV->LOA->VP, 4th-hop-capped fallback,
+            //    CWK dead sponsor+GLV mgr, CWK exhausted fallback, cross-spoke ENG SoD, SeasonalFurlough headless denial,
+            //    B2B guest sponsor expiry, stale HR event replay, and adm_* split-SoD headless denials)!
             assert_eq!(orc.sealed_day2_events.len(), 18);
-            assert!(
-                orc.expected_outcome
-                    .day2_outcomes
-                    .contains_key("d2_ev12_emerg_term_loa_hop"),
-                "missing 3-hop Term->GLV->LOA emergency termination event on {}",
+            let active_dir_1_email = cubes[&bp.key_persons.active_dir_1]
+                .attributes
+                .get("work_email")
+                .map(String::as_str);
+            let ceo_vp_email = cubes[&bp.key_persons.ceo_vp]
+                .attributes
+                .get("work_email")
+                .map(String::as_str);
+            assert_eq!(
+                orc.expected_outcome.day2_outcomes["d2_ev01_emerg_2hop"]
+                    .resolved_custodian_or_notice_target
+                    .as_deref(),
+                active_dir_1_email,
+                "2-hop emergency termination must resolve to active_dir_1 on {}",
+                ep.episode_id
+            );
+            assert_eq!(
+                orc.expected_outcome.day2_outcomes["d2_ev12_emerg_term_loa_hop"]
+                    .resolved_custodian_or_notice_target
+                    .as_deref(),
+                ceo_vp_email,
+                "3-hop emergency termination (GLV->LOA->VP) must resolve to ceo_vp on {}",
+                ep.episode_id
+            );
+            assert_eq!(
+                orc.expected_outcome.day2_outcomes["d2_ev02_emerg_fallback"]
+                    .resolved_custodian_or_notice_target
+                    .as_deref(),
+                Some(bp.client.fallback_governance_mailbox.as_str()),
+                "4th-hop-capped emergency termination (Term->GLV->LOA->[VP]) must fall back to governance mailbox on {}",
                 ep.episode_id
             );
             assert_eq!(
