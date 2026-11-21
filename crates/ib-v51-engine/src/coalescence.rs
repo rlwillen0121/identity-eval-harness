@@ -28,10 +28,16 @@ pub struct CoalescedIdentity<'a> {
 pub struct SpokeCorrelationState {
     /// `(spoke_id, account_id) -> person_key`
     pub account_to_person: IndexMap<(String, String), String>,
-    /// `person_key -> spoke_id -> primary account_id`
+    /// `person_key -> spoke_id -> primary non-admin human account_id`
     pub person_to_spoke_primary: IndexMap<String, IndexMap<String, String>>,
-    /// `person_key -> spoke_id -> all correlated account_ids`
+    /// `person_key -> spoke_id -> privileged secondary human admin account_id` (e.g. `adm_*`)
+    pub person_to_spoke_admin_secondary: IndexMap<String, IndexMap<String, String>>,
+    /// `person_key -> spoke_id -> all correlated account_ids` (primary + admin_secondary)
     pub person_to_spoke_accounts: IndexMap<String, IndexMap<String, Vec<String>>>,
+    /// Set of `(spoke_id, account_id)` correlated as privileged admin secondary accounts.
+    pub admin_secondary_account_set: HashSet<(String, String)>,
+    /// Sorted `spoke_id:account_id` list of correlated privileged admin secondary accounts.
+    pub admin_secondary_accounts: Vec<String>,
     /// Sorted `spoke_id:account_id` list of uncorrelated accounts classified as `SERVICE_ACCOUNT_EXEMPT`.
     pub exempt_service_accounts: Vec<String>,
     /// Set of `(spoke_id, account_id)` classified as `SERVICE_ACCOUNT_EXEMPT`.
@@ -261,8 +267,17 @@ pub fn correlate_spokes_and_classify_service_accounts(
     cubes: &IndexMap<String, CoalescedIdentity<'_>>,
 ) -> SpokeCorrelationState {
     let mut state = SpokeCorrelationState::default();
+    let mut admin_secondary_sorted = BTreeSet::new();
     let mut exempt_sorted = BTreeSet::new();
     let mut uncorrelated_non_exempt_sorted = BTreeSet::new();
+
+    let admin_prefix = config
+        .identity_profile
+        .correlate_admin_secondary_prefix
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_ascii_lowercase);
 
     // Sort spoke IDs for deterministic traversal.
     let mut spoke_ids: Vec<&String> = world.spoke_accounts.keys().collect();
@@ -323,16 +338,38 @@ pub fn correlate_spokes_and_classify_service_accounts(
             }
 
             if let Some(person_key) = matched_person {
+                let is_admin_secondary = admin_prefix.as_deref().is_some_and(|pfx| {
+                    acct.is_admin_secondary
+                        || acct.account_id.to_ascii_lowercase().starts_with(pfx)
+                        || acct
+                            .attributes
+                            .get("sAMAccountName")
+                            .is_some_and(|s| s.trim().to_ascii_lowercase().starts_with(pfx))
+                });
+
                 state.account_to_person.insert(
                     (spoke_id.clone(), acct.account_id.clone()),
                     person_key.clone(),
                 );
-                state
-                    .person_to_spoke_primary
-                    .entry(person_key.clone())
-                    .or_default()
-                    .entry(spoke_id.clone())
-                    .or_insert_with(|| acct.account_id.clone());
+                if is_admin_secondary {
+                    state
+                        .person_to_spoke_admin_secondary
+                        .entry(person_key.clone())
+                        .or_default()
+                        .entry(spoke_id.clone())
+                        .or_insert_with(|| acct.account_id.clone());
+                    state
+                        .admin_secondary_account_set
+                        .insert((spoke_id.clone(), acct.account_id.clone()));
+                    admin_secondary_sorted.insert(format!("{spoke_id}:{}", acct.account_id));
+                } else {
+                    state
+                        .person_to_spoke_primary
+                        .entry(person_key.clone())
+                        .or_default()
+                        .entry(spoke_id.clone())
+                        .or_insert_with(|| acct.account_id.clone());
+                }
                 state
                     .person_to_spoke_accounts
                     .entry(person_key)
@@ -360,6 +397,7 @@ pub fn correlate_spokes_and_classify_service_accounts(
         }
     }
 
+    state.admin_secondary_accounts = admin_secondary_sorted.into_iter().collect();
     state.exempt_service_accounts = exempt_sorted.into_iter().collect();
     state.uncorrelated_non_exempt_accounts = uncorrelated_non_exempt_sorted.into_iter().collect();
     state

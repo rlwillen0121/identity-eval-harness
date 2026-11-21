@@ -18,6 +18,7 @@ pub struct EvaluatedLifecycle {
     pub sso_enabled: bool,
     pub vpn_enabled: bool,
     pub tokens_revoked: bool,
+    pub oauth_tokens_and_consents_revoked: bool,
     pub preserve_mailbox_and_drive: bool,
     pub block_purge: bool,
     pub keep_hr_payroll_untouched: bool,
@@ -108,11 +109,17 @@ pub fn evaluate_single_lifecycle(
                     .unwrap_or(rule.default_spoke_disposition);
                 spoke_dispositions.insert(spoke_id.clone(), disp);
             }
+            let oauth_revoked = !rule.sso_enabled
+                && rule.revoke_active_tokens_immediately
+                && config
+                    .lifecycle_states
+                    .revoke_oauth_and_refresh_trees_on_disable;
             EvaluatedLifecycle {
                 lifecycle_state: state_id,
                 sso_enabled: rule.sso_enabled,
                 vpn_enabled: rule.vpn_enabled,
                 tokens_revoked: rule.revoke_active_tokens_immediately,
+                oauth_tokens_and_consents_revoked: oauth_revoked,
                 preserve_mailbox_and_drive: rule.preserve_mailbox_and_drive_data,
                 block_purge: rule.block_account_purge,
                 keep_hr_payroll_untouched: rule.keep_hr_payroll_untouched,
@@ -132,6 +139,9 @@ pub fn evaluate_single_lifecycle(
                 sso_enabled: false,
                 vpn_enabled: false,
                 tokens_revoked: true,
+                oauth_tokens_and_consents_revoked: config
+                    .lifecycle_states
+                    .revoke_oauth_and_refresh_trees_on_disable,
                 preserve_mailbox_and_drive: false,
                 block_purge: false,
                 keep_hr_payroll_untouched: true,
@@ -144,7 +154,10 @@ pub fn evaluate_single_lifecycle(
 fn is_contingent_expired(cube: &CoalescedIdentity<'_>, cutover_date: &str) -> bool {
     let is_contingent = cube
         .active_affiliations
-        .contains(&AffiliationTypeV51::ContingentWorker);
+        .contains(&AffiliationTypeV51::ContingentWorker)
+        || cube
+            .active_affiliations
+            .contains(&AffiliationTypeV51::B2bGuest);
     if !is_contingent {
         return false;
     }

@@ -392,6 +392,7 @@ pub const fn affiliation_to_str(aff: &AffiliationTypeV51) -> &'static str {
         AffiliationTypeV51::ContingentWorker => "contingent_worker",
         AffiliationTypeV51::Vendor => "vendor",
         AffiliationTypeV51::Affiliate => "affiliate",
+        AffiliationTypeV51::B2bGuest => "b2b_guest",
     }
 }
 
@@ -411,6 +412,7 @@ pub fn parse_affiliation(token: &str) -> Option<AffiliationTypeV51> {
         "contingent_worker" => Some(AffiliationTypeV51::ContingentWorker),
         "vendor" => Some(AffiliationTypeV51::Vendor),
         "affiliate" => Some(AffiliationTypeV51::Affiliate),
+        "b2b_guest" => Some(AffiliationTypeV51::B2bGuest),
         _ => None,
     }
 }

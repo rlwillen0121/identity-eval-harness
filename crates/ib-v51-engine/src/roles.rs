@@ -1,17 +1,134 @@
-//! Birthright role assignment evaluation, group catalog classification, and SoD conflict detection.
+//! Birthright role assignment evaluation, group catalog classification, transitive nested group
+//! resolution (`GG -> SG -> LG`), cross-account person effective entitlements, and SoD detection.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use ib_v51_schemas::{
-    AffiliationTypeV51, EnterpriseBrownfieldWorldV51, GroupCatalogClassificationV51,
-    IgaDeploymentConfigV51, LifecycleStateIdV51, MinedRoleV51, RoleAssignmentKindV51, SodPolicyV51,
-    SpokeEnvKindV51,
+    AffiliationTypeV51, BrownfieldSpokeAccountV51, EnterpriseBrownfieldWorldV51,
+    GroupCatalogClassificationV51, IgaDeploymentConfigV51, LifecycleStateIdV51, MinedRoleV51,
+    RoleAssignmentKindV51, SodPolicyV51, SpokeEnvKindV51,
 };
 use indexmap::IndexMap;
 
-use crate::coalescence::CoalescedIdentity;
+use crate::coalescence::{CoalescedIdentity, SpokeCorrelationState};
 use crate::lifecycle::EvaluatedLifecycle;
 use crate::transforms::group_disposition_to_str;
+
+/// Expand a seed set of entitlements/groups transitively across `world.group_catalog`
+/// (`member_of_group_ids`), safely handling arbitrary nesting depth and cycles (`GG -> SG -> LG`).
+#[must_use]
+pub fn expand_entitlements_transitively<I, S>(
+    seed_entitlements: I,
+    world: &EnterpriseBrownfieldWorldV51,
+) -> BTreeSet<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut visited = BTreeSet::new();
+    let mut stack = Vec::new();
+
+    for ent in seed_entitlements {
+        let trimmed = ent.as_ref().trim();
+        if !trimmed.is_empty() && visited.insert(trimmed.to_owned()) {
+            stack.push(trimmed.to_owned());
+        }
+    }
+
+    while let Some(curr) = stack.pop() {
+        if let Some(grp) = world.group_catalog.get(&curr) {
+            for parent in &grp.member_of_group_ids {
+                let p = parent.trim();
+                if !p.is_empty() && visited.insert(p.to_owned()) {
+                    stack.push(p.to_owned());
+                }
+            }
+        }
+    }
+
+    visited
+}
+
+/// Expand a seed set of entitlements transitively using a custom working copy of group parent edges.
+#[must_use]
+pub fn expand_entitlements_with_graph<I, S>(
+    seed_entitlements: I,
+    group_parents: &HashMap<String, BTreeSet<String>>,
+) -> BTreeSet<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut visited = BTreeSet::new();
+    let mut stack = Vec::new();
+
+    for ent in seed_entitlements {
+        let trimmed = ent.as_ref().trim();
+        if !trimmed.is_empty() && visited.insert(trimmed.to_owned()) {
+            stack.push(trimmed.to_owned());
+        }
+    }
+
+    while let Some(curr) = stack.pop() {
+        if let Some(parents) = group_parents.get(&curr) {
+            for parent in parents {
+                if visited.insert(parent.clone()) {
+                    stack.push(parent.clone());
+                }
+            }
+        }
+    }
+
+    visited
+}
+
+/// Compute effective transitively-expanded entitlements for a single brownfield spoke account.
+#[must_use]
+pub fn account_effective_entitlements(
+    acct: &BrownfieldSpokeAccountV51,
+    world: &EnterpriseBrownfieldWorldV51,
+) -> BTreeSet<String> {
+    expand_entitlements_transitively(acct.entitlement_ids.iter(), world)
+}
+
+/// Compute each person's post-cutover effective entitlements across BOTH their `primary` AND
+/// `admin_secondary` correlated spoke accounts plus assigned birthright entitlements,
+/// transitively expanded through `world.group_catalog`.
+#[must_use]
+pub fn compute_person_effective_entitlements(
+    world: &EnterpriseBrownfieldWorldV51,
+    correlation: &SpokeCorrelationState,
+    birthright_by_person: &IndexMap<String, Vec<String>>,
+) -> IndexMap<String, BTreeSet<String>> {
+    let mut direct_by_person: IndexMap<String, BTreeSet<String>> = IndexMap::new();
+
+    for (pk, br) in birthright_by_person {
+        let entry = direct_by_person.entry(pk.clone()).or_default();
+        for ent in br {
+            entry.insert(ent.clone());
+        }
+    }
+
+    for (spoke_id, accounts) in &world.spoke_accounts {
+        for acct in accounts {
+            if let Some(owner) = correlation
+                .account_to_person
+                .get(&(spoke_id.clone(), acct.account_id.clone()))
+            {
+                let entry = direct_by_person.entry(owner.clone()).or_default();
+                for ent in &acct.entitlement_ids {
+                    entry.insert(ent.clone());
+                }
+            }
+        }
+    }
+
+    let mut effective = IndexMap::with_capacity(direct_by_person.len());
+    for (pk, direct) in direct_by_person {
+        effective.insert(pk, expand_entitlements_transitively(direct.iter(), world));
+    }
+    effective
+}
 
 /// Compute sorted, deduplicated birthright entitlements for a single identity.
 #[must_use]
@@ -103,7 +220,7 @@ pub fn compute_group_dispositions(config: &IgaDeploymentConfigV51) -> IndexMap<S
     out
 }
 
-/// Return the IDs of all active `SodPolicyV51` rules violated by `entitlements`.
+/// Return the IDs of all active `SodPolicyV51` rules violated by `entitlements` (direct match).
 #[must_use]
 pub fn find_sod_conflicts(
     entitlements: &BTreeSet<String>,
@@ -129,7 +246,18 @@ pub fn find_sod_conflicts(
     violated
 }
 
-/// Check if a role mixes `Prod` and `NonProd` entitlements using authoritative group metadata.
+/// Expand `entitlements` transitively through `world.group_catalog` and return all violated `SodPolicyV51` IDs.
+#[must_use]
+pub fn find_sod_conflicts_transitive(
+    entitlements: &BTreeSet<String>,
+    world: &EnterpriseBrownfieldWorldV51,
+    sod_policies: &[SodPolicyV51],
+) -> Vec<String> {
+    let expanded = expand_entitlements_transitively(entitlements.iter(), world);
+    find_sod_conflicts(&expanded, sod_policies)
+}
+
+/// Check if a role mixes `Prod` and `NonProd` entitlements (transitively expanded) using authoritative metadata.
 #[must_use]
 pub fn role_mixes_prod_and_nonprod(
     role: &MinedRoleV51,
@@ -138,8 +266,9 @@ pub fn role_mixes_prod_and_nonprod(
 ) -> bool {
     let mut has_prod = false;
     let mut has_nonprod = false;
+    let expanded = expand_entitlements_transitively(role.entitlement_ids.iter(), world);
 
-    for ent in &role.entitlement_ids {
+    for ent in &expanded {
         let env = authoritative_classifications
             .get(ent)
             .map(|c| c.environment)
@@ -170,20 +299,20 @@ pub fn role_mixes_prod_and_nonprod(
     has_prod && has_nonprod
 }
 
-/// Return any entitlements in `role` that belong to service-account-only or orphaned groups.
+/// Return any entitlements in `role` (transitively expanded) that belong to service-account-only or orphaned groups.
 #[must_use]
 pub fn role_service_or_orphan_groups(
     role: &MinedRoleV51,
     world: &EnterpriseBrownfieldWorldV51,
 ) -> Vec<String> {
-    role.entitlement_ids
-        .iter()
+    let expanded = expand_entitlements_transitively(role.entitlement_ids.iter(), world);
+    expanded
+        .into_iter()
         .filter(|ent| {
             world
                 .group_catalog
-                .get(*ent)
+                .get(ent)
                 .is_some_and(|g| g.is_service_account_only || g.is_orphaned_no_app)
         })
-        .cloned()
         .collect()
 }
