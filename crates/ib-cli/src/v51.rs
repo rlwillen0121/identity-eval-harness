@@ -92,6 +92,9 @@ pub struct V51RunArgs {
     /// Planned repeats per episode (1 or 3).
     #[arg(long, default_value = "1", value_parser = v51_repeat_arg)]
     pub repeats: usize,
+    /// Resume an existing run directory, preserving completed slots and re-running missing or provider-error slots.
+    #[arg(long, default_value_t = false)]
+    pub resume: bool,
 }
 
 #[derive(Debug, Args)]
@@ -341,6 +344,7 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V51RunArgs) -> Result<V
         max_calls_per_turn: loaded_config.run_config.max_calls_per_turn,
         pricing: loaded_pricing.rates,
         out_dir: out_dir.clone(),
+        resume: args.resume,
     };
 
     let records = run_v51_suite(

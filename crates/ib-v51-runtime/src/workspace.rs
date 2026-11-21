@@ -491,6 +491,17 @@ impl<'a> VirtualWorkspaceRuntimeV51<'a> {
                 "committed": true,
             });
         }
+        if let Err(err) = self.engine.preview_identities(
+            &self.episode.world,
+            &self.config,
+            &self.episode.cutover_date,
+            Some(&[]),
+        ) {
+            return json!({
+                "status": "SCHEMA_ERROR",
+                "errors": [err],
+            });
+        }
         self.committed = true;
         self.commit_notes = Some(notes.to_owned());
         json!({
