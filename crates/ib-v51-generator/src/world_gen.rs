@@ -5949,7 +5949,7 @@ fn build_group_blueprints(
         format!("SG_{pfx}_PRD_UAR_PRIV_AUDIT"),
         "ad",
         "Privileged AD Audit Review Role",
-        "Prod Tier-1 AD audit group requiring dual attestation",
+        "Production Tier-1 AD admin audit group governed by the CISO privileged-access policy and requiring dual attestation",
         vec![],
         "PROD",
         SpokeEnvKindV51::Prod,

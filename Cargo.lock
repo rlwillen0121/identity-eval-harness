@@ -899,7 +899,6 @@ name = "ib-v51-engine"
 version = "5.0.0"
 dependencies = [
  "hex",
- "ib-core",
  "ib-v51-schemas",
  "indexmap",
  "regex",
@@ -957,7 +956,6 @@ dependencies = [
  "indexmap",
  "serde",
  "serde_json",
- "thiserror",
 ]
 
 [[package]]
