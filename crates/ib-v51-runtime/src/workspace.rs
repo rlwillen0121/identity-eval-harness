@@ -257,83 +257,113 @@ impl<'a> VirtualWorkspaceRuntimeV51<'a> {
             });
         }
 
-        let result: Result<String, serde_json::Error> = match path {
-            "config/transforms.json" => parse_config_content::<TransformsConfigV51>(raw_content)
-                .and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+        let result: Result<String, String> = match path {
+            "config/transforms.json" => {
+                validate_config_payload::<TransformsConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.transforms = cfg;
-                    Ok(s)
-                }),
+                    s
+                })
+            }
             "config/identity_profile.json" => {
-                parse_config_content::<IdentityProfileConfigV51>(raw_content).and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+                validate_config_payload::<IdentityProfileConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.identity_profile = cfg;
-                    Ok(s)
+                    s
                 })
             }
             "config/username_policy.json" => {
-                parse_config_content::<UsernamePolicyConfigV51>(raw_content).and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+                validate_config_payload::<UsernamePolicyConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.username_policy = cfg;
-                    Ok(s)
+                    s
                 })
             }
             "config/lifecycle_states.json" => {
-                parse_config_content::<LifecycleStatesConfigV51>(raw_content).and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+                validate_config_payload::<LifecycleStatesConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.lifecycle_states = cfg;
-                    Ok(s)
+                    s
                 })
             }
-            "config/connectors.json" => parse_config_content::<ConnectorsConfigV51>(raw_content)
-                .and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+            "config/connectors.json" => {
+                validate_config_payload::<ConnectorsConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.connectors = cfg;
-                    Ok(s)
-                }),
+                    s
+                })
+            }
             "config/attribute_sync.json" => {
-                parse_config_content::<AttributeSyncConfigV51>(raw_content).and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+                validate_config_payload::<AttributeSyncConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.attribute_sync = cfg;
-                    Ok(s)
+                    s
                 })
             }
-            "config/role_model.json" => parse_config_content::<RoleModelConfigV51>(raw_content)
-                .and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+            "config/role_model.json" => {
+                validate_config_payload::<RoleModelConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.role_model = cfg;
-                    Ok(s)
-                }),
-            "config/workflows.json" => parse_config_content::<WorkflowsConfigV51>(raw_content)
-                .and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
-                    self.config.workflows = cfg;
-                    Ok(s)
-                }),
-            "config/golive_plan.json" => parse_config_content::<GoLivePlanConfigV51>(raw_content)
-                .and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
-                    self.config.golive_plan = cfg;
-                    Ok(s)
-                }),
-            "config/nhi_and_agents.json" => {
-                parse_config_content::<NhiAndAgentConfigV51>(raw_content).and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
-                    self.config.nhi_and_agents = cfg;
-                    Ok(s)
+                    s
                 })
             }
-            "config/cloud_ciem.json" => parse_config_content::<CloudCiemConfigV51>(raw_content)
-                .and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+            "config/workflows.json" => {
+                validate_config_payload::<WorkflowsConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
+                    self.config.workflows = cfg;
+                    s
+                })
+            }
+            "config/golive_plan.json" => {
+                validate_config_payload::<GoLivePlanConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
+                    self.config.golive_plan = cfg;
+                    s
+                })
+            }
+            "config/nhi_and_agents.json" => {
+                validate_config_payload::<NhiAndAgentConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
+                    self.config.nhi_and_agents = cfg;
+                    s
+                })
+            }
+            "config/cloud_ciem.json" => {
+                validate_config_payload::<CloudCiemConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.cloud_ciem = cfg;
-                    Ok(s)
-                }),
+                    s
+                })
+            }
             "config/access_reviews.json" => {
-                parse_config_content::<AccessReviewsConfigV51>(raw_content).and_then(|cfg| {
-                    let s = serde_json::to_string_pretty(&cfg)?;
+                validate_config_payload::<AccessReviewsConfigV51>(raw_content, |cfg| {
+                    cfg.schema_version.as_str()
+                })
+                .map(|(cfg, s)| {
                     self.config.access_reviews = cfg;
-                    Ok(s)
+                    s
                 })
             }
             _ => {
@@ -358,7 +388,7 @@ impl<'a> VirtualWorkspaceRuntimeV51<'a> {
             Err(err) => json!({
                 "status": "SCHEMA_ERROR",
                 "path": path,
-                "error": err.to_string(),
+                "error": err,
             }),
         }
     }
@@ -682,6 +712,70 @@ fn parse_config_content<T: DeserializeOwned>(value: &Value) -> Result<T, serde_j
         Value::String(text) => serde_json::from_str::<T>(text),
         other => serde_json::from_value::<T>(other.clone()),
     }
+}
+
+fn validate_config_payload<T: DeserializeOwned + serde::Serialize>(
+    raw_content: &Value,
+    schema_version_of: impl FnOnce(&T) -> &str,
+) -> Result<(T, String), String> {
+    let cfg = parse_config_content::<T>(raw_content)
+        .map_err(|err| sanitize_serde_enum_order_error(&err.to_string()))?;
+    let schema_version = schema_version_of(&cfg);
+    if schema_version != "v5.1" {
+        return Err(format!(
+            "SCHEMA_ERROR: schema_version must be \"v5.1\", got \"{schema_version}\""
+        ));
+    }
+    let serialized = serde_json::to_string_pretty(&cfg).map_err(|err| err.to_string())?;
+    Ok((cfg, serialized))
+}
+
+/// Sort any backtick-quoted enum/field lists after `"expected one of "` into strict
+/// alphabetical order so invalid-variant probes never leak operational enum declaration order.
+fn sanitize_serde_enum_order_error(err: &str) -> String {
+    const MARKER: &str = "expected one of ";
+    let mut out = String::with_capacity(err.len());
+    let mut remaining = err;
+
+    while let Some(pos) = remaining.find(MARKER) {
+        let split = pos + MARKER.len();
+        out.push_str(&remaining[..split]);
+        let after = &remaining[split..];
+
+        let mut cursor = after;
+        let mut items: Vec<&str> = Vec::new();
+        while let Some(after_open) = cursor.strip_prefix('`') {
+            let Some(close_idx) = after_open.find('`') else {
+                break;
+            };
+            items.push(&after_open[..close_idx]);
+            cursor = &after_open[close_idx + 1..];
+            if let Some(next) = cursor.strip_prefix(", ")
+                && next.starts_with('`')
+            {
+                cursor = next;
+            } else {
+                break;
+            }
+        }
+
+        if items.is_empty() {
+            remaining = after;
+        } else {
+            items.sort_unstable();
+            for (idx, item) in items.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(", ");
+                }
+                out.push('`');
+                out.push_str(item);
+                out.push('`');
+            }
+            remaining = cursor;
+        }
+    }
+    out.push_str(remaining);
+    out
 }
 
 fn normalize_workspace_path(raw: &str) -> &str {

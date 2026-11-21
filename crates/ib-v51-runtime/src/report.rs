@@ -296,11 +296,22 @@ pub fn render_v51_report_markdown(
         |rate| format!("{:.1}%", rate * 100.0),
     );
 
+    let evaluator_error_episodes: Vec<String> = records
+        .iter()
+        .filter(|r| {
+            r.termination_reason == "EVALUATOR_ERROR"
+                || r.score
+                    .as_ref()
+                    .is_some_and(|s| s.failures.iter().any(|f| f.check_name == "evaluate_commit"))
+        })
+        .map(|r| format!("{}#r{}", r.episode_id, r.repeat_index))
+        .collect();
+
     let mut md = format!(
         "# IdentityBench v5.1 Evaluation Report\n\n\
          - **Spec:** `{}` | **Suite:** `{}`\n\
          - **Model:** `{}` (`{}` via `{}`, effort `{}`)\n\
-         - **Completeness:** `is_complete = {}` (`{}/{}` observed, `{}` completed, `{}` step-limit, `{}` parse-failure, `{}` provider-error)\n\n\
+         - **Completeness:** `is_complete = {}` (`{}/{}` observed, `{}` completed, `{}` step-limit, `{}` parse-failure, `{}` provider-error, `{}` evaluator-error)\n\n\
          ## Primary Metrics\n\n\
          | Metric | Value |\n\
          | :--- | :--- |\n\
@@ -327,6 +338,7 @@ pub fn render_v51_report_markdown(
         summary.step_limit_slots,
         summary.parse_failure_slots,
         summary.provider_error_slots,
+        evaluator_error_episodes.len(),
         g_srr_display,
         summary.observed_state_accuracy * 100.0,
         summary.total_overgrants,
@@ -380,7 +392,8 @@ pub fn render_v51_report_markdown(
         "\n## Family Outcomes\n\n\
          - **Passed Families ({}):** {}\n\
          - **Failed Families ({}):** {}\n\
-         - **Provider-Error Families ({}):** {}\n\n\
+         - **Provider-Error Families ({}):** {}\n\
+         - **Evaluator-Error Slots ({}):** {}\n\n\
          ## Episode Breakdown\n\n\
          | Episode | Family | Repeat | Status | Turns | Dry Runs | G-SRR | State-Acc | OG | AB |\n\
          | :--- | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n",
@@ -390,6 +403,8 @@ pub fn render_v51_report_markdown(
         join_or_none(&summary.failed_families),
         summary.provider_error_families.len(),
         join_or_none(&summary.provider_error_families),
+        evaluator_error_episodes.len(),
+        join_or_none(&evaluator_error_episodes),
     ));
 
     let mut seen_slots = BTreeSet::new();
