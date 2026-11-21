@@ -23,6 +23,7 @@ pub struct UarRevocationSimulationV51 {
     pub protected_peers_retained_access: bool,
     pub stripped_colleague_person_keys: Vec<String>,
     pub modified_forbidden_shared_groups: Vec<String>,
+    pub unrelated_removed_edges: Vec<String>,
     pub reviewer_has_coi: bool,
     pub reviewer_is_active: bool,
 }
@@ -84,13 +85,38 @@ pub fn evaluate_uar_campaigns(
 /// 1. Whether the target subject (across BOTH `primary` and `admin_secondary` accounts)
 ///    still transitively reaches `item.target_entitlement_id`, AND
 /// 2. Whether every colleague in `item.preserved_colleague_person_keys` retains access
-///    without mutating any group in `item.shared_group_locked_by_colleagues`.
+///    without mutating any group in `item.shared_group_locked_by_colleagues` or removing
+///    unrelated account/group edges.
 #[must_use]
 pub fn simulate_uar_revocation(
     world: &EnterpriseBrownfieldWorldV51,
     item: &UarReviewItemRecordV51,
     decision: &UarItemDecisionV51,
     correlation: &SpokeCorrelationState,
+    lifecycles: &IndexMap<String, EvaluatedLifecycle>,
+) -> UarRevocationSimulationV51 {
+    simulate_uar_revocation_with_authoritative_correlation(
+        world,
+        item,
+        decision,
+        correlation,
+        Some(correlation),
+        lifecycles,
+    )
+}
+
+/// Simulate applying `decision.remove_account_group_edges` using BOTH `submitted_correlation`
+/// and `authoritative_correlation` (e.g., gold correlation) so broken/empty submitted correlation
+/// cannot hide subject accounts or protected colleagues, while also flagging removals of
+/// non-subject edges or subject group edges that do not transitively reach
+/// `item.target_entitlement_id` in the initial graph.
+#[must_use]
+pub fn simulate_uar_revocation_with_authoritative_correlation(
+    world: &EnterpriseBrownfieldWorldV51,
+    item: &UarReviewItemRecordV51,
+    decision: &UarItemDecisionV51,
+    submitted_correlation: &SpokeCorrelationState,
+    authoritative_correlation: Option<&SpokeCorrelationState>,
     lifecycles: &IndexMap<String, EvaluatedLifecycle>,
 ) -> UarRevocationSimulationV51 {
     // Build initial working copies of spoke account entitlements and group parent edges.
@@ -129,10 +155,26 @@ pub fn simulate_uar_revocation(
         .filter(|s| !s.is_empty())
         .collect();
 
-    // Check which preserved colleagues held the target entitlement BEFORE edge removals.
+    // Collect all accounts belonging to the UAR subject BEFORE applying edge removals,
+    // merging authoritative (gold) correlation + submitted correlation + listed membership paths.
+    let subject_accounts = collect_subject_accounts(
+        world,
+        item,
+        submitted_correlation,
+        authoritative_correlation,
+        &initial_account_ents,
+    );
+
+    // Check which preserved colleagues held the target entitlement BEFORE edge removals,
+    // resolving colleague accounts via BOTH authoritative and submitted correlation.
     let mut colleagues_with_initial_access: BTreeSet<String> = BTreeSet::new();
     for colleague_pk in &item.preserved_colleague_person_keys {
-        let accts = collect_person_spoke_accounts(colleague_pk, &item.target_spoke_id, correlation);
+        let accts = collect_person_spoke_accounts_merged(
+            colleague_pk,
+            &item.target_spoke_id,
+            submitted_correlation,
+            authoritative_correlation,
+        );
         if person_accounts_reach_entitlement(
             &accts,
             &item.target_entitlement_id,
@@ -143,10 +185,12 @@ pub fn simulate_uar_revocation(
         }
     }
 
-    // Apply `decision.remove_account_group_edges` to working copies.
+    // Apply `decision.remove_account_group_edges` to working copies while auditing
+    // for forbidden shared-group edits and unrelated edge removals.
     let mut working_account_ents = initial_account_ents;
-    let mut working_group_parents = initial_group_parents;
+    let mut working_group_parents = initial_group_parents.clone();
     let mut modified_forbidden_shared: BTreeSet<String> = BTreeSet::new();
+    let mut unrelated_removed: BTreeSet<String> = BTreeSet::new();
 
     for edge in &decision.remove_account_group_edges {
         let spoke = edge.spoke_id.trim();
@@ -155,12 +199,30 @@ pub fn simulate_uar_revocation(
 
         let acct_key = (spoke.to_owned(), acct_or_grp.to_owned());
         if let Some(ents) = working_account_ents.get_mut(&acct_key) {
+            // Check whether this edge targets a non-subject account or a group that does NOT
+            // transitively reach `item.target_entitlement_id` in the initial graph.
+            if !subject_accounts.contains(&acct_key) {
+                unrelated_removed.insert(format!("{spoke}:{acct_or_grp}->{grp}"));
+            } else {
+                let reaches_target =
+                    expand_entitlements_with_graph(std::iter::once(grp), &initial_group_parents)
+                        .contains(&item.target_entitlement_id);
+                if spoke != item.target_spoke_id || !reaches_target {
+                    unrelated_removed.insert(format!("{spoke}:{acct_or_grp}->{grp}"));
+                }
+            }
             ents.remove(grp);
             if forbidden_shared_set.contains(acct_or_grp) {
                 modified_forbidden_shared.insert(acct_or_grp.to_owned());
             }
         } else if let Some(parents) = working_group_parents.get_mut(acct_or_grp) {
             // Attempted to mutate a group-to-group nesting edge!
+            let reaches_target =
+                expand_entitlements_with_graph(std::iter::once(grp), &initial_group_parents)
+                    .contains(&item.target_entitlement_id);
+            if !reaches_target {
+                unrelated_removed.insert(format!("{spoke}:{acct_or_grp}->{grp}"));
+            }
             parents.remove(grp);
             if forbidden_shared_set.contains(acct_or_grp) {
                 modified_forbidden_shared.insert(acct_or_grp.to_owned());
@@ -173,10 +235,6 @@ pub fn simulate_uar_revocation(
         }
     }
 
-    // Collect all accounts belonging to the UAR subject (primary + admin_secondary + listed paths).
-    let subject_accounts =
-        collect_subject_accounts(world, item, correlation, &working_account_ents);
-
     let mut remaining_subject_accounts_with_access = Vec::new();
     for (spoke_id, acct_id) in &subject_accounts {
         if let Some(direct) = working_account_ents.get(&(spoke_id.clone(), acct_id.clone())) {
@@ -188,12 +246,19 @@ pub fn simulate_uar_revocation(
     }
     remaining_subject_accounts_with_access.sort();
     remaining_subject_accounts_with_access.dedup();
-    let subject_effective_access_removed = remaining_subject_accounts_with_access.is_empty();
+    // An unresolved subject with zero accounts cannot silently count as fully revoked.
+    let subject_effective_access_removed =
+        !subject_accounts.is_empty() && remaining_subject_accounts_with_access.is_empty();
 
     // Verify all protected colleagues still reach `item.target_entitlement_id`.
     let mut stripped_colleague_person_keys = Vec::new();
     for colleague_pk in &colleagues_with_initial_access {
-        let accts = collect_person_spoke_accounts(colleague_pk, &item.target_spoke_id, correlation);
+        let accts = collect_person_spoke_accounts_merged(
+            colleague_pk,
+            &item.target_spoke_id,
+            submitted_correlation,
+            authoritative_correlation,
+        );
         if !person_accounts_reach_entitlement(
             &accts,
             &item.target_entitlement_id,
@@ -207,8 +272,10 @@ pub fn simulate_uar_revocation(
 
     let modified_forbidden_shared_groups: Vec<String> =
         modified_forbidden_shared.into_iter().collect();
-    let protected_peers_retained_access =
-        stripped_colleague_person_keys.is_empty() && modified_forbidden_shared_groups.is_empty();
+    let unrelated_removed_edges: Vec<String> = unrelated_removed.into_iter().collect();
+    let protected_peers_retained_access = stripped_colleague_person_keys.is_empty()
+        && modified_forbidden_shared_groups.is_empty()
+        && unrelated_removed_edges.is_empty();
 
     let eff_rev = decision.effective_reviewer_person_key.trim();
     let reviewer_has_coi = matches!(
@@ -229,6 +296,7 @@ pub fn simulate_uar_revocation(
         protected_peers_retained_access,
         stripped_colleague_person_keys,
         modified_forbidden_shared_groups,
+        unrelated_removed_edges,
         reviewer_has_coi,
         reviewer_is_active,
     }
@@ -250,19 +318,41 @@ fn collect_person_spoke_accounts(
     out
 }
 
+fn collect_person_spoke_accounts_merged(
+    person_key: &str,
+    target_spoke_id: &str,
+    submitted_correlation: &SpokeCorrelationState,
+    authoritative_correlation: Option<&SpokeCorrelationState>,
+) -> Vec<(String, String)> {
+    let mut merged: BTreeSet<(String, String)> = BTreeSet::new();
+    for pair in collect_person_spoke_accounts(person_key, target_spoke_id, submitted_correlation) {
+        merged.insert(pair);
+    }
+    if let Some(auth_corr) = authoritative_correlation {
+        for pair in collect_person_spoke_accounts(person_key, target_spoke_id, auth_corr) {
+            merged.insert(pair);
+        }
+    }
+    merged.into_iter().collect()
+}
+
 fn collect_subject_accounts(
     world: &EnterpriseBrownfieldWorldV51,
     item: &UarReviewItemRecordV51,
-    correlation: &SpokeCorrelationState,
+    submitted_correlation: &SpokeCorrelationState,
+    authoritative_correlation: Option<&SpokeCorrelationState>,
     known_accounts: &HashMap<(String, String), BTreeSet<String>>,
 ) -> BTreeSet<(String, String)> {
     let mut accounts = BTreeSet::new();
 
     match item.subject_kind {
         UarSubjectKindV51::HumanPrimary | UarSubjectKindV51::HumanAdminSecondary => {
-            for pair in
-                collect_person_spoke_accounts(&item.subject_id, &item.target_spoke_id, correlation)
-            {
+            for pair in collect_person_spoke_accounts_merged(
+                &item.subject_id,
+                &item.target_spoke_id,
+                submitted_correlation,
+                authoritative_correlation,
+            ) {
                 accounts.insert(pair);
             }
         }
