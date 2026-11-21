@@ -50,6 +50,35 @@ pub struct AttributeSyncRunOutput {
     pub max_cohort_disable_ratio_bps: u32,
     /// Cohort name exhibiting `max_cohort_disable_ratio_bps`, when non-zero.
     pub max_cohort_name: Option<String>,
+    /// Uncorrelated non-exempt spoke accounts (`spoke_id:account_id`) exhibiting brownfield
+    /// service-account operational indicators (`OU=ServiceAccounts`, `svc_`/`sa_` prefix, or SPN)
+    /// that would be targeted for disablement. Strictly non-oracle.
+    pub service_like_accounts_targeted_for_disable: Vec<String>,
+}
+
+/// Heuristic check strictly from brownfield operational attributes (zero oracle access)
+/// for whether a spoke account exhibits service-account indicators (`OU=ServiceAccounts`,
+/// `svc_`/`sa_` prefix, or Kerberos SPN present).
+#[must_use]
+pub fn is_brownfield_service_like_account(acct: &BrownfieldSpokeAccountV51) -> bool {
+    if acct.has_service_principal_name {
+        return true;
+    }
+    let dn_low = acct.native_dn_or_key.to_ascii_lowercase();
+    if dn_low.contains("ou=serviceaccounts") || dn_low.contains("ou=service_accounts") {
+        return true;
+    }
+    let acct_id_low = acct.account_id.to_ascii_lowercase();
+    if acct_id_low.starts_with("svc_") || acct_id_low.starts_with("sa_") {
+        return true;
+    }
+    if let Some(sam) = acct.attributes.get("sAMAccountName") {
+        let sam_low = sam.trim().to_ascii_lowercase();
+        if sam_low.starts_with("svc_") || sam_low.starts_with("sa_") {
+            return true;
+        }
+    }
+    false
 }
 
 /// Simulate attribute sync against `world.spoke_accounts` and collect operational diagnostics
@@ -66,6 +95,7 @@ pub fn execute_attribute_sync(
     let mut synced_spoke_attributes: IndexMap<String, IndexMap<String, String>> = IndexMap::new();
     let mut excluded_admin_secondary_sorted: BTreeSet<String> = BTreeSet::new();
     let mut contaminated_admin_secondary_sorted: BTreeSet<String> = BTreeSet::new();
+    let mut service_like_targeted_sorted: BTreeSet<String> = BTreeSet::new();
     let mut saw_any_admin_secondary = false;
     let mut null_overwrite_targets: Vec<String> = Vec::new();
     let mut schema_errors: Vec<String> = Vec::new();
@@ -217,6 +247,12 @@ pub fn execute_attribute_sync(
                         modified_accounts.insert(acct_key.clone());
                     }
                 }
+            } else if !correlation
+                .exempt_service_account_set
+                .contains(&(spoke_id.clone(), acct.account_id.clone()))
+                && is_brownfield_service_like_account(acct)
+            {
+                service_like_targeted_sorted.insert(acct_key);
             }
         }
     }
@@ -297,6 +333,13 @@ pub fn execute_attribute_sync(
         ));
     }
 
+    if !service_like_targeted_sorted.is_empty() {
+        operational_warnings.push(format!(
+            "{} uncorrelated service-like account(s) would be targeted for disablement",
+            service_like_targeted_sorted.len()
+        ));
+    }
+
     AttributeSyncRunOutput {
         synced_spoke_attributes,
         admin_secondary_accounts_excluded_from_sync: excluded_admin_secondary_sorted
@@ -314,6 +357,9 @@ pub fn execute_attribute_sync(
         cohort_disable_ratios_bps,
         max_cohort_disable_ratio_bps,
         max_cohort_name,
+        service_like_accounts_targeted_for_disable: service_like_targeted_sorted
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -537,11 +583,21 @@ pub fn build_dry_run_result(
     };
 
     let gates = &config.golive_plan.safety_gates;
+    let service_account_targeted = !sync.service_like_accounts_targeted_for_disable.is_empty()
+        || correlation
+            .uncorrelated_non_exempt_accounts
+            .iter()
+            .any(|entry| {
+                let acct_part = entry.split_once(':').map_or(entry.as_str(), |(_, a)| a);
+                let low = acct_part.to_ascii_lowercase();
+                low.starts_with("svc_") || low.starts_with("sa_")
+            });
     let would_abort_on_configured_gates = sync.null_overwrite_targets.len()
         > config.attribute_sync.max_allowed_null_overwrites
         || sync.null_overwrite_targets.len() > gates.abort_if_null_attribute_overwrites_gt
         || correlation.uncorrelated_non_exempt_accounts.len()
             > gates.abort_if_uncorrelated_human_disable_count_gt
+        || (gates.abort_if_service_account_targeted_for_disable && service_account_targeted)
         || sync.schema_errors.len() > gates.abort_if_schema_validation_errors_gt
         || attribute_modify_ratio_bps > config.attribute_sync.max_modify_blast_radius_bps
         || sync.max_cohort_disable_ratio_bps > gates.abort_if_cohort_disable_ratio_bps_gt;

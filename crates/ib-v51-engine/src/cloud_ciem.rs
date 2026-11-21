@@ -160,12 +160,21 @@ pub fn detect_escalation_vector(principal: &CloudPrincipalRecordV51) -> CloudEsc
 
     match principal.provider {
         CloudProviderV51::Aws => {
+            let has_wildcard_iam = effective_perms.iter().any(|p| {
+                let low = p.to_ascii_lowercase();
+                !required_set.contains(&low) && (low == "iam:*" || low == "*")
+            });
             let has_pass_role = effective_perms.iter().any(|p| {
                 let low = p.to_ascii_lowercase();
-                !required_set.contains(&low)
-                    && (low == "iam:passrole" || low == "iam:*" || low == "*")
+                !required_set.contains(&low) && low == "iam:passrole"
             });
-            if has_pass_role {
+            let has_compute_exec = effective_perms.iter().any(|p| {
+                let low = p.to_ascii_lowercase();
+                is_aws_compute_exec_perm(&low)
+            });
+            if has_wildcard_iam
+                || (has_pass_role && (has_compute_exec || principal.is_orphan_unused))
+            {
                 return CloudEscalationVectorV51::AwsPassRoleCompute;
             }
             let has_assume_or_iam_priv = effective_perms.iter().any(|p| {
@@ -205,10 +214,19 @@ pub fn detect_escalation_vector(principal: &CloudPrincipalRecordV51) -> CloudEsc
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
             {
+                let single_quoted = format!("'{req_repo}'");
+                let double_quoted = format!("\"{req_repo}\"");
                 let pinned = principal
                     .wif_trust_condition
                     .as_deref()
-                    .is_some_and(|cond| cond.contains(req_repo) && !cond.contains('*'));
+                    .is_some_and(|cond| {
+                        !cond.contains('*')
+                            && (cond.contains(&single_quoted) || cond.contains(&double_quoted))
+                            && !cond.contains(&format!("startsWith({single_quoted})"))
+                            && !cond.contains(&format!("startsWith({double_quoted})"))
+                            && !cond.contains(&format!("!= {single_quoted}"))
+                            && !cond.contains(&format!("!= {double_quoted}"))
+                    });
                 if !pinned {
                     return CloudEscalationVectorV51::GcpWifUnscopedRepo;
                 }
@@ -240,6 +258,51 @@ pub fn is_escalation_permission(provider: CloudProviderV51, permission: &str) ->
         }
         CloudProviderV51::Gcp => is_gcp_escalation_perm(&low),
     }
+}
+
+fn is_aws_compute_exec_perm(low: &str) -> bool {
+    matches!(
+        low,
+        "lambda:*"
+            | "lambda:createfunction"
+            | "lambda:updatefunctioncode"
+            | "lambda:updatefunctionconfiguration"
+            | "lambda:invokefunction"
+            | "ec2:*"
+            | "ec2:runinstances"
+            | "ec2:associateiaminstanceprofile"
+            | "ec2:replaceiaminstanceprofileassociation"
+            | "ecs:*"
+            | "ecs:registertaskdefinition"
+            | "ecs:runtask"
+            | "ecs:createservice"
+            | "ecs:updateservice"
+            | "glue:*"
+            | "glue:createjob"
+            | "glue:updatejob"
+            | "glue:createdevendpoint"
+            | "glue:startjobrun"
+            | "sagemaker:*"
+            | "sagemaker:createnotebookinstance"
+            | "sagemaker:createtrainingjob"
+            | "sagemaker:createprocessingjob"
+            | "sagemaker:createmodel"
+            | "states:*"
+            | "states:createstatemachine"
+            | "states:updatestatemachine"
+            | "states:startexecution"
+            | "cloudformation:*"
+            | "cloudformation:createstack"
+            | "cloudformation:updatestack"
+            | "codebuild:*"
+            | "codebuild:createproject"
+            | "codebuild:startbuild"
+            | "datapipeline:*"
+            | "datapipeline:createpipeline"
+            | "batch:*"
+            | "batch:submitjob"
+            | "batch:registerjobdefinition"
+    )
 }
 
 fn is_aws_escalation_perm(low: &str) -> bool {

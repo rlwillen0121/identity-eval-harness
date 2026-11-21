@@ -18,6 +18,10 @@ use crate::roles::{
 use crate::transforms::{eval_date_compare, lifecycle_state_to_str};
 use crate::username::GeneratedUsername;
 
+/// Maximum upward hops allowed when walking a live manager or sponsor chain (`3` hops max;
+/// a 4th hop falls back to `fallback_governance_mailbox` / `fallback_vms_pmo_queue`).
+pub const MAX_LIVE_MANAGER_CHAIN_HOPS: usize = 3;
+
 /// Execute a sealed Day-2 event sequence deterministically over post-cutover identity state.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
@@ -148,6 +152,7 @@ pub fn evaluate_day2_events(
                         cubes,
                         usernames,
                         &effective_states,
+                        MAX_LIVE_MANAGER_CHAIN_HOPS,
                     )
                     .unwrap_or_else(|| wf.fallback_governance_mailbox.clone())
                 } else {
@@ -233,6 +238,7 @@ pub fn evaluate_day2_events(
                         cubes,
                         usernames,
                         &effective_states,
+                        MAX_LIVE_MANAGER_CHAIN_HOPS,
                     )
                     .or_else(|| {
                         walk_live_chain(
@@ -242,6 +248,7 @@ pub fn evaluate_day2_events(
                             cubes,
                             usernames,
                             &effective_states,
+                            MAX_LIVE_MANAGER_CHAIN_HOPS,
                         )
                     })
                     .unwrap_or_else(|| wf.fallback_vms_pmo_queue.clone())
@@ -441,15 +448,16 @@ pub fn evaluate_day2_events(
                     });
 
                 let decision = if approved {
-                    let entry = person_entitlements
-                        .entry(requester_person_key.clone())
-                        .or_default();
-                    for ent in &expanded_requested {
-                        entry.insert(ent.clone());
-                    }
                     if *target_spoke_ticket_closed_without_aggregation && verify_post_close {
+                        // Do NOT mutate live effective entitlements while target readback verification is pending!
                         "approved_pending_itsm_verify".to_owned()
                     } else {
+                        let entry = person_entitlements
+                            .entry(requester_person_key.clone())
+                            .or_default();
+                        for ent in &expanded_requested {
+                            entry.insert(ent.clone());
+                        }
                         "approved_provisioned".to_owned()
                     }
                 } else {
@@ -580,13 +588,16 @@ fn walk_live_chain(
     cubes: &IndexMap<String, CoalescedIdentity<'_>>,
     usernames: &IndexMap<String, GeneratedUsername>,
     effective_states: &HashMap<String, LifecycleStateIdV51>,
+    max_hops: usize,
 ) -> Option<String> {
     let mut visited: HashSet<String> = HashSet::new();
     visited.insert(subject_key.to_owned());
 
     let mut cursor = start_key;
+    let mut hops = 0usize;
     while let Some(key) = cursor {
-        if !visited.insert(key.to_owned()) {
+        hops += 1;
+        if hops > max_hops || !visited.insert(key.to_owned()) {
             break;
         }
         let cube = cubes.get(key)?;
