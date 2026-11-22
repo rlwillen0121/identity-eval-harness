@@ -6,12 +6,31 @@ Notable changes are recorded here in Keep a Changelog format. Dates below come f
 
 ### Added
 
+- IdentityBench **v5.1.0** is the sole benchmark: froze [SPEC-v5.1.md](SPEC-v5.1.md) (contract `identitybench.v5.1.practitioner-contract.v2`, generator `5.1.0`) and sealed the 8-category practitioner IGA engagement suites `datasets/v51/v51_{dev,lite,core,full}` (`12` / `24` / `48` / `96` episodes, seed `20261120`; `b3e8e70`), after `12/12` blind conformance on `v51_dev` (`6e2a0a0`).
+- Imported the first `v51_core` results under [`reports/v51/runs/`](reports/v51/runs/) (`5` complete runs, `4` in progress) and added the run importer `node scripts/import-v51-run.mjs <raw_run_dir> [<name>]` (`e495220`).
+- Rewrote the [dataset card](datasets/README.md), README, agent instructions, skills, and Rust/architecture/release docs for v5.1 and `identitybench v51` (`build`, `validate`, `run`, `report`).
+
+### Changed
+
+- Replaced the identitybench.ai v5 `v5_core` leaderboard with the v5.1 `v51_core` board: complete runs are ranked; incomplete runs are listed as in progress.
+- Reduced the Rust workspace (version `5.1.0`) to `ib-core`, `ib-providers`, `ib-accounting` (renamed from `ib-v5-accounting`), `ib-v51-schemas`, `ib-v51-engine`, `ib-v51-generator`, `ib-v51-runtime`, and `ib-cli`; CI validates `v51_dev` offline with `--double-build`. Example run configs move to `examples/v51/`.
+
+### Removed
+
+- Retired native Rust v5 (`identitybench v5`, Draft 5) at tag `legacy-v5` (`e68ffb0`). Moved `datasets/v5_*` and `datasets/v5_draft5` to [`archive/datasets/v5/`](archive/datasets/v5/), the v5 specifications to [`archive/specs/v5/`](archive/specs/v5/), `reports/v5/{runs,baselines,conformance}` and the published leaderboard data to [`archive/reports/v5/`](archive/reports/v5/), and `docs/RUST-CONFORMANCE.md` to [`archive/reports/v5/RUST-CONFORMANCE.md`](archive/reports/v5/RUST-CONFORMANCE.md) (`c298c00`). v5 and v5.1 scores measure different tasks and are not comparable.
+
+## 2026-11-18 — native Rust v5 (retired at `legacy-v5`)
+
+These entries describe the native Rust v5 cutover. That generation has since been retired; its artifacts are under [`archive/`](archive/README.md).
+
+### Added
+
 - Completed hard cutover to pure native Rust `v5` (`crates/`, 14 crates, `ib-cli` `identitybench v5` executable) as the sole live benchmark harness.
 - Added `.gitattributes` classifying `archive/**` and `reports/**` as `linguist-documentation` and `datasets/**` as `linguist-generated`.
 - Added native Rust v5 operator configs and frozen pricing JSONs under `examples/rust-v5/` (`v5_core_codex_62_astra.yaml`, `v5_core_codex_62_sol.yaml`).
 - Merged PR #8 (`0ab2f9a`, 2026-11-17): Native Rust v5 workspace (`crates/`, `ib-cli`) implementing v5 Draft 5 generation, oracle evaluation, runtime, providers, accounting, scoring, reporting, validation, and conformance (`prepare`/`freeze`/`run`/`bind`/`verify`), without Python runtime bindings or subprocess fallback.
 - Synthesized the audited preliminary v5 Draft 5 (`v5_core`) preview results bundle under [archive/reports/v5-python-draft5/preliminary-core/](archive/reports/v5-python-draft5/preliminary-core/report.md) from the offline native Rust audit ([AUDIT.md](archive/reports/v5-python-draft5/rust-final-audit/historical/AUDIT.md), `24` configurations / `3,456` slots, `24/24` byte-identical summaries and Markdown reports, `18` `protocol_complete` vs. `6` `provider_incomplete`).
-- A canonical [dataset card](datasets/README.md) for active Draft 5 `v5` splits, contamination notice, software citation metadata, and architecture, Rust, conformance, and release instructions.
+- A canonical dataset card for the then-active Draft 5 `v5` splits (since replaced by the v5.1 card), contamination notice, software citation metadata, and architecture, Rust, conformance, and release instructions.
 
 ### Changed
 

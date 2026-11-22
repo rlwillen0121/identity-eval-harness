@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The active **IdentityBench v5** native Rust workspace (`crates/`, `identitybench v5`) receives security fixes. Earlier benchmark generations (`v1–v4` at `legacy-v1-v4`, and `v4.1` plus legacy Python `v5` at `legacy-v4.1`) are retired and preserved under [`archive/`](archive/README.md) as unsupported archival artifacts. See [archive/reports/v5-python-draft5/rust-final-audit/DAYBREAK.md](archive/reports/v5-python-draft5/rust-final-audit/DAYBREAK.md) and [archive/reports/v5-python-draft5/security-audit-daybreak-blue-20261115.md](archive/reports/v5-python-draft5/security-audit-daybreak-blue-20261115.md) for recent defensive audit remediations.
+The active **IdentityBench v5.1** native Rust workspace (`crates/`, `identitybench v51`) receives security fixes. Earlier benchmark generations (`v1–v4` at `legacy-v1-v4`, `v4.1` plus legacy Python `v5` at `legacy-v4.1`, and native Rust `v5` at `legacy-v5`) are retired and preserved under [`archive/`](archive/README.md) as unsupported archival artifacts. See [archive/reports/v5-python-draft5/rust-final-audit/DAYBREAK.md](archive/reports/v5-python-draft5/rust-final-audit/DAYBREAK.md) and [archive/reports/v5-python-draft5/security-audit-daybreak-blue-20261115.md](archive/reports/v5-python-draft5/security-audit-daybreak-blue-20261115.md) for the defensive audit remediations carried into the shared provider adapters.
 
 ## Reporting a vulnerability
 
@@ -26,20 +26,20 @@ Do not put credentials or exploit details in a public issue.
 - Some subscription-CLI providers pass prompt text in process arguments, visible to
   other local users via the process table. Run on a single-user host. For example,
   Cursor passes the prompt as an argument, and Claude passes its system prompt this way.
-- **Native Rust v5 adapter & loader bounds (`crates/ib-providers`, `crates/ib-v5-generator`):**
+- **Native Rust provider adapter bounds (`crates/ib-providers`):**
   HTTP clients refuse redirects and enforce an incremental `20 MiB` response body cap, CLI
   adapters cap auxiliary output files at `16 MiB` (`64 KiB` per stream on version probes) and
-  retain bounded stdout/stderr on timeouts with process-group cleanup, and the native dataset
-  loader caps reads at `512 MiB` across the three sealed files with regular-file and Unix
-  descriptor checks (directory ownership and ancestor directory permissions remain operator
+  retain bounded stdout/stderr on timeouts with process-group cleanup.
+- **v5.1 dataset loading:** `identitybench v51 validate` verifies `SEAL.json` digests for
+  `episodes.jsonl`, `oracles.jsonl`, and `SPEC-v5.1.md`; `identitybench v51 run` checks only the
+  sealed suite ID before executing. Validate a suite before running it, and load datasets only
+  from trusted directories (file sizes, ownership, and directory permissions remain operator
   responsibilities).
 - `endpoint_identity` contains a truncated, unsalted hash of the base URL and other
   endpoint settings. It is not encryption and does not prevent guessing a known URL;
   an explicit custom-endpoint opt-in also adds a readable identity prefix.
-- Run artifacts are verified by raw-trajectory regrading and digest pins, not
-  cryptographically signed. Verification checks consistency with recorded actions,
-  not the authenticity of provider output; older artifacts may lack enough context to
-  verify.
-- Native Rust `v5 conformance` executes operator-supplied evaluator binaries in a clean
-  child environment with read-only staged artifacts, but without OS-level network
-  sandboxing; do not run untrusted evaluator executables.
+- v5.1 run artifacts are not cryptographically signed. `identitybench v51 report`
+  recomputes summaries from the recorded per-slot scores in `episodes.jsonl`; it checks
+  consistency of the recorded results, not the authenticity of provider output.
+  Retired v5 artifacts under `archive/` were verified by raw-trajectory regrading at
+  `legacy-v5`.

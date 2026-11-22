@@ -1,5 +1,8 @@
 # Native v5 conformance evidence
 
+> [!NOTE]
+> **Archived (retired native Rust v5).** This guide was `docs/RUST-CONFORMANCE.md` until native v5 was retired in favor of IdentityBench v5.1. The `identitybench v5 conformance` commands, `crates/ib-v5-*` sources, `datasets/v5_draft5/` inputs, and `reports/v5/conformance/` paths below refer to the tree at tag `legacy-v5`; in this checkout those artifacts live under [`archive/datasets/v5/`](../../datasets/v5/) and [`archive/reports/v5/conformance/`](conformance/). For the active v5.1 blind-conformance gate (`G-BLIND-V51`), see [docs/RUST.md](../../../docs/RUST.md).
+
 The native `identitybench v5 conformance` commands freeze public inputs and independent
 external evaluators, run them through the shared JSONL protocol, compare their results with
 the Rust production evaluator, and bind verifiable receipts. The native commands do not
@@ -255,5 +258,5 @@ built from it. Rebuild and gather a new freeze rather than rewriting an old rece
 The preserved Python receipt schemas and committed audit bytes remain archival compatibility
 evidence. Existing stale Draft 5 G-SPEC receipts remain failures. Native plumbing tests do not
 refresh those receipts or establish freshly qualified blind conformance. Retired `v4.1`
-artifacts remain separate under [`archive/`](../archive/README.md). See [RUST.md](RUST.md) for
+artifacts remain separate under [`archive/`](../../README.md). See the `legacy-v5` `docs/RUST.md` for
 native source checks and the remaining live and release evidence boundaries.
