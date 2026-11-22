@@ -1585,8 +1585,6 @@ fn build_fixture() -> (EpisodeV52, SealedEpisodeOracleV52) {
         engagement_title: "Full-Stack Engine Unit Fixture".to_owned(),
         cutover_date,
         cutover_epoch_s: 1_795_132_800,
-        max_assistant_generations: 20,
-        max_calls_per_turn: 8,
         max_golive_dry_runs: 5,
         readonly_files,
         starter_configs: gold_config.clone(),

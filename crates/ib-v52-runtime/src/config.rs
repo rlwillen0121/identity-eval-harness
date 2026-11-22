@@ -5,18 +5,24 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use ib_accounting::{FrozenPricingRate, HasUsageTokenCounts, estimate_frozen_cost_micros};
 use ib_core::hashing::sha256_hex;
-use ib_providers::factory::ModelSpec;
+use ib_providers::factory::{ModelSpec, ProviderKind};
 use ib_v52_schemas::{EpisodeV52, SealedEpisodeOracleV52};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const DEFAULT_V52_MAX_OUTPUT_TOKENS: u64 = 32_768;
+use crate::protocol::PER_CALL_TIMEOUT_S_V52;
 
 /// Pricing rates in USD micros per 1M tokens.
+///
+/// Cache-write tokens are priced at `cache_write_micros_per_million` when present and are never
+/// folded into cache-read tokens (`SPEC-v5.2` §10.2). Without a cache-write rate they are priced
+/// as uncached input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct PricingRatesV52 {
     pub uncached_input_micros_per_million: i64,
     pub cached_input_micros_per_million: i64,
+    #[serde(default)]
+    pub cache_write_micros_per_million: Option<i64>,
     pub output_micros_per_million: i64,
     pub reasoning_micros_per_million: i64,
 }
@@ -39,9 +45,14 @@ impl PricingRatesV52 {
                 }
                 Ok(n)
             };
+            let cache_write = match obj.get("cache_write_micros_per_million") {
+                None | Some(Value::Null) => None,
+                Some(_) => Some(get_micros("cache_write_micros_per_million")?),
+            };
             return Ok(Self {
                 uncached_input_micros_per_million: get_micros("uncached_input_micros_per_million")?,
                 cached_input_micros_per_million: get_micros("cached_input_micros_per_million")?,
+                cache_write_micros_per_million: cache_write,
                 output_micros_per_million: get_micros("output_micros_per_million")?,
                 reasoning_micros_per_million: get_micros("reasoning_micros_per_million")?,
             });
@@ -63,6 +74,10 @@ impl PricingRatesV52 {
                 None | Some(Value::Null) => 0,
                 Some(_) => get_usd_micros("cached_input_per_1m_usd")?,
             };
+            let cache_write = match obj.get("cache_write_per_1m_usd") {
+                None | Some(Value::Null) => None,
+                Some(_) => Some(get_usd_micros("cache_write_per_1m_usd")?),
+            };
             let output = get_usd_micros("output_per_1m_usd")?;
             let reasoning = match obj.get("reasoning_per_1m_usd") {
                 None | Some(Value::Null) => output,
@@ -71,6 +86,7 @@ impl PricingRatesV52 {
             return Ok(Self {
                 uncached_input_micros_per_million: uncached,
                 cached_input_micros_per_million: cached,
+                cache_write_micros_per_million: cache_write,
                 output_micros_per_million: output,
                 reasoning_micros_per_million: reasoning,
             });
@@ -89,24 +105,27 @@ impl PricingRatesV52 {
             currency_code: "USD".to_owned(),
             input_cost_per_million_micros: self.uncached_input_micros_per_million,
             cached_input_cost_per_million_micros: Some(self.cached_input_micros_per_million),
-            cache_write_cost_per_million_micros: None,
+            cache_write_cost_per_million_micros: self.cache_write_micros_per_million,
             output_cost_per_million_micros: self.output_micros_per_million,
             reasoning_cost_per_million_micros: Some(self.reasoning_micros_per_million),
         }
     }
 
-    /// Compute rounded integer USD micros from accumulated token counts.
+    /// Compute rounded integer USD micros from accumulated token counts. `input_tokens` is
+    /// uncached input; cache-read and cache-write tokens are separate, disjoint counts.
     #[must_use]
     pub fn compute_cost_usd_micros(
         &self,
         input_tokens: u64,
-        cached_input_tokens: u64,
+        cache_read_tokens: u64,
+        cache_write_tokens: u64,
         output_tokens: u64,
         reasoning_tokens: u64,
     ) -> u64 {
         struct TokenSnapshot {
             total_in: i64,
             cached_in: i64,
+            cache_write_in: i64,
             total_out: i64,
             reasoning: i64,
         }
@@ -123,35 +142,31 @@ impl PricingRatesV52 {
             fn reasoning_tokens_subset(&self) -> Option<i64> {
                 Some(self.reasoning)
             }
+            fn cache_write_input_tokens(&self) -> Option<i64> {
+                Some(self.cache_write_in)
+            }
         }
+        let to_i64 = |n: u64| i64::try_from(n).unwrap_or(i64::MAX);
         let snapshot = TokenSnapshot {
-            total_in: i64::try_from(input_tokens.saturating_add(cached_input_tokens))
-                .unwrap_or(i64::MAX),
-            cached_in: i64::try_from(cached_input_tokens).unwrap_or(i64::MAX),
-            total_out: i64::try_from(output_tokens).unwrap_or(i64::MAX),
-            reasoning: i64::try_from(reasoning_tokens).unwrap_or(i64::MAX),
+            total_in: to_i64(
+                input_tokens
+                    .saturating_add(cache_read_tokens)
+                    .saturating_add(cache_write_tokens),
+            ),
+            cached_in: to_i64(cache_read_tokens),
+            cache_write_in: to_i64(cache_write_tokens),
+            total_out: to_i64(output_tokens),
+            reasoning: to_i64(reasoning_tokens.min(output_tokens)),
         };
         let frozen = self.to_frozen_rate(&"0".repeat(64));
-        if let Some(micros) = estimate_frozen_cost_micros(&snapshot, &frozen)
-            && micros >= 0
-        {
-            return micros as u64;
-        }
-        let visible_output = output_tokens.saturating_sub(reasoning_tokens);
-        let numerator = i128::from(input_tokens)
-            * i128::from(self.uncached_input_micros_per_million)
-            + i128::from(cached_input_tokens) * i128::from(self.cached_input_micros_per_million)
-            + i128::from(visible_output) * i128::from(self.output_micros_per_million)
-            + i128::from(reasoning_tokens) * i128::from(self.reasoning_micros_per_million);
-        if numerator <= 0 {
-            0
-        } else {
-            u64::try_from((numerator + 500_000) / 1_000_000).unwrap_or(u64::MAX)
+        match estimate_frozen_cost_micros(&snapshot, &frozen) {
+            Some(micros) if micros >= 0 => micros as u64,
+            _ => 0,
         }
     }
 }
 
-/// Loaded pricing artifact with raw SHA-256 digest.
+/// Loaded pricing artifact with raw SHA-256 digest (`pricing_sha256`).
 #[derive(Debug, Clone)]
 pub struct LoadedPricingV52 {
     pub rates: PricingRatesV52,
@@ -172,27 +187,21 @@ pub fn load_pricing_v52(path: &Path) -> Result<LoadedPricingV52> {
     })
 }
 
-/// Execution parameters parsed from the optional `run_config` YAML section.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+/// Optional `run_config` YAML section. Budget, ceiling, output-token and prompt overrides are
+/// not accepted (`SPEC-v5.2` §10.1 item 5).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct RunConfigV52 {
     pub effort: Option<String>,
-    pub max_output_tokens: u64,
-    pub max_assistant_generations: Option<usize>,
-    pub max_calls_per_turn: Option<usize>,
     pub temperature: Option<f64>,
+    /// The model's declared context window in tokens, recorded in the probe receipt (§11.2.1).
+    pub context_window_tokens: Option<u64>,
 }
 
-impl Default for RunConfigV52 {
-    fn default() -> Self {
-        Self {
-            effort: None,
-            max_output_tokens: DEFAULT_V52_MAX_OUTPUT_TOKENS,
-            max_assistant_generations: None,
-            max_calls_per_turn: None,
-            temperature: None,
-        }
-    }
+/// Transports whose requests carry a provider output-token parameter (§7.3).
+#[must_use]
+pub fn is_http_transport(kind: ProviderKind) -> bool {
+    kind.is_api_kind()
 }
 
 /// Complete YAML run configuration (`model`, optional `model_tier`, optional `run_config`).
@@ -201,11 +210,37 @@ pub struct LoadedRunConfigV52 {
     pub model_spec: ModelSpec,
     pub run_config: RunConfigV52,
     pub model_tier: Option<String>,
+    /// Reasoning effort of the entry, or `transport_default` when none is configured.
     pub effort: String,
-    pub max_output_tokens: u64,
+    /// `transport_id` of the entry (the provider kind).
+    pub transport_id: String,
+    /// Requested output-token parameter: the model's vendor maximum for HTTP transports; `None`
+    /// for transports that expose no such parameter (§7.3).
+    pub requested_output_tokens: Option<u64>,
+    /// Pinned temperature, or `None` when recorded as `transport_default`.
+    pub temperature: Option<f64>,
+    /// Normalized model configuration bound into the run fingerprint (§7.5).
+    pub model_config: Value,
+}
+
+impl LoadedRunConfigV52 {
+    /// `(model_id, reasoning_effort, transport_id)` entry tuple (§7.3).
+    #[must_use]
+    pub fn entry(&self) -> (String, String, String) {
+        (
+            self.model_spec.model.clone(),
+            self.effort.clone(),
+            self.transport_id.clone(),
+        )
+    }
 }
 
 /// Load a YAML run configuration (`model`, optional `model_tier`, optional `run_config`).
+///
+/// - Adapter-internal retries are forced off: `extra.max_retries` must be absent or `0` (§7.4).
+/// - HTTP transports must state `model.max_output_tokens` explicitly: the model's vendor-maximum
+///   output tokens (§7.3). There is no harness default and no combined cap.
+/// - `timeout_s` defaults to the protocol's per-call timeout of 1800 s (§7.4).
 pub fn load_run_config_v52(path: &Path) -> Result<LoadedRunConfigV52> {
     let raw = std::fs::read(path)
         .with_context(|| format!("failed to read model config {}", path.display()))?;
@@ -229,67 +264,86 @@ pub fn load_run_config_v52(path: &Path) -> Result<LoadedRunConfigV52> {
         Some(_) => bail!("model_tier must be 'frontier' or 'fast'"),
     };
 
+    let run_config: RunConfigV52 = match object.get("run_config") {
+        None | Some(Value::Null) => RunConfigV52::default(),
+        Some(val @ Value::Object(_)) => serde_json::from_value(val.clone()).map_err(|e| {
+            anyhow::anyhow!(
+                "invalid run_config ({e}); v5.2 accepts only effort, temperature and context_window_tokens (no budget, ceiling or output-token overrides)"
+            )
+        })?,
+        Some(_) => bail!("run_config must be a mapping"),
+    };
+
     let model_value = object
         .get_mut("model")
         .and_then(Value::as_object_mut)
         .ok_or_else(|| anyhow::anyhow!("model config must contain a 'model' mapping"))?;
 
     let explicit_model_max_output = model_value.get("max_output_tokens").and_then(Value::as_u64);
-    normalize_model_extra(model_value);
+    normalize_model_extra(model_value)?;
+    if !model_value.contains_key("timeout_s") {
+        model_value.insert(
+            "timeout_s".to_owned(),
+            Value::from(PER_CALL_TIMEOUT_S_V52 as f64),
+        );
+    }
     let model_spec = ModelSpec::from_json_value(Value::Object(model_value.clone()))
         .map_err(|e| anyhow::anyhow!("invalid model specification: {e}"))?;
 
-    let run_config = match object.get("run_config") {
-        None | Some(Value::Null) => RunConfigV52::default(),
-        Some(val @ Value::Object(_)) => parse_run_config_section(val)?,
-        Some(_) => bail!("run_config must be a mapping"),
+    let requested_output_tokens = if is_http_transport(model_spec.provider) {
+        Some(explicit_model_max_output.ok_or_else(|| {
+            anyhow::anyhow!(
+                "provider '{}' requires model.max_output_tokens set to the model's vendor-maximum output tokens (SPEC-v5.2 §7.3)",
+                model_spec.provider.as_str()
+            )
+        })?)
+    } else {
+        None
     };
 
     let effort = model_spec
         .effective_effort()
         .map(str::to_owned)
         .or_else(|| run_config.effort.clone())
-        .unwrap_or_else(|| "medium".to_owned());
+        .unwrap_or_else(|| "transport_default".to_owned());
+    let temperature = model_spec.temperature.or(run_config.temperature);
+    let transport_id = model_spec.provider.as_str().to_owned();
 
-    let max_output_tokens = explicit_model_max_output.unwrap_or(run_config.max_output_tokens);
+    let mut normalized = serde_json::to_value(&model_spec)?;
+    if let Some(map) = normalized.as_object_mut() {
+        map.insert(
+            "requested_output_tokens".to_owned(),
+            requested_output_tokens.map_or(Value::Null, Value::from),
+        );
+        map.insert("reasoning_effort".to_owned(), Value::String(effort.clone()));
+        map.insert(
+            "sampling".to_owned(),
+            temperature.map_or_else(
+                || Value::String("transport_default".to_owned()),
+                |t| serde_json::json!({ "temperature": t }),
+            ),
+        );
+        map.insert(
+            "context_window_tokens".to_owned(),
+            run_config
+                .context_window_tokens
+                .map_or(Value::Null, Value::from),
+        );
+    }
 
     Ok(LoadedRunConfigV52 {
         model_spec,
         run_config,
         model_tier,
         effort,
-        max_output_tokens,
+        transport_id,
+        requested_output_tokens,
+        temperature,
+        model_config: normalized,
     })
 }
 
-fn parse_run_config_section(value: &Value) -> Result<RunConfigV52> {
-    let map = value
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("run_config must be a mapping"))?;
-    let mut cfg = RunConfigV52::default();
-    if let Some(eff) = map.get("effort").and_then(Value::as_str) {
-        cfg.effort = Some(eff.to_owned());
-    }
-    if let Some(toks) = map.get("max_output_tokens").and_then(Value::as_u64) {
-        cfg.max_output_tokens = toks;
-    }
-    if let Some(gens) = map
-        .get("max_assistant_generations")
-        .or_else(|| map.get("max_assistant_generations_per_episode"))
-        .and_then(Value::as_u64)
-    {
-        cfg.max_assistant_generations = Some(usize::try_from(gens)?);
-    }
-    if let Some(calls) = map.get("max_calls_per_turn").and_then(Value::as_u64) {
-        cfg.max_calls_per_turn = Some(usize::try_from(calls)?);
-    }
-    if let Some(temp) = map.get("temperature").and_then(Value::as_f64) {
-        cfg.temperature = Some(temp);
-    }
-    Ok(cfg)
-}
-
-fn normalize_model_extra(model: &mut Map<String, Value>) {
+fn normalize_model_extra(model: &mut Map<String, Value>) -> Result<()> {
     let provider = model.get("provider").and_then(Value::as_str);
     let supports_retries = matches!(
         provider,
@@ -306,7 +360,7 @@ fn normalize_model_extra(model: &mut Map<String, Value>) {
         )
     );
     if !supports_retries {
-        return;
+        return Ok(());
     }
     match model.get_mut("extra") {
         None | Some(Value::Null) => {
@@ -314,13 +368,18 @@ fn normalize_model_extra(model: &mut Map<String, Value>) {
             extra.insert("max_retries".to_owned(), Value::from(0));
             model.insert("extra".to_owned(), Value::Object(extra));
         }
-        Some(Value::Object(extra)) => {
-            extra
-                .entry("max_retries".to_owned())
-                .or_insert(Value::from(0));
-        }
+        Some(Value::Object(extra)) => match extra.get("max_retries") {
+            None => {
+                extra.insert("max_retries".to_owned(), Value::from(0));
+            }
+            Some(v) if v.as_u64() == Some(0) => {}
+            Some(_) => bail!(
+                "extra.max_retries must be 0: adapters perform no internal retries (SPEC-v5.2 §7.4)"
+            ),
+        },
         Some(_) => {}
     }
+    Ok(())
 }
 
 /// Loaded v5.2 dataset directory (`episodes.jsonl`, `oracles.jsonl`, `SEAL.json`).
@@ -377,4 +436,46 @@ fn parse_jsonl<T: serde::de::DeserializeOwned>(bytes: &[u8], label: &str) -> Res
         items.push(item);
     }
     Ok(items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_writes_are_priced_separately_from_cache_reads() {
+        let rates = PricingRatesV52 {
+            uncached_input_micros_per_million: 1_000_000,
+            cached_input_micros_per_million: 100_000,
+            cache_write_micros_per_million: Some(1_250_000),
+            output_micros_per_million: 4_000_000,
+            reasoning_micros_per_million: 4_000_000,
+        };
+        // 1M uncached + 1M cache-read + 1M cache-write + 1M output.
+        let cost = rates.compute_cost_usd_micros(1_000_000, 1_000_000, 1_000_000, 1_000_000, 0);
+        assert_eq!(cost, 1_000_000 + 100_000 + 1_250_000 + 4_000_000);
+        // Without a cache-write rate, cache writes are priced as uncached input, never as reads.
+        let no_cw = PricingRatesV52 {
+            cache_write_micros_per_million: None,
+            ..rates
+        };
+        let cost = no_cw.compute_cost_usd_micros(0, 0, 1_000_000, 0, 0);
+        assert_eq!(cost, 1_000_000);
+    }
+
+    #[test]
+    fn pricing_parses_cache_write_in_both_formats() {
+        let micros = PricingRatesV52::from_json_value(&serde_json::json!({
+            "uncached_input_micros_per_million": 1, "cached_input_micros_per_million": 2,
+            "cache_write_micros_per_million": 3, "output_micros_per_million": 4,
+            "reasoning_micros_per_million": 5
+        }))
+        .unwrap();
+        assert_eq!(micros.cache_write_micros_per_million, Some(3));
+        let usd = PricingRatesV52::from_json_value(&serde_json::json!({
+            "input_per_1m_usd": 3.0, "cache_write_per_1m_usd": 3.75, "output_per_1m_usd": 15.0
+        }))
+        .unwrap();
+        assert_eq!(usd.cache_write_micros_per_million, Some(3_750_000));
+    }
 }

@@ -329,14 +329,6 @@ pub struct EpisodeV52 {
     pub engagement_title: String,
     pub cutover_date: String,
     pub cutover_epoch_s: i64,
-    /// TRANSITIONAL and never serialized (`#[serde(skip)]`). An in-memory harness turn budget kept only
-    /// so the pre-Phase-2 runner compiles; it always deserializes to [`crate::DEFAULT_MAX_TURNS_V52`].
-    /// The Phase-2 runner sources harness budgets from the system prompt, after which this field is deleted.
-    #[serde(skip, default = "default_transitional_max_turns")]
-    pub max_assistant_generations: usize,
-    /// TRANSITIONAL and never serialized (`#[serde(skip)]`); see [`Self::max_assistant_generations`].
-    #[serde(skip, default = "default_transitional_max_calls_per_turn")]
-    pub max_calls_per_turn: usize,
     /// Dry-run credits, a task resource (§3.1). The only budget-like member of a serialized episode.
     pub max_golive_dry_runs: usize,
     /// Read-only engagement files (`engagement/*.md`, `legacy_iiq/*.xml`, `sources/*`, `target_specs/*.md`).
@@ -345,14 +337,6 @@ pub struct EpisodeV52 {
     pub starter_configs: IgaDeploymentConfigV52,
     /// Structured backing world for deterministic sandbox preview & dry-run tools.
     pub world: EnterpriseBrownfieldWorldV52,
-}
-
-const fn default_transitional_max_turns() -> usize {
-    crate::DEFAULT_MAX_TURNS_V52
-}
-
-const fn default_transitional_max_calls_per_turn() -> usize {
-    crate::DEFAULT_MAX_CALLS_PER_TURN_V52
 }
 
 // ---------------------------------------------------------------------------

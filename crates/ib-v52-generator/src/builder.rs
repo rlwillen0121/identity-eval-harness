@@ -1,8 +1,8 @@
 //! Episode and suite dataset builders parameterized over [`IgaEngineBackendV52`].
 
 use ib_v52_schemas::{
-    DEFAULT_MAX_CALLS_PER_TURN_V52, DEFAULT_MAX_DRY_RUNS_V52, DEFAULT_MAX_TURNS_V52, EpisodeV52,
-    IgaEngineBackendV52, SPEC_VERSION_V52, SealedEpisodeOracleV52, V52Suite,
+    DEFAULT_MAX_DRY_RUNS_V52, EpisodeV52, IgaEngineBackendV52, SPEC_VERSION_V52,
+    SealedEpisodeOracleV52, V52Suite,
 };
 use serde::{Deserialize, Serialize};
 
@@ -132,8 +132,6 @@ pub fn build_v52_episode_with_engine(
         cutover_date: bp.client.cutover_date.clone(),
         cutover_epoch_s: bp.client.cutover_epoch_s,
         // In-memory only; never serialized (`SPEC-v5.2` §3.1).
-        max_assistant_generations: DEFAULT_MAX_TURNS_V52,
-        max_calls_per_turn: DEFAULT_MAX_CALLS_PER_TURN_V52,
         max_golive_dry_runs: DEFAULT_MAX_DRY_RUNS_V52,
         readonly_files,
         starter_configs,
