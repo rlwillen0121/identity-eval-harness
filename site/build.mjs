@@ -5,7 +5,7 @@
  * Reads (all committed):
  *   - reports/v51/runs/<run>/summary.json   SuiteReportSummaryV51 (imported with scripts/import-v51-run.mjs)
  *   - reports/v51/runs/<run>/episodes.json  compact per-slot records for the same run
- *   - datasets/v51/v51_core/SEAL.json       suite seal
+ *   - archive/datasets/v51/v51_core/SEAL.json  suite seal (archived at legacy-v5.1)
  *   - site/data/history.json                first-publication dates
  *
  * Only protocol-complete v51_core runs (is_complete === true, observed_slots === planned_slots,
@@ -26,7 +26,7 @@ const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 
 const RUNS_DIR = path.join(ROOT, 'reports/v51/runs');
-const SEAL_PATH = path.join(ROOT, 'datasets/v51/v51_core/SEAL.json');
+const SEAL_PATH = path.join(ROOT, 'archive/datasets/v51/v51_core/SEAL.json');
 const HISTORY_PATH = path.join(__dirname, 'data/history.json');
 const OUTPUT_PATH = path.join(__dirname, 'data/leaderboard.json');
 
