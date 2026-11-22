@@ -3360,9 +3360,13 @@ fn validate_v51_dataset_enforces_categories_parity_negative_mutations_and_invari
     assert!(!permissive_report.gates[1].passed);
     let details = permissive_report.gates[1].details.join("\n");
     for expected_label in [
-        "reverse_golive_ordered_phases",
-        "exclude_service_accounts_false",
-        "exclude_admin_secondary_accounts_false",
+        "unsafe_cutover_order",
+        "svc_mass_disable",
+        "adm_secondary_mail_sync",
+        "dead_manager_transfer",
+        "ciem_escalation_keep",
+        "ciem_break_required_op",
+        "cohort_spike_bypass",
         "clear_nhi_and_agents",
         "clear_cloud_ciem_principals",
         "clear_access_reviews_items",
