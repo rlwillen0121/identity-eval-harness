@@ -1,8 +1,0 @@
-model:
-  provider: replay
-  model: synthetic-offline-example
-  concurrency: 1
-  extra:
-    path: examples/rust-v5/empty-responses.jsonl
-run_config:
-  max_transient_retries: 0
