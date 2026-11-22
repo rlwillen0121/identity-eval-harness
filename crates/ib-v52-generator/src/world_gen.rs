@@ -18,7 +18,7 @@ use ib_v52_schemas::{
 use indexmap::IndexMap;
 
 use crate::archetypes::{
-    DifficultyTierV52, FamilyRegimeSpecV52, SecondarySourceKindV52, is_ceiling_hardened_family,
+    DifficultyTierV52, FamilyRegimeSpecV52, SecondarySourceKindV52, ceiling_hardening_profile,
     resolve_family_regime_spec,
 };
 use crate::cells::V52Cell;
@@ -130,7 +130,13 @@ pub enum GroupRoleTagV52 {
     UarExcValid,
     UarPrivAudit,
     NestedAdmSodDeployLeft,
+    /// `F06-CR`: PROD group of a CMDB-`RETIRED` application whose memberships were never cleaned up
+    /// (held by every active Finance FTE, so naive `>= 80%` mining bundles it).
+    RetiredAppPopulated,
 }
+
+/// `F06-CR`: application ID of the CMDB-`RETIRED` application behind [`GroupRoleTagV52::RetiredAppPopulated`].
+pub const F06_RETIRED_APP_ID_V52: &str = "app_fin_expense_classic";
 
 /// Effective-dated governance ledger entry rendered inside `sources/nhi_and_agents.json` on `F05`/`F12`.
 #[derive(Debug, Clone)]
@@ -186,7 +192,7 @@ pub struct CloudActivityTelemetryV52 {
     pub observed_30d_permissions: Vec<String>,
 }
 
-/// Remediation ticket history entry rendered inside `sources/uar_campaigns.json` on `F10`/`F11`.
+/// Remediation ticket history entry rendered inside `sources/uar_campaigns.json` on `F08`/`F10`/`F11`.
 #[derive(Debug, Clone)]
 pub struct UarRemediationTicketV52 {
     pub ticket_id: String,
@@ -198,14 +204,14 @@ pub struct UarRemediationTicketV52 {
     pub closed_at: Option<String>,
 }
 
-/// Spoke aggregation watermark rendered inside `sources/uar_campaigns.json` on `F10`/`F11`.
+/// Spoke aggregation watermark rendered inside `sources/uar_campaigns.json` on `F08`/`F10`/`F11`.
 #[derive(Debug, Clone)]
 pub struct SpokeReadbackWatermarkV52 {
     pub spoke_id: String,
     pub last_complete_aggregation_at: String,
 }
 
-/// Signed `(department, job_code)` entitlement matrix row rendered inside `sources/uar_campaigns.json` on `F10`/`F11`.
+/// Signed `(department, job_code)` entitlement matrix row rendered inside `sources/uar_campaigns.json` on `F08`/`F10`/`F11`.
 #[derive(Debug, Clone)]
 pub struct SignedRoleBundleEntryV52 {
     pub department: String,
@@ -248,7 +254,7 @@ pub struct ScenarioBlueprintV52 {
     pub cloud_deployment_revisions: Vec<CloudWorkloadDeploymentRevisionV52>,
     pub cloud_capability_dictionary: IndexMap<String, String>,
     pub cloud_activity_telemetry: Vec<CloudActivityTelemetryV52>,
-    /// Mechanism E (`F10`/`F11`): UAR remediation ticket log, spoke readback watermarks & role bundle matrix.
+    /// Mechanism E (`F08`/`F10`/`F11`): UAR remediation ticket log, spoke readback watermarks & role bundle matrix.
     pub uar_remediation_ticket_log: Vec<UarRemediationTicketV52>,
     pub spoke_readback_watermarks: Vec<SpokeReadbackWatermarkV52>,
     pub signed_role_bundle_matrix: Vec<SignedRoleBundleEntryV52>,
@@ -465,6 +471,14 @@ struct PersonPlan {
     paired_withdrawn_override: Option<PairedWithdrawnKind>,
     /// Mechanism A (`F11`): one of the 2 active Legal cohort members receiving a `WITHDRAWN` `TERM` Workday duplicate.
     f11_legal_cohort_spike_target: bool,
+    /// Mechanism `F01-AS`: lagging Workday replica of `academic_status` (Banner SIS stays authoritative).
+    wd_academic_status_replica: Option<String>,
+    /// Mechanism `F02-ST`: raw SAP HCM `STAT2` code rendered in Workday `payroll_code`
+    /// (the plan's `workday_status_code` stays the canonical truth).
+    wd_payroll_code_raw: Option<String>,
+    /// Mechanism `F07-WR`: one non-effective Fieldglass work-order revision row
+    /// `(record_status, contract_status, contract_end_date)` emitted after the in-force row.
+    vms_unapproved_revision: Option<(String, String, String)>,
     /// When true, leave the spoke badge/employeeId blank (`""`) across spokes so correlation MUST
     /// fall back to case-insensitive `mail` / `SMTP_ADDR` / `email`.
     omit_spoke_badge: bool,
@@ -561,6 +575,9 @@ fn compute_base_sam_for_plan(
 #[must_use]
 pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     let spec = resolve_family_regime_spec(&cell.family_id, &cell.regime_id);
+    // `SPEC-v5.2` Appendix C: per-family ceiling-hardening mechanisms. New mechanisms consume no RNG,
+    // so carried-forward families keep their `v5.1` hardened worlds.
+    let hardening = ceiling_hardening_profile(spec.family_id);
     let mut rng = PyRandom::from_u64(cell.seed);
 
     let client = build_client_parameters(&spec, &mut rng);
@@ -775,6 +792,17 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
         "",
         longname_choice.2,
         longname_choice.1,
+    );
+
+    // `F09-DF`: the diacritic new hire's ASCII base handle (its `first_initial_last` base ignores the
+    // middle name), held by a disabled acquired-forest account.
+    let diacritic_base_sam = compute_base_sam_for_plan(
+        &spec.base_username_pattern,
+        spec.use_preferred_first_name,
+        diacritic_choice.0,
+        "",
+        "",
+        diacritic_choice.1,
     );
 
     // Build deterministic scalable enterprise fill-slot schedule for slots `38..n_identities`.
@@ -1100,6 +1128,9 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     used_sams.insert(lh_base_sam.clone());
     used_sams.insert(tomb_base_sam.clone());
     used_sams.insert(long_base_sam.clone());
+    if hardening.disabled_forest_handle_lock {
+        used_sams.insert(diacritic_base_sam.clone());
+    }
 
     let badge_base: u32 = u32::try_from(rng.randint(10_000, 79_000)).expect("positive");
     let mut badge_offsets: Vec<usize> = (0..n_identities).collect();
@@ -1109,6 +1140,12 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     let mut f05_control_assigned = false;
     let mut f11_legal_spike_assigned = 0usize;
     let mut loa_4hop_owner: Option<String> = None;
+    // Appendix C witness assignment (first matching fill slot per mechanism; no RNG consumed).
+    let mut f01_alumnus_assigned = false;
+    let mut f02_stat2_withdrawn_assigned = false;
+    let mut f02_stat2_active_assigned = false;
+    let mut f02_stat2_inactive_assigned = false;
+    let mut f07_unapproved_revival_assigned = false;
 
     for (slot_idx, &person_idx) in slot_order.iter().enumerate() {
         let pkey = canonical_person_keys[person_idx].clone();
@@ -1182,6 +1219,9 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
         let vms_bridge_personal_email_only = false;
         let mut paired_withdrawn_override: Option<PairedWithdrawnKind> = None;
         let mut f11_legal_cohort_spike_target = false;
+        let mut wd_academic_status_replica: Option<String> = None;
+        let mut wd_payroll_code_raw: Option<String> = None;
+        let mut vms_unapproved_revision: Option<(String, String, String)> = None;
         let mut has_sap_account = false;
         let mut has_epic_account = false;
         let mut has_aws_account = false;
@@ -1257,6 +1297,12 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                 (dept_code, dept_canonical) = dept_code_for("Legal");
                 workday_status_code = "TERM".to_owned();
                 ad_enabled = false;
+                if hardening.disabled_forest_handle_lock {
+                    // `F09-DF`: the disabled acquired-forest account keeps its legacy-domain UPN (so ISC
+                    // never preserves it) and holds the diacritic new hire's ASCII base handle.
+                    ad_use_acquired_domain = true;
+                    ad_force_sam = Some(diacritic_base_sam.clone());
+                }
             }
             6 => {
                 // emerg_term_fallback: Active Legal FTE reporting to a 3-inactive manager chain
@@ -1328,6 +1374,10 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                     in_secondary = true;
                     sec_aff_code = "STU".to_owned();
                 }
+                if hardening.banner_academic_standing_sor {
+                    // `F01-AS` AB witness: Workday's replica lags fall registration; Banner says ENROLLED.
+                    wd_academic_status_replica = Some("NOT_ENROLLED".to_owned());
+                }
                 (dept_code, dept_canonical) = dept_code_for("Academic Affairs");
                 job_code_raw = "stu_asst".to_owned();
             }
@@ -1344,6 +1394,14 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                 manager_key = active_dir_1.clone();
                 blank_vms_dept_and_office = true;
                 has_custom_rest_account = true;
+                if hardening.vms_revision_approval_ledger {
+                    // `F07-WR`: a REJECTED extension revision must not lift the grace suspension.
+                    vms_unapproved_revision = Some((
+                        "REJECTED".to_owned(),
+                        "ACT".to_owned(),
+                        shift_iso_date(&client.cutover_date, 90),
+                    ));
+                }
             }
             13 => {
                 // contingent_day2_active_sp: Active contractor expiring on Day 2 with active sponsor
@@ -1597,7 +1655,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
             36 => {
                 // fallback_user_2: Active Finance FTE; adm_* #6, UAR colleague y holding shared collab group!
                 (dept_code, dept_canonical) = dept_code_for("Finance");
-                job_code_raw = if matches!(spec.family_id, "F10" | "F11") {
+                job_code_raw = if hardening.uar_readback_closure {
                     "fin_treasury".to_owned()
                 } else {
                     "fin_analyst".to_owned()
@@ -1722,6 +1780,11 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                         if d == "Finance" {
                             has_sap_account = spec.has_sap;
                             has_custom_rest_account = spec.tier == DifficultyTierV52::Focused;
+                            if hardening.hcm_stat2_payroll_codes && !f02_stat2_active_assigned {
+                                // `F02-ST` control: STAT2 `3` (active) = ACTIVE.
+                                wd_payroll_code_raw = Some("3".to_owned());
+                                f02_stat2_active_assigned = true;
+                            }
                             if spec.family_id == "F05" && !f05_control_assigned {
                                 in_secondary = true;
                                 sec_bridge_personal_email_only = true;
@@ -1815,6 +1878,22 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                         blank_vms_dept_and_office = other % 3 == 0;
                         has_custom_rest_account =
                             spec.tier == DifficultyTierV52::Focused || other % 2 == 0;
+                        if hardening.vms_revision_approval_ledger
+                            && is_cwk
+                            && !f07_unapproved_revival_assigned
+                        {
+                            // `F07-WR` OG witness: the in-force work order was ended early (`TERM`);
+                            // the sponsor's re-extension request is still PENDING_APPROVAL.
+                            vms_status_code = "TERM".to_owned();
+                            contract_end_date = shift_iso_date(&client.cutover_date, -45);
+                            ad_enabled = false;
+                            vms_unapproved_revision = Some((
+                                "PENDING_APPROVAL".to_owned(),
+                                "ACT".to_owned(),
+                                shift_iso_date(&client.cutover_date, 180),
+                            ));
+                            f07_unapproved_revival_assigned = true;
+                        }
                     }
                     FillRole::NonActiveTerm(d) => {
                         (dept_code, dept_canonical) = dept_code_for(d);
@@ -1829,6 +1908,28 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                         } else if d == "Finance" {
                             has_sap_account = spec.has_sap;
                         }
+                        if hardening.banner_academic_standing_sor
+                            && d == "Academic Affairs"
+                            && !f01_alumnus_assigned
+                        {
+                            // `F01-AS` OG witness: a former student worker who graduated (Banner) while
+                            // Workday's replica still reads ENROLLED.
+                            workday_aff_code = "STW".to_owned();
+                            job_code_raw = "stu_asst".to_owned();
+                            academic_status = "GRADUATED".to_owned();
+                            in_secondary = true;
+                            sec_aff_code.clear();
+                            wd_academic_status_replica = Some("ENROLLED".to_owned());
+                            f01_alumnus_assigned = true;
+                        }
+                        if hardening.hcm_stat2_payroll_codes
+                            && d == "Finance"
+                            && !f02_stat2_withdrawn_assigned
+                        {
+                            // `F02-ST` OG witness: STAT2 `0` (withdrawn) = TERMINATED.
+                            wd_payroll_code_raw = Some("0".to_owned());
+                            f02_stat2_withdrawn_assigned = true;
+                        }
                     }
                     FillRole::NonActiveLoa(d) => {
                         (dept_code, dept_canonical) = dept_code_for(d);
@@ -1836,6 +1937,14 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                         workday_status_code = "LOA".to_owned();
                         leave_code = "PAR".to_owned();
                         ad_enabled = false;
+                        if hardening.hcm_stat2_payroll_codes
+                            && d == "Finance"
+                            && !f02_stat2_inactive_assigned
+                        {
+                            // `F02-ST` witness: STAT2 `1` (inactive) = LOA, never ACTIVE.
+                            wd_payroll_code_raw = Some("1".to_owned());
+                            f02_stat2_inactive_assigned = true;
+                        }
                         if d == "Clinical Operations" {
                             workday_aff_code = "CLIN".to_owned();
                             has_epic_account = spec.has_epic;
@@ -2001,6 +2110,9 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                 vms_bridge_personal_email_only,
                 paired_withdrawn_override,
                 f11_legal_cohort_spike_target,
+                wd_academic_status_replica,
+                wd_payroll_code_raw,
+                vms_unapproved_revision,
                 omit_spoke_badge,
                 has_sap_account,
                 has_epic_account,
@@ -2199,7 +2311,12 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                     p.manager_key.clone()
                 },
             );
-            attrs.insert("payroll_code".to_owned(), p.workday_status_code.clone());
+            attrs.insert(
+                "payroll_code".to_owned(),
+                p.wd_payroll_code_raw
+                    .clone()
+                    .unwrap_or_else(|| p.workday_status_code.clone()),
+            );
             let wd_leave_code = if matches!(
                 p.paired_withdrawn_override,
                 Some(
@@ -2214,7 +2331,9 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
             attrs.insert("leave_code".to_owned(), wd_leave_code);
             attrs.insert("legal_hold_flag".to_owned(), p.legal_hold_raw.clone());
             attrs.insert("worker_type".to_owned(), p.workday_aff_code.clone());
-            if !p.academic_status.is_empty() {
+            if let Some(replica) = &p.wd_academic_status_replica {
+                attrs.insert("academic_status".to_owned(), replica.clone());
+            } else if !p.academic_status.is_empty() {
                 attrs.insert("academic_status".to_owned(), p.academic_status.clone());
             }
             if !p.clinical_license_status.is_empty()
@@ -2555,6 +2674,25 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
                 attributes: attrs,
             });
             rec_seq += 1;
+
+            // Mechanism `F07-WR`: a later work-order revision that is not in force (submitted or
+            // rejected extension). Same `last_updated` and a later `record_id`, so without the
+            // status filter the engine's latest-record rule picks the revision over the in-force row.
+            if let Some((rev_status, rev_contract_status, rev_end)) = &p.vms_unapproved_revision {
+                let mut rev = vms_rows
+                    .last()
+                    .map(|r| r.attributes.clone())
+                    .unwrap_or_default();
+                rev.insert("contract_status".to_owned(), rev_contract_status.clone());
+                rev.insert("contract_end_date".to_owned(), rev_end.clone());
+                rev.insert("record_status".to_owned(), rev_status.clone());
+                vms_rows.push(RawSourceRecordV52 {
+                    record_id: format!("vms_rev_{:03}", rec_seq),
+                    source_id: "fieldglass_vms".to_owned(),
+                    attributes: rev,
+                });
+                rec_seq += 1;
+            }
 
             // Plant 3-4 WITHDRAWN/CANCELLED_DUPLICATE poison rows in Fieldglass VMS!
             let is_vms_poison_target = p.person_key == contingent_day2_active_sp
@@ -3311,6 +3449,22 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
         }
     }
 
+    // `F06-CR` (Appendix C): memberships of the CMDB-retired Expense Classic group were never cleaned
+    // up, so every active Finance FTE/PT account still holds it (100% >= 80% mining threshold).
+    if hardening.cmdb_retirement_register
+        && let Some(retired_gid) = groups
+            .iter()
+            .find(|g| g.role_tag == GroupRoleTagV52::RetiredAppPopulated)
+            .map(|g| g.record.group_id.clone())
+    {
+        for pkey in &coh_fin {
+            push_uniq(
+                ad_ents_map.entry(pkey.clone()).or_default(),
+                retired_gid.clone(),
+            );
+        }
+    }
+
     // Build actual spoke accounts per person!
     for (person_ord, pkey) in canonical_person_keys.iter().enumerate() {
         let p = &plans_by_key[pkey];
@@ -4049,7 +4203,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
         .first()
         .cloned()
         .unwrap_or_else(|| nonprod_group.clone());
-    let has_ledger_mech_b = matches!(spec.family_id, "F05" | "F12");
+    let has_ledger_mech_b = hardening.nhi_governance_ledger;
     let nhi_count = if has_ledger_mech_b { 9usize } else { 8usize };
     let mut nhi_ids: Vec<String> = (1..=nhi_count)
         .map(|i| format!("nhi_workload_{i:02}"))
@@ -4325,7 +4479,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
 
     // 6 RFC 8693 OBO Delegation Requests (8 on F10/F12 adding paired 2-hop HITL control + 4th-hop boundary witness)
     // covering all 5 OboDelegationVerdictV52 outcomes with seed-shuffled neutral IDs.
-    let has_obo_mech_c = matches!(spec.family_id, "F10" | "F12");
+    let has_obo_mech_c = hardening.relational_obo_tables;
     let dlreq_end = if has_obo_mech_c { 108usize } else { 106usize };
     let mut dlreq_ids: Vec<String> = (101..=dlreq_end).map(|i| format!("dlreq_{i}")).collect();
     rng.shuffle(&mut dlreq_ids);
@@ -4676,7 +4830,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     }
 
     // 9 Multi-Cloud CIEM Principals (3 AWS, 3 Azure/Entra, 3 GCP) with seed-shuffled neutral IDs.
-    let has_ciem_mech_d = matches!(spec.family_id, "F03" | "F12");
+    let has_ciem_mech_d = hardening.ciem_revision_join;
     let mut aws_ids: Vec<String> = (1..=3).map(|i| format!("cld_aws_{i:02}")).collect();
     let mut az_ids: Vec<String> = (1..=3).map(|i| format!("cld_az_{i:02}")).collect();
     let mut gcp_ids: Vec<String> = (1..=3).map(|i| format!("cld_gcp_{i:02}")).collect();
@@ -5116,8 +5270,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     rng.shuffle(&mut uar_ids);
     let _ = &uar_adm_bridge;
 
-    let has_uar_mech_e =
-        is_ceiling_hardened_family(spec.family_id) && matches!(spec.family_id, "F10" | "F11");
+    let has_uar_mech_e = hardening.uar_readback_closure;
     let mut workforce_uar_items = vec![
         UarReviewItemRecordV52 {
             item_id: uar_ids[0].clone(),
@@ -5318,7 +5471,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     ];
 
     let mut raw_uar_notes: Vec<(String, String)> = if has_uar_mech_e {
-        // Mechanism E (`F10`/`F11`): strictly neutral review notes (zero hints about bundle split or phantom-closed tickets!).
+        // Mechanism E (`F08`/`F10`/`F11`): strictly neutral review notes (zero hints about bundle split or phantom-closed tickets!).
         vec![
             (
                 uar_ids[0].clone(),
@@ -5418,7 +5571,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     raw_uar_notes.sort_by(|a, b| a.0.cmp(&b.0));
     let uar_review_notes: IndexMap<String, String> = raw_uar_notes.into_iter().collect();
 
-    // Mechanism E (`F10`/`F11`): Remediation ticket log, spoke readback watermarks & signed role bundle matrix.
+    // Mechanism E (`F08`/`F10`/`F11`): Remediation ticket log, spoke readback watermarks & signed role bundle matrix.
     let mut uar_remediation_ticket_log: Vec<UarRemediationTicketV52> = Vec::new();
     let mut spoke_readback_watermarks: Vec<SpokeReadbackWatermarkV52> = Vec::new();
     let mut signed_role_bundle_matrix: Vec<SignedRoleBundleEntryV52> = Vec::new();
@@ -5781,6 +5934,33 @@ fn prev_day_iso(cutover_date: &str, sub_days: u32) -> String {
         return format!("{y:04}-{m:02}-{:02}", d - sub_days);
     }
     "2026-11-05".to_owned()
+}
+
+/// Shift an ISO `YYYY-MM-DD` date by `delta_days` using exact proleptic-Gregorian arithmetic.
+/// Used by the Appendix C mechanisms; the older `prev_day_iso`/`next_day_iso` helpers stay unchanged
+/// so carried-forward episodes keep their bytes.
+pub(crate) fn shift_iso_date(date: &str, delta_days: i64) -> String {
+    let mut parts = date.split('-').map(str::parse::<i64>);
+    let (Some(Ok(y)), Some(Ok(m)), Some(Ok(d))) = (parts.next(), parts.next(), parts.next()) else {
+        return date.to_owned();
+    };
+    // Howard Hinnant's days_from_civil / civil_from_days.
+    let yy = if m <= 2 { y - 1 } else { y };
+    let era = yy.div_euclid(400);
+    let yoe = yy - era * 400;
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let z = era * 146_097 + doe - 719_468 + delta_days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 fn next_day_iso(cutover_date: &str, add_days: u32) -> String {
@@ -6678,6 +6858,24 @@ fn build_group_blueprints(
         None,
         GroupRoleTagV52::Orphaned,
     );
+
+    // 6b. `F06-CR` (Appendix C): PROD group of an application the CMDB register lists as RETIRED.
+    //     Its catalog row carries a live-looking `cmdb_app` and a neutral description, so only the
+    //     `cmdb_register` join (lifecycle `RETIRED`, `retired_on <= cutover`) marks it decommissioned.
+    if ceiling_hardening_profile(spec.family_id).cmdb_retirement_register {
+        push_group(
+            format!("GG_{pfx}_{reg}_PRD_FIN_EXPENSE_CLASSIC"),
+            "ad",
+            "Finance Expense Classic Users",
+            "Expense Classic submitter & approver access",
+            vec![],
+            "PROD",
+            SpokeEnvKindV52::Prod,
+            GroupDispositionV52::OrphanedDeprecatedDoNotAssign,
+            Some(F06_RETIRED_APP_ID_V52),
+            GroupRoleTagV52::RetiredAppPopulated,
+        );
+    }
 
     // 7. Service-Account-Only groups (held ONLY by exempt service accounts; daemon/batch bindings!)
     push_group(

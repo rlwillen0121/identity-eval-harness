@@ -40,7 +40,8 @@ use indexmap::IndexMap;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::archetypes::{
-    DifficultyTierV52, canonical_affiliation_precedence, is_ceiling_hardened_family,
+    DifficultyTierV52, HCM_STAT2_PAYROLL_CODES_V52, VMS_NON_EFFECTIVE_REVISION_STATUSES_V52,
+    canonical_affiliation_precedence, ceiling_hardening_profile, is_ceiling_hardened_family,
 };
 use crate::world_gen::{GroupRoleTagV52, ScenarioBlueprintV52};
 
@@ -267,6 +268,14 @@ fn build_gold_transforms(bp: &ScenarioBlueprintV52, sec_id: &str) -> TransformsC
         ]),
     );
 
+    // `F02-ST` (Appendix C): acquired-population Workday rows carry SAP HCM `STAT2` codes, which the
+    // charter maps (`3` -> ACTIVE, `1` -> LOA, `0` -> TERMINATED).
+    let mut hr_status_table = bp.client.hr_status_lookup.clone();
+    if ceiling_hardening_profile(bp.spec.family_id).hcm_stat2_payroll_codes {
+        for (code, status) in HCM_STAT2_PAYROLL_CODES_V52 {
+            hr_status_table.insert(code.to_owned(), status.to_owned());
+        }
+    }
     t.insert(
         "normalize_hr_status".to_owned(),
         lookup(
@@ -275,7 +284,7 @@ fn build_gold_transforms(bp: &ScenarioBlueprintV52, sec_id: &str) -> TransformsC
                 src("fieldglass_vms", "contract_status"),
                 src(sec_id, "payroll_code"),
             ]))),
-            &bp.client.hr_status_lookup,
+            &hr_status_table,
             "",
         ),
     );
@@ -430,6 +439,15 @@ fn build_gold_identity_profile(
         },
     ];
     let ignore_statuses = vec!["CANCELLED_DUPLICATE".to_owned(), "WITHDRAWN".to_owned()];
+    // `F07-WR` (Appendix C): Fieldglass revisions that are not in force never drive lifecycle.
+    let mut vms_ignore_statuses = ignore_statuses.clone();
+    if ceiling_hardening_profile(bp.spec.family_id).vms_revision_approval_ledger {
+        vms_ignore_statuses.extend(
+            VMS_NON_EFFECTIVE_REVISION_STATUSES_V52
+                .iter()
+                .map(|s| (*s).to_owned()),
+        );
+    }
 
     let authoritative_sources = vec![
         AuthoritativeSourceRuleV52 {
@@ -448,7 +466,7 @@ fn build_gold_identity_profile(
             source_id: "fieldglass_vms".to_owned(),
             priority_rank: 3,
             match_keys: std_keys,
-            ignore_records_with_status: ignore_statuses,
+            ignore_records_with_status: vms_ignore_statuses,
         },
     ];
 
@@ -1835,7 +1853,7 @@ fn build_gold_access_reviews(
             };
 
             let requires_owner_split = if !bp.signed_role_bundle_matrix.is_empty() {
-                // Mechanism E (`F10`/`F11`): derive owner-split strictly from signed_role_bundle_matrix + AD graph!
+                // Mechanism E (`F08`/`F10`/`F11`): derive owner-split strictly from signed_role_bundle_matrix + AD graph!
                 if is_human_subject {
                     let subj_dept = cubes
                         .get(&item.subject_id)
