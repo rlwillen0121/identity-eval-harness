@@ -337,6 +337,32 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
             &state.sync,
         )
     }
+
+    fn correlated_spoke_accounts(
+        &self,
+        world: &EnterpriseBrownfieldWorldV52,
+        config: &IgaDeploymentConfigV52,
+        cutover_date: &str,
+    ) -> Result<Vec<(String, String, String)>, String> {
+        let (cubes, _declared_sources) = coalesce_identities(world, config, cutover_date)?;
+        let correlation = correlate_spokes_and_classify_service_accounts(world, config, &cubes);
+        let mut out = Vec::new();
+        for (spoke_id, accounts) in &world.spoke_accounts {
+            for acct in accounts {
+                if let Some(person_key) = correlation
+                    .account_to_person
+                    .get(&(spoke_id.clone(), acct.account_id.clone()))
+                {
+                    out.push((
+                        spoke_id.clone(),
+                        acct.account_id.clone(),
+                        person_key.clone(),
+                    ));
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 fn select_representative_keys(

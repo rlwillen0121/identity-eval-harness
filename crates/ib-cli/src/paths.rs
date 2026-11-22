@@ -39,6 +39,20 @@ pub fn ensure_output_separate(output: &Path, dataset: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Private suites are never committed (`SPEC-v5.2` §2.2): refuse any output inside the repository,
+/// including through directory aliases.
+pub fn ensure_outside_repository(output: &Path, root: &Path) -> Result<()> {
+    let repo = root.canonicalize()?;
+    let target = canonicalize_available(output)?;
+    if target.starts_with(&repo) {
+        bail!(
+            "private suites are never written inside the repository; choose an output directory outside {}",
+            repo.display()
+        );
+    }
+    Ok(())
+}
+
 pub fn find_root(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = explicit {
         return Ok(path.canonicalize()?);
