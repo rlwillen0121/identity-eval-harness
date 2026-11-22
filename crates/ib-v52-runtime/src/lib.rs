@@ -11,6 +11,7 @@ pub mod probe;
 pub mod protocol;
 pub mod report;
 pub mod runner;
+pub mod stats;
 pub mod transcript;
 pub mod validation;
 pub mod workspace;
