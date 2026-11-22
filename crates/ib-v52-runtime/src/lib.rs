@@ -3,6 +3,7 @@
 pub mod baselines;
 pub mod config;
 pub mod integrity;
+pub mod metrics;
 pub mod mutations;
 pub mod opening;
 pub mod parity;
