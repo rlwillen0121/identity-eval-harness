@@ -3,6 +3,8 @@
 pub mod baselines;
 pub mod config;
 pub mod integrity;
+pub mod leaderboard;
+pub mod metrics;
 pub mod mutations;
 pub mod opening;
 pub mod parity;
@@ -10,6 +12,7 @@ pub mod probe;
 pub mod protocol;
 pub mod report;
 pub mod runner;
+pub mod stats;
 pub mod transcript;
 pub mod validation;
 pub mod workspace;
