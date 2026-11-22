@@ -1,5 +1,6 @@
 //! Native Rust executable for the IdentityBench v5.2 benchmark.
 mod paths;
+mod reveal;
 mod v52;
 
 use std::path::PathBuf;
