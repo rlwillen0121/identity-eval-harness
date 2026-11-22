@@ -1,38 +1,233 @@
 {
-  "suite": "v52_lite",
-  "master_seed": 20261120,
+  "suite_id": "v52_lite",
+  "visibility": "public",
   "episode_count": 24,
-  "family_count": 12,
-  "episodes_sha256": "97d8d3fa8c444ed978ddff7b37ee4e1c7f023bc8bcba2d36f515a9565c256303",
-  "oracles_sha256": "d1b361ffc9f9734bb60cbf5a08c2c67015240ab9139bbbcd3b02bd78123831dd",
+  "cells": [
+    {
+      "episode_id": "v52_lite_F01_R2_s00",
+      "family_id": "F01",
+      "regime_id": "R2",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 1091138717476360325
+    },
+    {
+      "episode_id": "v52_lite_F01_R3_s00",
+      "family_id": "F01",
+      "regime_id": "R3",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 15806720834913251549
+    },
+    {
+      "episode_id": "v52_lite_F02_R3_s00",
+      "family_id": "F02",
+      "regime_id": "R3",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 12261563140211819827
+    },
+    {
+      "episode_id": "v52_lite_F02_R4_s00",
+      "family_id": "F02",
+      "regime_id": "R4",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 6528919551702742502
+    },
+    {
+      "episode_id": "v52_lite_F03_R1_s00",
+      "family_id": "F03",
+      "regime_id": "R1",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 14800818989120045122
+    },
+    {
+      "episode_id": "v52_lite_F03_R4_s00",
+      "family_id": "F03",
+      "regime_id": "R4",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 16360360154242806125
+    },
+    {
+      "episode_id": "v52_lite_F04_R1_s00",
+      "family_id": "F04",
+      "regime_id": "R1",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 9141373267931016569
+    },
+    {
+      "episode_id": "v52_lite_F04_R2_s00",
+      "family_id": "F04",
+      "regime_id": "R2",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 13284977186988949300
+    },
+    {
+      "episode_id": "v52_lite_F05_R2_s00",
+      "family_id": "F05",
+      "regime_id": "R2",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 4730831826087582826
+    },
+    {
+      "episode_id": "v52_lite_F05_R3_s00",
+      "family_id": "F05",
+      "regime_id": "R3",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 10664799853984738588
+    },
+    {
+      "episode_id": "v52_lite_F06_R3_s00",
+      "family_id": "F06",
+      "regime_id": "R3",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 12952787003364199359
+    },
+    {
+      "episode_id": "v52_lite_F06_R4_s00",
+      "family_id": "F06",
+      "regime_id": "R4",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 17631418316220728023
+    },
+    {
+      "episode_id": "v52_lite_F07_R1_s00",
+      "family_id": "F07",
+      "regime_id": "R1",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 14536258522510262464
+    },
+    {
+      "episode_id": "v52_lite_F07_R4_s00",
+      "family_id": "F07",
+      "regime_id": "R4",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 4373007878253116985
+    },
+    {
+      "episode_id": "v52_lite_F08_R1_s00",
+      "family_id": "F08",
+      "regime_id": "R1",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 13763338658082138637
+    },
+    {
+      "episode_id": "v52_lite_F08_R2_s00",
+      "family_id": "F08",
+      "regime_id": "R2",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 7334022158091922594
+    },
+    {
+      "episode_id": "v52_lite_F09_R2_s00",
+      "family_id": "F09",
+      "regime_id": "R2",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 1176138989794558296
+    },
+    {
+      "episode_id": "v52_lite_F09_R3_s00",
+      "family_id": "F09",
+      "regime_id": "R3",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 17445024678964494129
+    },
+    {
+      "episode_id": "v52_lite_F10_R3_s00",
+      "family_id": "F10",
+      "regime_id": "R3",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 9943572594000520228
+    },
+    {
+      "episode_id": "v52_lite_F10_R4_s00",
+      "family_id": "F10",
+      "regime_id": "R4",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 2095342445853055386
+    },
+    {
+      "episode_id": "v52_lite_F11_R1_s00",
+      "family_id": "F11",
+      "regime_id": "R1",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 15120360103760054240
+    },
+    {
+      "episode_id": "v52_lite_F11_R4_s00",
+      "family_id": "F11",
+      "regime_id": "R4",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 17190388863623199100
+    },
+    {
+      "episode_id": "v52_lite_F12_R1_s00",
+      "family_id": "F12",
+      "regime_id": "R1",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 4161013511397290246
+    },
+    {
+      "episode_id": "v52_lite_F12_R2_s00",
+      "family_id": "F12",
+      "regime_id": "R2",
+      "seed_slot": "00",
+      "collision_suffix": 0,
+      "base_seed": 7436693475926893371
+    }
+  ],
+  "episode_seeds": [
+    1091138717476360325,
+    15806720834913251549,
+    12261563140211819827,
+    6528919551702742502,
+    14800818989120045122,
+    16360360154242806125,
+    9141373267931016569,
+    13284977186988949300,
+    4730831826087582826,
+    10664799853984738588,
+    12952787003364199359,
+    17631418316220728023,
+    14536258522510262464,
+    4373007878253116985,
+    13763338658082138637,
+    7334022158091922594,
+    1176138989794558296,
+    17445024678964494129,
+    9943572594000520228,
+    2095342445853055386,
+    15120360103760054240,
+    17190388863623199100,
+    4161013511397290246,
+    7436693475926893371
+  ],
+  "episodes_sha256": "1f80dd43cdca5cdfe1317d7dc5662eef77cb8b9ca9a7ba6f9aa60300f22044c2",
+  "oracles_sha256": "873a2266ab9302e1203c9e6e941ce43a79c606aab9954c456c41365d22a61f17",
   "spec_version": "SPEC-v5.2",
   "spec_sha256": "0abe925de307ab7a287254a1201ad68feb0a06ba93a5007472d0500cc047cd3b",
-  "generator_version": "5.2.0",
   "contract_id": "identitybench.v5.2.practitioner-contract.v1",
-  "episode_seeds": [
-    459176326,
-    722644220,
-    271799014,
-    866538003,
-    846861906,
-    813336194,
-    677537899,
-    531967175,
-    181364692,
-    500881381,
-    523269969,
-    391239949,
-    421068439,
-    328874046,
-    695235576,
-    862104191,
-    419600243,
-    666372227,
-    290344773,
-    370237750,
-    674319649,
-    695832967,
-    173084897,
-    655407984
-  ]
+  "protocol_id": "identitybench.v5.2.protocol.v1",
+  "generator_version": "5.2.0",
+  "seed_key": "S_pub"
 }

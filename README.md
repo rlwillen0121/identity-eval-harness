@@ -5,7 +5,7 @@
 [![CI](https://github.com/rlwillen0121/identity-eval-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/rlwillen0121/identity-eval-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-077a46.svg)](LICENSE)
 [![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-b7410e)](Cargo.toml)
-[![v5.2 core, provisional seal](https://img.shields.io/badge/dataset-v5.2%20core%20(provisional)-077a46)](datasets/v52/v52_core/SEAL.json)
+[![v5.2 public dev suite, provisional seal](https://img.shields.io/badge/dataset-v5.2%20dev%20(provisional)-077a46)](datasets/v52/v52_dev/SEAL.json)
 
 This is independent synthetic-benchmark research, not production safety certification or a comparison of IGA products.
 
@@ -86,7 +86,7 @@ See [docs/RUST.md](docs/RUST.md) for all commands, validation gates, and run sem
 
 ## Benchmark integrity
 
-Read the [security policy](SECURITY.md) and [dataset card](datasets/README.md) for trust boundaries, seals, tuning rules, and the contamination notice. The datasets are public and synthetic, with no private holdout yet (`SPEC-v5.2.md` §2 adds private ranked suites in a later phase); future-model results must be interpreted with contamination risk in mind. Tune only on `v52_dev`, never on held-out `v52_lite`, `v52_core`, or `v52_full`. The current `datasets/v52/` seals are provisional and will be regenerated.
+Read the [security policy](SECURITY.md) and [dataset card](datasets/README.md) for trust boundaries, seals, tuning rules, and the contamination notice. The committed suites (`v52_dev`, `v52_lite`, `v52_blind_fixture`) are public and synthetic and regenerable from the public key `S_pub`. The ranked `v52_core` and confirmatory `v52_full` suites are private: they derive from a never-committed key under the `SPEC-v5.2.md` §2.2 commit–reveal scheme and are not in this repository. Public-suite results must be interpreted with contamination risk in mind. Tune only on `v52_dev`, never on `v52_lite`, `v52_blind_fixture`, `v52_core`, or `v52_full`. The current `datasets/v52/` seals stay provisional until the dataset freeze.
 
 ## Earlier generations
 
