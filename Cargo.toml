@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "5.1.0"
+version = "5.2.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
@@ -15,10 +15,10 @@ publish = false
 ib-core = { path = "crates/ib-core" }
 ib-accounting = { path = "crates/ib-accounting" }
 ib-providers = { path = "crates/ib-providers" }
-ib-v51-schemas = { path = "crates/ib-v51-schemas" }
-ib-v51-engine = { path = "crates/ib-v51-engine" }
-ib-v51-generator = { path = "crates/ib-v51-generator" }
-ib-v51-runtime = { path = "crates/ib-v51-runtime" }
+ib-v52-schemas = { path = "crates/ib-v52-schemas" }
+ib-v52-engine = { path = "crates/ib-v52-engine" }
+ib-v52-generator = { path = "crates/ib-v52-generator" }
+ib-v52-runtime = { path = "crates/ib-v52-runtime" }
 
 # Async / HTTP / Process / Files
 tokio = { version = "1", features = ["full"] }

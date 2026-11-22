@@ -15,10 +15,10 @@ anyhow.workspace = true
 clap.workspace = true
 ib-core.workspace = true
 ib-providers.workspace = true
-ib-v51-engine.workspace = true
-ib-v51-generator.workspace = true
-ib-v51-runtime.workspace = true
-ib-v51-schemas.workspace = true
+ib-v52-engine.workspace = true
+ib-v52-generator.workspace = true
+ib-v52-runtime.workspace = true
+ib-v52-schemas.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 

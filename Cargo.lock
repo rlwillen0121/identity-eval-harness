@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "ib-accounting"
-version = "5.1.0"
+version = "5.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -643,16 +643,16 @@ dependencies = [
 
 [[package]]
 name = "ib-cli"
-version = "5.1.0"
+version = "5.2.0"
 dependencies = [
  "anyhow",
  "clap",
  "ib-core",
  "ib-providers",
- "ib-v51-engine",
- "ib-v51-generator",
- "ib-v51-runtime",
- "ib-v51-schemas",
+ "ib-v52-engine",
+ "ib-v52-generator",
+ "ib-v52-runtime",
+ "ib-v52-schemas",
  "serde_json",
  "tempfile",
  "tokio",
@@ -660,7 +660,7 @@ dependencies = [
 
 [[package]]
 name = "ib-core"
-version = "5.1.0"
+version = "5.2.0"
 dependencies = [
  "hex",
  "serde",
@@ -671,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "ib-providers"
-version = "5.1.0"
+version = "5.2.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -693,11 +693,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-v51-engine"
-version = "5.1.0"
+name = "ib-v52-engine"
+version = "5.2.0"
 dependencies = [
  "hex",
- "ib-v51-schemas",
+ "ib-v52-schemas",
  "indexmap",
  "regex",
  "serde",
@@ -708,13 +708,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-v51-generator"
-version = "5.1.0"
+name = "ib-v52-generator"
+version = "5.2.0"
 dependencies = [
  "hex",
  "ib-core",
- "ib-v51-engine",
- "ib-v51-schemas",
+ "ib-v52-engine",
+ "ib-v52-schemas",
  "indexmap",
  "regex",
  "serde",
@@ -725,8 +725,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-v51-runtime"
-version = "5.1.0"
+name = "ib-v52-runtime"
+version = "5.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -734,7 +734,7 @@ dependencies = [
  "ib-accounting",
  "ib-core",
  "ib-providers",
- "ib-v51-schemas",
+ "ib-v52-schemas",
  "indexmap",
  "regex",
  "serde",
@@ -748,8 +748,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-v51-schemas"
-version = "5.1.0"
+name = "ib-v52-schemas"
+version = "5.2.0"
 dependencies = [
  "indexmap",
  "serde",

@@ -48,7 +48,7 @@ pub fn find_root(explicit: Option<&Path>) -> Result<PathBuf> {
         // Installed binaries can use an explicit --root; source builds find the workspace root.
         let manifest = directory.join("Cargo.toml");
         if manifest.is_file()
-            && directory.join("crates/ib-v51-generator").is_dir()
+            && directory.join("crates/ib-v52-generator").is_dir()
             && std::fs::read_to_string(&manifest).is_ok_and(|text| text.contains("[workspace]"))
         {
             return Ok(directory.to_path_buf());
@@ -65,8 +65,8 @@ mod tests {
     fn resolve_keeps_absolute_paths_and_joins_relative_ones() {
         let root = Path::new("/repo");
         assert_eq!(
-            resolve(root, Path::new("datasets/v51/v51_dev")),
-            root.join("datasets/v51/v51_dev")
+            resolve(root, Path::new("datasets/v52/v52_dev")),
+            root.join("datasets/v52/v52_dev")
         );
         assert_eq!(resolve(root, Path::new("/abs/out")), Path::new("/abs/out"));
     }
@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn output_may_not_overlap_or_alias_a_sealed_dataset() {
         let dir = tempfile::tempdir().unwrap();
-        let dataset = dir.path().join("datasets/v51/v51_dev");
+        let dataset = dir.path().join("datasets/v52/v52_dev");
         std::fs::create_dir_all(&dataset).unwrap();
         std::fs::write(dataset.join("SEAL.json"), b"{}").unwrap();
 

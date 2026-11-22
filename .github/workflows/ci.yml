@@ -49,7 +49,7 @@ jobs:
         run: cargo +1.90.0 check --workspace --locked
 
   rust:
-    name: Rust v5.1 (${{ matrix.os }})
+    name: Rust v5.2 (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -81,11 +81,11 @@ jobs:
       - name: Rust tests and executable workflows
         run: cargo test --workspace --locked
 
-      - name: Validate sealed v5.1 dev dataset with double build
+      - name: Validate sealed v5.2 dev dataset with double build
         run: |
-          validation="$RUNNER_TEMP/v51-dev-validation.json"
+          validation="$RUNNER_TEMP/v52-dev-validation.json"
           set +e
-          cargo run --locked -p ib-cli -- v51 validate --suite v51_dev --double-build > "$validation"
+          cargo run --locked -p ib-cli -- v52 validate --suite v52_dev --double-build > "$validation"
           validation_status=$?
           set -e
           node - "$validation" "$validation_status" <<'JS'
@@ -93,9 +93,9 @@ jobs:
           const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
           const status = Number(process.argv[3]);
           if (status !== 0) {
-            throw new Error(`expected exit 0 from v51 validate; got ${status}: ${JSON.stringify(report)}`);
+            throw new Error(`expected exit 0 from v52 validate; got ${status}: ${JSON.stringify(report)}`);
           }
-          const expected = ['G-SEAL-V51', 'G-GOLD-REPLAY-V51', 'G-ANTI-ORACLE-V51', 'G-DET-V51'];
+          const expected = ['G-SEAL-V52', 'G-GOLD-REPLAY-V52', 'G-ANTI-ORACLE-V52', 'G-DET-V52'];
           const actual = report.gates.map((gate) => gate.gate_id);
           if (JSON.stringify(actual) !== JSON.stringify(expected)) {
             throw new Error(`unexpected gate set: ${JSON.stringify(actual)}`);
@@ -106,7 +106,7 @@ jobs:
             }
           }
           if (report.passed !== true || report.episode_count !== 12) {
-            throw new Error(`v51_dev must pass with 12 episodes: ${JSON.stringify(report)}`);
+            throw new Error(`v52_dev must pass with 12 episodes: ${JSON.stringify(report)}`);
           }
-          console.log(`v51_dev seal, gold replay, anti-oracle, and double-build determinism pass: ${expected.join(', ')}`);
+          console.log(`v52_dev seal, gold replay, anti-oracle, and double-build determinism pass: ${expected.join(', ')}`);
           JS

@@ -1,0 +1,13 @@
+# Offline replay config for IdentityBench v5.2. Contacts no provider and spends nothing:
+# the empty recording makes every slot a recorded provider error, which exercises the
+# run, resume, and report artifact paths end to end. Run from the repository root:
+#   identitybench --no-env-file v52 run \
+#     --config examples/v52/model-offline-replay.yaml \
+#     --pricing examples/v52/pricing-synthetic-zero.json \
+#     --suite v52_dev --out runs/v52/offline-replay
+model:
+  provider: replay
+  model: offline-replay
+  concurrency: 1
+  extra:
+    path: examples/v52/empty-responses.jsonl
