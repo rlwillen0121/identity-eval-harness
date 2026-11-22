@@ -23,23 +23,21 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::base::{
-    Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall,
-    hash_endpoint,
+    Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, SystemChannel,
+    ToolCall, hash_endpoint,
 };
 use crate::json::{
     bounded_token_count, load_object, safe_nonnegative_float_add, sanitize_response,
 };
 use crate::subprocess::{
-    Command, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BASE_DELAY_S, MAX_CAPTURE_BYTES, ProcessResult,
-    ProcessRunner, SystemProcessRunner, is_transient_error, redact, retry_transient,
-    run_command_with_cap, tail,
+    Command, DEFAULT_RETRY_BASE_DELAY_S, MAX_CAPTURE_BYTES, ProcessResult, ProcessRunner,
+    SystemProcessRunner, is_transient_error, redact, retry_transient, run_command_with_cap, tail,
 };
 
-pub const SYSTEM_BEGIN: &str = "===== SYSTEM INSTRUCTIONS =====";
-pub const SYSTEM_END: &str = "===== END SYSTEM INSTRUCTIONS =====";
+/// Header of the optional canonical system block (`SPEC-v5.2` §7.1 transcript grammar).
+pub const SYSTEM_BEGIN: &str = "=== SYSTEM ===";
 pub const MAX_ARG_BYTES: usize = 100_000;
 pub const MAX_SIDECAR_BYTES: usize = MAX_CAPTURE_BYTES;
-pub const SYSTEM_POINTER: &str = "Your instructions are at the start of the user message, between the lines '===== SYSTEM INSTRUCTIONS =====' and '===== END SYSTEM INSTRUCTIONS ====='. Treat them as your system prompt.";
 pub const NEUTRAL_SYSTEM: &str = "You are a helpful assistant.";
 pub const ACTION_SCHEMA_NAME: &str = "tool_action";
 
@@ -198,12 +196,15 @@ const ALLOWED_SYNC_BACK_KEYS: &[&str] = &[
 
 // --------------------------------------------------------------------------- pure helpers
 
+/// Prefix `body` with the canonical `SPEC-v5.2` §7.1 system block
+/// (`=== SYSTEM ===\n<system_prompt>\n`) for transports without a system channel.
+/// The system prompt is inserted after removing its trailing LF bytes.
 #[must_use]
 pub fn prepend_system(system: &str, body: &str) -> String {
     if system.is_empty() {
         body.to_string()
     } else {
-        format!("{SYSTEM_BEGIN}\n{system}\n{SYSTEM_END}\n\n{body}")
+        format!("{SYSTEM_BEGIN}\n{}\n{body}", system.trim_end_matches('\n'))
     }
 }
 
@@ -226,14 +227,10 @@ pub fn system_override(
         );
         return (NEUTRAL_SYSTEM.to_string(), body.to_string(), notes);
     }
-    let combined_len = prefix.len() + system.len();
-    if combined_len > MAX_ARG_BYTES {
-        return (
-            SYSTEM_POINTER.to_string(),
-            prepend_system(system, body),
-            Map::new(),
-        );
-    }
+    // No pointer swap (SPEC-v5.2 §7.1): an over-long system argument is passed through
+    // unchanged, and the argv limit check fails the call as a provider error instead of
+    // rewriting what the model receives.
+    let _ = prefix;
     (system.to_string(), body.to_string(), Map::new())
 }
 
@@ -1013,7 +1010,8 @@ impl CliConfig {
             binary: binary.into(),
             runner: Arc::new(SystemProcessRunner),
             version: None,
-            max_retries: DEFAULT_MAX_RETRIES,
+            // SPEC-v5.2 §7.4: adapters perform no internal retries; the runner owns the cap.
+            max_retries: 0,
             retry_base_delay_s: DEFAULT_RETRY_BASE_DELAY_S,
             environment: None,
         }
@@ -1025,6 +1023,11 @@ pub trait CliAdapter: Send + Sync {
     fn python_type_identity(&self) -> (&'static str, &'static str);
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::new(true, false, false)
+    }
+    /// Whether this CLI receives the system prompt through a dedicated flag/file (`Native`) or
+    /// inline as the canonical `=== SYSTEM ===` block of the user message (`Inline`).
+    fn system_channel(&self) -> SystemChannel {
+        SystemChannel::Native
     }
     fn supports_effort(&self) -> bool {
         true
@@ -1316,9 +1319,8 @@ impl<A: CliAdapter> CliProvider<A> {
 
         let large_system = Value::Array(vec![
             Value::from(MAX_ARG_BYTES as u64),
-            Value::String(SYSTEM_POINTER.to_string()),
             Value::String(SYSTEM_BEGIN.to_string()),
-            Value::String(SYSTEM_END.to_string()),
+            Value::String(self.adapter.system_channel().as_str().to_string()),
         ]);
 
         let mut setup = Map::new();
@@ -1635,6 +1637,10 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
 
     fn capabilities(&self) -> ProviderCapabilities {
         self.adapter.capabilities()
+    }
+
+    fn system_channel(&self) -> SystemChannel {
+        self.adapter.system_channel()
     }
 
     async fn complete(&self, request: &ModelRequest) -> ModelResponse {

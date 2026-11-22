@@ -245,7 +245,8 @@ fn factory_validation_yaml_and_make_provider() {
 
     let oai = make_provider_with_env(&spec, Some(env)).unwrap();
     assert_eq!(oai.kind(), "openai_compatible");
-    assert_eq!(oai.local_retry_limit(), Some(4));
+    // SPEC-v5.2 §7.4: adapters default to no internal retries.
+    assert_eq!(oai.local_retry_limit(), Some(0));
 }
 
 #[test]
@@ -315,9 +316,10 @@ fn python_type_identities_and_retry_limits_match_provider_accounting() {
         ("identitybench.providers.replay", "ReplayProvider")
     );
 
-    assert_eq!(oai.local_retry_limit(), Some(4));
-    assert_eq!(ant.local_retry_limit(), Some(4));
-    assert_eq!(claude.local_retry_limit(), Some(3));
+    // SPEC-v5.2 §7.4: every adapter defaults to `max_retries = 0`.
+    assert_eq!(oai.local_retry_limit(), Some(0));
+    assert_eq!(ant.local_retry_limit(), Some(0));
+    assert_eq!(claude.local_retry_limit(), Some(0));
     assert_eq!(muse.local_retry_limit(), Some(0));
     assert_eq!(replay.local_retry_limit(), None);
 }

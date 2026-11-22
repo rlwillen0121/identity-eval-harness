@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use ib_core::pyjson::{DumpOptions, dumps};
 use serde_json::{Map, Value};
 
-use crate::base::{ModelRequest, ModelResponse, Usage};
+use crate::base::{ModelRequest, ModelResponse, SystemChannel, Usage};
 use crate::cli::{
     ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int,
     link_credentials, parse_jsonl, prepend_system, read_sidecar_text, render_transcript,
@@ -141,6 +141,10 @@ impl CliAdapter for CodexAdapter {
             private.to_string_lossy().into_owned(),
         );
         Ok(Isolation { env, links })
+    }
+
+    fn system_channel(&self) -> SystemChannel {
+        SystemChannel::Inline
     }
 
     fn build(

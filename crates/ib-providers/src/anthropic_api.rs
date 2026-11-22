@@ -128,7 +128,8 @@ impl AnthropicConfig {
             base_url_env: None,
             cache_namespace: None,
             allow_custom_endpoint: false,
-            max_retries: 4,
+            // SPEC-v5.2 §7.4: no adapter-internal retries; the runner owns the retry cap.
+            max_retries: 0,
             timeout_s: 600.0,
             retry_base_delay_s: 0.5,
             env_override: None,

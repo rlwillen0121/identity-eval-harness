@@ -468,6 +468,16 @@ pub(crate) fn sanitize_response_post_usage(
     kind: &str,
 ) -> ModelResponse {
     let mut malformed = false;
+    // Keep the size and digest of an oversized visible text so a runner can classify it as the
+    // model's own output (`SPEC-v5.2` §3.1 `OUTPUT_LIMIT`) rather than a transport failure.
+    let oversized_text = response.text.as_ref().and_then(|text| {
+        (text.chars().count() > MAX_JSON_TEXT).then(|| {
+            (
+                text.len(),
+                hex::encode(<sha2::Sha256 as sha2::Digest>::digest(text.as_bytes())),
+            )
+        })
+    });
     for field in [
         &mut response.text,
         &mut response.served_model,
@@ -542,10 +552,20 @@ pub(crate) fn sanitize_response_post_usage(
         response.parsed = None;
         response.tool_calls.clear();
         response.error = Some(format!("{kind}: malformed response"));
+        if let Some((bytes, digest)) = oversized_text {
+            let raw = response.raw.get_or_insert_with(Map::new);
+            raw.insert(OVERSIZED_TEXT_BYTES.to_string(), Value::from(bytes as u64));
+            raw.insert(OVERSIZED_TEXT_SHA256.to_string(), Value::String(digest));
+        }
     }
 
     response
 }
+
+/// `ModelResponse::raw` key carrying the UTF-8 byte length of a dropped oversized visible text.
+pub const OVERSIZED_TEXT_BYTES: &str = "oversized_text_bytes";
+/// `ModelResponse::raw` key carrying the SHA-256 (hex) of a dropped oversized visible text.
+pub const OVERSIZED_TEXT_SHA256: &str = "oversized_text_sha256";
 
 /// `text` decoded as one JSON object, or `None` (invalid, not an object, or too deep).
 #[must_use]

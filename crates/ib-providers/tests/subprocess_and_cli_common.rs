@@ -13,10 +13,10 @@ use ib_providers::base::{Message, ModelRequest, ModelResponse, Provider, ToolCal
 use ib_providers::cli::claude::ClaudeAdapter;
 use ib_providers::cli::{
     ACTION_SCHEMA_NAME, CallDirGuard, CliConfig, CliProvider, MAX_ARG_BYTES, NEUTRAL_SYSTEM,
-    OWNER_FILE, SYSTEM_BEGIN, SYSTEM_END, SYSTEM_POINTER, base_child_env, link_credentials,
-    merge_attempts, owner_alive, parse_json_payload, parse_jsonl, prepend_system, probe_version,
-    render_transcript, scrub_stderr, served_models, structured_text, sweep_stale_call_dirs,
-    sync_back, system_override, valid_effort,
+    OWNER_FILE, SYSTEM_BEGIN, base_child_env, link_credentials, merge_attempts, owner_alive,
+    parse_json_payload, parse_jsonl, prepend_system, probe_version, render_transcript,
+    scrub_stderr, served_models, structured_text, sweep_stale_call_dirs, sync_back,
+    system_override, valid_effort,
 };
 use ib_providers::subprocess::{
     Command, ProcessResult, ProcessRunner, TRUNCATION_MARKER, is_transient_error, kill_all_live,
@@ -415,12 +415,16 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
     );
 
     assert_eq!(prepend_system("", "body"), "body");
+    // Canonical SPEC-v5.2 §7.1 system block: `=== SYSTEM ===\n<system_prompt>\n` then the body.
     assert_eq!(
-        prepend_system("rules", "body"),
-        format!("{SYSTEM_BEGIN}\nrules\n{SYSTEM_END}\n\nbody")
+        prepend_system("rules\n\n", "=== ENGAGEMENT ===\nbody"),
+        format!("{SYSTEM_BEGIN}\nrules\n=== ENGAGEMENT ===\nbody")
     );
+    assert_eq!(SYSTEM_BEGIN, "=== SYSTEM ===");
+    // No pointer swap: an over-long system prompt is passed through unchanged.
     let big = "x".repeat(MAX_ARG_BYTES + 1);
-    assert_eq!(system_override(&big, "body", "").0, SYSTEM_POINTER);
+    let (system, body, _) = system_override(&big, "body", "");
+    assert_eq!((system.as_str(), body.as_str()), (big.as_str(), "body"));
     assert_eq!(system_override(" \n\t", "body", "").0, NEUTRAL_SYSTEM);
     assert!(valid_effort("xhigh"));
     assert!(!valid_effort("-bad"));
@@ -555,7 +559,11 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
         p1.python_type_identity(),
         ("identitybench.providers.claude_cli", "ClaudeCliProvider")
     );
-    assert_eq!(p1.local_retry_limit(), Some(3));
+    assert_eq!(
+        p1.local_retry_limit(),
+        Some(0),
+        "SPEC-v5.2 §7.4: no adapter retries"
+    );
     assert_eq!(ACTION_SCHEMA_NAME, "tool_action");
 
     // Mock Runner integration

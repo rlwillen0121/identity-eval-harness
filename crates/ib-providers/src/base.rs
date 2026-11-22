@@ -275,6 +275,28 @@ impl ProviderError {
     }
 }
 
+/// How a transport receives the system prompt (`SPEC-v5.2` §7.1).
+///
+/// `Native` transports deliver it through a dedicated system-instruction channel. `Inline`
+/// transports have none, so the adapter prefixes the single user message with the canonical
+/// `=== SYSTEM ===` block ([`crate::cli::prepend_system`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SystemChannel {
+    Native,
+    Inline,
+}
+
+impl SystemChannel {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Inline => "inline",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderCapabilities {
     pub native_structured_output: bool,
@@ -330,6 +352,11 @@ pub trait Provider: Send + Sync {
     fn endpoint_identity(&self) -> String;
 
     fn capabilities(&self) -> ProviderCapabilities;
+
+    /// Channel through which this transport receives `ModelRequest::system`.
+    fn system_channel(&self) -> SystemChannel {
+        SystemChannel::Native
+    }
 
     async fn complete(&self, request: &ModelRequest) -> ModelResponse;
 

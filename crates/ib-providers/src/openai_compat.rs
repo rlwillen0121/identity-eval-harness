@@ -308,7 +308,8 @@ impl OpenAICompatConfig {
             provider_routing: None,
             headers: None,
             api: OpenAiApi::ChatCompletions,
-            max_retries: 4,
+            // SPEC-v5.2 §7.4: no adapter-internal retries; the runner owns the retry cap.
+            max_retries: 0,
             timeout_s: 600.0,
             retry_base_delay_s: 0.5,
             env_override: None,
