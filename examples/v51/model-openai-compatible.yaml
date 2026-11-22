@@ -21,4 +21,3 @@ model:
 model_tier: frontier
 run_config:
   max_output_tokens: 32768
-  max_assistant_generations: 50
