@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use ib_accounting::{FrozenPricingRate, HasUsageTokenCounts, estimate_frozen_cost_micros};
 use ib_core::hashing::sha256_hex;
 use ib_providers::factory::ModelSpec;
-use ib_v5_accounting::{FrozenPricingRateV5, HasUsageTokenCounts, estimate_frozen_cost_micros_v5};
 use ib_v51_schemas::{EpisodeV51, SealedEpisodeOracleV51};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -22,7 +22,7 @@ pub struct PricingRatesV51 {
 }
 
 impl PricingRatesV51 {
-    /// Parse either `ib-v5-runner` micros-per-million JSON or calibration USD-per-1M JSON.
+    /// Parse either micros-per-million JSON or calibration USD-per-1M JSON.
     pub fn from_json_value(value: &Value) -> Result<Self> {
         let obj = value
             .as_object()
@@ -81,10 +81,10 @@ impl PricingRatesV51 {
         )
     }
 
-    /// Convert to `ib-v5-accounting`'s `FrozenPricingRateV5` representation.
+    /// Convert to `ib-accounting`'s `FrozenPricingRate` representation.
     #[must_use]
-    pub fn to_frozen_rate(&self, pricing_manifest_sha256: &str) -> FrozenPricingRateV5 {
-        FrozenPricingRateV5 {
+    pub fn to_frozen_rate(&self, pricing_manifest_sha256: &str) -> FrozenPricingRate {
+        FrozenPricingRate {
             pricing_manifest_sha256: pricing_manifest_sha256.to_owned(),
             currency_code: "USD".to_owned(),
             input_cost_per_million_micros: self.uncached_input_micros_per_million,
@@ -132,7 +132,7 @@ impl PricingRatesV51 {
             reasoning: i64::try_from(reasoning_tokens).unwrap_or(i64::MAX),
         };
         let frozen = self.to_frozen_rate(&"0".repeat(64));
-        if let Some(micros) = estimate_frozen_cost_micros_v5(&snapshot, &frozen, None, None)
+        if let Some(micros) = estimate_frozen_cost_micros(&snapshot, &frozen)
             && micros >= 0
         {
             return micros as u64;
@@ -205,7 +205,7 @@ pub struct LoadedRunConfigV51 {
     pub max_output_tokens: u64,
 }
 
-/// Load a calibration/v5-compatible YAML run configuration.
+/// Load a YAML run configuration (`model`, optional `model_tier`, optional `run_config`).
 pub fn load_run_config_v51(path: &Path) -> Result<LoadedRunConfigV51> {
     let raw = std::fs::read(path)
         .with_context(|| format!("failed to read model config {}", path.display()))?;

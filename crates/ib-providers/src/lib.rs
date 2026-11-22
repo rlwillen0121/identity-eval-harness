@@ -1,5 +1,5 @@
 //! Environment loading, isolated CLI runners, HTTP API adapters, replay, and provider factory
-//! for the IdentityBench v5 Rust port.
+//! for the IdentityBench Rust harness.
 
 pub mod anthropic_api;
 pub mod base;

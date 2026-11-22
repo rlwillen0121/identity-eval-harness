@@ -1,6 +1,6 @@
 [package]
 name = "ib-providers"
-description = "Environment loading, isolated CLI runners, HTTP API adapters, replay, and provider factory for IdentityBench v5"
+description = "Environment loading, isolated CLI runners, HTTP API adapters, replay, and provider factory for IdentityBench"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

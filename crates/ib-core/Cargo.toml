@@ -1,6 +1,6 @@
 [package]
 name = "ib-core"
-description = "Python-compatible primitives for the IdentityBench Rust port: canonical JSON, float repr, CPython random, NumPy PCG64, hashing"
+description = "Python-compatible primitives for the IdentityBench Rust port: canonical JSON, float repr, CPython random, hashing"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

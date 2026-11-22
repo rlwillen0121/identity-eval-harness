@@ -249,7 +249,7 @@ fn factory_validation_yaml_and_make_provider() {
 }
 
 #[test]
-fn python_type_identities_and_retry_limits_match_v5_provider_accounting() {
+fn python_type_identities_and_retry_limits_match_provider_accounting() {
     let mut oai_config = OpenAICompatConfig::new("m");
     oai_config.env_override = Some(BTreeMap::from([(
         "OPENAI_BASE_URL".to_string(),
