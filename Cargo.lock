@@ -633,37 +633,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-cli"
-version = "5.0.0"
+name = "ib-accounting"
+version = "5.1.0"
 dependencies = [
- "anyhow",
- "async-trait",
- "clap",
- "hex",
- "ib-core",
- "ib-providers",
- "ib-v5-accounting",
- "ib-v5-baselines",
- "ib-v5-conformance",
- "ib-v5-generator",
- "ib-v5-report",
- "ib-v5-runner",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "ib-v5-scoring",
- "ib-v5-validation",
- "libc",
  "serde",
  "serde_json",
- "serde_norway",
- "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "ib-cli"
+version = "5.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ib-core",
+ "ib-providers",
+ "ib-v51-engine",
+ "ib-v51-generator",
+ "ib-v51-runtime",
+ "ib-v51-schemas",
+ "serde_json",
  "tempfile",
  "tokio",
 ]
 
 [[package]]
 name = "ib-core"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "hex",
  "serde",
@@ -674,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "ib-providers"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -696,70 +693,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-v5-accounting"
-version = "5.0.0"
-dependencies = [
- "ib-core",
- "ib-v5-schemas",
- "indexmap",
- "regex",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "ib-v5-baselines"
-version = "5.0.0"
+name = "ib-v51-engine"
+version = "5.1.0"
 dependencies = [
  "hex",
- "ib-core",
- "ib-providers",
- "ib-v5-generator",
- "ib-v5-oracle",
- "ib-v5-runner",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "ib-v5-scoring",
+ "ib-v51-schemas",
  "indexmap",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "ib-v5-conformance"
-version = "5.0.0"
-dependencies = [
- "hex",
- "ib-core",
- "ib-v5-oracle",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "ib-v5-scoring",
- "indexmap",
- "nix",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "ib-v5-generator"
-version = "5.0.0"
-dependencies = [
- "ib-core",
- "ib-v5-oracle",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "indexmap",
- "nix",
  "regex",
  "serde",
  "serde_json",
@@ -769,29 +708,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-v5-oracle"
-version = "5.0.0"
-dependencies = [
- "ib-core",
- "ib-v5-schemas",
- "indexmap",
- "regex",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "ib-v5-report"
-version = "5.0.0"
+name = "ib-v51-generator"
+version = "5.1.0"
 dependencies = [
  "hex",
  "ib-core",
- "ib-v5-accounting",
- "ib-v5-generator",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "ib-v5-scoring",
+ "ib-v51-engine",
+ "ib-v51-schemas",
+ "indexmap",
  "regex",
  "serde",
  "serde_json",
@@ -801,93 +725,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "ib-v5-runner"
-version = "5.0.0"
+name = "ib-v51-runtime"
+version = "5.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "hex",
+ "ib-accounting",
  "ib-core",
  "ib-providers",
- "ib-v5-accounting",
- "ib-v5-oracle",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "ib-v5-scoring",
+ "ib-v51-schemas",
  "indexmap",
  "regex",
  "serde",
  "serde_json",
+ "serde_norway",
  "sha2",
- "thiserror",
- "tiktoken-rs",
- "tokio",
-]
-
-[[package]]
-name = "ib-v5-runtime"
-version = "5.0.0"
-dependencies = [
- "ib-core",
- "ib-v5-schemas",
- "indexmap",
- "serde",
- "serde_json",
- "thiserror",
- "tiktoken-rs",
-]
-
-[[package]]
-name = "ib-v5-schemas"
-version = "5.0.0"
-dependencies = [
- "hex",
- "ib-core",
- "indexmap",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "ib-v5-scoring"
-version = "5.0.0"
-dependencies = [
- "hex",
- "ib-core",
- "ib-v5-accounting",
- "ib-v5-oracle",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "indexmap",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "ib-v5-validation"
-version = "5.0.0"
-dependencies = [
- "base64 0.23.1",
- "ib-core",
- "ib-v5-baselines",
- "ib-v5-conformance",
- "ib-v5-generator",
- "ib-v5-oracle",
- "ib-v5-runner",
- "ib-v5-runtime",
- "ib-v5-schemas",
- "ib-v5-scoring",
- "indexmap",
- "regex",
- "serde",
- "serde_json",
  "tempfile",
+ "thiserror",
+ "tiktoken-rs",
  "tokio",
+]
+
+[[package]]
+name = "ib-v51-schemas"
+version = "5.1.0"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

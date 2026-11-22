@@ -15,31 +15,15 @@ anyhow.workspace = true
 clap.workspace = true
 ib-core.workspace = true
 ib-providers.workspace = true
-ib-v5-accounting.workspace = true
-ib-v5-baselines.workspace = true
-ib-v5-conformance.workspace = true
-ib-v5-generator.workspace = true
-ib-v5-report.workspace = true
-ib-v5-runner.workspace = true
-ib-v5-runtime.workspace = true
-ib-v5-schemas.workspace = true
-ib-v5-scoring.workspace = true
-ib-v5-validation.workspace = true
-serde.workspace = true
+ib-v51-engine.workspace = true
+ib-v51-generator.workspace = true
+ib-v51-runtime.workspace = true
+ib-v51-schemas.workspace = true
 serde_json.workspace = true
-serde_norway.workspace = true
 tokio.workspace = true
-tempfile.workspace = true
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 
 [dev-dependencies]
-async-trait.workspace = true
-
-[build-dependencies]
-hex.workspace = true
-sha2.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

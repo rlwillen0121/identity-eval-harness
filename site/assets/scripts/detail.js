@@ -1,9 +1,8 @@
-import { endToEndPct, pct, int, tokens, usd, seconds, date, escapeHTML as esc } from './format.js';
+import { endToEndPct, pct, int, tokens, usd, elapsed, date, escapeHTML as esc } from './format.js';
 import { vendorLogo } from './logos.js';
 
 export const costBasis = {
-  retail_api: 'Retail token prices applied to the run\'s recorded tokens',
-  billed: 'Amount billed for the run, when reported',
+  retail_api_estimate: 'Estimated: recorded tokens priced at retail API rates (the run used a vendor subscription CLI, so nothing was billed per token)',
   local: 'Local hardware; no run cost',
 };
 
@@ -13,14 +12,13 @@ export function statusGlyph(pass) {
 
 const clamp = (n) => Math.min(1, Math.max(0, Number(n) || 0));
 
-const outcomeOrder = [
-  ['end_to_end', 'End-to-end pass', 'var(--seq-6)'],
-  ['state_only', 'State-correct only', 'var(--seq-4)'],
-  ['completed_other', 'Completed (other fail)', 'var(--seq-2)'],
+/** Every slot lands in exactly one outcome; shared by the detail panel and the outcomes chart. */
+export const OUTCOME_SEGMENTS = [
+  ['end_to_end', 'Resolved end to end', 'var(--seq-6)'],
+  ['committed_failed', 'Committed, checks failed', 'var(--seq-4)'],
+  ['committed_unsafe', 'Committed with violations', 'var(--seq-2)'],
   ['turn_limit', 'Turn limit', 'var(--seq-1)'],
-  ['output_budget', 'Output budget', 'var(--axis)'],
   ['parse_failure', 'Parse failure', 'var(--critical)'],
-  ['context_limit', 'Context limit', 'var(--muted)'],
 ];
 
 const medianCache = new WeakMap();
@@ -32,21 +30,27 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
+const rateOf = (entry) => {
+  const total = Number(entry?.planned_slots ?? entry?.slots) || 0;
+  return total > 0 ? (Number(entry?.pass_count) || 0) / total : 0;
+};
+
+/** Field medians over ranked models only; pending runs never contribute. */
 export function fieldMedians(data) {
   const models = Array.isArray(data.models) ? data.models : [];
-  const slotsPerRun = Number(data.suite?.slots_per_run) || 144;
-  const categoryFields = Object.fromEntries((data.categories || []).map((category) => [
+  const categories = Object.fromEntries((data.categories || []).map((category) => [
     category.id,
-    median(models.map((model) => {
-      const cat = model.categories?.[category.id];
-      const total = Number(cat?.planned_slots) || slotsPerRun;
-      return total > 0 ? (Number(cat?.pass_count) || 0) / total : 0;
-    })),
+    median(models.map((model) => rateOf(model.categories?.[category.id]))),
   ]));
-  const familyFields = (data.families || []).map((_, index) => median(
-    models.map((model) => Number(model.families?.[index]) || 0),
-  ));
-  return { categories: categoryFields, families: familyFields };
+  const subscores = Object.fromEntries((data.subscores || []).map((subscore) => [
+    subscore.id,
+    median(models.map((model) => rateOf(model.subscores?.[subscore.id]))),
+  ]));
+  const families = Object.fromEntries((data.families || []).map((family) => [
+    family.id,
+    median(models.map((model) => rateOf(model.families?.[family.id]))),
+  ]));
+  return { categories, subscores, families };
 }
 
 function cachedFieldMedians(data) {
@@ -55,12 +59,12 @@ function cachedFieldMedians(data) {
 }
 
 function bars(items) {
-  return `<ul class="detail-bars">${items.map(({ label, meta, hits, total, median: fieldMedian }) => {
+  return `<ul class="detail-bars">${items.map(({ label, hits, total, median: fieldMedian }) => {
     const rate = total ? hits / total : 0;
     const medianTick = Number.isFinite(fieldMedian)
       ? `<span class="field-median-tick" style="left:${clamp(fieldMedian) * 100}%" role="img" aria-label="Field median ${pct(fieldMedian)}" title="Field median ${pct(fieldMedian)}"></span>`
       : '';
-    return `<li><div class="bar-label"><span>${esc(label)}${meta ? ` <span class="detail-phase">${esc(meta)}</span>` : ''}</span><span>${int(hits)}/${int(total)} <span class="muted">${total ? pct(rate) : 'No attempts'}</span></span></div><div class="detail-bar-visual"><div class="detail-track" aria-hidden="true"><span class="detail-fill" style="width:${clamp(rate) * 100}%"></span></div>${medianTick}</div></li>`;
+    return `<li><div class="bar-label"><span>${esc(label)}</span><span>${int(hits)}/${int(total)} <span class="muted">${total ? pct(rate) : 'No attempts'}</span></span></div><div class="detail-bar-visual"><div class="detail-track" aria-hidden="true"><span class="detail-fill" style="width:${clamp(rate) * 100}%"></span></div>${medianTick}</div></li>`;
   }).join('')}</ul>`;
 }
 
@@ -68,38 +72,25 @@ function figures(items, className = '') {
   return `<dl class="detail-figures ${className}">${items.map(([label, value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>`;
 }
 
-export function stateAccuracySummary(model, total) {
-  return `${int(model.sem_srr_slots)} of ${int(total)} trials (${pct(model.sem_srr_commit)})`;
+const plural = (n, one, many) => `${int(n)} ${n === 1 ? one : many}`;
+
+export function endToEndSummary(model, total) {
+  return `${endToEndPct(model.g_srr)} (${int(model.g_srr_slots)}/${int(total)} · 95% interval ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])})`;
+}
+
+export function violationSummary(model, total) {
+  return `${plural(model.unsafe_count, 'violation', 'violations')} in ${int(model.unsafe_slots)} of ${int(total)} engagements (${pct(model.unsafe_slot_rate)})`;
 }
 
 function formatCostDetail(model) {
-  if (model.cost_basis === 'local') {
-    const est = model.recorded_estimated_cost_usd != null
-      ? ` (reference token estimate ${usd(model.recorded_estimated_cost_usd)})`
-      : '';
-    return `${costBasis['local']}${est}`;
-  }
-  const coverage = model.accounting_coverage && model.accounting_coverage !== 'COMPLETE'
-    ? ` · ${model.accounting_coverage.toLowerCase()} accounting`
-    : '';
-  return `${usd(model.cost_usd)} · ${costBasis[model.cost_basis] || 'Basis not recorded'}${coverage}`;
+  if (model.cost_basis === 'local') return costBasis.local;
+  if (model.cost_usd == null) return 'Not recorded';
+  return `${usd(model.cost_usd)} · ${costBasis[model.cost_basis] || 'Basis not recorded'}`;
 }
 
 function formatSourceKind(sourceKind) {
-  if (sourceKind === 'native_rust_run') return 'Native Rust v5 run';
-  if (sourceKind === 'historical_native_audit') return 'Historical trajectory regraded by native Rust v5';
+  if (sourceKind === 'native_rust_v51_run') return 'Native Rust v5.1 run';
   return sourceKind || 'Not recorded';
-}
-
-function formatRunSetup(provenance) {
-  const topology = provenance?.topology === 'T0_SINGLE_MONOLITH' || !provenance?.topology
-    ? 'Single model'
-    : provenance.topology.toLowerCase().replace(/_/g, ' ');
-  const steering = (provenance?.steering_mode || 'UNSTEERED').toLowerCase();
-  const execution = provenance?.wave_execution_mode === 'COUPLED' || !provenance?.wave_execution_mode
-    ? 'coupled two-phase'
-    : provenance.wave_execution_mode.toLowerCase().replace(/_/g, ' ');
-  return `${topology} · ${steering} · ${execution}`;
 }
 
 export function mount(rootEl, data, store) {
@@ -111,78 +102,80 @@ export function mount(rootEl, data, store) {
     previous = id;
     const model = data.models.find((m) => m.id === id);
     if (!model) { rootEl.replaceChildren(); return; }
-    const total = Number(model.planned_slots) || Number(data.suite?.slots_per_run) || 144;
-    const failures = model.failures || {};
+    const total = Number(model.planned_slots) || Number(data.suite?.slots_per_run);
     const outcomes = model.outcomes || {};
     const families = Array.isArray(data.families) ? data.families : [];
-    const hasDecisions = (Number(model.unsafe_targets) || 0) > 0;
-    const unsafeSummary = hasDecisions
-      ? `${pct(model.unsafe_rate)} · ${int(model.unsafe_count)} of ${int(model.unsafe_targets)} decisions`
-      : 'No decisions committed';
+    const regimes = Number(data.suite?.regimes) || 4;
+    const perFamily = families.length ? Math.round(total / families.length) : 0;
 
     rootEl.innerHTML = `
       <div class="detail-heading"><h3>${vendorLogo(model.vendor, model.vendor_label, 'vendor-logo detail-logo')}${esc(model.name)} <span class="muted">· ${esc(model.vendor_label)} · ${esc(model.effort)} effort</span></h3><button type="button" class="text-button copy-link">Copy link</button></div>
       <p class="model-id">${esc(model.id)}</p>
       <p class="copy-status muted" role="status"></p>
       ${figures([
-        ['End to end', `${endToEndPct(model.g_srr)} (${int(model.g_srr_slots)}/${int(total)} · 95% interval ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])})`],
-        ['State accuracy', `${pct(model.sem_srr_commit)} (${int(model.sem_srr_slots)}/${int(total)})`],
-        ['Unsafe actions', unsafeSummary],
+        ['End to end', endToEndSummary(model, total)],
+        ['State accuracy', pct(model.state_accuracy)],
+        ['Unsafe', violationSummary(model, total)],
         ['Total output tokens', `${tokens(model.output_tokens)} (${int(model.output_tokens)})`],
       ], 'mobile-figures')}
       <div class="detail-columns">
         <div>
-          <h4>Governance categories</h4>
-          <p class="detail-median-key muted"><span class="field-median-key" aria-hidden="true"></span> Field median across all ${int(data.models.length)} models</p>
+          <h4>IGA categories</h4>
+          <p class="detail-median-key muted"><span class="field-median-key" aria-hidden="true"></span> Field median across all ${int(data.models.length)} ranked models</p>
           ${bars((data.categories || []).map((category) => {
             const cat = model.categories?.[category.id] || { pass_count: 0, planned_slots: total };
             return {
-              label: category.label,
-              meta: (category.phases || []).join('+'),
+              label: category.title || category.label,
               hits: cat.pass_count,
               total: cat.planned_slots || total,
               median: medians.categories[category.id],
             };
           }))}
+          <h4>Subscores</h4>
+          ${bars((data.subscores || []).map((subscore) => {
+            const entry = model.subscores?.[subscore.id] || { pass_count: 0, slots: 0 };
+            return { label: subscore.label, hits: entry.pass_count, total: entry.slots, median: medians.subscores[subscore.id] };
+          }))}
           <h4>Resolution &amp; safety</h4>
           ${figures([
-            ['End to end', `${endToEndPct(model.g_srr)} · 95% interval ${endToEndPct(model.g_srr_ci[0])}–${endToEndPct(model.g_srr_ci[1])}`],
-            ['State accuracy', `${pct(model.sem_srr_commit)} · 95% interval ${pct(model.sem_srr_ci[0])}–${pct(model.sem_srr_ci[1])}`],
-            ['Cross-phase carry-through', `${pct(model.g_prop)} (baseline ${pct(model.g_prop_reset)})`],
-            ['Unsafe actions', unsafeSummary],
-            ['Unauthorized grants', `${int(model.overgrant_count)} committed (${pct(model.overgrant_rate)} per trial)`],
-            ['Wrongful revocations & halts', `${int(model.avail_breach_count)} committed (${pct(model.avail_breach_rate)} per trial)`],
-            ['Valid execution', `${pct(model.execution_valid_rate)} (${int(model.observed_slots)}/${int(total)} trials)`],
+            ['End to end', endToEndSummary(model, total)],
+            ['State accuracy', `${pct(model.state_accuracy)} of assertions satisfied, averaged over engagements`],
+            ['Overgrants', `${int(model.overgrant_count)} in ${int(model.overgrant_slots)} of ${int(total)} engagements`],
+            ['Availability breaches', `${int(model.avail_breach_count)} in ${int(model.avail_breach_slots)} of ${int(total)} engagements`],
+            ['Any violation', `${int(model.unsafe_slots)} of ${int(total)} engagements (${pct(model.unsafe_slot_rate)})`],
+            ['Committed', `${int(model.committed_slots)} of ${int(total)} engagements`],
+            ['Turns per engagement', `${model.avg_turns} average (cap ${int(data.suite?.turn_budget)})`],
+            ['Go-live dry runs', `${int(model.dry_runs_used)} used (up to ${int(data.suite?.max_dry_runs)} per engagement)`],
           ])}
         </div>
         <div>
-          <h4>Trial outcomes &amp; terminations</h4>
-          <div class="outcome-bar" role="img" aria-label="${esc(outcomeOrder.map(([key, label]) => `${label}: ${int(outcomes[key] || 0)}`).join('; '))}">
-            ${outcomeOrder.filter(([key]) => (outcomes[key] || 0) > 0).map(([key, label, color]) => `<span style="flex:${outcomes[key]};background:${color}" title="${esc(label)}: ${int(outcomes[key])} of ${int(total)}"></span>`).join('')}
+          <h4>Engagement outcomes</h4>
+          <div class="outcome-bar" role="img" aria-label="${esc(OUTCOME_SEGMENTS.map(([key, label]) => `${label}: ${int(outcomes[key] || 0)}`).join('; '))}">
+            ${OUTCOME_SEGMENTS.filter(([key]) => (outcomes[key] || 0) > 0).map(([key, label, color]) => `<span style="flex:${outcomes[key]};background:${color}" title="${esc(label)}: ${int(outcomes[key])} of ${int(total)}"></span>`).join('')}
           </div>
-          <ul class="outcome-legend">${outcomeOrder.map(([key, label, color]) => `<li><span class="legend-swatch" style="background:${color}" aria-hidden="true"></span>${esc(label)} <strong>${int(outcomes[key] || 0)}</strong></li>`).join('')}</ul>
+          <ul class="outcome-legend">${OUTCOME_SEGMENTS.map(([key, label, color]) => `<li><span class="legend-swatch" style="background:${color}" aria-hidden="true"></span>${esc(label)} <strong>${int(outcomes[key] || 0)}</strong></li>`).join('')}</ul>
           <dl class="detail-terminations">
-            <div><dt>Parse failures</dt><dd>${int(failures.parse_failures || 0)}</dd></div>
-            <div><dt>Turn limits</dt><dd>${int(failures.turn_limits || 0)}</dd></div>
-            <div><dt>Output-budget stops</dt><dd>${int(failures.output_limits || 0)}</dd></div>
-            <div><dt>Context-limit stops</dt><dd>${int(failures.context_limits || 0)}</dd></div>
+            <div><dt>Turn-limit stops</dt><dd>${int(outcomes.turn_limit || 0)}</dd></div>
+            <div><dt>Parse failures</dt><dd>${int(outcomes.parse_failure || 0)}</dd></div>
+            <div><dt>Provider errors</dt><dd>${int(outcomes.provider_error || 0)}</dd></div>
           </dl>
-          <h4>Scenario families (F01–F12)</h4>
-          <p class="detail-caption">End-to-end resolution across 4 policy regimes × 3 repeats (12 trials per family).</p>
-          <div class="family-grid">${(model.families || []).map((rate, i) => {
-            const family = families[i] || { id: `F${String(i + 1).padStart(2, '0')}`, label: '' };
-            const title = `${family.id}${family.label ? ` · ${family.label}` : ''}: ${pct(rate)}`;
+          <h4>Engagement families (F01–F12)</h4>
+          <p class="detail-caption">End-to-end resolution across ${int(regimes)} client regimes (${int(perFamily)} engagements per family).</p>
+          <div class="family-grid">${families.map((family) => {
+            const entry = model.families?.[family.id] || { pass_count: 0, slots: 0 };
+            const rate = rateOf(entry);
+            const title = `${family.id} · ${family.label}: ${int(entry.pass_count)}/${int(entry.slots)} (${pct(rate)})`;
             return `<div class="family-cell" title="${esc(title)}"><span class="family-square" role="img" aria-label="${esc(title)}" style="background:var(--seq-${rate > 0 ? Math.max(1, Math.ceil(clamp(rate) * 7)) : 0})"></span><span>${esc(family.id)}</span></div>`;
           }).join('')}</div>
           <div class="scale-key"><span>0%</span>${Array.from({ length: 8 }, (_, i) => `<span style="background:var(--seq-${i})" aria-hidden="true"></span>`).join('')}<span>100%</span></div>
           ${figures([
             ['Output & reasoning tokens', `${tokens(model.output_tokens)} (${int(model.output_tokens)} total · ${tokens(model.reasoning_tokens)} reasoning)`],
-            ['Input tokens', `${tokens(model.input_tokens)} (${tokens(model.cached_input_tokens)} cached)`],
-            ['Run cost', formatCostDetail(model)],
-            ['Elapsed wall time', seconds((Number(model.wall_time_ms) || 0) / 1000)],
-            ['Run setup', formatRunSetup(model.provenance)],
+            ['Input tokens', `${tokens(model.input_tokens)} uncached · ${tokens(model.cached_input_tokens)} cached`],
+            ['Estimated cost', formatCostDetail(model)],
+            ['Summed engagement time', elapsed(model.wall_time_ms)],
+            ['Run setup', `Single agent · ${model.effort} effort · ${int(total)} engagements × ${int(data.suite?.repeats)} run`],
             ['Provenance', formatSourceKind(model.provenance?.source_kind)],
-            ['Run manifest SHA-256', model.provenance?.run_manifest_sha256 || 'Not recorded'],
+            ['Run summary SHA-256', model.provenance?.summary_sha256 || 'Not recorded'],
             ['First published', date(model.first_published)],
           ])}
         </div>

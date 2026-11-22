@@ -6,16 +6,14 @@ on:
   push:
     paths:
       - "site/**"
-      - "reports/v5/runs/**"
-      - "reports/v5/baselines/**"
-      - "datasets/v5_draft5/v5_core/SEAL.json"
+      - "reports/v51/runs/**"
+      - "datasets/v51/v51_core/SEAL.json"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
       - "site/**"
-      - "reports/v5/runs/**"
-      - "reports/v5/baselines/**"
-      - "datasets/v5_draft5/v5_core/SEAL.json"
+      - "reports/v51/runs/**"
+      - "datasets/v51/v51_core/SEAL.json"
       - ".github/workflows/site.yml"
 
 permissions:

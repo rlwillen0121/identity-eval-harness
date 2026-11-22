@@ -4,4 +4,4 @@ description: Operates explicitly authorized IdentityBench runs and their artifac
 tools: Read, Grep, Glob, Bash
 ---
 
-Follow [AGENTS.md](../../AGENTS.md) and [the bench-operator skill](../../.agents/skills/bench-operator/SKILL.md). Do not edit source, tests, or sealed datasets. A live `identitybench v5` Rust run requires explicit user authorization in the current turn. Never revive `v1–v4`, `v4.1`, or Python `v5` as live targets. Use separate output directories per config; protect credentials and private endpoint details. Keep run integrity, source health, and publication proof distinct.
+Follow [AGENTS.md](../../AGENTS.md) and [the bench-operator skill](../../.agents/skills/bench-operator/SKILL.md). Do not edit source, tests, or sealed datasets. A live `identitybench v51` Rust run requires explicit user authorization in the current turn. Never revive `v1–v4`, `v4.1`, legacy Python `v5`, or native Rust `v5` as live targets. Use separate output directories per config; protect credentials and private endpoint details. Keep run integrity, source health, and publication proof distinct.

@@ -10,13 +10,8 @@ function fillSummary(data) {
   const models = data.models;
   document.getElementById('interval-method').textContent = END_TO_END_INTERVAL_METHOD;
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
-  const topModel = models.reduce((best, item) => ((item.g_srr || 0) > (best?.g_srr || -1) ? item : best), models[0]);
-  const figures = [
-    [int(models.length), 'models'],
-    [int(data.suite.slots_per_run), `trials (${int(data.suite.episodes)} × ${int(data.suite.repeats)})`],
-    [int(data.suite.decisions), 'decisions checked per run'],
-    [endToEndPct(topModel?.g_srr ?? 0), 'top end-to-end'],
-  ];
+  const topModel = models.reduce((best, item) => ((item.g_srr || 0) > (best?.g_srr ?? -1) ? item : best), null);
+  const figures = heroFigures(data, topModel);
   const root = document.getElementById('hero-figures');
   root.replaceChildren();
   for (const [value, label] of figures) {
@@ -30,15 +25,7 @@ function fillSummary(data) {
   }
   const provenance = document.getElementById('provenance');
   provenance.replaceChildren();
-  for (const [label, value] of [
-    ['Suite', data.suite.id],
-    ['Seed', String(data.suite.seed)],
-    ['Normative contract', data.suite.normative_contract],
-    ['Published', date(data.suite.published)],
-    ['Seal SHA-256', data.suite.seal_sha256],
-    ['Episodes SHA-256', data.suite.episodes_sha256],
-    ['Oracles SHA-256', data.suite.oracles_sha256],
-  ]) {
+  for (const [label, value] of provenanceRows(data)) {
     const dt = document.createElement('dt');
     const dd = document.createElement('dd');
     dt.textContent = label;
@@ -49,8 +36,33 @@ function fillSummary(data) {
   document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
 }
 
+export function heroFigures(data, topModel) {
+  const suite = data.suite;
+  return [
+    [int(data.models.length), 'ranked models'],
+    [int(suite.slots_per_run), `slots (${int(suite.episodes)} engagements × ${int(suite.repeats)})`],
+    [int(suite.config_files), 'config files authored per engagement'],
+    [endToEndPct(topModel?.g_srr ?? 0), 'top end-to-end'],
+  ];
+}
+
+export function provenanceRows(data) {
+  const suite = data.suite;
+  return [
+    ['Suite', suite.id],
+    ['Specification', `${suite.spec_version} · generator ${suite.generator_version}`],
+    ['Master seed', String(suite.seed)],
+    ['Normative contract', suite.contract_id],
+    ['Published', date(suite.published)],
+    ['Seal SHA-256', suite.seal_sha256],
+    ['Episodes SHA-256', suite.episodes_sha256],
+    ['Oracles SHA-256', suite.oracles_sha256],
+    ['Specification SHA-256', suite.spec_sha256],
+  ];
+}
+
 export function leaderboardLede(data) {
-  return `Ranked by the ${int(data.suite.slots_per_run)} trials each resolves end to end: both phases correct, nothing unsafe, nothing missed.`;
+  return `Ranked by how many of ${int(data.suite.slots_per_run)} client engagements each resolves end to end: every category correct, nothing unsafe, committed within the turn cap.`;
 }
 
 export async function boot() {

@@ -304,10 +304,10 @@ pub trait Provider: Send + Sync {
     fn kind(&self) -> &str;
     fn model(&self) -> &str;
 
-    /// Exact Python `(module, class)` tuple for v5 provider accounting parity.
+    /// Exact Python `(module, class)` tuple for provider accounting parity.
     fn python_type_identity(&self) -> (&'static str, &'static str);
 
-    /// Local retry limit configured on this adapter, if applicable to v5 accounting.
+    /// Local retry limit configured on this adapter, if applicable to provider accounting.
     fn local_retry_limit(&self) -> Option<u32> {
         None
     }
