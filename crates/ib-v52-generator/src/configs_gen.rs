@@ -16,6 +16,7 @@ use ib_v52_engine::{
         compute_birthright_entitlements, compute_person_effective_entitlements,
         expand_entitlements_transitively, find_sod_conflicts_transitive,
     },
+    workflows::MAX_LIVE_MANAGER_CHAIN_HOPS,
 };
 use ib_v52_schemas::{
     AccessReviewsConfigV52, AccountGroupEdgeV52, AffiliationPolicyV52, AffiliationTypeV52,
@@ -1426,7 +1427,9 @@ fn build_gold_nhi_and_agents(
     person_eff: &IndexMap<String, BTreeSet<String>>,
 ) -> NhiAndAgentConfigV52 {
     let hardened = is_ceiling_hardened_family(bp.spec.family_id);
-    let nhi_max_hops = if hardened { 3 } else { 8 };
+    // `SPEC-v5.2` §5.3 Clarification 1: every escalation walk is bounded at 3 hops in all 12 families.
+    // The walk starts at the inactive owner (hop 0), so hops 1..=3 are its manager chain.
+    let nhi_max_hops = MAX_LIVE_MANAGER_CHAIN_HOPS;
     let eligible_states = [LifecycleStateIdV52::Active];
     let mut nhi_decisions = IndexMap::new();
     for nhi in &bp.world.nhi_workloads {
@@ -1652,12 +1655,14 @@ fn build_gold_nhi_and_agents(
                             }
                             None
                         } else {
+                            // The walk starts at the immediate manager (hop 1), so `MAX - 1` further
+                            // hops reach hop 3 (§5.3 Clarification 1).
                             resolve_live_human_custodian(
                                 mgr,
                                 cubes,
                                 lifecycles,
                                 &eligible_states,
-                                8,
+                                MAX_LIVE_MANAGER_CHAIN_HOPS - 1,
                             )
                             .filter(|p| p != &req.initiating_human_person_key)
                         }
