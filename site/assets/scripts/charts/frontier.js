@@ -1,4 +1,4 @@
-import { endToEndPct, pct, usd } from '../format.js';
+import { endToEndPct, int, pct, usd } from '../format.js';
 import { chart, el, log, linear, scatter, stepObstacles, stepPath, svgCanvas, text, ticks, yAxis } from './svg.js';
 
 export function paretoFrontier(models, metric = 'g_srr') {
@@ -14,26 +14,28 @@ export function paretoFrontier(models, metric = 'g_srr') {
 
 export function mount(root, data, store) {
   let metric = 'g_srr';
-  const subtitle = 'Run cost on a log scale across 144 trials. The line traces the best result at each cost.';
+  const slots = Number(data.suite?.slots_per_run);
+  const subtitle = `Estimated run cost (retail API prices) on a log scale across ${int(slots)} engagements. The line traces the best result at each cost.`;
   const view = chart(root, 'What does resolution cost?', subtitle, store, ({ width, canvas, tip }) => {
     const plot = { left: 44, right: width - 18, top: 22, bottom: 312 };
     const paid = data.models.filter((m) => m.cost_basis !== 'local' && m.cost_usd > 0);
     const local = data.models.filter((m) => m.cost_basis === 'local');
     const logStart = plot.left + (local.length ? 52 : 0);
     const minCost = Math.min(10, ...paid.map((m) => m.cost_usd));
-    const maxCost = Math.max(500, ...paid.map((m) => m.cost_usd)) * 1.15;
+    const maxCost = Math.max(200, ...paid.map((m) => m.cost_usd)) * 1.15;
     const x = log([minCost, maxCost], [logStart, plot.right - 6]);
     // The scale stops short of the plot's top edge so a label fits beside high-scoring models.
     const y = linear([0, 1], [plot.bottom, plot.top + 26]);
     const frontier = paretoFrontier(data.models, metric);
     const lead = data.models.reduce((a, b) => (a[metric] > b[metric] ? a : b));
     const metricLabel = metric === 'g_srr' ? 'end-to-end resolution' : 'state accuracy';
+    const frontierText = `${int(frontier.length)} paid ${frontier.length === 1 ? 'model forms' : 'models form'} the cost frontier`;
     const leadRate = metric === 'g_srr' ? endToEndPct(lead[metric]) : pct(lead[metric], 1);
     const svg = svgCanvas(canvas, width, 366,
-      `${lead.name} has the highest ${metricLabel} at ${leadRate}; ${frontier.length} paid models form the cost frontier. Local runs are shown separately.`);
+      `${lead.name} has the highest ${metricLabel} at ${leadRate}; ${frontierText}.${local.length ? ' Local runs are shown separately.' : ''}`);
     yAxis(svg, plot, y, ticks(0, 1, 4), (v) => pct(v, 0));
     svg.append(text(plot.left, 12, metric === 'g_srr' ? 'End to end' : 'State accuracy', { class: 'chart-axis-title' }));
-    for (const value of [10, 30, 100, 300, 600]) {
+    for (const value of [10, 20, 50, 100, 200, 500]) {
       if (value < minCost || value > maxCost) continue;
       svg.append(
         el('line', { x1: x(value), x2: x(value), y1: plot.bottom, y2: plot.bottom + 5, class: 'chart-axis' }),
@@ -47,7 +49,7 @@ export function mount(root, data, store) {
         text(plot.left + 12, plot.bottom + 20, 'local', { 'text-anchor': 'middle', class: 'chart-tick' }),
       );
     }
-    svg.append(text((logStart + plot.right) / 2, 356, 'Run cost · USD', { 'text-anchor': 'middle', class: 'chart-axis-title' }));
+    svg.append(text((logStart + plot.right) / 2, 356, 'Estimated run cost · USD', { 'text-anchor': 'middle', class: 'chart-axis-title' }));
     const frontierPoints = frontier.map((m) => ({ x: x(m.cost_usd), y: y(m[metric]) }));
     const line = el('path', { d: stepPath(frontierPoints, plot.right), class: 'chart-frontier' });
     svg.append(line);
@@ -62,9 +64,9 @@ export function mount(root, data, store) {
       opacity: m[metric] === 0 ? 0.35 : ids.has(m.id) ? 1 : 0.55,
       radius: m[metric] === 0 ? 3 : undefined,
       lines: [
-        ['Run cost', `${m.cost_basis === 'local' ? 'No run cost (local hardware)' : usd(m.cost_usd)} (${({ retail_api: 'retail API', billed: 'billed', local: 'local' })[m.cost_basis]})${m.accounting_coverage && m.accounting_coverage !== 'COMPLETE' ? ' · partial' : ''}`],
-        ['End to end', endToEndPct(m.g_srr)],
-        ['State accuracy', pct(m.sem_srr_commit, 1)],
+        ['Est. cost', m.cost_basis === 'local' ? 'No run cost (local hardware)' : `${usd(m.cost_usd)} (retail API estimate)`],
+        ['End to end', `${endToEndPct(m.g_srr)} (${int(m.g_srr_slots)}/${int(m.planned_slots)})`],
+        ['State accuracy', pct(m.state_accuracy, 1)],
       ],
     }));
     const sync = scatter(svg, points, plot, store, tip, root, ids, {
@@ -81,14 +83,14 @@ export function mount(root, data, store) {
   control.className = 'chart-segmented chart-toggle';
   control.setAttribute('role', 'group');
   control.setAttribute('aria-label', 'Resolution metric');
-  const buttons = [['g_srr', 'End to end'], ['sem_srr_commit', 'State accuracy']].map(([key, label]) => {
+  const buttons = [['g_srr', 'End to end'], ['state_accuracy', 'State accuracy']].map(([key, label]) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = label;
     button.setAttribute('aria-pressed', key === metric ? 'true' : 'false');
     button.addEventListener('click', () => {
       metric = key;
-      for (const [i, item] of buttons.entries()) item.setAttribute('aria-pressed', ['g_srr', 'sem_srr_commit'][i] === metric ? 'true' : 'false');
+      for (const [i, item] of buttons.entries()) item.setAttribute('aria-pressed', ['g_srr', 'state_accuracy'][i] === metric ? 'true' : 'false');
       view.redraw();
     });
     control.append(button);

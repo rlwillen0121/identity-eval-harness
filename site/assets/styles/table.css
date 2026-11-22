@@ -54,7 +54,7 @@
 .task-count { flex: 0 0 3.2ch; color: var(--muted); font-size: 11.5px; }
 .tasks-track { flex: 1 1 0; min-width: 0; max-width: 64px; height: 4px; border-radius: 2px; background: var(--grid); overflow: hidden; }
 .tasks-fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
-.category-bars { display: flex; align-items: end; gap: 3px; width: 74px; height: 28px; }
+.category-bars { display: flex; align-items: end; gap: 2px; width: 78px; height: 28px; }
 .category-track { display: flex; align-items: end; width: 8px; height: 28px; border-radius: 2px; background: var(--grid); overflow: hidden; }
 .category-fill { display: block; width: 8px; background: var(--ink-2); }
 .safety-cell { white-space: nowrap; }
@@ -119,7 +119,7 @@
 .detail-caption { font-size: 11px; color: var(--ink-2); margin: -6px 0 10px; }
 .detail-note { font-size: 11px; margin: 10px 0 0; }
 .detail-phase { font: 10px var(--mono); color: var(--muted); margin-left: 4px; }
-.detail-terminations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+.detail-terminations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
 .detail-terminations > div { min-width: 0; }
 .detail-terminations dt { font-size: 10.5px; color: var(--muted); line-height: 1.3; }
 .detail-terminations dd { margin: 2px 0 0; font: 600 13px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
@@ -147,6 +147,9 @@
 .baseline-description { font-size: 12px; font-weight: 400; line-height: 1.45; margin-top: 2px; }
 .baseline-table th:first-child, .baseline-table td:first-child { text-align: left; padding-left: 0; }
 .baselines p { color: var(--ink-2); max-width: 90ch; }
+.pending-runs { border-top: 1px solid var(--rule); }
+.pending-title { margin: 5px 0 0; color: var(--ink); font: 500 12.5px/1.5 var(--sans); }
+.pending-table .vendor-logo { width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px; }
 .empty-row td { color: var(--ink-2); padding-block: 24px; }
 @media (min-width: 760px) and (max-width: 1050px) {
   .leaderboard-table { font-size: 12px; }
@@ -190,7 +193,6 @@
   .detail-heading { flex-wrap: wrap; gap: 8px; }
   .mobile-figures { display: grid; margin: 0 0 24px; padding-top: 0; border: 0; }
   .family-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-  .detail-terminations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .model-row { scroll-margin-top: 80px; }
   .vendor-controls { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; margin: -3px -12px; padding: 3px 12px; scrollbar-width: none; }
   .vendor-controls::-webkit-scrollbar { display: none; }

@@ -154,19 +154,28 @@ test('full DOM boot hides #load-status, mounts 4 SVG charts, populates provenanc
     assert.equal(byId.get('load-status').hidden, true);
     const figures = byId.get('hero-figures').children.map((group) => group.children.map((node) => node.textContent));
     assert.deepEqual(figures, [
-      ['models', String(data.models.length)],
-      ['trials (48 × 3)', '144'],
-      ['decisions checked per run', '2,748'],
-      ['top end-to-end', '76.4%'],
+      ['ranked models', String(data.models.length)],
+      ['slots (48 engagements × 1)', '48'],
+      ['config files authored per engagement', '12'],
+      ['top end-to-end', '87.5%'],
     ]);
-    assert.ok(byId.get('provenance').children.length >= 10);
+    const provenance = byId.get('provenance').children.map((node) => node.textContent);
+    assert.equal(provenance.length, 18);
+    assert.deepEqual(provenance.slice(0, 2), ['Suite', 'v51_core']);
+    assert.ok(provenance.includes(data.suite.seal_sha256));
+    assert.ok(provenance.includes(data.suite.spec_sha256));
+    assert.match(byId.get('interval-method').textContent, /^Wilson score interval/);
+    assert.match(byId.get('leaderboard-lede').textContent, /of 48 client engagements/);
     assert.match(byId.get('updated-date').textContent, /^Updated /);
-    assert.match(byId.get('leaderboard-root').innerHTML, /Show reference &amp; baselines/);
+    assert.match(byId.get('leaderboard-root').innerHTML, /Show reference replay/);
+    assert.match(byId.get('leaderboard-root').innerHTML, /In progress · not ranked/);
     assert.ok(byId.get('updates-root').innerHTML.includes(data.models[0].name));
 
     for (const chartId of ['chart-frontier', 'chart-safety', 'chart-outcomes', 'chart-anatomy']) {
       const svgs = byId.get(chartId).querySelectorAll('svg');
       assert.equal(svgs.length, 1, `${chartId} should mount 1 SVG`);
+      const plotted = new Set(byId.get(chartId).querySelectorAll('[data-model-id]').map((node) => node.getAttribute('data-model-id')));
+      for (const pending of data.pending) assert.ok(!plotted.has(pending.id), `${chartId} must not plot pending ${pending.id}`);
     }
 
     const themeBtn = byId.get('theme-toggle');

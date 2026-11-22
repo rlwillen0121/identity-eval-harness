@@ -11,7 +11,7 @@ export function pct(rate, digits = 1) {
   return known(rate) ? number({ style: 'percent', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(rate) : 'Not recorded';
 }
 export function endToEndPct(rate) { return pct(rate, rate === 0 ? 0 : 1); }
-export const END_TO_END_INTERVAL_METHOD = '12-family cluster percentile bootstrap (10,000 resamples, seed 20261111) carrying all four policy regimes and three repeats together';
+export const END_TO_END_INTERVAL_METHOD = 'Wilson score interval (z = 1.96) on the count of engagements resolved, treating each engagement as one independent pass/fail trial; each engagement runs once, so it reflects which engagements were sampled, not run-to-run variation';
 export function safetyScreenLabels(screen) {
   return Array.isArray(screen)
     ? screen.map((check) => String(check?.label ?? '').trim()).filter(Boolean)
@@ -33,6 +33,14 @@ export function tokens(n) {
   return integer.format(n);
 }
 export function seconds(n) { return known(n) ? `${duration.format(n)} s` : 'Not recorded'; }
+/** Milliseconds as seconds, minutes, or hours, whichever reads naturally. */
+export function elapsed(ms) {
+  if (!known(ms)) return 'Not recorded';
+  const s = ms / 1000;
+  if (Math.abs(s) < 60) return seconds(s);
+  if (Math.abs(s) < 3600) return `${duration.format(s / 60)} min`;
+  return `${duration.format(s / 3600)} h`;
+}
 export function date(iso) {
   const match = typeof iso === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;
   if (!match) return 'Not recorded';

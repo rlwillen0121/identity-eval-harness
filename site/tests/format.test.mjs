@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compact, date, endToEndPct, escapeHTML, int, pct, safetyScreenDescription, safetyScreenLabels, seconds, tokens, usd } from '../assets/scripts/format.js';
+import { compact, date, elapsed, END_TO_END_INTERVAL_METHOD, endToEndPct, escapeHTML, int, pct, safetyScreenDescription, safetyScreenLabels, seconds, tokens, usd } from '../assets/scripts/format.js';
 
 test('percentage formatting covers bounds, small rates, negatives, and missing values', () => {
   assert.equal(pct(0), '0.0%');
@@ -75,6 +75,16 @@ test('duration formatting handles zero, small and negative values, and missing v
   for (const value of [undefined, null, Number.NaN, Number.NEGATIVE_INFINITY]) {
     assert.equal(seconds(value), 'Not recorded');
   }
+});
+
+test('elapsed formatting picks seconds, minutes or hours, and the interval method names Wilson honestly', () => {
+  assert.equal(elapsed(0), '0 s');
+  assert.equal(elapsed(30_000), '30 s');
+  assert.equal(elapsed(90_000), '1.5 min');
+  assert.equal(elapsed(36_984_437), '10.3 h');
+  for (const value of [undefined, null, Number.NaN]) assert.equal(elapsed(value), 'Not recorded');
+  assert.match(END_TO_END_INTERVAL_METHOD, /Wilson score interval/);
+  assert.match(END_TO_END_INTERVAL_METHOD, /not run-to-run variation/);
 });
 
 test('date formatting validates month and day bounds, including leap years', () => {

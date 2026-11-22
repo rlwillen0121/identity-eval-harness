@@ -79,6 +79,7 @@ p { margin: 0 0 16px; }
 .updates-date-block { display: flex; flex-wrap: wrap; align-items: baseline; align-content: flex-start; gap: 6px; padding-top: 9px; }
 .updates-date { color: var(--ink-2); font: 11px/1.5 var(--mono); }
 .updates-launch { border: 1px solid var(--rule); border-radius: 999px; padding: 0 6px; color: var(--muted); font: 10px/1.6 var(--mono); }
+.updates-note { max-width: 70ch; margin: 7px 0 8px; color: var(--ink-2); font-size: 13.5px; text-wrap: pretty; }
 .updates-models { margin: 0 -8px; padding: 0; list-style: none; }
 .updates-models li + li { background: linear-gradient(var(--rule), var(--rule)) 8px 0 / calc(100% - 16px) 1px no-repeat; }
 .update-model-button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: 6px; padding: 8px; text-align: left; }

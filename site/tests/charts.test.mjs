@@ -41,7 +41,8 @@ for (const [name, chart] of Object.entries(charts)) {
           assert.ok(svg.getAttribute('aria-label')?.trim());
         }
         const nodes = marks(root);
-        assert.equal(new Set(nodes.map((n) => n.getAttribute('data-model-id'))).size, data.models.length);
+        assert.deepEqual(new Set(nodes.map((n) => n.getAttribute('data-model-id'))), new Set(data.models.map((m) => m.id)),
+          'charts plot ranked models only, never pending runs');
         assert.equal(
           nodes.length,
           data.models.length * (name === 'anatomy' ? data.categories.length + (width < 640 ? 0 : data.families.length) : 1),
@@ -125,10 +126,11 @@ test('frontier chart-toggle switches between End to end and State accuracy', () 
   destroy();
 });
 
-test('outcomes preserves rank, seven-segment distinct outcomes, and computed caption', () => {
+test('outcomes preserves rank, five v5.1 outcome segments, and computed caption', () => {
   const dom = installDOM();
   const root = dom.root(560);
   const destroy = outcomes.mount(root, data, makeStore());
+  assert.deepEqual(outcomes.OUTCOME_SEGMENTS.map(([key]) => key), ['end_to_end', 'committed_failed', 'committed_unsafe', 'turn_limit', 'parse_failure']);
   const rows = root.querySelectorAll('[data-row-model]');
   assert.deepEqual(
     rows.map((n) => n.getAttribute('data-row-model')),
@@ -144,21 +146,31 @@ test('outcomes preserves rank, seven-segment distinct outcomes, and computed cap
     }
   }
   const count = data.models.filter((m) => m.outcomes.end_to_end > data.suite.slots_per_run / 2).length;
-  assert.match(root.querySelector('.chart-caption').textContent, new RegExp(`Only ${count} of ${data.models.length}`));
+  const lead = count === data.models.length ? 'All' : `Only ${count} of`;
+  assert.equal(root.querySelector('.chart-caption').textContent,
+    `${lead} ${data.models.length} models resolve more than half of the 48 engagements end to end.`);
   destroy();
 });
 
-test('anatomy displays 7 categories on mobile and 7 categories + 12 coupling families on desktop', () => {
+test('anatomy displays 8 categories on mobile and 8 categories + 12 engagement families on desktop', () => {
   const dom = installDOM();
-  for (const width of [328, 1120]) {
+  for (const width of [328, 1120, 1600]) {
     const root = dom.root(width);
     const destroy = anatomy.mount(root, data, makeStore());
-    const expected = data.categories.map((item) => (width < 640 ? (item.short || item.label) : item.label))
-      .concat(width < 640 ? [] : data.families.map((item) => item.id));
     const actual = root.querySelectorAll('.chart-column-label').map((node) => node.children.map((line) => line.textContent).join(' '));
-    assert.deepEqual(actual, expected);
+    assert.equal(actual.length, width < 640 ? 8 : 20);
+    for (const [i, category] of data.categories.entries()) {
+      const allowed = width < 640 ? [category.short] : [category.label, category.short];
+      assert.ok(allowed.includes(actual[i]), `${category.id} header "${actual[i]}" at ${width}px`);
+    }
+    if (width >= 640) assert.deepEqual(actual.slice(8), data.families.map((item) => item.id));
     destroy();
   }
+  const column = { category: true, label: 'Connectors', short: 'Conn.' };
+  assert.deepEqual(anatomy.columnLabelLines(column, 80), ['Connectors'], 'labels that fit are kept');
+  assert.deepEqual(anatomy.columnLabelLines(column, 40), ['Conn.'], 'labels that cannot fit fall back to the short label');
+  assert.deepEqual(anatomy.columnLabelLines({ category: true, label: 'Access policy', short: 'Policy' }, 50), ['Access', 'policy']);
+  assert.deepEqual(anatomy.columnLabelLines({ id: 'F01', category: false }, 10), ['F01']);
 });
 
 test('safety plot follows outcomes height only at side-by-side viewport breakpoint', () => {
@@ -204,6 +216,20 @@ test('chart interaction rectangles stay inside the SVG at narrow widths', () => 
       assert.ok(x >= 0 && x + Number(rect.getAttribute('width')) <= 328 + 1e-8, `${name}: horizontal rectangle bounds`);
       assert.ok(y >= 0 && y + Number(rect.getAttribute('height')) <= height + 1e-8, `${name}: vertical rectangle bounds`);
     }
+    destroy();
+  }
+});
+
+test('chart copy and accessible labels describe v5.1 engagements with no retired references', () => {
+  const dom = installDOM();
+  const retired = [/\bv5(?![.\d])/, /\bv5_core\b/, /(?<![\d,.])144(?![\d,]| ?k)/, /\btrials\b/, /[Cc]oupling famil/];
+  for (const [name, chart] of Object.entries(charts)) {
+    const root = dom.root(1120);
+    const destroy = chart.mount(root, data, makeStore());
+    const labels = root.querySelectorAll('*').flatMap((node) => [node.getAttribute('aria-label') || '', node.innerHTML || '']);
+    const copy = [root.textContent, ...labels].join('\n');
+    for (const pattern of retired) assert.doesNotMatch(copy, pattern, `${name}: ${pattern}`);
+    assert.match(copy, /engagements/, `${name} talks about engagements`);
     destroy();
   }
 });

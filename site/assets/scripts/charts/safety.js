@@ -1,5 +1,5 @@
 import { endToEndPct, int, pct } from '../format.js';
-import { chart, el, linear, power, scatter, svgCanvas, text, ticks, yAxis } from './svg.js';
+import { chart, el, power, scatter, svgCanvas, text, yAxis } from './svg.js';
 
 const minimumHeight = 354;
 
@@ -30,66 +30,71 @@ function plotHeight(root, peer) {
   return Math.max(minimumHeight, peer.getBoundingClientRect().height - chromeHeight(root));
 }
 
+// Both axes are the share of engagements with at least one committed violation of that kind.
+export const SAFE_ZONE = 0.05;
+
+export function safetyRates(model) {
+  const slots = Number(model.planned_slots) || 0;
+  return {
+    og: slots ? (Number(model.overgrant_slots) || 0) / slots : 0,
+    ab: slots ? (Number(model.avail_breach_slots) || 0) / slots : 0,
+  };
+}
+
 export function mount(root, data, store) {
-  const subtitle = 'Committed unsafe actions per trial across 144 trials.';
+  const slots = Number(data.suite?.slots_per_run);
+  const subtitle = `Share of the ${int(slots)} engagements with at least one committed violation of each kind.`;
   const legend = document.createElement('p');
   legend.className = 'chart-legend';
-  legend.textContent = 'Shaded: ≤ 5% unauthorized grants and ≤ 20% wrongful revocations per trial · Compressed vertical scale';
+  legend.textContent = `Shaded: violations in ≤ ${pct(SAFE_ZONE, 0)} of engagements on both axes · Compressed scales`;
   const peer = outcomesPeer(root);
-  const view = chart(root, 'Unauthorized grants vs. wrongful revocations', subtitle, store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Overgrants vs. availability breaches', subtitle, store, ({ width, canvas, tip }) => {
     canvas.append(legend);
     const height = plotHeight(root, peer);
     const plot = { left: 48, right: width - 18, top: 26, bottom: height - 54 };
-    const maxAB = Math.max(1, Math.ceil(Math.max(...data.models.map((m) => m.avail_breach_rate)) * 10) / 10);
-    const maxOG = Math.max(0.5, Math.ceil(Math.max(...data.models.map((m) => m.overgrant_rate)) * 2) / 2);
-    const x = linear([0, maxAB], [plot.left + 6, plot.right - 6]);
-    const y = power([0, maxOG], [plot.bottom, plot.top], 0.45);
-    const lowBreach = data.models.filter((m) => m.g_srr >= 0.35 || (m.overgrant_count === 0 && m.g_srr > 0));
+    const x = power([0, 1], [plot.left + 6, plot.right - 6], 0.6);
+    const y = power([0, 1], [plot.bottom, plot.top], 0.45);
+    const lowRisk = data.models.filter((m) => {
+      const { og, ab } = safetyRates(m);
+      return m.g_srr > 0 || (og <= SAFE_ZONE && ab <= SAFE_ZONE);
+    });
     const svg = svgCanvas(canvas, width, height,
-      `Scatter plot of unauthorized grants vs. wrongful revocations and halts across ${int(data.models.length)} complete models.`);
+      `Scatter plot of the share of engagements with overgrants vs. availability breaches across ${int(data.models.length)} ranked models.`);
     svg.append(el('rect', {
       x: x(0),
-      y: y(0.05),
-      width: Math.max(0, x(0.2) - x(0)),
-      height: Math.max(0, y(0) - y(0.05)),
+      y: y(SAFE_ZONE),
+      width: Math.max(0, x(SAFE_ZONE) - x(0)),
+      height: Math.max(0, y(0) - y(SAFE_ZONE)),
       fill: 'var(--good)',
       opacity: 0.08,
     }));
-    yAxis(svg, plot, y, [0, 0.05, 0.2, 0.5, 1.0, 2.0, 2.5].filter((v) => v <= maxOG), (v) => pct(v, 0));
-    for (const value of ticks(0, maxAB, 4)) {
+    yAxis(svg, plot, y, [0, SAFE_ZONE, 0.25, 0.5, 1], (v) => pct(v, 0));
+    for (const value of [0, SAFE_ZONE, 0.25, 0.5, 1]) {
       svg.append(text(x(value), plot.bottom + 20, pct(value, 0), { 'text-anchor': 'middle', class: 'chart-tick' }));
     }
     svg.append(
-      text(plot.left, 13, 'Unauthorized grants · compressed scale', { class: 'chart-axis-title' }),
-      text((plot.left + plot.right) / 2, height - 10, 'Wrongful revocations & halts', { 'text-anchor': 'middle', class: 'chart-axis-title' }),
-      el('line', { x1: x(0.2), x2: x(0.2), y1: plot.top, y2: plot.bottom, class: 'chart-threshold' }),
-      el('line', { x1: plot.left, x2: plot.right, y1: y(0.05), y2: y(0.05), class: 'chart-threshold' }),
-      text(x(0.2) + 5, plot.top + 13, '20% revocations', { class: 'chart-safety-threshold' }),
-      text(plot.right - 4, y(0.05) - 7, '5% grants', { 'text-anchor': 'end', class: 'chart-safety-threshold' }),
+      text(plot.left, 13, 'Engagements with overgrants', { class: 'chart-axis-title' }),
+      text((plot.left + plot.right) / 2, height - 10, 'Engagements with availability breaches', { 'text-anchor': 'middle', class: 'chart-axis-title' }),
+      el('line', { x1: x(SAFE_ZONE), x2: x(SAFE_ZONE), y1: plot.top, y2: plot.bottom, class: 'chart-threshold' }),
+      el('line', { x1: plot.left, x2: plot.right, y1: y(SAFE_ZONE), y2: y(SAFE_ZONE), class: 'chart-threshold' }),
     );
-    const labelIds = new Set(lowBreach.map((m) => m.id));
+    const labelIds = new Set(lowRisk.map((m) => m.id));
     const sync = scatter(svg, data.models.map((m) => {
-      const zeroOgResolving = m.overgrant_count === 0 && m.g_srr > 0;
-      const inLowZone = m.overgrant_rate <= 0.05 && m.avail_breach_rate <= 0.20 && m.g_srr > 0;
+      const { og, ab } = safetyRates(m);
+      const inLowZone = og <= SAFE_ZONE && ab <= SAFE_ZONE;
       return {
         model: m,
-        x: x(m.avail_breach_rate),
-        y: y(m.overgrant_rate),
-        color: inLowZone ? 'var(--good)' : zeroOgResolving ? 'var(--accent)' : 'var(--ink-2)',
+        x: x(ab),
+        y: y(og),
+        color: inLowZone ? 'var(--good)' : m.overgrant_count === 0 && m.g_srr > 0 ? 'var(--accent)' : 'var(--ink-2)',
         lines: [
-          ['Unauthorized grants', `${pct(m.overgrant_rate, 1)} (${int(m.overgrant_count)})`],
-          ['Wrongful revocations', `${pct(m.avail_breach_rate, 1)} (${int(m.avail_breach_count)})`],
-          ['Unsafe rate', (m.unsafe_targets || 0) > 0 ? `${pct(m.unsafe_rate, 1)} (${int(m.unsafe_count)}/${int(m.unsafe_targets)})` : 'No commits'],
+          ['Overgrants', `${int(m.overgrant_count)} in ${int(m.overgrant_slots)} engagements (${pct(og, 1)})`],
+          ['Availability breaches', `${int(m.avail_breach_count)} in ${int(m.avail_breach_slots)} engagements (${pct(ab, 1)})`],
+          ['Any violation', `${int(m.unsafe_slots)} of ${int(m.planned_slots)} engagements`],
           ['End to end', endToEndPct(m.g_srr)],
         ],
       };
-    }), plot, store, tip, root, labelIds, {
-      labelMode: 'safety',
-      obstacles: [
-        { x: x(0.2) + 3, y: plot.top + 1, width: 92, height: 14 },
-        { x: plot.right - 64, y: y(0.05) - 17, width: 62, height: 13 },
-      ],
-    });
+    }), plot, store, tip, root, labelIds, { labelMode: 'safety' });
     canvas.append(legend);
     return sync;
   });
