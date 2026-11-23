@@ -195,6 +195,7 @@ fn accepted_with_identities(
         stop_reason: None,
         usage: TurnUsageV52::default(),
         provider_attempts: 1,
+        latency_ms: None,
     }
 }
 
@@ -220,6 +221,7 @@ fn rejected(turn: usize, reason: RejectionReasonV52, raw: String) -> TurnRecordV
         stop_reason: None,
         usage: TurnUsageV52::default(),
         provider_attempts: 1,
+        latency_ms: None,
     }
 }
 

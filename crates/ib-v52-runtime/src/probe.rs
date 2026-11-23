@@ -252,7 +252,8 @@ async fn call(
         ..RunV52EpisodeOptions::default()
     };
     let mut usage = TurnUsageV52::default();
-    let (outcome, _) = generate_with_retries(provider, request, &episode_options, &mut usage).await;
+    let (outcome, _, _) =
+        generate_with_retries(provider, request, &episode_options, &mut usage).await;
     match outcome {
         GenerationOutcome::Text {
             text,
@@ -573,7 +574,6 @@ Include the exact probe canary token stated in your system instructions somewher
         passed,
         timestamp_utc: utc_timestamp_now(),
     };
-    validate_probe_receipt_evidence(&receipt)?;
     if receipt.passed {
         let expected = ProbeBindingExpectationV52 {
             model_id: &options.model_id,
@@ -588,6 +588,8 @@ Include the exact probe canary token stated in your system instructions somewher
             provider_routing: options.provider_routing.as_ref(),
         };
         verify_probe_receipt_binding(&receipt, &expected)?;
+    } else {
+        validate_probe_receipt_evidence(&receipt)?;
     }
     Ok(receipt)
 }
@@ -645,36 +647,7 @@ fn is_valid_sha256_hex(s: &str) -> bool {
 }
 
 fn is_valid_utc_timestamp(ts: &str) -> bool {
-    let b = ts.as_bytes();
-    if b.len() != 20
-        || b[4] != b'-'
-        || b[7] != b'-'
-        || b[10] != b'T'
-        || b[13] != b':'
-        || b[16] != b':'
-        || b[19] != b'Z'
-    {
-        return false;
-    }
-    let digits = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18];
-    if !digits.iter().all(|&i| b[i].is_ascii_digit()) {
-        return false;
-    }
-    let year: u32 = ts[0..4].parse().unwrap_or(0);
-    let month: u32 = ts[5..7].parse().unwrap_or(0);
-    let day: u32 = ts[8..10].parse().unwrap_or(0);
-    let hour: u32 = ts[11..13].parse().unwrap_or(99);
-    let minute: u32 = ts[14..16].parse().unwrap_or(99);
-    let second: u32 = ts[17..19].parse().unwrap_or(99);
-    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
-    let max_day = match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => 0,
-    };
-    (1..=max_day).contains(&day) && hour <= 23 && minute <= 59 && second <= 59
+    crate::integrity::is_valid_utc_timestamp_shape(ts)
 }
 
 pub(crate) fn is_valid_sampling_value(value: &Value) -> bool {

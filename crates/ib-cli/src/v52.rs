@@ -522,7 +522,6 @@ fn prepare_probe_output(path: &Path) -> Result<File> {
 }
 
 fn write_probe_receipt_at(output_root: &File, receipt: &ProbeReceiptV52) -> Result<String> {
-    ib_v52_runtime::validate_probe_receipt_evidence(receipt)?;
     let bytes = pretty_json_bytes(receipt)?;
     artifact::write_new_at(output_root, Path::new("probe_receipt.json"), &bytes, false)
         .context("failed to publish probe receipt")?;
@@ -1197,7 +1196,7 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
             .with_context(|| format!("failed to read published seal {}", pub_path.display()))?;
         verify_v52_seal_against_published(&dataset, &spec_bytes, &published_seal)?
     } else {
-        verify_v52_seal(&dataset, &spec_bytes, true)?
+        verify_v52_seal(&dataset, &spec_bytes)?
     };
     let loaded_config = load_run_config_v52(&config_path)?;
     let loaded_pricing = load_pricing_v52(&pricing_path)?;

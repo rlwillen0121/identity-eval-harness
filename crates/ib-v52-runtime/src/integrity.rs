@@ -325,11 +325,7 @@ impl SealDigestsV52 {
 /// Verify a loaded dataset against its seal before the first slot (§7.5): the episode and oracle
 /// digests, the spec digest, the contract ID, and the protocol ID. Current v5.2 suites must always
 /// carry `protocol_id == PROTOCOL_ID_V52`.
-pub fn verify_v52_seal(
-    dataset: &LoadedV52Dataset,
-    spec_bytes: &[u8],
-    _require_protocol_id: bool,
-) -> Result<SealDigestsV52> {
+pub fn verify_v52_seal(dataset: &LoadedV52Dataset, spec_bytes: &[u8]) -> Result<SealDigestsV52> {
     let seal = &dataset.seal;
     let recorded = SealDigestsV52::from_seal_json(seal)?;
     for (key, actual, expected) in [
@@ -383,7 +379,7 @@ pub fn verify_v52_seal_against_published(
     spec_bytes: &[u8],
     published_seal: &Value,
 ) -> Result<SealDigestsV52> {
-    let local = verify_v52_seal(dataset, spec_bytes, true)?;
+    let local = verify_v52_seal(dataset, spec_bytes)?;
     let published =
         SealDigestsV52::from_seal_json(published_seal).context("published SEAL.json is invalid")?;
     if published.contract_id != ib_v52_schemas::CONTRACT_ID_V52 {
@@ -727,6 +723,84 @@ pub fn utc_timestamp(unix_secs: u64) -> String {
     )
 }
 
+struct UtcTimestampParts {
+    year: u32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    frac_secs: f64,
+}
+
+fn parse_utc_timestamp_parts(ts: &str) -> Option<UtcTimestampParts> {
+    let body = ts.strip_suffix('Z')?;
+    let (main, frac) = match body.split_once('.') {
+        Some((m, f)) => (m, Some(f)),
+        None => (body, None),
+    };
+    let frac_secs = match frac {
+        Some(f) if f.is_empty() || !f.bytes().all(|b| b.is_ascii_digit()) => return None,
+        Some(f) => format!("0.{f}").parse::<f64>().ok()?,
+        None => 0.0,
+    };
+    let b = main.as_bytes();
+    if b.len() != 19
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || b[10] != b'T'
+        || b[13] != b':'
+        || b[16] != b':'
+    {
+        return None;
+    }
+    let part = |r: std::ops::Range<usize>| {
+        b[r.clone()]
+            .iter()
+            .all(u8::is_ascii_digit)
+            .then(|| main[r].parse::<u32>().ok())
+            .flatten()
+    };
+    let year = part(0..4)?;
+    let month = part(5..7).filter(|m| (1..=12).contains(m))?;
+    let day = part(8..10).filter(|d| (1..=31).contains(d))?;
+    let hour = part(11..13).filter(|&h| h <= 23)?;
+    let minute = part(14..16).filter(|&m| m <= 59)?;
+    let second = part(17..19).filter(|&s| s <= 59)?;
+    Some(UtcTimestampParts {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        frac_secs,
+    })
+}
+
+/// Strict shape check (`YYYY-MM-DDTHH:MM:SS[.fraction]Z`, digit ranges only).
+#[must_use]
+pub fn is_valid_utc_timestamp_shape(ts: &str) -> bool {
+    parse_utc_timestamp_parts(ts).is_some()
+}
+
+/// Parse an RFC 3339 UTC timestamp (`YYYY-MM-DDTHH:MM:SS[.fraction]Z`) into UNIX seconds.
+#[must_use]
+pub fn parse_utc_timestamp_secs(ts: &str) -> Option<f64> {
+    let p = parse_utc_timestamp_parts(ts)?;
+    // Howard Hinnant's days_from_civil (inverse of civil_from_days in `utc_timestamp`).
+    let y = i64::from(p.year) - i64::from(p.month <= 2);
+    let era = y.div_euclid(400);
+    let yoe = (y - era * 400) as u64;
+    let m = u64::from(p.month);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + u64::from(p.day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe as i64 - 719_468;
+    let whole_secs =
+        days * 86_400 + i64::from(p.hour) * 3_600 + i64::from(p.minute) * 60 + i64::from(p.second);
+    Some(whole_secs as f64 + p.frac_secs)
+}
+
 /// A non-secret endpoint identity for the run fingerprint and the probe receipt (§7.5):
 /// `SHA-256("<transport_id>|<provider endpoint digest>")`. For the offline `replay` transport the
 /// digest covers the recording path rather than its contents.
@@ -775,6 +849,22 @@ mod tests {
         let mut rng = ChaCha20RngV52::from_key([0; 32]);
         assert_eq!(rng.next_u32(), 0xade0_b876);
         assert_eq!(rng.next_u32(), 0x903d_f1a0);
+    }
+
+    #[test]
+    fn utc_timestamp_parser_round_trips_and_handles_fractions() {
+        for secs in [0_u64, 86_400, 951_782_400, 1_700_000_000, 1_795_449_600] {
+            let formatted = utc_timestamp(secs);
+            assert!(is_valid_utc_timestamp_shape(&formatted), "{formatted}");
+            assert_eq!(parse_utc_timestamp_secs(&formatted), Some(secs as f64));
+        }
+        assert!(is_valid_utc_timestamp_shape("2026-11-23T00:00:00.250Z"));
+        let diff = parse_utc_timestamp_secs("2026-11-23T00:00:02.750Z").unwrap()
+            - parse_utc_timestamp_secs("2026-11-23T00:00:00.250Z").unwrap();
+        assert!((diff - 2.5).abs() < 1e-9);
+        assert!(!is_valid_utc_timestamp_shape("2026-13-45T99:99:99Z"));
+        assert!(!is_valid_utc_timestamp_shape("2026-11-23T00:00:00.Z"));
+        assert!(!is_valid_utc_timestamp_shape("2026-11-23T00:00:00"));
     }
 
     fn ids(n: usize) -> Vec<String> {

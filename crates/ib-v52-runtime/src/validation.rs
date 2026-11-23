@@ -71,6 +71,7 @@ const SEED_MATERIAL_KEYS: [&str; 6] = [
 pub struct GateResultV52 {
     pub gate_id: String,
     pub passed: bool,
+    #[serde(default)]
     pub details: Vec<String>,
 }
 
@@ -98,10 +99,13 @@ pub struct BaselineRowV52 {
 /// §8.1 shortcut ceiling: component-wise maxima over the four non-oracle baselines.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShortcutCeilingV52 {
+    #[serde(default)]
     pub state_acc: f64,
     pub macro_cat_acc: f64,
+    #[serde(default)]
     pub category_pass_rate: IndexMap<String, f64>,
     /// The baseline attaining each maximum (`state_acc`, `macro_cat_acc`, then per category).
+    #[serde(default)]
     pub attained_by: IndexMap<String, String>,
 }
 
@@ -116,15 +120,19 @@ pub struct AblationFieldPathsV52 {
 /// resolutions of points the specification leaves open.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BaselineReportV52 {
+    #[serde(default)]
     pub rows: Vec<BaselineRowV52>,
     pub shortcut_ceiling: ShortcutCeilingV52,
+    #[serde(default)]
     pub ablation_field_paths: Vec<AblationFieldPathsV52>,
+    #[serde(default)]
     pub resolved_ambiguities: Vec<String>,
 }
 
 /// Complete offline validation report for a v5.2 dataset directory.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ValidationReportV52 {
+    #[serde(default)]
     pub dataset_dir: String,
     pub suite_id: String,
     pub episode_count: usize,
@@ -133,9 +141,91 @@ pub struct ValidationReportV52 {
     pub system_prompt_sha256: String,
     pub binary_sha256: String,
     pub seal: Option<SealDigestsV52>,
+    #[serde(default)]
     pub passed: bool,
+    #[serde(default)]
     pub gates: Vec<GateResultV52>,
     pub baselines: Option<BaselineReportV52>,
+}
+
+impl ValidationReportV52 {
+    /// Whether `gate_id` is present and passed in this report (`None` if absent).
+    #[must_use]
+    pub(crate) fn gate_passed(&self, gate_id: &str) -> Option<bool> {
+        self.gates
+            .iter()
+            .find(|g| g.gate_id == gate_id)
+            .map(|g| g.passed)
+    }
+}
+
+/// Expected suite, seal, harness identity, and required passing gates for [`verify_validation_report_v52`].
+pub(crate) struct ValidationReportExpectationV52<'a> {
+    pub suite_id: &'a str,
+    pub episode_count: Option<usize>,
+    pub expected_seal: Option<&'a SealDigestsV52>,
+    pub protocol_id: &'a str,
+    pub compaction_policy_id: &'a str,
+    pub system_prompt_sha256: &'a str,
+    pub binary_sha256: Option<&'a str>,
+    pub required_passing_gates: &'a [&'a str],
+}
+
+/// Parse and verify a `v52 validate` JSON report against its expected suite, seal, harness
+/// identity, and required passing gates.
+pub(crate) fn verify_validation_report_v52(
+    raw: &Value,
+    expected: &ValidationReportExpectationV52<'_>,
+) -> Result<ValidationReportV52> {
+    let report: ValidationReportV52 = serde_json::from_value(raw.clone())
+        .context("validation report is missing required seal, harness identity, or gate fields")?;
+    anyhow::ensure!(
+        report.suite_id == expected.suite_id,
+        "validation report suite_id '{}' does not match expected suite '{}'",
+        report.suite_id,
+        expected.suite_id
+    );
+    if let Some(count) = expected.episode_count {
+        anyhow::ensure!(
+            report.episode_count == count,
+            "validation report episode_count {} does not match expected {count}",
+            report.episode_count
+        );
+    }
+    anyhow::ensure!(
+        !report.binary_sha256.is_empty()
+            && report.protocol_id == expected.protocol_id
+            && report.compaction_policy_id == expected.compaction_policy_id
+            && report.system_prompt_sha256 == expected.system_prompt_sha256
+            && expected
+                .binary_sha256
+                .is_none_or(|bin| report.binary_sha256 == bin),
+        "validation report harness identity does not match expected harness"
+    );
+    let report_seal = report
+        .seal
+        .as_ref()
+        .context("validation report is missing suite seal digests")?;
+    anyhow::ensure!(
+        report_seal.suite_id == expected.suite_id
+            && report_seal.protocol_id.as_deref() == Some(expected.protocol_id),
+        "validation report seal does not match expected suite or protocol_id"
+    );
+    if let Some(seal) = expected.expected_seal {
+        let diff = report_seal.differing_fields(seal);
+        anyhow::ensure!(
+            diff.is_empty(),
+            "validation report seal differs from the suite seal: {}",
+            diff.join(", ")
+        );
+    }
+    for &gate_id in expected.required_passing_gates {
+        anyhow::ensure!(
+            report.gate_passed(gate_id) == Some(true),
+            "validation report must pass {gate_id}"
+        );
+    }
+    Ok(report)
 }
 
 /// Run every offline gate except `G-DET-V52` against a v5.2 dataset. Gates appear in the order
