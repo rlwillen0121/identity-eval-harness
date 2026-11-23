@@ -32,8 +32,9 @@ use crate::protocol::{
     COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_REQUEST_BYTES_V52,
     MIN_CONTEXT_WINDOW_TOKENS_V52, PROTOCOL_ID_V52, system_prompt_sha256_v52,
 };
-use crate::report::{RunMetadataHintV52, read_manifest_hint, summarize_v52_records};
+use crate::report::{RunMetadataHintV52, summarize_with_slots};
 use crate::runner::SlotCheckpointV52;
+use crate::runner::load_run_records_v52;
 use crate::stats::{
     BOOTSTRAP_REPLICATES_V52, BootstrapDrawsV52, EntryOutcomesV52, GsrrIntervalV52,
     LeaderboardOrderKeyV52, RankIntervalV52, RatioV52, bootstrap_key_v52, joint_statistics_v52,
@@ -133,24 +134,8 @@ impl LoadedRunV52 {
     }
 }
 
-fn read_records(path: &Path) -> Result<Vec<EpisodeExecutionRecordV52>> {
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let mut out = Vec::new();
-    for (idx, line) in raw.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        out.push(
-            serde_json::from_str(line).with_context(|| {
-                format!("invalid record at {} line {}", path.display(), idx + 1)
-            })?,
-        );
-    }
-    Ok(out)
-}
-
-/// Load a run directory (`manifest.json` and `episodes.jsonl`) and recompute its summary.
+/// Load a run directory (`manifest.json`, `episodes.jsonl` and any unassembled slot records) and
+/// recompute its summary.
 pub fn load_run_v52(run_dir: &Path) -> Result<LoadedRunV52> {
     let manifest_path = run_dir.join("manifest.json");
     let manifest: Value = serde_json::from_slice(
@@ -158,10 +143,13 @@ pub fn load_run_v52(run_dir: &Path) -> Result<LoadedRunV52> {
             .with_context(|| format!("failed to read {}", manifest_path.display()))?,
     )
     .with_context(|| format!("{} is invalid JSON", manifest_path.display()))?;
-    let records = read_records(&run_dir.join("episodes.jsonl"))?;
-    let hint: RunMetadataHintV52 = read_manifest_hint(&manifest_path);
-    let summary = summarize_v52_records(&records, &hint);
-    let slots = records.iter().map(slot_metrics_v52).collect();
+    let records = load_run_records_v52(run_dir)?;
+    let slots: Vec<SlotMetricsV52> = records.iter().map(slot_metrics_v52).collect();
+    let summary = summarize_with_slots(
+        &records,
+        &slots,
+        &RunMetadataHintV52::from_manifest(&manifest),
+    );
     let text = |key: &str| {
         manifest
             .get(key)
@@ -172,18 +160,8 @@ pub fn load_run_v52(run_dir: &Path) -> Result<LoadedRunV52> {
     Ok(LoadedRunV52 {
         run_dir: run_dir.to_path_buf(),
         model_id: text("model_id"),
-        reasoning_effort: manifest
-            .get("reasoning_effort")
-            .or_else(|| manifest.get("effort"))
-            .and_then(Value::as_str)
-            .unwrap_or("unknown")
-            .to_owned(),
-        transport_id: manifest
-            .get("transport_id")
-            .or_else(|| manifest.get("provider_kind"))
-            .and_then(Value::as_str)
-            .unwrap_or("unknown")
-            .to_owned(),
+        reasoning_effort: text("reasoning_effort"),
+        transport_id: text("transport_id"),
         manifest,
         records,
         slots,
