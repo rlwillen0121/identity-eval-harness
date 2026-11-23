@@ -31,7 +31,8 @@ pub use integrity::{
 };
 pub use mutations::{GoldMutationV52, MutationOriginV52, gold_replay_mutations_v52};
 pub use opening::{
-    render_v52_assignment_header, render_v52_initial_listing, render_v52_turn1_message,
+    render_v52_assignment_header, render_v52_episode_opening, render_v52_initial_listing,
+    render_v52_turn1_message,
 };
 pub use parity::{CanonicalParityRendererV52, registered_parity_renderer_v52};
 pub use probe::{

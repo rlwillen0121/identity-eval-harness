@@ -26,7 +26,7 @@ use crate::baselines::{
 };
 use crate::config::load_v52_dataset;
 use crate::mutations::gold_replay_mutations_v52;
-use crate::opening::render_v52_turn1_message;
+use crate::opening::render_v52_episode_opening;
 use crate::parity::{ParityOutcomeV52, evaluate_parity_gate_v52, registered_parity_renderer_v52};
 use crate::workspace::VirtualWorkspaceRuntimeV52;
 
@@ -272,7 +272,7 @@ pub fn validate_v52_dataset(
         evaluate_baselines(&dataset.episodes, &oracle_by_id, engine);
 
     // 5. G-ARTIFACT-BUDGET-V52
-    let artifact_gate = check_artifact_budget(&dataset.episodes, &dataset.episodes_bytes, engine);
+    let artifact_gate = check_artifact_budget(&dataset.episodes, &dataset.episodes_bytes);
 
     // G-PARITY-V52 (pending until the Phase-2 renderer is registered).
     let renderer = registered_parity_renderer_v52();
@@ -867,11 +867,7 @@ fn scan_budget_surface(surface: &str, text: &str, errors: &mut Vec<String>) {
     }
 }
 
-fn check_artifact_budget(
-    episodes: &[EpisodeV52],
-    episodes_bytes: &[u8],
-    engine: &dyn IgaEngineBackendV52,
-) -> GateResultV52 {
+fn check_artifact_budget(episodes: &[EpisodeV52], episodes_bytes: &[u8]) -> GateResultV52 {
     let mut errors = Vec::new();
     scan_budget_surface(
         "platform_reference_v52.md",
@@ -914,8 +910,7 @@ fn check_artifact_budget(
         for (path, content) in &ep.readonly_files {
             scan_budget_surface(&format!("{} {path}", ep.episode_id), content, &mut errors);
         }
-        let runtime = VirtualWorkspaceRuntimeV52::new(ep, engine);
-        let opening = render_v52_turn1_message(None, &runtime);
+        let opening = render_v52_episode_opening(None, ep);
         scan_budget_surface(
             &format!("{} opening user message", ep.episode_id),
             &opening,

@@ -23,7 +23,7 @@ use ib_v52_schemas::{EpisodeV52, IgaEngineBackendV52};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::opening::render_v52_turn1_message;
+use crate::opening::{render_v52_episode_opening, render_v52_turn1_message};
 pub use crate::protocol::{MAX_OPENING_BYTES_V52, MAX_REQUEST_BYTES_V52};
 use crate::protocol::{
     RejectionReasonV52, compact_json, delimiter_cut_offset_v52, render_v52_system_prompt,
@@ -441,10 +441,10 @@ impl ParityRendererV52 for CanonicalParityRendererV52 {
         episode: &EpisodeV52,
         engine: &dyn IgaEngineBackendV52,
     ) -> Result<ParityRequestV52, String> {
-        let runtime = VirtualWorkspaceRuntimeV52::new(episode, engine);
+        let _ = engine;
         Ok(Self::request(
             transport_id,
-            &render_v52_turn1_message(None, &runtime),
+            &render_v52_episode_opening(None, episode),
         ))
     }
 
