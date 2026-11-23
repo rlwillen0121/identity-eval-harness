@@ -234,8 +234,8 @@ fn build_is_deterministic_and_validates_with_double_build() {
             ("G-DET-V52".to_owned(), true),
         ]
     );
-    // The runner registers its canonical renderer, so G-PARITY-V52 is evaluated, not pending.
-    assert_eq!(report["pending_gates"], serde_json::json!([]));
+    // G-PARITY-V52 always runs the canonical renderer; the report has no pending gates.
+    assert!(report.get("pending_gates").is_none());
     assert_eq!(report["baselines"]["rows"].as_array().unwrap().len(), 13);
 }
 
