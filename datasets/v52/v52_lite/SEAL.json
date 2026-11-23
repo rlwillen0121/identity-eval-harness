@@ -222,10 +222,10 @@
     4161013511397290246,
     7436693475926893371
   ],
-  "episodes_sha256": "e15dd2b7e5fe40423c045ad862ba4f1b26b7c5ab8288cf61caa4d74afcd1ac79",
+  "episodes_sha256": "cb74e523764cf69604c5a9f0ce095c6894328803b4fbd443e23b05d32a622d24",
   "oracles_sha256": "84c9677c1e4740bf9c5b43de7ef71f3d4e0bf0b543af3592933c02eb9c7abb21",
   "spec_version": "SPEC-v5.2",
-  "spec_sha256": "b335c4ef85e8e621650d8f56c8eef3f1ec798eb71c0f32f31c5925ed64082b69",
+  "spec_sha256": "a672a35f020d4443c8e5e61be7ec87761809b8efc1e662f3b21fa3f3d8b91426",
   "contract_id": "identitybench.v5.2.practitioner-contract.v1",
   "protocol_id": "identitybench.v5.2.protocol.v1",
   "generator_version": "5.2.0",
