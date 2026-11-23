@@ -18,11 +18,9 @@ use ib_providers::cli::codex::{
 use ib_providers::cli::cursor::{CursorAdapter, CursorCliProvider, chat_dir, cursor_config_dir};
 use ib_providers::cli::grok::{GrokAdapter, GrokCliProvider};
 use ib_providers::cli::muse::{MuseAdapter, MuseCliProvider, trace_events};
-use ib_providers::cli::{
-    ACTION_SCHEMA_NAME, CliConfig, MAX_SIDECAR_BYTES, NEUTRAL_SYSTEM, read_sidecar_text,
-};
+use ib_providers::cli::{CliConfig, MAX_SIDECAR_BYTES, NEUTRAL_SYSTEM, read_sidecar_text};
 use ib_providers::subprocess::{Command, ProcessResult, ProcessRunner};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use tempfile::TempDir;
 
 type RunnerClosure = Box<dyn FnMut(&Command) -> ProcessResult + Send>;
@@ -71,27 +69,8 @@ fn flag_value<'a>(argv: &'a [String], flag: &str) -> &'a str {
     &argv[pos + 1]
 }
 
-fn decision_schema() -> Map<String, Value> {
-    json!({
-        "type": "object",
-        "properties": {
-            "decision": {"type": "string"},
-            "rules": {"type": "array"}
-        },
-        "required": ["decision", "rules"]
-    })
-    .as_object()
-    .unwrap()
-    .clone()
-}
-
-fn make_request(prompt: &str, system: &str, schema: Option<Map<String, Value>>) -> ModelRequest {
-    ModelRequest {
-        system: system.to_string(),
-        messages: vec![Message::user(prompt)],
-        output_schema: schema,
-        ..ModelRequest::default()
-    }
+fn make_request(prompt: &str, system: &str) -> ModelRequest {
+    ModelRequest::new(system, vec![Message::user(prompt)])
 }
 
 #[test]
@@ -152,7 +131,7 @@ fn agy_stream_event(result: Value, log: Option<&str>) -> RunnerClosure {
 }
 
 #[tokio::test]
-async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
+async fn agy_cli_argv_agent_definition_and_served_model() {
     let log = "I1014 21:05:45 model_resolver.go:155] model alias \"gemini-4-argon\" resolved to \"gemini-4-argon-medium\"\n";
     let result = json!({
         "conversation_id": "c1",
@@ -171,13 +150,7 @@ async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
     cfg.retry_base_delay_s = 0.0;
     let p = AgyCliProvider::new(AgyAdapter, cfg.clone());
 
-    let resp = p
-        .complete(&make_request(
-            "Decide REQ-1.",
-            "SYS",
-            Some(decision_schema()),
-        ))
-        .await;
+    let resp = p.complete(&make_request("Decide REQ-1.", "SYS")).await;
     assert!(resp.ok());
     assert_eq!(resp.served_model.as_deref(), Some("gemini-4-argon-medium"));
     assert_eq!(
@@ -187,7 +160,7 @@ async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
     assert_eq!(resp.usage.input_tokens, 821);
     assert_eq!(resp.usage.output_tokens, 50);
 
-    // Action protocol turn withholds --json-schema and sets tools: []
+    // No --json-schema flag, and the private agent declares no tools.
     let seen_agent = Arc::new(Mutex::new(String::new()));
     let sa = Arc::clone(&seen_agent);
     let inner = agy_stream_event(
@@ -202,9 +175,7 @@ async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
     });
     cfg.runner = Arc::clone(&runner2) as Arc<dyn ProcessRunner>;
     let p2 = AgyCliProvider::new(AgyAdapter, cfg);
-    let mut action_req = make_request("Decide", "", Some(decision_schema()));
-    action_req.schema_name = ACTION_SCHEMA_NAME.to_string();
-    let r2 = p2.complete(&action_req).await;
+    let r2 = p2.complete(&make_request("Decide", "")).await;
     assert!(r2.ok());
     assert!(
         !runner2.commands()[0]
@@ -216,12 +187,9 @@ async fn agy_cli_argv_agent_schema_withholding_and_served_model() {
         r2.raw.as_ref().unwrap()["substituted_system"],
         json!(NEUTRAL_SYSTEM)
     );
-    assert_eq!(
-        r2.raw.as_ref().unwrap()["json_schema"],
-        json!("withheld (JSON action protocol turn)")
-    );
     assert_eq!(served_model(log).as_deref(), Some("gemini-4-argon-medium"));
-    assert!(agent_definition("SYS", true).contains("tools: [finish]"));
+    assert!(agent_definition("SYS").contains("\ntools: []\n"));
+    assert!(agent_definition("SYS").ends_with("---\n\nSYS"));
 }
 
 #[tokio::test]
@@ -250,7 +218,7 @@ async fn agy_rejects_oversized_log_without_discarding_completed_response_or_usag
     config.max_retries = 0;
     let provider = AgyCliProvider::new(AgyAdapter, config);
 
-    let response = provider.complete(&make_request("x", "SYS", None)).await;
+    let response = provider.complete(&make_request("x", "SYS")).await;
     assert!(response.ok(), "unexpected error: {:?}", response.error);
     assert_eq!(response.text.as_deref(), Some("completed answer"));
     assert_eq!(response.usage.input_tokens, 20);
@@ -298,8 +266,7 @@ async fn agy_recovers_completed_action_response_on_empty_function_call_only_on_d
     cfg.max_retries = 0;
     let p = AgyCliProvider::new(AgyAdapter, cfg);
 
-    let mut action_req = make_request("x", "SYS", Some(decision_schema()));
-    action_req.schema_name = ACTION_SCHEMA_NAME.to_string();
+    let action_req = make_request("x", "SYS");
     let resp = p.complete(&action_req).await;
     assert!(resp.ok());
     assert!(resp.parsed.is_none());
@@ -374,7 +341,7 @@ async fn agy_error_diagnostics_do_not_prove_an_unanswered_request() {
         config.version = Some("offline-test".to_owned());
         config.max_retries = 0;
         let provider = AgyCliProvider::new(AgyAdapter, config);
-        let response = provider.complete(&make_request("x", "SYS", None)).await;
+        let response = provider.complete(&make_request("x", "SYS")).await;
         assert!(response.error.is_some());
         assert_eq!(runner.commands().len(), 1);
         let raw = response.raw.as_ref().unwrap();
@@ -406,9 +373,7 @@ async fn agy_capacity_guard_refuses_oversized_user_messages_without_spawning() {
     config.version = Some("offline-test".to_owned());
     config.max_retries = 0;
     let provider = AgyCliProvider::new(AgyAdapter, config.clone());
-    let response = provider
-        .complete(&make_request(&at_limit, "SYS", None))
-        .await;
+    let response = provider.complete(&make_request(&at_limit, "SYS")).await;
     assert!(response.ok(), "{:?}", response.error);
     let commands = runner.commands();
     assert_eq!(commands.len(), 1);
@@ -426,7 +391,7 @@ async fn agy_capacity_guard_refuses_oversized_user_messages_without_spawning() {
         let mut config = config.clone();
         config.runner = Arc::clone(&idle) as Arc<dyn ProcessRunner>;
         let provider = AgyCliProvider::new(AgyAdapter, config);
-        let response = provider.complete(&make_request(&over, "SYS", None)).await;
+        let response = provider.complete(&make_request(&over, "SYS")).await;
         assert!(idle.commands().is_empty(), "nothing may be spawned");
         let error = response.error.as_deref().unwrap();
         assert!(error.contains("agy capacity guard"), "{error}");
@@ -462,7 +427,7 @@ async fn cli_timeout_preserves_buffered_usage_and_cost_without_claiming_completi
     config.version = Some("offline-test".to_owned());
     config.max_retries = 0;
     let provider = ClaudeCliProvider::new(ClaudeAdapter, config);
-    let response = provider.complete(&make_request("x", "SYS", None)).await;
+    let response = provider.complete(&make_request("x", "SYS")).await;
     assert!(response.error.is_some());
     assert_eq!(runner.commands().len(), 1);
     assert_eq!(response.text.as_deref(), Some("buffered answer"));
@@ -478,19 +443,18 @@ async fn cli_timeout_preserves_buffered_usage_and_cost_without_claiming_completi
 // --------------------------------------------------------------------------- codex_cli
 
 #[tokio::test]
-async fn codex_cli_flags_usage_and_empty_completed_action_turn() {
+async fn codex_cli_flags_and_usage() {
     assert_eq!(DISABLED_FEATURES.len(), 29);
     assert_eq!(CONFIG_OVERRIDES.len(), 3);
     assert_eq!(CODEX_DEFAULT_EFFORT, "medium");
 
-    let runner = FakeRunner::new(vec![
-        Box::new(|cmd: &Command| {
-            fs::write(
-                flag_value(&cmd.argv, "-o"),
-                r#"{"decision":"DENY","rules":["LIFE-001"]}"#,
-            )
-            .unwrap();
-            let stdout = [
+    let runner = FakeRunner::new(vec![Box::new(|cmd: &Command| {
+        fs::write(
+            flag_value(&cmd.argv, "-o"),
+            r#"{"decision":"DENY","rules":["LIFE-001"]}"#,
+        )
+        .unwrap();
+        let stdout = [
                 json!({"type": "thread.started", "thread_id": "th_123"}),
                 json!({"type": "turn.completed", "usage": {"input_tokens": 1000, "cached_input_tokens": 800, "output_tokens": 50, "reasoning_output_tokens": 30}}),
             ]
@@ -498,36 +462,15 @@ async fn codex_cli_flags_usage_and_empty_completed_action_turn() {
             .map(Value::to_string)
             .collect::<Vec<_>>()
             .join("\n");
-            ProcessResult {
-                returncode: 0,
-                stdout,
-                stderr: String::new(),
-                duration_s: 0.01,
-                timed_out: false,
-                launch_error: None,
-            }
-        }),
-        // Commit 05e0c79: turn.completed without turn.failed + rc=0 + ACTION_SCHEMA_NAME + empty output -> text = ""
-        Box::new(|cmd: &Command| {
-            assert!(!cmd.argv.contains(&"--output-schema".to_string()));
-            let stdout = [
-                json!({"type": "thread.started", "thread_id": "th_456"}),
-                json!({"type": "turn.completed", "usage": {"input_tokens": 500, "cached_input_tokens": 0, "output_tokens": 10}}),
-            ]
-            .iter()
-            .map(Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-            ProcessResult {
-                returncode: 0,
-                stdout,
-                stderr: String::new(),
-                duration_s: 0.01,
-                timed_out: false,
-                launch_error: None,
-            }
-        }),
-    ]);
+        ProcessResult {
+            returncode: 0,
+            stdout,
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        }
+    })]);
 
     let mut cfg = CliConfig::new("gpt-test", "codex", 900.0);
     cfg.effort = Some(CODEX_DEFAULT_EFFORT.to_string());
@@ -536,23 +479,21 @@ async fn codex_cli_flags_usage_and_empty_completed_action_turn() {
     cfg.retry_base_delay_s = 0.0;
     let p = CodexCliProvider::new(CodexAdapter, cfg);
 
-    let r1 = p
-        .complete(&make_request("Decide", "SYS", Some(decision_schema())))
-        .await;
+    let r1 = p.complete(&make_request("Decide", "SYS")).await;
     assert!(r1.ok());
     assert_eq!(r1.usage.input_tokens, 200);
     assert_eq!(r1.usage.cache_read_tokens, 800);
     assert_eq!(r1.usage.reasoning_tokens, 30);
-    assert_eq!(r1.parsed.as_ref().unwrap()["decision"], json!("DENY"));
-
-    let mut action_req = make_request("Decide", "SYS", Some(decision_schema()));
-    action_req.schema_name = ACTION_SCHEMA_NAME.to_string();
-    let r2 = p.complete(&action_req).await;
-    assert!(r2.ok());
-    assert!(r2.error.is_none());
-    assert_eq!(r2.text.as_deref(), Some(""));
-    assert!(r2.parsed.is_none());
-    assert_eq!(r2.stop_reason.as_deref(), Some("completed"));
+    assert_eq!(
+        r1.text.as_deref(),
+        Some(r#"{"decision":"DENY","rules":["LIFE-001"]}"#)
+    );
+    assert_eq!(r1.stop_reason.as_deref(), Some("completed"));
+    assert!(
+        !runner.commands()[0]
+            .argv
+            .contains(&"--output-schema".to_string())
+    );
 }
 
 #[tokio::test]
@@ -585,7 +526,7 @@ async fn codex_rejects_oversized_sidecar_and_preserves_streamed_response_and_usa
     config.max_retries = 0;
     let provider = CodexCliProvider::new(CodexAdapter, config);
 
-    let response = provider.complete(&make_request("x", "SYS", None)).await;
+    let response = provider.complete(&make_request("x", "SYS")).await;
     assert!(response.ok(), "unexpected error: {:?}", response.error);
     assert_eq!(response.text.as_deref(), Some("streamed answer"));
     assert_eq!(response.usage.input_tokens, 20);
@@ -622,8 +563,7 @@ async fn codex_rejected_sidecar_without_streamed_fallback_is_not_an_empty_succes
     config.version = Some("offline-test".to_owned());
     config.max_retries = 0;
     let provider = CodexCliProvider::new(CodexAdapter, config);
-    let mut request = make_request("x", "SYS", Some(decision_schema()));
-    request.schema_name = ACTION_SCHEMA_NAME.to_owned();
+    let request = make_request("x", "SYS");
 
     let response = provider.complete(&request).await;
     assert!(!response.ok());
@@ -696,9 +636,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
     c_cfg.retry_base_delay_s = 0.0;
     let claude_p = ClaudeCliProvider::new(ClaudeAdapter, c_cfg);
     assert!(!claude_p.endpoint_identity().is_empty());
-    let cr = claude_p
-        .complete(&make_request("Decide.", "SYS", Some(decision_schema())))
-        .await;
+    let cr = claude_p.complete(&make_request("Decide.", "SYS")).await;
     assert!(cr.ok());
     assert_eq!(cr.usage.input_tokens, 10);
     assert_eq!(cr.usage.cache_read_tokens, 20);
@@ -728,8 +666,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
     g_cfg.runner = g_runner;
     g_cfg.version = Some("1.0.46".to_string());
     let grok_p = GrokCliProvider::new(GrokAdapter, g_cfg);
-    let mut g_req = make_request("hi", "- bullet system", Some(decision_schema()));
-    g_req.schema_name = ACTION_SCHEMA_NAME.to_string();
+    let g_req = make_request("hi", "- bullet system");
     let gr = grok_p.complete(&g_req).await;
     assert!(gr.ok());
     assert_eq!(gr.text.as_deref(), Some("ok"));
@@ -751,9 +688,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
     cur_cfg.runner = cur_runner;
     cur_cfg.version = Some("1.0".to_string());
     let cur_p = CursorCliProvider::new(CursorAdapter, cur_cfg);
-    let cur_r = cur_p
-        .complete(&make_request("- leading dash", "", None))
-        .await;
+    let cur_r = cur_p.complete(&make_request("- leading dash", "")).await;
     assert!(cur_r.ok());
     assert_eq!(cur_r.usage.input_tokens, 7);
     let env_map = BTreeMap::from([("CURSOR_CONFIG_DIR".to_string(), "/tmp/cur".to_string())]);
@@ -804,7 +739,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
         },
         m_cfg,
     );
-    let mr = muse_p.complete(&make_request("hi", "SYS", None)).await;
+    let mr = muse_p.complete(&make_request("hi", "SYS")).await;
     assert!(mr.ok(), "muse failed: {:?}", mr.error);
     assert_eq!(mr.usage.input_tokens, 60);
     assert_eq!(mr.usage.cache_read_tokens, 40);

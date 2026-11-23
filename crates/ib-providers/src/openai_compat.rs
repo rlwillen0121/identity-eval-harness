@@ -513,85 +513,23 @@ impl OpenAICompatProvider {
     }
 
     fn input_items(message: &Message) -> Vec<Map<String, Value>> {
-        match message.role {
-            Role::Tool => {
-                let mut item = Map::new();
-                item.insert(
-                    "type".to_string(),
-                    Value::String("function_call_output".to_string()),
-                );
-                item.insert(
-                    "call_id".to_string(),
-                    message
-                        .tool_call_id
-                        .as_ref()
-                        .map_or(Value::Null, |id| Value::String(id.clone())),
-                );
-                item.insert("output".to_string(), Value::String(message.content.clone()));
-                vec![item]
-            }
-            Role::Assistant => {
-                let mut items = Vec::new();
-                if !message.content.is_empty() {
-                    let mut m = Map::new();
-                    m.insert("role".to_string(), Value::String("assistant".to_string()));
-                    m.insert(
-                        "content".to_string(),
-                        Value::String(message.content.clone()),
-                    );
-                    items.push(m);
-                }
-                for call in &message.tool_calls {
-                    let args_str = dumps(
-                        &Value::Object(call.arguments.clone()),
-                        &DumpOptions {
-                            ensure_ascii: false,
-                            ..DumpOptions::default()
-                        },
-                    )
-                    .unwrap_or_else(|_| "{}".to_string());
-                    let mut m = Map::new();
-                    m.insert(
-                        "type".to_string(),
-                        Value::String("function_call".to_string()),
-                    );
-                    m.insert("call_id".to_string(), Value::String(call.id.clone()));
-                    m.insert("name".to_string(), Value::String(call.name.clone()));
-                    m.insert("arguments".to_string(), Value::String(args_str));
-                    items.push(m);
-                }
-                items
-            }
-            Role::User => {
-                let mut m = Map::new();
-                m.insert("role".to_string(), Value::String("user".to_string()));
-                m.insert(
-                    "content".to_string(),
-                    Value::String(message.content.clone()),
-                );
-                vec![m]
-            }
-        }
+        let role = match message.role {
+            Role::User => "user",
+            // An empty assistant turn sends no input item.
+            Role::Assistant if message.content.is_empty() => return Vec::new(),
+            Role::Assistant => "assistant",
+        };
+        let mut m = Map::new();
+        m.insert("role".to_string(), Value::String(role.to_string()));
+        m.insert(
+            "content".to_string(),
+            Value::String(message.content.clone()),
+        );
+        vec![m]
     }
 
     fn api_message(&self, message: &Message) -> Map<String, Value> {
         match message.role {
-            Role::Tool => {
-                let mut m = Map::new();
-                m.insert("role".to_string(), Value::String("tool".to_string()));
-                m.insert(
-                    "tool_call_id".to_string(),
-                    message
-                        .tool_call_id
-                        .as_ref()
-                        .map_or(Value::Null, |id| Value::String(id.clone())),
-                );
-                m.insert(
-                    "content".to_string(),
-                    Value::String(message.content.clone()),
-                );
-                m
-            }
             Role::Assistant => {
                 let mut m = Map::new();
                 m.insert("role".to_string(), Value::String("assistant".to_string()));
@@ -603,32 +541,6 @@ impl OpenAICompatProvider {
                         Value::String(message.content.clone())
                     },
                 );
-                if !message.tool_calls.is_empty() {
-                    let tcs = message
-                        .tool_calls
-                        .iter()
-                        .map(|call| {
-                            let args_str = dumps(
-                                &Value::Object(call.arguments.clone()),
-                                &DumpOptions {
-                                    ensure_ascii: false,
-                                    ..DumpOptions::default()
-                                },
-                            )
-                            .unwrap_or_else(|_| "{}".to_string());
-                            let mut fn_obj = Map::new();
-                            fn_obj.insert("name".to_string(), Value::String(call.name.clone()));
-                            fn_obj.insert("arguments".to_string(), Value::String(args_str));
-                            let mut wrapper = Map::new();
-                            wrapper.insert("id".to_string(), Value::String(call.id.clone()));
-                            wrapper
-                                .insert("type".to_string(), Value::String("function".to_string()));
-                            wrapper.insert("function".to_string(), Value::Object(fn_obj));
-                            Value::Object(wrapper)
-                        })
-                        .collect();
-                    m.insert("tool_calls".to_string(), Value::Array(tcs));
-                }
                 if self.config.model.contains("reflection/")
                     || self.config.model.contains("beam-1.0")
                 {
@@ -643,10 +555,7 @@ impl OpenAICompatProvider {
                     );
                     m.insert("reasoning".to_string(), Value::String(val.to_string()));
                 }
-                if self.config.model.contains("cohere/")
-                    && message.tool_calls.is_empty()
-                    && message.content.trim().is_empty()
-                {
+                if self.config.model.contains("cohere/") && message.content.trim().is_empty() {
                     m.insert("content".to_string(), Value::String(".".to_string()));
                 }
                 m

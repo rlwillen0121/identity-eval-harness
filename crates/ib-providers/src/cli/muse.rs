@@ -177,7 +177,7 @@ impl CliAdapter for MuseAdapter {
     ) -> Invocation {
         let prompt = io_dir.join("prompt.txt");
         let _ = fs::write(&prompt, render_transcript(&request.messages));
-        let mut argv = vec![
+        let argv = vec![
             config.binary.clone(),
             "exec".to_string(),
             "--provider".to_string(),
@@ -205,14 +205,6 @@ impl CliAdapter for MuseAdapter {
             "--reasoning-effort".to_string(),
             effort.unwrap_or(DEFAULT_EFFORT).to_string(),
         ];
-        if let Some(schema) = &request.output_schema {
-            let schema_path = io_dir.join("schema.json");
-            let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                .unwrap_or_else(|_| "{}".to_string());
-            let _ = fs::write(&schema_path, schema_json);
-            argv.push("--output-schema".to_string());
-            argv.push(schema_path.to_string_lossy().into_owned());
-        }
 
         let mut raw = Map::new();
         raw.insert(

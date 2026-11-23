@@ -1,23 +1,19 @@
 //! `codex exec` (OpenAI Codex CLI, headless) provider.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use ib_core::pyjson::{DumpOptions, dumps};
 use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, SystemChannel, Usage};
 use crate::cli::{
-    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int,
-    link_credentials, parse_jsonl, prepend_system, read_sidecar_text, render_transcript,
+    CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int, link_credentials,
+    parse_jsonl, prepend_system, read_sidecar_text, render_transcript,
 };
-use crate::json::load_object;
 use crate::subprocess::{ProcessResult, user_home_dir};
 
 pub const OUTPUT_FILE: &str = "last_message.txt";
-pub const SCHEMA_FILE: &str = "output_schema.json";
 pub const DEFAULT_EFFORT: &str = "medium";
 
 pub const DISABLED_FEATURES: &[&str] = &[
@@ -182,22 +178,6 @@ impl CliAdapter for CodexAdapter {
         argv.push("-o".to_string());
         argv.push(io_dir.join(OUTPUT_FILE).to_string_lossy().into_owned());
 
-        let mut raw = Map::new();
-        if let Some(schema) = &request.output_schema {
-            if request.schema_name != ACTION_SCHEMA_NAME {
-                let schema_path = io_dir.join(SCHEMA_FILE);
-                let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                    .unwrap_or_else(|_| "{}".to_string());
-                let _ = fs::write(&schema_path, schema_json);
-                argv.push("--output-schema".to_string());
-                argv.push(schema_path.to_string_lossy().into_owned());
-            } else {
-                raw.insert(
-                    "output_schema".to_string(),
-                    Value::String("withheld (JSON action protocol turn)".to_string()),
-                );
-            }
-        }
         argv.push("-C".to_string());
         argv.push(work_dir.to_string_lossy().into_owned());
         argv.push("-".to_string());
@@ -205,7 +185,7 @@ impl CliAdapter for CodexAdapter {
         Invocation {
             argv,
             stdin: Some(prompt),
-            raw,
+            raw: Map::new(),
             home_files: BTreeMap::new(),
         }
     }
@@ -225,7 +205,6 @@ impl CliAdapter for CodexAdapter {
         let mut errors: Vec<String> = Vec::new();
         let mut streamed_text: Option<String> = None;
         let mut turn_completed = false;
-        let mut turn_failed = false;
 
         for event in &events {
             let kind = event.get("type").and_then(Value::as_str);
@@ -251,9 +230,6 @@ impl CliAdapter for CodexAdapter {
             } else if let Some(message) = agent_message(event) {
                 streamed_text = Some(message);
             } else if let Some(err) = event_error(event) {
-                if kind == Some("turn.failed") {
-                    turn_failed = true;
-                }
                 errors.push(err);
             }
         }
@@ -279,16 +255,6 @@ impl CliAdapter for CodexAdapter {
                 text = Some(t.to_string());
             }
         }
-        if text.is_none()
-            && !output_file_rejected
-            && turn_completed
-            && !turn_failed
-            && result.returncode == 0
-            && request.schema_name == ACTION_SCHEMA_NAME
-        {
-            text = Some(String::new());
-        }
-
         if !raw_usage.is_empty() {
             raw.insert("raw_usage".to_string(), Value::Array(raw_usage));
         }
@@ -308,7 +274,7 @@ impl CliAdapter for CodexAdapter {
             ..ModelResponse::default()
         };
 
-        let Some(ref final_text) = text else {
+        if text.is_none() {
             let reason = if output_file_rejected {
                 "final output sidecar was rejected"
             } else {
@@ -319,7 +285,7 @@ impl CliAdapter for CodexAdapter {
             };
             response.error = Some(helper.error_text(reason, Some(result), Some(request)));
             return response;
-        };
+        }
 
         if result.returncode != 0 && !turn_completed {
             let reason = errors
@@ -330,9 +296,6 @@ impl CliAdapter for CodexAdapter {
             return response;
         }
 
-        if request.output_schema.is_some() {
-            response.parsed = load_object(final_text);
-        }
         response
     }
 }

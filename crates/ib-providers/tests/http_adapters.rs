@@ -431,7 +431,7 @@ async fn openai_responses_api_malformed_body_and_redacted_errors() {
 }
 
 #[tokio::test]
-async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
+async fn anthropic_messages_tool_use_detection_sse_stream_and_isolation() {
     let first_msg = MockReply::json(
         200,
         json!({
@@ -495,14 +495,7 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     assert!(r1.raw.as_ref().unwrap().contains_key(ASSISTANT_CONTENT_KEY));
 
     // Follow-up request uses SSE (>16k tokens)
-    let mut req2 = ModelRequest::new(
-        "POLICY",
-        vec![
-            Message::user("Decide."),
-            Message::assistant("", r1.tool_calls.clone()),
-            Message::tool("toolu_9", "U9 record"),
-        ],
-    );
+    let mut req2 = ModelRequest::new("POLICY", vec![Message::user("Decide.")]);
     req2.params.max_output_tokens = 20_000;
 
     let r2 = p.complete(&req2).await;

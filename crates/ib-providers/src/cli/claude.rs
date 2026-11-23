@@ -2,13 +2,12 @@
 
 use std::path::Path;
 
-use ib_core::pyjson::{DumpOptions, dumps};
 use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
-    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, as_dict, as_float, as_int,
-    parse_json_payload, render_transcript, served_models, structured_text, system_override,
+    CliAdapter, CliConfig, CliProvider, Invocation, as_dict, as_float, as_int, parse_json_payload,
+    render_transcript, served_models, structured_text, system_override,
 };
 use crate::subprocess::ProcessResult;
 
@@ -59,7 +58,7 @@ impl CliAdapter for ClaudeAdapter {
         _io_dir: &Path,
         _work_dir: &Path,
     ) -> Invocation {
-        let (system, body, mut notes) =
+        let (system, body, notes) =
             system_override(&request.system, &render_transcript(&request.messages), "");
         let mut argv = vec![
             config.binary.clone(),
@@ -80,19 +79,6 @@ impl CliAdapter for ClaudeAdapter {
             "--output-format".to_string(),
             "json".to_string(),
         ];
-        if let Some(schema) = &request.output_schema {
-            if request.schema_name != ACTION_SCHEMA_NAME {
-                let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                    .unwrap_or_else(|_| "{}".to_string());
-                argv.push("--json-schema".to_string());
-                argv.push(schema_json);
-            } else {
-                notes.insert(
-                    "json_schema".to_string(),
-                    Value::String("withheld (JSON action protocol turn)".to_string()),
-                );
-            }
-        }
         if let Some(eff) = effort {
             argv.push("--effort".to_string());
             argv.push(eff.to_string());

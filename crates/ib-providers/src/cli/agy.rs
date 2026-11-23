@@ -11,16 +11,14 @@ use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
-    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, NEUTRAL_SYSTEM,
-    as_dict, as_int, parse_jsonl, read_sidecar_text, render_transcript, structured_text,
+    CliAdapter, CliConfig, CliProvider, Invocation, Isolation, NEUTRAL_SYSTEM, as_dict, as_int,
+    parse_jsonl, read_sidecar_text, render_transcript, structured_text,
 };
 use crate::subprocess::{ProcessResult, user_home_dir};
 
 pub const AGENT_NAME: &str = "identitybench";
 pub const AGENT_FILE: &str = ".gemini/config/agents/identitybench/agent.md";
-pub const SCHEMA_FILE: &str = "output_schema.json";
 pub const LOG_FILE: &str = "agy.log";
-pub const STRUCTURED_OUTPUT_TOOL: &str = "finish";
 /// Largest user message, in UTF-8 bytes, that `agy` delivers unmodified. The CLI truncates a
 /// longer user message client-side to about `191_985` bytes and appends
 /// `\n<truncated N bytes>`, so the adapter refuses to send one instead (`SPEC-v5.2` §7.2: silent
@@ -37,13 +35,9 @@ static RESOLVED_RE: LazyLock<Regex> = LazyLock::new(|| {
         .expect("valid resolved regex")
 });
 
+/// The private agent file: no tools, no inherited components, then the system prompt.
 #[must_use]
-pub fn agent_definition(system: &str, structured: bool) -> String {
-    let tools = if structured {
-        format!("[{STRUCTURED_OUTPUT_TOOL}]")
-    } else {
-        "[]".to_string()
-    };
+pub fn agent_definition(system: &str) -> String {
     let front = [
         "---",
         &format!("name: {AGENT_NAME}"),
@@ -53,7 +47,7 @@ pub fn agent_definition(system: &str, structured: bool) -> String {
         "excludeDefaultComponents: true",
         "inheritCustomizations: false",
         "inheritMcp: false",
-        &format!("tools: {tools}"),
+        "tools: []",
         "---",
     ]
     .join("\n");
@@ -69,10 +63,6 @@ pub fn served_model(log_text: &str) -> Option<String> {
         }
     }
     found
-}
-
-fn is_structured_request(request: &ModelRequest) -> bool {
-    request.output_schema.is_some() && request.schema_name != ACTION_SCHEMA_NAME
 }
 
 #[must_use]
@@ -207,14 +197,6 @@ impl CliAdapter for AgyAdapter {
         } else {
             &request.system
         };
-        let structured = is_structured_request(request);
-        if request.output_schema.is_some() && !structured {
-            notes.insert(
-                "json_schema".to_string(),
-                Value::String("withheld (JSON action protocol turn)".to_string()),
-            );
-        }
-
         let mut msg_inner = Map::new();
         msg_inner.insert("role".to_string(), Value::String("user".to_string()));
         msg_inner.insert(
@@ -239,14 +221,6 @@ impl CliAdapter for AgyAdapter {
             "--log-file".to_string(),
             io_dir.join(LOG_FILE).to_string_lossy().into_owned(),
         ];
-        if structured && let Some(schema) = &request.output_schema {
-            let schema_path = io_dir.join(SCHEMA_FILE);
-            let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                .unwrap_or_else(|_| "{}".to_string());
-            let _ = fs::write(&schema_path, schema_json);
-            argv.push("--json-schema".to_string());
-            argv.push(schema_path.to_string_lossy().into_owned());
-        }
         if let Some(eff) = effort {
             argv.push("--effort".to_string());
             argv.push(eff.to_string());
@@ -264,7 +238,7 @@ impl CliAdapter for AgyAdapter {
         .unwrap_or_else(|_| "{}".to_string());
 
         let mut home_files = BTreeMap::new();
-        home_files.insert(AGENT_FILE.to_string(), agent_definition(system, structured));
+        home_files.insert(AGENT_FILE.to_string(), agent_definition(system));
 
         Invocation {
             argv,
@@ -350,7 +324,6 @@ impl CliAdapter for AgyAdapter {
             ..ModelResponse::default()
         };
 
-        let structured = is_structured_request(request);
         let status = payload
             .get("status")
             .and_then(Value::as_str)
@@ -358,8 +331,7 @@ impl CliAdapter for AgyAdapter {
 
         if status != "SUCCESS" {
             let err_str = payload.get("error").and_then(Value::as_str).unwrap_or("");
-            if !structured
-                && result.returncode == 0
+            if result.returncode == 0
                 && err_str
                     .to_lowercase()
                     .contains("function call is empty - no input to parse")

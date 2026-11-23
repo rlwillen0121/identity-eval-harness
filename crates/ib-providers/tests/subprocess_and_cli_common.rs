@@ -9,21 +9,20 @@ use tokio::sync::RwLock;
 static LIVE_GROUP_RWLOCK: RwLock<()> = RwLock::const_new(());
 
 use async_trait::async_trait;
-use ib_providers::base::{Message, ModelRequest, ModelResponse, ToolCall, Usage};
+use ib_providers::base::{Message, ModelRequest, ModelResponse, Usage};
 use ib_providers::cli::claude::ClaudeAdapter;
 use ib_providers::cli::{
-    ACTION_SCHEMA_NAME, CallDirGuard, CliConfig, CliProvider, MAX_ARG_BYTES, NEUTRAL_SYSTEM,
-    OWNER_FILE, SYSTEM_BEGIN, base_child_env, link_credentials, merge_attempts, owner_alive,
-    parse_json_payload, parse_jsonl, prepend_system, probe_version, render_transcript,
-    scrub_stderr, served_models, structured_text, sweep_stale_call_dirs, sync_back,
-    system_override, valid_effort,
+    CallDirGuard, CliConfig, CliProvider, MAX_ARG_BYTES, NEUTRAL_SYSTEM, OWNER_FILE, SYSTEM_BEGIN,
+    base_child_env, link_credentials, merge_attempts, owner_alive, parse_json_payload, parse_jsonl,
+    prepend_system, probe_version, render_transcript, scrub_stderr, served_models, structured_text,
+    sweep_stale_call_dirs, sync_back, system_override, valid_effort,
 };
 use ib_providers::subprocess::{
     Command, ProcessResult, ProcessRunner, TRUNCATION_MARKER, is_transient_error, kill_all_live,
     live_groups, redact, redact_diagnostics, register_group, retry_transient, run_command,
     run_command_with_cap, tail, unregister_group, url_hostname,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Map, json};
 use tempfile::TempDir;
 
 fn sh_cmd(script: &str, stdin: Option<&str>, timeout_s: f64, cwd: PathBuf) -> Command {
@@ -394,24 +393,14 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
         render_transcript(&[Message::user("exact  text\n")]),
         "exact  text\n"
     );
-    let mut args = Map::new();
-    args.insert("id".to_string(), Value::String("U1".to_string()));
     let rendered = render_transcript(&[
         Message::user("Decide REQ-1."),
-        Message::assistant(
-            "Looking it up.",
-            vec![ToolCall {
-                id: "call_1".to_string(),
-                name: "get_identity".to_string(),
-                arguments: args,
-            }],
-        ),
-        Message::tool("call_1", r#"{"id": "U1"}"#),
+        Message::assistant("Looking it up."),
         Message::user("Now decide."),
     ]);
     assert_eq!(
         rendered,
-        "[User]\nDecide REQ-1.\n\n[Assistant]\nLooking it up.\n(tool call get_identity id=call_1: {\"id\": \"U1\"})\n\n[Tool result call_1]\n{\"id\": \"U1\"}\n\n[User]\nNow decide."
+        "[User]\nDecide REQ-1.\n\n[Assistant]\nLooking it up.\n\n[User]\nNow decide."
     );
 
     assert_eq!(prepend_system("", "body"), "body");
@@ -560,7 +549,6 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
         0,
         "SPEC-v5.2 §7.4: no adapter retries"
     );
-    assert_eq!(ACTION_SCHEMA_NAME, "tool_action");
 
     // Mock Runner integration
     struct DummyRunner;

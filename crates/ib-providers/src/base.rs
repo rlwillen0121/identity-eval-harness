@@ -30,7 +30,6 @@ pub(crate) fn provider_timeout(seconds: f64) -> Result<Duration, &'static str> {
 pub enum Role {
     User,
     Assistant,
-    Tool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,14 +46,11 @@ pub struct ToolCall {
     pub arguments: Map<String, Value>,
 }
 
+/// One text message of a request. The v5.2 runtime sends exactly one `User` message per call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub role: Role,
     pub content: String,
-    #[serde(default)]
-    pub tool_calls: Vec<ToolCall>,
-    #[serde(default)]
-    pub tool_call_id: Option<String>,
 }
 
 impl Message {
@@ -63,28 +59,14 @@ impl Message {
         Self {
             role: Role::User,
             content: content.into(),
-            tool_calls: Vec::new(),
-            tool_call_id: None,
         }
     }
 
     #[must_use]
-    pub fn assistant(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+    pub fn assistant(content: impl Into<String>) -> Self {
         Self {
             role: Role::Assistant,
             content: content.into(),
-            tool_calls,
-            tool_call_id: None,
-        }
-    }
-
-    #[must_use]
-    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self {
-            role: Role::Tool,
-            content: content.into(),
-            tool_calls: Vec::new(),
-            tool_call_id: Some(tool_call_id.into()),
         }
     }
 }
@@ -108,25 +90,13 @@ impl Default for GenerationParams {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A model call: a system prompt, text messages and generation parameters. Requests carry no
+/// native tools and no output schema (`SPEC-v5.2` §7.1).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelRequest {
     pub system: String,
     pub messages: Vec<Message>,
-    pub output_schema: Option<Map<String, Value>>,
-    pub schema_name: String,
     pub params: GenerationParams,
-}
-
-impl Default for ModelRequest {
-    fn default() -> Self {
-        Self {
-            system: String::new(),
-            messages: Vec::new(),
-            output_schema: None,
-            schema_name: "decision".to_string(),
-            params: GenerationParams::default(),
-        }
-    }
 }
 
 impl ModelRequest {

@@ -173,7 +173,7 @@ impl AnthropicProvider {
         );
         params.insert(
             "messages".to_string(),
-            Value::Array(self.api_messages(&request.messages)),
+            Value::Array(Self::api_messages(&request.messages)),
         );
 
         if !request.system.is_empty() {
@@ -205,41 +205,28 @@ impl AnthropicProvider {
         params
     }
 
-    fn api_messages(&self, messages: &[Message]) -> Vec<Value> {
+    fn api_messages(messages: &[Message]) -> Vec<Value> {
         let mut api: Vec<Map<String, Value>> = Vec::new();
         for message in messages {
-            if message.role == Role::Assistant {
-                let mut m = Map::new();
-                m.insert("role".to_string(), Value::String("assistant".to_string()));
-                m.insert(
-                    "content".to_string(),
-                    Value::Array(self.assistant_content(message)),
-                );
-                api.push(m);
-                continue;
-            }
-            let block = if message.role == Role::Tool {
-                let mut b = Map::new();
-                b.insert("type".to_string(), Value::String("tool_result".to_string()));
-                b.insert(
-                    "tool_use_id".to_string(),
-                    message
-                        .tool_call_id
-                        .as_ref()
-                        .map_or(Value::Null, |id| Value::String(id.clone())),
-                );
-                b.insert(
-                    "content".to_string(),
-                    Value::String(message.content.clone()),
-                );
-                Value::Object(b)
-            } else {
+            let text_block = || {
                 let mut b = Map::new();
                 b.insert("type".to_string(), Value::String("text".to_string()));
                 b.insert("text".to_string(), Value::String(message.content.clone()));
                 Value::Object(b)
             };
-
+            if message.role == Role::Assistant {
+                let blocks = if message.content.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![text_block()]
+                };
+                let mut m = Map::new();
+                m.insert("role".to_string(), Value::String("assistant".to_string()));
+                m.insert("content".to_string(), Value::Array(blocks));
+                api.push(m);
+                continue;
+            }
+            let block = text_block();
             if let Some(last) = api.last_mut()
                 && last.get("role").and_then(Value::as_str) == Some("user")
                 && let Some(Value::Array(arr)) = last.get_mut("content")
@@ -253,25 +240,6 @@ impl AnthropicProvider {
             api.push(m);
         }
         api.into_iter().map(Value::Object).collect()
-    }
-
-    fn assistant_content(&self, message: &Message) -> Vec<Value> {
-        let mut blocks = Vec::new();
-        if !message.content.is_empty() {
-            let mut b = Map::new();
-            b.insert("type".to_string(), Value::String("text".to_string()));
-            b.insert("text".to_string(), Value::String(message.content.clone()));
-            blocks.push(Value::Object(b));
-        }
-        for call in &message.tool_calls {
-            let mut b = Map::new();
-            b.insert("type".to_string(), Value::String("tool_use".to_string()));
-            b.insert("id".to_string(), Value::String(call.id.clone()));
-            b.insert("name".to_string(), Value::String(call.name.clone()));
-            b.insert("input".to_string(), Value::Object(call.arguments.clone()));
-            blocks.push(Value::Object(b));
-        }
-        blocks
     }
 
     fn get_client(&self) -> Result<&reqwest::Client, String> {

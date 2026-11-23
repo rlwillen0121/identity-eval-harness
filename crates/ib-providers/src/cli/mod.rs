@@ -24,7 +24,7 @@ use sha2::{Digest, Sha256};
 
 use crate::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, SystemChannel,
-    ToolCall, hash_endpoint,
+    hash_endpoint,
 };
 use crate::json::{
     bounded_token_count, load_object, safe_nonnegative_float_add, sanitize_response,
@@ -40,7 +40,6 @@ pub const SYSTEM_BEGIN: &str = "=== SYSTEM ===";
 pub const MAX_ARG_BYTES: usize = 100_000;
 pub const MAX_SIDECAR_BYTES: usize = MAX_CAPTURE_BYTES;
 pub const NEUTRAL_SYSTEM: &str = "You are a helpful assistant.";
-pub const ACTION_SCHEMA_NAME: &str = "tool_action";
 
 pub const STDERR_EXCERPT_CHARS: usize = 300;
 const MARK_CHARS: usize = 60;
@@ -234,37 +233,14 @@ pub fn render_transcript(messages: &[Message]) -> String {
     if messages.len() == 1 && messages[0].role == Role::User {
         return messages[0].content.clone();
     }
-    let dump_opts = DumpOptions {
-        sort_keys: true,
-        ensure_ascii: false,
-        ..DumpOptions::default()
-    };
-    let mut parts = Vec::with_capacity(messages.len());
-    for message in messages {
-        match message.role {
-            Role::User => parts.push(format!("[User]\n{}", message.content)),
-            Role::Assistant => {
-                let mut lines = Vec::new();
-                if !message.content.is_empty() {
-                    lines.push(message.content.clone());
-                }
-                for call in &message.tool_calls {
-                    let args_json = dumps(&Value::Object(call.arguments.clone()), &dump_opts)
-                        .unwrap_or_else(|_| "{}".to_string());
-                    lines.push(format!(
-                        "(tool call {} id={}: {args_json})",
-                        call.name, call.id
-                    ));
-                }
-                parts.push(format!("[Assistant]\n{}", lines.join("\n")));
-            }
-            Role::Tool => {
-                let call_id = message.tool_call_id.as_deref().unwrap_or("");
-                parts.push(format!("[Tool result {call_id}]\n{}", message.content));
-            }
-        }
-    }
-    parts.join("\n\n")
+    messages
+        .iter()
+        .map(|message| match message.role {
+            Role::User => format!("[User]\n{}", message.content),
+            Role::Assistant => format!("[Assistant]\n{}", message.content),
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 #[must_use]
@@ -1217,50 +1193,22 @@ impl<A: CliAdapter> CliProvider<A> {
     }
 
     fn compute_setup_revision(&self) -> String {
-        let mut args = Map::new();
-        args.insert("<arg>".to_string(), Value::String("<value>".to_string()));
         let transcript = vec![
             Message::user("<prompt>"),
-            Message::assistant(
-                "<reply>",
-                vec![ToolCall {
-                    id: "<call-id>".to_string(),
-                    name: "<tool>".to_string(),
-                    arguments: args,
-                }],
-            ),
-            Message::tool("<call-id>", "<result>"),
+            Message::assistant("<reply>"),
             Message::user("<follow-up>"),
         ];
-        let mut empty_obj_schema = Map::new();
-        empty_obj_schema.insert("type".to_string(), Value::String("object".to_string()));
-        empty_obj_schema.insert("properties".to_string(), Value::Object(Map::new()));
-
         let templates: Vec<(ModelRequest, Option<&str>)> = vec![
             (ModelRequest::new("", vec![Message::user("<prompt>")]), None),
             (
-                ModelRequest {
-                    system: "<system>".to_string(),
-                    messages: transcript.clone(),
-                    output_schema: Some(empty_obj_schema.clone()),
-                    ..ModelRequest::default()
-                },
+                ModelRequest::new("<system>", transcript.clone()),
                 if self.adapter.supports_effort() {
                     Some("<effort>")
                 } else {
                     None
                 },
             ),
-            (
-                ModelRequest {
-                    system: "<system>".to_string(),
-                    messages: transcript,
-                    output_schema: Some(empty_obj_schema),
-                    schema_name: ACTION_SCHEMA_NAME.to_string(),
-                    ..ModelRequest::default()
-                },
-                None,
-            ),
+            (ModelRequest::new("<system>", transcript), None),
         ];
 
         let dir = CallDirGuard::new(&format!("identitybench-{}-setup-", self.adapter.kind()))
