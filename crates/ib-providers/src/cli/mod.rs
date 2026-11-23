@@ -1058,6 +1058,13 @@ pub trait CliAdapter: Send + Sync {
         Vec::new()
     }
 
+    /// Refuse a request before anything is spawned, for example when the CLI would silently
+    /// rewrite or truncate it. An `Err` becomes a provider failure carrying `(error_code,
+    /// message)`; it never reaches the model.
+    fn preflight(&self, _request: &ModelRequest) -> Result<(), (&'static str, String)> {
+        Ok(())
+    }
+
     fn build(
         &self,
         config: &CliConfig,
@@ -1393,6 +1400,22 @@ impl<A: CliAdapter> CliProvider<A> {
         }
         if request.messages.is_empty() {
             return self.fail("request has no messages", None, Some(request));
+        }
+        if let Err((error_code, message)) = self.adapter.preflight(request) {
+            let mut failed = self.fail(&message, None, Some(request));
+            let mut meta = Map::new();
+            meta.insert(
+                "error_code".to_string(),
+                Value::String(error_code.to_string()),
+            );
+            meta.insert(
+                "error_class".to_string(),
+                Value::String("TRANSPORT_CAPACITY".to_string()),
+            );
+            // Nothing was spawned, so the model provably never saw the request.
+            meta.insert("proven_unanswered".to_string(), Value::Bool(true));
+            failed.raw = Some(meta);
+            return failed;
         }
         let effort: Option<String> = if self.adapter.supports_effort() {
             request

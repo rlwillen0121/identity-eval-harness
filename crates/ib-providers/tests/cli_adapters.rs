@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use ib_providers::base::{Message, ModelRequest, Provider, ToolSpec};
 use ib_providers::cli::agy::{
-    AGENT_FILE, AgyAdapter, AgyCliProvider, agent_definition, served_model,
+    AGENT_FILE, AGY_CAPACITY_ERROR_CODE, AGY_MAX_USER_MESSAGE_BYTES, AgyAdapter, AgyCliProvider,
+    agent_definition, served_model,
 };
 use ib_providers::cli::claude::{ClaudeAdapter, ClaudeCliProvider};
 use ib_providers::cli::codex::{
@@ -386,6 +387,57 @@ async fn agy_error_diagnostics_do_not_prove_an_unanswered_request() {
         } else {
             assert_eq!(raw["error_class"], json!("AMBIGUOUS_FAILURE"));
         }
+    }
+}
+
+#[tokio::test]
+async fn agy_capacity_guard_refuses_oversized_user_messages_without_spawning() {
+    let success = || {
+        agy_stream_event(
+            json!({"status": "SUCCESS", "response": "{\"actions\":[]}", "usage": {"input_tokens": 10, "output_tokens": 5}}),
+            None,
+        )
+    };
+    // Exactly at the guard: delivered unchanged on stdin.
+    let at_limit = "a".repeat(AGY_MAX_USER_MESSAGE_BYTES);
+    let runner = FakeRunner::new(vec![success()]);
+    let mut config = CliConfig::new("offline-model", "never-executed", 1.0);
+    config.runner = Arc::clone(&runner) as Arc<dyn ProcessRunner>;
+    config.version = Some("offline-test".to_owned());
+    config.max_retries = 0;
+    let provider = AgyCliProvider::new(AgyAdapter, config.clone());
+    let response = provider
+        .complete(&make_request(&at_limit, "SYS", None))
+        .await;
+    assert!(response.ok(), "{:?}", response.error);
+    let commands = runner.commands();
+    assert_eq!(commands.len(), 1);
+    let stdin: Value =
+        serde_json::from_str(commands[0].stdin.as_deref().unwrap().trim_end()).unwrap();
+    assert_eq!(stdin["message"]["content"], json!(at_limit));
+
+    // One byte over (multi-byte UTF-8 counts in bytes): refused before any process is spawned,
+    // as a provider failure, never truncated and never delivered.
+    for over in [
+        "a".repeat(AGY_MAX_USER_MESSAGE_BYTES + 1),
+        "é".repeat(AGY_MAX_USER_MESSAGE_BYTES / 2 + 1),
+    ] {
+        let idle = FakeRunner::new(Vec::new());
+        let mut config = config.clone();
+        config.runner = Arc::clone(&idle) as Arc<dyn ProcessRunner>;
+        let provider = AgyCliProvider::new(AgyAdapter, config);
+        let response = provider.complete(&make_request(&over, "SYS", None)).await;
+        assert!(idle.commands().is_empty(), "nothing may be spawned");
+        let error = response.error.as_deref().unwrap();
+        assert!(error.contains("agy capacity guard"), "{error}");
+        assert!(error.contains(&over.len().to_string()), "{error}");
+        assert!(response.text.is_none() && response.parsed.is_none());
+        let raw = response.raw.as_ref().unwrap();
+        assert_eq!(raw["error_code"], json!(AGY_CAPACITY_ERROR_CODE));
+        assert_eq!(raw["error_class"], json!("TRANSPORT_CAPACITY"));
+        assert_eq!(raw["proven_unanswered"], json!(true));
+        // Not the oversized-model-output path, which the runner scores as OUTPUT_LIMIT.
+        assert!(raw.get("oversized_text_bytes").is_none());
     }
 }
 
