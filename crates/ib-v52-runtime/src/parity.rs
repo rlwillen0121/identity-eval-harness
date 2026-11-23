@@ -26,11 +26,12 @@ use serde_json::{Value, json};
 use crate::opening::render_v52_turn1_message;
 pub use crate::protocol::{MAX_OPENING_BYTES_V52, MAX_REQUEST_BYTES_V52};
 use crate::protocol::{
-    RejectionReasonV52, compact_json, render_v52_system_prompt, render_wire_message,
+    RejectionReasonV52, compact_json, delimiter_cut_offset_v52, render_v52_system_prompt,
+    render_wire_message,
 };
 use crate::transcript::{
-    ActionResultV52, CanonicalRequestV52, TurnOutcomeV52, TurnRecordV52, TurnUsageV52,
-    build_canonical_request, render_uncompacted_transcript, rolled_back_outputs,
+    ActionResultV52, CanonicalRequestV52, DelimiterCutV52, TurnOutcomeV52, TurnRecordV52,
+    TurnUsageV52, build_canonical_request, render_uncompacted_transcript, rolled_back_outputs,
 };
 use crate::validation::GateResultV52;
 use crate::workspace::VirtualWorkspaceRuntimeV52;
@@ -144,6 +145,7 @@ fn accepted(turn: usize, actions: Vec<(Value, Value)>) -> TurnRecordV52 {
         turn,
         raw_sha256: sha256_hex(raw.as_bytes()),
         raw_bytes: raw.len(),
+        delimiter_cut: None,
         raw_text: Some(raw),
         outcome: TurnOutcomeV52::Accepted {
             action_object: object,
@@ -163,10 +165,19 @@ fn accepted(turn: usize, actions: Vec<(Value, Value)>) -> TurnRecordV52 {
 }
 
 fn rejected(turn: usize, reason: RejectionReasonV52, raw: String) -> TurnRecordV52 {
+    // As in the runner, a generation within the output limit is cut at a delimiter line (§7.1).
+    let delimiter_cut = (reason == RejectionReasonV52::FormatError)
+        .then(|| delimiter_cut_offset_v52(&raw))
+        .flatten()
+        .map(|offset| DelimiterCutV52 {
+            offset,
+            bytes: raw.len() - offset,
+        });
     TurnRecordV52 {
         turn,
         raw_sha256: sha256_hex(raw.as_bytes()),
         raw_bytes: raw.len(),
+        delimiter_cut,
         raw_text: Some(raw),
         outcome: TurnOutcomeV52::Rejected {
             reason,
@@ -227,7 +238,10 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
         rejected(
             4,
             RejectionReasonV52::FormatError,
-            filler("I will now", 2_000),
+            format!(
+                "{}\n\n=== TURN 4 RESULTS ===\n[]",
+                filler("I will now", 2_000)
+            ),
         ),
         accepted(
             5,
@@ -450,6 +464,13 @@ impl ParityRendererV52 for CanonicalParityRendererV52 {
                 .contains("\"error\":\"CONTEXT_CEILING_EXCEEDED\"")
         }) {
             return Err("fixture does not exercise the rollback fallback".to_owned());
+        }
+        if !requests
+            .iter()
+            .flatten()
+            .any(|r| r.transcript.contains("[CUT_AT_DELIMITER bytes="))
+        {
+            return Err("fixture does not exercise the delimiter cut marker".to_owned());
         }
         Ok(requests
             .iter()
