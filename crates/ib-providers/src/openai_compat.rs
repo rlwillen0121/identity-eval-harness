@@ -10,7 +10,6 @@ use ib_core::pyjson::{DumpOptions, PyNumber, classify_number, dumps};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use url::Url;
 
 use crate::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall, Usage,
@@ -18,17 +17,16 @@ use crate::base::{
 };
 use crate::env::paired_api_key_env;
 use crate::http::{
-    MAX_PROVIDER_RESPONSE_BYTES, read_bounded_response_body, redirect_provider_error,
+    MAX_PROVIDER_RESPONSE_BYTES, PLACEHOLDER_API_KEY, Redactor, env_var, is_vendor_host,
+    read_bounded_response_body, redirect_provider_error, status_error_class,
 };
 use crate::json::{bounded_token_count, load_object, raw_usage_payload, sanitize_response};
-use crate::subprocess::{redact, redact_diagnostics_map};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 pub const DEFAULT_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
 pub const DEFAULT_API_KEY_ENV: &str = "OPENAI_API_KEY";
 pub const UNPARSED_ARGUMENTS_KEY: &str = "_unparsed_arguments";
 
-const PLACEHOLDER_API_KEY: &str = "not-set";
 const VENDOR_HOST: &str = "api.openai.com";
 pub const NO_TEMPERATURE_MODELS: &[&str] = &["gpt-5", "o1", "o3", "o4"];
 
@@ -155,17 +153,7 @@ pub fn accepts_temperature(model: &str) -> bool {
 
 #[must_use]
 pub fn is_vendor_endpoint(base_url: Option<&str>) -> bool {
-    let Some(u) = base_url else {
-        return false;
-    };
-    Url::parse(u)
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .host_str()
-                .map(|h| h.eq_ignore_ascii_case(VENDOR_HOST))
-        })
-        .unwrap_or(false)
+    is_vendor_host(base_url, VENDOR_HOST)
 }
 
 #[must_use]
@@ -427,23 +415,12 @@ impl OpenAICompatProvider {
         self.config.reasoning_effort_param
     }
 
-    fn get_env(&self, name: &str) -> Option<String> {
-        if let Some(ref map) = self.config.env_override {
-            map.get(name).cloned()
-        } else {
-            std::env::var(name).ok()
-        }
-    }
-
-    fn redaction_env_names(&self) -> Vec<&str> {
-        let mut names = Vec::new();
-        if let Some(ref k) = self.resolved_api_key_env {
-            names.push(k.as_str());
-        }
-        if let Some(ref b) = self.config.base_url_env {
-            names.push(b.as_str());
-        }
-        names
+    fn redactor(&self) -> Redactor<'_> {
+        Redactor::new(
+            self.config.env_override.as_ref(),
+            self.resolved_api_key_env.as_deref(),
+            self.config.base_url_env.as_deref(),
+        )
     }
 
     #[must_use]
@@ -780,7 +757,7 @@ impl OpenAICompatProvider {
         let key = self
             .resolved_api_key_env
             .as_deref()
-            .and_then(|name| self.get_env(name))
+            .and_then(|name| env_var(self.config.env_override.as_ref(), name))
             .filter(|v| !v.is_empty());
         if let Some(k) = key {
             return Ok(k);
@@ -825,17 +802,7 @@ impl OpenAICompatProvider {
     }
 
     fn fail(&self, message: &str, raw: Option<Map<String, Value>>) -> ModelResponse {
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        ModelResponse {
-            error: Some(redact(
-                &format!("openai_compatible: {message}"),
-                env_ref,
-                &names,
-            )),
-            raw: raw.map(|r| redact_diagnostics_map(&r, env_ref, &names)),
-            ..ModelResponse::default()
-        }
+        self.redactor().fail("openai_compatible", message, raw)
     }
 
     async fn complete_inner(&self, request: &ModelRequest) -> ModelResponse {
@@ -1063,13 +1030,10 @@ impl OpenAICompatProvider {
             .and_then(Value::as_array)
             .ok_or_else(|| "missing choices".to_string())?;
         if choices.is_empty() {
-            let env_ref = self.config.env_override.as_ref();
-            let names = self.redaction_env_names();
-            response.error = Some(redact(
-                "openai_compatible: response has no choices",
-                env_ref,
-                &names,
-            ));
+            response.error = Some(
+                self.redactor()
+                    .text("openai_compatible: response has no choices"),
+            );
             return Ok(response);
         }
 
@@ -1199,13 +1163,10 @@ impl OpenAICompatProvider {
                     format!("{code}: {msg}")
                 })
                 .unwrap_or_else(|| "no error given".to_string());
-            let env_ref = self.config.env_override.as_ref();
-            let names = self.redaction_env_names();
-            response.error = Some(redact(
-                &format!("openai_compatible: response failed ({detail})"),
-                env_ref,
-                &names,
-            ));
+            response.error = Some(
+                self.redactor()
+                    .text(&format!("openai_compatible: response failed ({detail})")),
+            );
             return Ok(response);
         }
 
@@ -1389,14 +1350,7 @@ impl Provider for OpenAICompatProvider {
             );
             response.raw = Some(raw);
         }
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        if let Some(ref err) = response.error {
-            response.error = Some(redact(err, env_ref, &names));
-        }
-        if let Some(ref raw) = response.raw {
-            response.raw = Some(redact_diagnostics_map(raw, env_ref, &names));
-        }
+        self.redactor().response(&mut response);
         response
     }
 }
@@ -1408,12 +1362,7 @@ fn resolve_base_url(
     let Some(env_name) = base_url_env else {
         return Some(DEFAULT_BASE_URL.to_string());
     };
-    let val = if let Some(map) = env_override {
-        map.get(env_name).cloned()
-    } else {
-        std::env::var(env_name).ok()
-    };
-    if let Some(v) = val
+    if let Some(v) = env_var(env_override, env_name)
         && !v.is_empty()
     {
         return Some(v.trim_end_matches('/').to_string());
@@ -1422,19 +1371,5 @@ fn resolve_base_url(
         Some(DEFAULT_BASE_URL.to_string())
     } else {
         None
-    }
-}
-
-fn status_error_class(status: u16) -> &'static str {
-    match status {
-        400 => "BadRequestError",
-        401 => "AuthenticationError",
-        403 => "PermissionDeniedError",
-        404 => "NotFoundError",
-        409 => "ConflictError",
-        422 => "UnprocessableEntityError",
-        429 => "RateLimitError",
-        500..=599 => "InternalServerError",
-        _ => "APIStatusError",
     }
 }

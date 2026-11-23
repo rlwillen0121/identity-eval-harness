@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde_json::{Map, Value};
-use url::Url;
 
 use crate::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall, Usage,
@@ -15,16 +14,15 @@ use crate::base::{
 };
 use crate::env::paired_api_key_env;
 use crate::http::{
-    MAX_PROVIDER_RESPONSE_BYTES, read_bounded_response_body, redirect_provider_error,
+    MAX_PROVIDER_RESPONSE_BYTES, PLACEHOLDER_API_KEY, Redactor, env_var, is_vendor_host,
+    read_bounded_response_body, redirect_provider_error, status_error_class,
 };
 use crate::json::{bounded_token_count, load_object, raw_usage_payload, sanitize_response};
-use crate::subprocess::{redact, redact_diagnostics_map};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 pub const STREAMING_THRESHOLD_TOKENS: u64 = 16_000;
 const VENDOR_HOST: &str = "api.anthropic.com";
-const PLACEHOLDER_API_KEY: &str = "not-set";
 pub const ASSISTANT_CONTENT_KEY: &str = "assistant_content";
 
 pub const NO_TEMPERATURE_MODELS: &[&str] = &[
@@ -44,20 +42,6 @@ pub fn accepts_temperature(model: &str) -> bool {
     !NO_TEMPERATURE_MODELS
         .iter()
         .any(|family| model.contains(family))
-}
-
-fn is_vendor_endpoint(base_url: Option<&str>) -> bool {
-    let Some(base_url) = base_url else {
-        return false;
-    };
-    Url::parse(base_url)
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .host_str()
-                .map(|host| host.eq_ignore_ascii_case(VENDOR_HOST))
-        })
-        .unwrap_or(false)
 }
 
 fn parse_usage(usage_val: Option<&Value>) -> Usage {
@@ -137,7 +121,7 @@ impl AnthropicProvider {
         let base_url =
             resolve_base_url(config.base_url_env.as_deref(), config.env_override.as_ref());
         if kind == "anthropic"
-            && !is_vendor_endpoint(base_url.as_deref())
+            && !is_vendor_host(base_url.as_deref(), VENDOR_HOST)
             && !config.allow_custom_endpoint
         {
             return Err(
@@ -165,22 +149,15 @@ impl AnthropicProvider {
     }
 
     fn get_env(&self, name: &str) -> Option<String> {
-        if let Some(ref map) = self.config.env_override {
-            map.get(name).cloned()
-        } else {
-            std::env::var(name).ok()
-        }
+        env_var(self.config.env_override.as_ref(), name)
     }
 
-    fn redaction_env_names(&self) -> Vec<&str> {
-        let mut names = Vec::new();
-        if let Some(ref k) = self.resolved_api_key_env {
-            names.push(k.as_str());
-        }
-        if let Some(ref b) = self.config.base_url_env {
-            names.push(b.as_str());
-        }
-        names
+    fn redactor(&self) -> Redactor<'_> {
+        Redactor::new(
+            self.config.env_override.as_ref(),
+            self.resolved_api_key_env.as_deref(),
+            self.config.base_url_env.as_deref(),
+        )
     }
 
     #[must_use]
@@ -375,17 +352,7 @@ impl AnthropicProvider {
     }
 
     fn fail(&self, message: &str, raw: Option<Map<String, Value>>) -> ModelResponse {
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        ModelResponse {
-            error: Some(redact(
-                &format!("{}: {message}", self.kind),
-                env_ref,
-                &names,
-            )),
-            raw: raw.map(|r| redact_diagnostics_map(&r, env_ref, &names)),
-            ..ModelResponse::default()
-        }
+        self.redactor().fail(self.kind, message, raw)
     }
 
     async fn complete_inner(&self, request: &ModelRequest) -> ModelResponse {
@@ -716,14 +683,7 @@ impl Provider for AnthropicProvider {
             );
             response.raw = Some(raw);
         }
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        if let Some(ref err) = response.error {
-            response.error = Some(redact(err, env_ref, &names));
-        }
-        if let Some(ref raw) = response.raw {
-            response.raw = Some(redact_diagnostics_map(raw, env_ref, &names));
-        }
+        self.redactor().response(&mut response);
         response
     }
 }
@@ -865,13 +825,7 @@ fn resolve_base_url(
     base_url_env: Option<&str>,
     env_override: Option<&BTreeMap<String, String>>,
 ) -> Option<String> {
-    let get = |name: &str| -> Option<String> {
-        if let Some(map) = env_override {
-            map.get(name).cloned()
-        } else {
-            std::env::var(name).ok()
-        }
-    };
+    let get = |name: &str| env_var(env_override, name);
     if let Some(env_name) = base_url_env {
         let val = get(env_name).filter(|v| !v.is_empty())?;
         return Some(val.trim_end_matches('/').to_string());
@@ -880,18 +834,4 @@ fn resolve_base_url(
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
     Some(val.trim_end_matches('/').to_string())
-}
-
-fn status_error_class(status: u16) -> &'static str {
-    match status {
-        400 => "BadRequestError",
-        401 => "AuthenticationError",
-        403 => "PermissionDeniedError",
-        404 => "NotFoundError",
-        409 => "ConflictError",
-        422 => "UnprocessableEntityError",
-        429 => "RateLimitError",
-        500..=599 => "InternalServerError",
-        _ => "APIStatusError",
-    }
 }
