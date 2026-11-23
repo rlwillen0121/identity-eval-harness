@@ -14,9 +14,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use ib_core::hashing::sha256_hex;
-use ib_providers::base::{
-    GenerationParams, Message, ModelRequest, ModelResponse, Provider, SystemChannel,
-};
+use ib_providers::base::{ModelRequest, ModelResponse, Provider, SystemChannel};
 use ib_providers::json::{OVERSIZED_TEXT_BYTES, OVERSIZED_TEXT_SHA256};
 use ib_v52_schemas::{
     AssertionFailureV52, AttemptStatusV52, CategoryIdV52, DeploymentScoreV52,
@@ -25,7 +23,7 @@ use ib_v52_schemas::{
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
@@ -39,11 +37,11 @@ use crate::protocol::{
     MAX_OPENING_BYTES_V52, MAX_PROVIDER_RETRIES_V52, MAX_REQUEST_BYTES_V52, OUTPUT_LIMIT_BYTES_V52,
     PER_CALL_TIMEOUT_S_V52, PROTOCOL_ID_V52, RejectionReasonV52, WALL_CLOCK_GUARD_MS_V52,
     declared_tool_names_v52, delimiter_cut_offset_v52, parse_v52_action_turn,
-    render_v52_opening_user_message, render_v52_system_prompt,
+    render_v52_opening_user_message, render_v52_system_prompt, single_message_request,
 };
 use crate::transcript::{
-    ActionResultV52, CanonicalRequestV52, DelimiterCutV52, TurnOutcomeV52, TurnRecordV52,
-    TurnUsageV52, build_canonical_request, rolled_back_outputs,
+    ActionResultV52, DelimiterCutV52, TurnOutcomeV52, TurnRecordV52, TurnUsageV52,
+    build_canonical_request, rolled_back_outputs,
 };
 use crate::workspace::{CONFIG_FILE_PATHS_V52, VirtualWorkspaceRuntimeV52, WorkspaceStateV52};
 
@@ -438,29 +436,6 @@ pub(crate) async fn generate_with_retries(
     (GenerationOutcome::ProviderFailure(last_error), attempts)
 }
 
-fn build_request(
-    system_prompt: &str,
-    canonical: &CanonicalRequestV52,
-    options: &RunV52EpisodeOptions,
-    cache_key: String,
-) -> ModelRequest {
-    let mut extra = Map::new();
-    extra.insert(REPLAY_CACHE_KEY_PARAM.to_owned(), Value::String(cache_key));
-    ModelRequest {
-        system: system_prompt.to_owned(),
-        messages: vec![Message::user(canonical.transcript.clone())],
-        // Constrained decoding is disabled for every transport (§7.1).
-        output_schema: None,
-        schema_name: "v52_canonical_turn".to_owned(),
-        params: GenerationParams {
-            max_output_tokens: options.requested_output_tokens.unwrap_or(0),
-            temperature: options.temperature,
-            effort: (options.effort != "transport_default").then(|| options.effort.clone()),
-            extra,
-        },
-    }
-}
-
 /// Roll back the most recent turn's workspace effects (§7.2 fallback). Returns `false` when the
 /// most recent turn cannot be rolled back.
 fn rollback_last_turn(
@@ -615,11 +590,13 @@ async fn drive_slot(
         }
         checkpoint.max_request_bytes = checkpoint.max_request_bytes.max(canonical.request_bytes);
 
-        let request = build_request(
+        let request = single_message_request(
             &system_prompt,
-            &canonical,
-            options,
+            canonical.transcript,
             format!("{}_r{}_t{turn}", episode.episode_id, options.repeat_index),
+            options.requested_output_tokens,
+            options.temperature,
+            &options.effort,
         );
         let mut turn_usage = TurnUsageV52::default();
         let (outcome, attempts) =

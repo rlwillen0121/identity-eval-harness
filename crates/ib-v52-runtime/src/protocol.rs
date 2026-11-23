@@ -4,6 +4,7 @@
 use std::sync::OnceLock;
 
 use ib_core::hashing::sha256_hex;
+use ib_providers::base::{GenerationParams, Message, ModelRequest};
 use serde_json::{Map, Value, json};
 
 use crate::workspace::{VirtualWorkspaceRuntimeV52, tool_definitions_v52};
@@ -180,6 +181,34 @@ Each request contains the engagement opening followed by every completed turn as
 #[must_use]
 pub fn render_v52_opening_user_message(runtime: &VirtualWorkspaceRuntimeV52<'_>) -> String {
     crate::opening::render_v52_turn1_message(None, runtime)
+}
+
+/// The request of every v5.2 model call (§7.1): `system_prompt` through the system channel and
+/// `transcript` as the single user message, with no tools and no output schema. `cache_key`
+/// selects the offline replay recording; an `effort` of `"transport_default"` sends none.
+#[must_use]
+pub fn single_message_request(
+    system_prompt: &str,
+    transcript: String,
+    cache_key: String,
+    requested_output_tokens: Option<u64>,
+    temperature: Option<f64>,
+    effort: &str,
+) -> ModelRequest {
+    let mut extra = Map::new();
+    extra.insert(
+        crate::runner::REPLAY_CACHE_KEY_PARAM.to_owned(),
+        Value::String(cache_key),
+    );
+    ModelRequest {
+        params: GenerationParams {
+            max_output_tokens: requested_output_tokens.unwrap_or(0),
+            temperature,
+            effort: (effort != "transport_default").then(|| effort.to_owned()),
+            extra,
+        },
+        ..ModelRequest::new(system_prompt, vec![Message::user(transcript)])
+    }
 }
 
 /// The message bytes a transport receives for a canonical transcript: the transcript itself,
