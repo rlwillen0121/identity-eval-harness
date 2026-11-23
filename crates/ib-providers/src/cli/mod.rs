@@ -114,8 +114,17 @@ pub const HOME_RELATIVE_VARS: &[&str] = &["XDG_CONFIG_HOME", "XDG_DATA_HOME", "X
 /// child process. Require a single-link regular file, open it without following links or blocking
 /// on special files, and enforce the same 16 MiB limit used for captured stdout and stderr.
 pub fn read_sidecar_text(path: &Path) -> std::io::Result<String> {
+    read_bounded_regular_text(path, MAX_SIDECAR_BYTES, "CLI sidecar", "16 MiB")
+}
+
+fn read_bounded_regular_text(
+    path: &Path,
+    max_bytes: usize,
+    description: &str,
+    limit_description: &str,
+) -> std::io::Result<String> {
     let before = fs::symlink_metadata(path)?;
-    validate_sidecar_metadata(&before)?;
+    validate_private_file_metadata(&before, max_bytes, description, limit_description)?;
 
     let mut options = OpenOptions::new();
     options.read(true);
@@ -126,7 +135,7 @@ pub fn read_sidecar_text(path: &Path) -> std::io::Result<String> {
     }
     let mut file = options.open(path)?;
     let opened = file.metadata()?;
-    validate_sidecar_metadata(&opened)?;
+    validate_private_file_metadata(&opened, max_bytes, description, limit_description)?;
 
     #[cfg(unix)]
     {
@@ -140,33 +149,38 @@ pub fn read_sidecar_text(path: &Path) -> std::io::Result<String> {
 
     let mut bytes = Vec::with_capacity(
         usize::try_from(opened.len())
-            .unwrap_or(MAX_SIDECAR_BYTES)
-            .min(MAX_SIDECAR_BYTES),
+            .unwrap_or(max_bytes)
+            .min(max_bytes),
     );
     file.by_ref()
-        .take(MAX_SIDECAR_BYTES as u64 + 1)
+        .take(max_bytes as u64 + 1)
         .read_to_end(&mut bytes)?;
-    if bytes.len() > MAX_SIDECAR_BYTES {
+    if bytes.len() > max_bytes {
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
-            "CLI sidecar exceeds the 16 MiB limit",
+            format!("{description} exceeds the {limit_description} limit"),
         ));
     }
-    validate_sidecar_metadata(&file.metadata()?)?;
+    validate_private_file_metadata(&file.metadata()?, max_bytes, description, limit_description)?;
     String::from_utf8(bytes).map_err(|error| std::io::Error::new(ErrorKind::InvalidData, error))
 }
 
-fn validate_sidecar_metadata(metadata: &fs::Metadata) -> std::io::Result<()> {
+fn validate_private_file_metadata(
+    metadata: &fs::Metadata,
+    max_bytes: usize,
+    description: &str,
+    limit_description: &str,
+) -> std::io::Result<()> {
     if !metadata.file_type().is_file() {
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
-            "CLI sidecar is not a regular file",
+            format!("{description} is not a regular file"),
         ));
     }
-    if metadata.len() > MAX_SIDECAR_BYTES as u64 {
+    if metadata.len() > max_bytes as u64 {
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
-            "CLI sidecar exceeds the 16 MiB limit",
+            format!("{description} exceeds the {limit_description} limit"),
         ));
     }
     #[cfg(unix)]
@@ -175,7 +189,7 @@ fn validate_sidecar_metadata(metadata: &fs::Metadata) -> std::io::Result<()> {
         if metadata.nlink() != 1 {
             return Err(std::io::Error::new(
                 ErrorKind::InvalidData,
-                "CLI sidecar must have exactly one link",
+                format!("{description} must have exactly one link"),
             ));
         }
     }
@@ -257,39 +271,42 @@ pub fn parse_json_payload(stdout: &str) -> Option<Map<String, Value>> {
     if let Some(whole) = load_object(text) {
         return Some(whole);
     }
-    let mut candidates = Vec::new();
+    let mut last_candidate: Option<Map<String, Value>> = None;
+    let mut last_result: Option<Map<String, Value>> = None;
     for raw_line in text.lines() {
         let line = raw_line.trim();
         if line.starts_with('{')
             && let Some(val) = load_object(line)
+            && let Some(previous) = last_candidate.replace(val)
+            && previous.get("type").and_then(Value::as_str) == Some("result")
         {
-            candidates.push(val);
+            last_result = Some(previous);
         }
     }
-    if candidates.is_empty() {
-        return None;
+    match last_candidate {
+        Some(candidate) if candidate.get("type").and_then(Value::as_str) == Some("result") => {
+            Some(candidate)
+        }
+        Some(candidate) => last_result.or(Some(candidate)),
+        None => None,
     }
-    if let Some(result_obj) = candidates
-        .iter()
-        .rev()
-        .find(|m| m.get("type").and_then(Value::as_str) == Some("result"))
-    {
-        return Some(result_obj.clone());
+}
+
+pub(crate) fn visit_jsonl(stdout: &str, mut visit: impl FnMut(&Map<String, Value>)) {
+    for raw_line in stdout.lines() {
+        let line = raw_line.trim();
+        if line.starts_with('{')
+            && let Some(value) = load_object(line)
+        {
+            visit(&value);
+        }
     }
-    candidates.pop()
 }
 
 #[must_use]
 pub fn parse_jsonl(stdout: &str) -> Vec<Map<String, Value>> {
     let mut events = Vec::new();
-    for raw_line in stdout.lines() {
-        let line = raw_line.trim();
-        if line.starts_with('{')
-            && let Some(val) = load_object(line)
-        {
-            events.push(val);
-        }
-    }
+    visit_jsonl(stdout, |event| events.push(event.clone()));
     events
 }
 
@@ -378,7 +395,7 @@ pub fn base_child_env(base: Option<&BTreeMap<String, String>>) -> BTreeMap<Strin
     let source = match base {
         Some(m) => m,
         None => {
-            owned = std::env::vars().collect();
+            owned = crate::env::unicode_env_snapshot();
             &owned
         }
     };
@@ -484,7 +501,7 @@ fn probe_version_uncached_with_limits(
         for line in text.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
-                return trimmed.to_string();
+                return redact(trimmed, Some(env), &[]);
             }
         }
     }
@@ -587,6 +604,70 @@ mod version_probe_tests {
             "not-installed"
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn version_probe_redacts_metadata_before_endpoint_identity() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let binary = temp.path().join("mock-sensitive-version.sh");
+        fs::write(&binary, "#!/bin/sh\nprintf '%s\\n' \"$VERSION_LINE\"\n")
+            .expect("write mock version binary");
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
+            .expect("make mock executable");
+        let marker = "synthetic-openrouter-version-marker";
+        let env = BTreeMap::from([
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+            ("OPENROUTER".to_string(), marker.to_string()),
+            ("VERSION_LINE".to_string(), marker.to_string()),
+        ]);
+
+        assert_eq!(
+            probe_version_uncached_with_limits(
+                &binary.to_string_lossy(),
+                &env,
+                Duration::from_secs(5),
+                64,
+            ),
+            "<redacted>"
+        );
+
+        let mut config = CliConfig::new("fixture", "mock", 1.0);
+        config.version = Some(marker.to_string());
+        config.environment = Some(env);
+        assert!(!format!("{config:?}").contains(marker));
+        let explicit_version_provider = CliProvider::new(claude::ClaudeAdapter, config);
+        assert_eq!(
+            explicit_version_provider
+                .resolved_version
+                .get()
+                .map(String::as_str),
+            Some("<redacted>")
+        );
+
+        let wrapper_binary = temp.path().join("mock-wrapper-version.sh");
+        fs::write(
+            &wrapper_binary,
+            "#!/bin/sh\nprintf 'sk-testsecretvalue1234\\n'\n",
+        )
+        .expect("write mock wrapper binary");
+        fs::set_permissions(&wrapper_binary, fs::Permissions::from_mode(0o755))
+            .expect("make wrapper executable");
+        let wrapper = CliProvider::new(
+            claude::ClaudeAdapter,
+            CliConfig::new(
+                "fixture",
+                wrapper_binary.to_string_lossy().into_owned(),
+                5.0,
+            ),
+        );
+        let _ = wrapper.endpoint_identity();
+        assert_eq!(
+            wrapper.resolved_version.get().map(String::as_str),
+            Some("<redacted>")
+        );
+    }
 }
 
 // --------------------------------------------------------------------------- stderr excerpts
@@ -614,11 +695,15 @@ fn windows_set(text: &str) -> HashSet<String> {
 
 #[must_use]
 pub fn scrub_stderr(stderr: &str, request: Option<&ModelRequest>, limit: usize) -> String {
+    tail(&strip_prompt_echoes(stderr, request), limit)
+}
+
+fn strip_prompt_echoes(stderr: &str, request: Option<&ModelRequest>) -> String {
     if stderr.trim().is_empty() {
         return String::new();
     }
     let Some(req) = request else {
-        return tail(stderr, limit);
+        return stderr.to_string();
     };
 
     let mut texts: Vec<&str> = Vec::with_capacity(1 + req.messages.len());
@@ -663,7 +748,7 @@ pub fn scrub_stderr(stderr: &str, request: Option<&ModelRequest>, limit: usize) 
     };
 
     let kept: Vec<&str> = stderr.lines().filter(|line| !echoes_prompt(line)).collect();
-    tail(&kept.join("\n"), limit)
+    kept.join("\n")
 }
 
 // --------------------------------------------------------------------------- call directories
@@ -709,7 +794,8 @@ pub fn remove_live_call_dirs() -> usize {
 
 #[must_use]
 pub fn owner_alive(path: &Path) -> Option<bool> {
-    let content = fs::read_to_string(path.join(OWNER_FILE)).ok()?;
+    let content =
+        read_bounded_regular_text(&path.join(OWNER_FILE), 32, "owner marker", "32-byte").ok()?;
     let pid: i32 = content.trim().parse().ok()?;
     if pid <= 0 {
         return None;
@@ -736,9 +822,24 @@ pub struct CallDirGuard {
 
 impl CallDirGuard {
     pub fn new(prefix: &str) -> std::io::Result<Self> {
-        let dir = tempfile::Builder::new().prefix(prefix).tempdir()?;
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(prefix);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            builder.permissions(fs::Permissions::from_mode(0o700));
+        }
+        let dir = builder.tempdir()?;
+        let mut owner_options = OpenOptions::new();
+        owner_options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            owner_options.mode(0o600);
+        }
+        let mut owner = owner_options.open(dir.path().join(OWNER_FILE))?;
+        std::io::Write::write_all(&mut owner, std::process::id().to_string().as_bytes())?;
         let raw_path = dir.keep();
-        let _ = fs::write(raw_path.join(OWNER_FILE), std::process::id().to_string());
         register_call_dir(&raw_path);
         let resolved_path = fs::canonicalize(&raw_path).unwrap_or_else(|_| raw_path.clone());
         Ok(Self {
@@ -815,12 +916,18 @@ pub fn sweep_stale_call_dirs(max_age_s: f64) -> usize {
 
 // --------------------------------------------------------------------------- isolation & credentials
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Invocation {
     pub argv: Vec<String>,
     pub stdin: Option<String>,
     pub raw: Map<String, Value>,
     pub home_files: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for Invocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Invocation").finish_non_exhaustive()
+    }
 }
 
 impl Invocation {
@@ -835,17 +942,31 @@ impl Invocation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CredentialLink {
     pub real: PathBuf,
     pub link: PathBuf,
     pub sync_back: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+impl std::fmt::Debug for CredentialLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialLink")
+            .field("sync_back", &self.sync_back)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Isolation {
     pub env: BTreeMap<String, String>,
     pub links: Vec<CredentialLink>,
+}
+
+impl std::fmt::Debug for Isolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Isolation").finish_non_exhaustive()
+    }
 }
 
 pub fn link_credentials(
@@ -905,19 +1026,11 @@ pub fn sync_back(links: &[CredentialLink]) {
         if !item.sync_back {
             continue;
         }
-        let Ok(meta) = fs::symlink_metadata(&item.link) else {
+        let Ok(text) = read_sidecar_text(&item.link) else {
             continue;
         };
-        if meta.file_type().is_symlink() || !meta.is_file() {
-            continue;
-        }
-        let Ok(content) = fs::read(&item.link) else {
-            continue;
-        };
-        let Ok(text) = std::str::from_utf8(&content) else {
-            continue;
-        };
-        let Some(parsed) = load_object(text) else {
+        let content = text.as_bytes();
+        let Some(parsed) = load_object(&text) else {
             continue;
         };
         if parsed.is_empty() {
@@ -969,7 +1082,7 @@ pub fn sync_back(links: &[CredentialLink]) {
             continue;
         };
         use std::io::Write as _;
-        if tmp.write_all(&content).is_ok() {
+        if tmp.write_all(content).is_ok() {
             let _ = tmp.persist(&item.real);
         }
     }
@@ -999,7 +1112,7 @@ impl std::fmt::Debug for CliConfig {
             .field("effort", &self.effort)
             .field("timeout_s", &self.timeout_s)
             .field("binary", &self.binary)
-            .field("version", &self.version)
+            .field("has_version", &self.version.is_some())
             .field("max_retries", &self.max_retries)
             .field("retry_base_delay_s", &self.retry_base_delay_s)
             .finish_non_exhaustive()
@@ -1100,7 +1213,7 @@ impl<A: CliAdapter> CliProvider<A> {
     pub fn new(adapter: A, config: CliConfig) -> Self {
         let resolved_version = OnceLock::new();
         if let Some(ref v) = config.version {
-            let _ = resolved_version.set(v.clone());
+            let _ = resolved_version.set(redact(v, config.environment.as_ref(), &[]));
         }
         Self {
             adapter,
@@ -1171,7 +1284,7 @@ impl<A: CliAdapter> CliProvider<A> {
         let source = match base.or(self.config.environment.as_ref()) {
             Some(m) => m,
             None => {
-                owned = std::env::vars().collect();
+                owned = crate::env::unicode_env_snapshot();
                 &owned
             }
         };
@@ -1337,7 +1450,15 @@ impl<A: CliAdapter> CliProvider<A> {
         let mut text = format!("{}: {message}", self.adapter.kind());
         if let Some(res) = result {
             let mut details = vec![format!("exit {}", res.returncode)];
-            let excerpt = scrub_stderr(&res.stderr, request, STDERR_EXCERPT_CHARS);
+            // Redact before taking the tail: the excerpt boundary can split a credential and
+            // leave a suffix that no longer matches the complete value.
+            let without_prompt_echoes = strip_prompt_echoes(&res.stderr, request);
+            let stderr = redact(
+                &without_prompt_echoes,
+                self.config.environment.as_ref(),
+                &[],
+            );
+            let excerpt = tail(&stderr, STDERR_EXCERPT_CHARS);
             if !excerpt.is_empty() {
                 details.push(format!("stderr: {excerpt}"));
             }
@@ -1564,6 +1685,16 @@ impl<A: CliAdapter> CliProvider<A> {
         )
         .await;
 
+        // The probe also asks for a marker in the subprocess cwd. Inspect its directory
+        // entry before adapter cleanup or dropping the call directory, without opening it.
+        if request.is_native_tool_probe()
+            && !matches!(fs::symlink_metadata(work_dir.join("canary.txt")), Err(e) if e.kind() == ErrorKind::NotFound)
+        {
+            response.raw.get_or_insert_with(Map::new).insert(
+                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                Value::Bool(true),
+            );
+        }
         sync_back(&isolation.links);
         self.adapter.after_call(&work_dir, &env);
 
@@ -1639,6 +1770,19 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
                 Value::Array(ignored.into_iter().map(Value::String).collect()),
             );
             response.raw = Some(raw);
+        }
+        if let Some(raw) = response.raw.take() {
+            response.raw = Some(crate::subprocess::redact_diagnostics_map(
+                &raw,
+                self.config.environment.as_ref(),
+                &[],
+            ));
+        }
+        for text in [&mut response.stop_reason, &mut response.served_model]
+            .into_iter()
+            .flatten()
+        {
+            *text = redact(text, self.config.environment.as_ref(), &[]);
         }
         response
     }

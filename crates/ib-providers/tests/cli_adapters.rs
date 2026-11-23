@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use ib_providers::base::{Message, ModelRequest, Provider};
 use ib_providers::cli::agy::{
     AGENT_FILE, AGY_CAPACITY_ERROR_CODE, AGY_MAX_USER_MESSAGE_BYTES, AgyAdapter, AgyCliProvider,
-    agent_definition, served_model,
+    agent_definition, recover_completed_agent_text, served_model,
 };
 use ib_providers::cli::claude::{ClaudeAdapter, ClaudeCliProvider};
 use ib_providers::cli::codex::{
@@ -18,7 +18,10 @@ use ib_providers::cli::codex::{
 use ib_providers::cli::cursor::{CursorAdapter, CursorCliProvider, chat_dir, cursor_config_dir};
 use ib_providers::cli::grok::{GrokAdapter, GrokCliProvider};
 use ib_providers::cli::muse::{MuseAdapter, MuseCliProvider, trace_events};
-use ib_providers::cli::{CliConfig, MAX_SIDECAR_BYTES, NEUTRAL_SYSTEM, read_sidecar_text};
+use ib_providers::cli::{
+    CliAdapter, CliConfig, CredentialLink, Invocation, Isolation, MAX_SIDECAR_BYTES,
+    NEUTRAL_SYSTEM, read_sidecar_text,
+};
 use ib_providers::subprocess::{Command, ProcessResult, ProcessRunner};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -98,6 +101,294 @@ fn caller_environment_reaches_cli_allowlist_without_global_mutation_or_debug_lea
         provider.child_env(Some(&explicit))["LANG"],
         "explicit-override"
     );
+}
+
+#[test]
+fn cli_sensitive_struct_debug_output_omits_prompts_credentials_and_paths() {
+    let marker = "synthetic-cli-debug-marker";
+    let invocation = Invocation {
+        argv: vec!["cli".to_string(), marker.to_string()],
+        stdin: Some(marker.to_string()),
+        raw: serde_json::Map::from_iter([(
+            "private".to_string(),
+            Value::String(marker.to_string()),
+        )]),
+        home_files: BTreeMap::from([("config/private.json".to_string(), marker.to_string())]),
+    };
+    assert!(!format!("{invocation:?}").contains(marker));
+
+    let link = CredentialLink {
+        real: Path::new("/Users/private-user/.config/cli/auth.json").to_path_buf(),
+        link: Path::new("/tmp/private-call/home/auth.json").to_path_buf(),
+        sync_back: true,
+    };
+    let isolation = Isolation {
+        env: BTreeMap::from([("CLAUDE_CODE_OAUTH_TOKEN".to_string(), marker.to_string())]),
+        links: vec![link.clone()],
+    };
+    let isolation_debug = format!("{isolation:?}");
+    assert!(!isolation_debug.contains(marker));
+    assert!(!isolation_debug.contains("private-user"));
+    assert!(!format!("{link:?}").contains("private-user"));
+}
+
+#[tokio::test]
+async fn cli_diagnostics_redact_environment_secrets_without_changing_response_text() {
+    let secret = "synthetic-openrouter-secret-marker";
+    let runner = FakeRunner::single(move |_cmd| ProcessResult {
+        returncode: 0,
+        stdout: {
+            let model_usage = serde_json::Map::from_iter([(secret.to_string(), json!({}))]);
+            json!({
+                "type": "result",
+                "subtype": "success",
+                "is_error": false,
+                "result": "answer remains byte-for-byte",
+                "stop_reason": secret,
+                "modelUsage": model_usage
+            })
+            .to_string()
+        },
+        stderr: String::new(),
+        duration_s: 0.01,
+        timed_out: false,
+        launch_error: None,
+    });
+    let mut config = CliConfig::new("fixture-model", "unused", 5.0);
+    config.runner = runner;
+    config.version = Some("fixture-version".to_string());
+    config.environment = Some(BTreeMap::from([(
+        "OPENROUTER".to_string(),
+        secret.to_string(),
+    )]));
+
+    let provider = ClaudeCliProvider::new(ClaudeAdapter, config);
+    let response = provider.complete(&make_request("prompt", "system")).await;
+
+    assert_eq!(
+        response.text.as_deref(),
+        Some("answer remains byte-for-byte")
+    );
+    assert_eq!(response.stop_reason.as_deref(), Some("<redacted>"));
+    assert_eq!(response.served_model.as_deref(), Some("<redacted>"));
+    let raw = response.raw.unwrap();
+    assert_eq!(raw["stop_reason"], "<redacted>");
+    assert!(!Value::Object(raw.clone()).to_string().contains(secret));
+}
+
+#[test]
+fn cli_error_redacts_before_taking_stderr_excerpt() {
+    let marker = "opaque-test-diagnostic-marker";
+    let mut config = CliConfig::new("fixture-model", "unused", 1.0);
+    config.environment = Some(BTreeMap::from([("OPENROUTER".into(), marker.into())]));
+    let provider = ClaudeCliProvider::new(ClaudeAdapter, config);
+    let result = ProcessResult {
+        returncode: 1,
+        stderr: format!("{marker}{}", " ".repeat(285)),
+        stdout: String::new(),
+        duration_s: 0.0,
+        timed_out: false,
+        launch_error: None,
+    };
+
+    let message = provider.error_text("failed", Some(&result), None);
+    assert!(!message.contains("ostic-marker"));
+}
+
+#[test]
+fn cli_error_removes_prompt_echo_before_redacting_its_secret_value() {
+    let secret = "synthetic-openrouter-secret-marker";
+    let prompt = format!("private-prompt-prefix {secret} private-prompt-suffix");
+    let mut config = CliConfig::new("fixture-model", "unused", 1.0);
+    config.environment = Some(BTreeMap::from([("OPENROUTER".into(), secret.into())]));
+    let provider = ClaudeCliProvider::new(ClaudeAdapter, config);
+    let request = make_request(&prompt, "");
+    let result = ProcessResult {
+        returncode: 1,
+        stderr: format!("diagnostic\n{prompt}"),
+        stdout: String::new(),
+        duration_s: 0.0,
+        timed_out: false,
+        launch_error: None,
+    };
+
+    let message = provider.error_text("failed", Some(&result), Some(&request));
+    assert!(message.contains("diagnostic"));
+    assert!(!message.contains(secret));
+    assert!(!message.contains("private-prompt-prefix"));
+    assert!(!message.contains("private-prompt-suffix"));
+}
+
+#[test]
+fn jsonl_cli_adapters_reduce_irrelevant_events_without_changing_final_records() {
+    let request = make_request("fixture", "SYS");
+    let config = CliConfig::new("fixture-model", "unused", 5.0);
+    let io_dir = TempDir::new().unwrap();
+
+    let mut agy_stdout = String::new();
+    for index in 0..2_048 {
+        agy_stdout.push_str(&json!({"event":"unrelated","index":index}).to_string());
+        agy_stdout.push('\n');
+    }
+    agy_stdout.push_str(
+        &json!({
+            "event":"result",
+            "result":{"status":"SUCCESS","response":"agy answer","usage":{"input_tokens":3,"output_tokens":2}}
+        })
+        .to_string(),
+    );
+    let agy = AgyAdapter.parse(
+        &config,
+        &ProcessResult {
+            returncode: 0,
+            stdout: agy_stdout,
+            stderr: String::new(),
+            duration_s: 0.0,
+            timed_out: false,
+            launch_error: None,
+        },
+        &request,
+        io_dir.path(),
+    );
+    assert_eq!(agy.text.as_deref(), Some("agy answer"));
+
+    let mut codex_stdout = String::new();
+    for index in 0..40 {
+        codex_stdout.push_str(
+            &json!({"type":"turn.completed","usage":{"input_tokens":index,"output_tokens":1}})
+                .to_string(),
+        );
+        codex_stdout.push('\n');
+    }
+    codex_stdout.push_str(
+        &json!({"type":"item.completed","item":{"type":"agent_message","text":"codex answer"}})
+            .to_string(),
+    );
+    let codex = CodexAdapter.parse(
+        &config,
+        &ProcessResult {
+            returncode: 0,
+            stdout: codex_stdout,
+            stderr: String::new(),
+            duration_s: 0.0,
+            timed_out: false,
+            launch_error: None,
+        },
+        &request,
+        io_dir.path(),
+    );
+    assert_eq!(codex.text.as_deref(), Some("codex answer"));
+    assert_eq!(
+        codex.raw.as_ref().unwrap()["raw_usage"]
+            .as_array()
+            .unwrap()
+            .len(),
+        32
+    );
+
+    let mut muse_stderr = String::new();
+    for index in 0..2_048 {
+        muse_stderr.push_str(&format!(
+            "SSE RESPONSE: event: ignored\\ndata: {}\n",
+            json!({"type":"ignored","index":index})
+        ));
+    }
+    muse_stderr.push_str("REQUEST: {\"instructions\":\"SYS\",\"tools\":[]}\n");
+    muse_stderr.push_str(&format!(
+        "SSE RESPONSE: event: response.completed\\ndata: {}\n",
+        json!({
+            "type":"response.completed",
+            "response":{"model":"fixture-model","status":"completed","usage":{"input_tokens":4,"output_tokens":2}}
+        })
+    ));
+    muse_stderr.push_str(&format!(
+        "SSE RESPONSE: event: response.subscription_usage\\ndata: {}\n",
+        json!({"type":"response.subscription_usage","subscription":{"active":true,"used_percent":1.0}})
+    ));
+    let muse = MuseAdapter { real_home: None }.parse(
+        &config,
+        &ProcessResult {
+            returncode: 0,
+            stdout: json!({
+                "payload_type":"run.terminal.completed",
+                "payload":{"terminal":"completed","text":"muse answer"}
+            })
+            .to_string(),
+            stderr: muse_stderr,
+            duration_s: 0.0,
+            timed_out: false,
+            launch_error: None,
+        },
+        &request,
+        io_dir.path(),
+    );
+    assert_eq!(muse.text.as_deref(), Some("muse answer"));
+    assert!(muse.error.is_none());
+    io_dir.close().unwrap();
+
+    let mut legitimate_steps = vec![
+        json!({
+            "event":"step_update",
+            "step_update":{"step_index":1,"step_type":"agent_response","text_delta":"first ","state":"IN_PROGRESS"}
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    ];
+    legitimate_steps.extend((2..=257).map(|step_index| {
+        json!({
+            "event":"step_update",
+            "step_update":{"step_index":step_index,"step_type":"agent_response","text_delta":"interleaved noise","state":"DONE"}
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    }));
+    legitimate_steps.push(
+        json!({
+            "event":"step_update",
+            "step_update":{"step_index":1,"step_type":"agent_response","text_delta":"interleaved chunk","state":"DONE"}
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
+    let expected_recovered = "first interleaved chunk";
+    assert_eq!(
+        recover_completed_agent_text(&legitimate_steps).as_deref(),
+        Some(expected_recovered)
+    );
+
+    let mut agy_recovery_stdout = legitimate_steps
+        .iter()
+        .map(|event| Value::Object(event.clone()))
+        .map(|event| event.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    agy_recovery_stdout.push('\n');
+    agy_recovery_stdout.push_str(
+        &json!({
+            "event":"result",
+            "result":{"status":"FAILURE","error":"function call is empty - no input to parse"}
+        })
+        .to_string(),
+    );
+    let agy_recovery_io = TempDir::new().unwrap();
+    let recovered = AgyAdapter.parse(
+        &config,
+        &ProcessResult {
+            returncode: 0,
+            stdout: agy_recovery_stdout,
+            stderr: String::new(),
+            duration_s: 0.0,
+            timed_out: false,
+            launch_error: None,
+        },
+        &request,
+        agy_recovery_io.path(),
+    );
+    assert_eq!(recovered.text.as_deref(), Some(expected_recovered));
+    assert!(recovered.error.is_none());
 }
 
 // --------------------------------------------------------------------------- agy_cli
@@ -748,4 +1039,56 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
         mr.raw.as_ref().unwrap()["subscription_usage"],
         json!({"used_percent": 2.5, "active": true})
     );
+}
+
+#[tokio::test]
+async fn native_probe_observes_cli_cwd_marker_and_structured_tool_events() {
+    for (cwd_marker, event_kind, expected) in [
+        (true, "agent_message", true),
+        (false, "file_change", true),
+        (false, "agent_message", false),
+    ] {
+        let runner =
+            FakeRunner::single(move |cmd| {
+                if cwd_marker {
+                    fs::write(cmd.cwd.join("canary.txt"), b"fixture").unwrap();
+                }
+                let stdout = [
+                json!({"type":"item.completed","item":{"type":event_kind,"text":"file_change"}}),
+                json!({"type":"item.completed","item":{"type":"agent_message","text":"done"}}),
+                json!({"type":"turn.completed","usage":{}}),
+            ].map(|event| event.to_string()).join("\n");
+                ProcessResult {
+                    stdout,
+                    returncode: 0,
+                    stderr: String::new(),
+                    duration_s: 0.0,
+                    timed_out: false,
+                    launch_error: None,
+                }
+            });
+        let mut config = CliConfig::new("fixture", "never-executed", 1.0);
+        config.runner = runner;
+        config.version = Some("offline".into());
+        config.max_retries = 0;
+        let mut req = make_request("fixture", "SYS");
+        req.params.extra.insert(
+            ib_providers::replay::CACHE_KEY_PARAM.into(),
+            ib_providers::base::NATIVE_TOOL_PROBE_KEY.into(),
+        );
+        let result = CodexCliProvider::new(CodexAdapter, config)
+            .complete(&req)
+            .await;
+        assert!(result.ok());
+        assert_eq!(result.text.as_deref(), Some("done"));
+        assert_eq!(
+            result
+                .raw
+                .as_ref()
+                .and_then(|r| r.get(ib_providers::base::NATIVE_TOOL_ACTIVITY))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            expected
+        );
+    }
 }
