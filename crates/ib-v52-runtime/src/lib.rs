@@ -4,6 +4,7 @@ pub mod baselines;
 pub mod calibration;
 pub mod config;
 pub mod control;
+mod failure_taxonomy;
 pub mod fsutil;
 pub mod integrity;
 pub mod leaderboard;

@@ -24,6 +24,7 @@ use ib_v52_runtime::integrity::{current_binary_sha256, run_endpoint_identity, un
 use ib_v52_runtime::leaderboard::{
     LeaderboardOptionsV52, build_leaderboard_v52, write_leaderboard_v52,
 };
+use ib_v52_runtime::report::report_v52_run_with_slot_rows;
 use ib_v52_runtime::{
     CalibrationReportOptionsV52, LoadedRunConfigV52, ProbeOptionsV52, RunControlV52,
     RunV52SuiteOptions, build_calibration_report_v52, load_pricing_v52, load_probe_receipt,
@@ -176,6 +177,9 @@ pub struct V52ReportArgs {
     pub run: PathBuf,
     #[arg(long, short)]
     pub out: Option<PathBuf>,
+    /// Include per-slot rows (public suites only, SPEC-v5.2 §10.3).
+    #[arg(long)]
+    pub include_slot_rows: bool,
 }
 
 #[derive(Debug, Args)]
@@ -869,7 +873,14 @@ fn report(root: &Path, args: V52ReportArgs) -> Result<Value> {
         .as_deref()
         .map(|p| paths::resolve(root, p))
         .unwrap_or_else(|| run_dir.clone());
-    let summary = report_v52_run(&run_dir, &out_dir)?;
+    let summary = report_v52_run_with_slot_rows(&run_dir, &out_dir, args.include_slot_rows)
+        .map_err(|e| {
+            if e.to_string().contains("withheld until sunset") {
+                usage_error(e.to_string())
+            } else {
+                e
+            }
+        })?;
     Ok(json!({
         "summary_path": out_dir.join("summary.json"),
         "report_path": out_dir.join("report.md"),
