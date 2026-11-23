@@ -142,6 +142,12 @@ Root: `{"schema_version":"v5.2","transforms":{"<name>":<TransformExprV52>}}`
 ```
 - `ConnectorKindV52` (alphabetical): `"ad_ldap"`, `"aws_iam_sso"`, `"custom_rest"`, `"entra_graph"`, `"epic_emp_ser"`, `"sap_bapi_cua"`.
 - `PaginationKindV52` (alphabetical): `"cursor_token"`, `"link_header"`, `"none_single_page"`, `"offset_limit"`.
+- Pagination kinds. `cursor_response_field` names the response field that carries the continuation value, and `cursor_request_param` names the request parameter that returns it:
+  - `"cursor_token"`: the response returns an opaque token and the next request sends that token.
+  - `"offset_limit"`: the request sends a numeric row offset and the response returns the next offset. Both fields are set.
+  - `"link_header"`: the response returns a complete next-page link, either an HTTP `Link` header or a body link field such as OData `@odata.nextLink`. Both fields are set: the link field, and the continuation parameter carried inside the link.
+  - `"none_single_page"`: one request returns everything. Both fields are `null` and `page_size` is `0`.
+- A nested response field is written as a dot-separated path, for example `"meta.next_cursor"`.
 - Unlisted affiliations in `ad_active_ou_by_affiliation` fall back to `OU=Users,<ad_domain_dn>`.
 
 ### 3.6 `config/attribute_sync.json`
