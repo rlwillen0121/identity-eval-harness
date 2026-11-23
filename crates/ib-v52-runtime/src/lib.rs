@@ -5,6 +5,7 @@ pub mod config;
 pub mod fsutil;
 pub mod integrity;
 pub mod leaderboard;
+pub mod manifest;
 pub mod metrics;
 pub mod mutations;
 pub mod opening;

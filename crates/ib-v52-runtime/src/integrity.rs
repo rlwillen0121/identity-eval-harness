@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use ib_core::hashing::sha256_hex;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::config::LoadedV52Dataset;
@@ -488,19 +488,6 @@ pub fn utc_timestamp(unix_secs: u64) -> String {
 #[must_use]
 pub fn run_endpoint_identity(transport_id: &str, provider_endpoint_identity: &str) -> String {
     sha256_hex(format!("{transport_id}|{provider_endpoint_identity}").as_bytes())
-}
-
-/// JSON summary of seal digests for manifests.
-#[must_use]
-pub fn seal_summary_json(seal: &SealDigestsV52) -> Value {
-    json!({
-        "suite_id": seal.suite_id,
-        "episodes_sha256": seal.episodes_sha256,
-        "oracles_sha256": seal.oracles_sha256,
-        "spec_sha256": seal.spec_sha256,
-        "contract_id": seal.contract_id,
-        "protocol_id": seal.protocol_id,
-    })
 }
 
 #[cfg(test)]
