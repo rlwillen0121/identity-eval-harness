@@ -418,7 +418,7 @@ fn eligibility_item6_withheld_bundle(run: &LoadedRunV52) -> Vec<IneligibilityRea
 
 /// §10.1 item 4: the run directory holds the exact receipt bound into its fingerprint, and the
 /// receipt passes the run binding (which includes the §7.2 context-window minimum).
-fn eligibility_item4_probe_receipt(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
+pub(crate) fn eligibility_item4_probe_receipt(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
     let Some(expected) = run.manifest_str("receipt_sha256") else {
         return vec![reason(
             4,

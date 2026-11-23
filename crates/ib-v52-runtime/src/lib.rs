@@ -1,6 +1,7 @@
 //! Virtual workspace tools, provider agent loop, platform reference, validation, and report runner for IdentityBench v5.2.
 
 pub mod baselines;
+pub mod calibration;
 pub mod config;
 pub mod control;
 pub mod fsutil;
@@ -23,6 +24,9 @@ pub mod workspace;
 pub const PLATFORM_REFERENCE_V52: &str = include_str!("platform_reference_v52.md");
 
 pub use baselines::{BaselineKindV52, ConstructedBaselineV52, construct_baseline_v52};
+pub use calibration::{
+    CalibrationReportOptionsV52, build_calibration_report_v52, write_calibration_report_v52,
+};
 pub use config::{
     LoadedPricingV52, LoadedRunConfigV52, LoadedV52Dataset, PricingArtifactV52, PricingRatesV52,
     PricingTableEntryV52, RunConfigV52, load_pricing_v52, load_run_config_v52, load_v52_dataset,
