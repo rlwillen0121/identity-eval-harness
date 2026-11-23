@@ -1,6 +1,6 @@
 //! `agy -p` (Google Antigravity CLI, headless) provider.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
     CliAdapter, CliConfig, CliProvider, Invocation, Isolation, NEUTRAL_SYSTEM, as_dict, as_int,
-    parse_jsonl, read_sidecar_text, render_transcript, structured_text,
+    read_sidecar_text, render_transcript, structured_text, visit_jsonl,
 };
 use crate::subprocess::{ProcessResult, user_home_dir};
 
@@ -67,46 +67,64 @@ pub fn served_model(log_text: &str) -> Option<String> {
 
 #[must_use]
 pub fn recover_completed_agent_text(events: &[Map<String, Value>]) -> Option<String> {
-    let mut chunks_by_step: HashMap<i64, String> = HashMap::new();
-    let mut done_steps: HashSet<i64> = HashSet::new();
-    let mut last_step_index: Option<i64> = None;
-
+    let final_step_index = events.iter().rev().find_map(agent_response_step_index)?;
+    let mut text = CompletedStepText::default();
     for event in events {
-        if event.get("event").and_then(Value::as_str) != Some("step_update") {
-            continue;
-        }
-        let su = as_dict(event.get("step_update"));
-        let Some(step_index) = su.get("step_index").and_then(Value::as_i64) else {
-            continue;
-        };
-        if su.get("step_type").and_then(Value::as_str) != Some("agent_response") {
-            continue;
-        }
-        last_step_index = Some(step_index);
-        if let Some(delta) = su.get("text_delta").and_then(Value::as_str) {
-            chunks_by_step
-                .entry(step_index)
-                .or_default()
-                .push_str(delta);
-        }
-        if su.get("state").and_then(Value::as_str) == Some("DONE") {
-            done_steps.insert(step_index);
+        if agent_response_step_index(event) == Some(final_step_index) {
+            text.append(event);
         }
     }
+    text.finish()
+}
 
-    let last_idx = last_step_index?;
-    if !done_steps.contains(&last_idx) {
+fn agent_response_step_index(event: &Map<String, Value>) -> Option<i64> {
+    if event.get("event").and_then(Value::as_str) != Some("step_update") {
         return None;
     }
-    let candidate = chunks_by_step
-        .get(&last_idx)
-        .map(|s| s.trim())
-        .unwrap_or("");
-    if candidate.is_empty() {
-        None
-    } else {
-        Some(candidate.to_string())
+    let update = event.get("step_update")?.as_object()?;
+    if update.get("step_type").and_then(Value::as_str) != Some("agent_response") {
+        return None;
     }
+    update.get("step_index").and_then(Value::as_i64)
+}
+
+#[derive(Default)]
+struct CompletedStepText {
+    chunks: String,
+    done: bool,
+}
+
+impl CompletedStepText {
+    fn append(&mut self, event: &Map<String, Value>) {
+        let Some(update) = event.get("step_update").and_then(Value::as_object) else {
+            return;
+        };
+        if let Some(delta) = update.get("text_delta").and_then(Value::as_str) {
+            self.chunks.push_str(delta);
+        }
+        if update.get("state").and_then(Value::as_str) == Some("DONE") {
+            self.done = true;
+        }
+    }
+
+    fn finish(self) -> Option<String> {
+        if !self.done {
+            return None;
+        }
+        let candidate = self.chunks.trim();
+        (!candidate.is_empty()).then(|| candidate.to_string())
+    }
+}
+
+fn recover_agent_text_from_jsonl(stdout: &str, final_step_index: Option<i64>) -> Option<String> {
+    let final_step_index = final_step_index?;
+    let mut text = CompletedStepText::default();
+    visit_jsonl(stdout, |event| {
+        if agent_response_step_index(event) == Some(final_step_index) {
+            text.append(event);
+        }
+    });
+    text.finish()
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -256,14 +274,18 @@ impl CliAdapter for AgyAdapter {
         io_dir: &Path,
     ) -> ModelResponse {
         let helper = CliProvider::new(*self, CliConfig::new("", "", 0.0));
-        let events = parse_jsonl(&result.stdout);
-        let results: Vec<Map<String, Value>> = events
-            .iter()
-            .filter(|e| e.get("event").and_then(Value::as_str) == Some("result"))
-            .map(|e| as_dict(e.get("result")))
-            .collect();
+        let mut result_payload: Option<Map<String, Value>> = None;
+        let mut final_step_index = None;
+        visit_jsonl(&result.stdout, |event| {
+            if let Some(step_index) = agent_response_step_index(event) {
+                final_step_index = Some(step_index);
+            }
+            if event.get("event").and_then(Value::as_str) == Some("result") {
+                result_payload = Some(as_dict(event.get("result")));
+            }
+        });
 
-        if results.is_empty() {
+        let Some(payload) = result_payload.as_ref() else {
             let mut failed = helper.fail("no result event on stdout", Some(result), Some(request));
             let mut meta = Map::new();
             meta.insert("cli_buffered_error".to_string(), Value::Bool(true));
@@ -277,9 +299,8 @@ impl CliAdapter for AgyAdapter {
             );
             failed.raw = Some(meta);
             return failed;
-        }
+        };
 
-        let payload = &results[results.len() - 1];
         let usage_in = as_dict(payload.get("usage"));
         let cache_read = as_int(usage_in.get("cache_read_tokens"));
         let parsed = payload
@@ -335,7 +356,8 @@ impl CliAdapter for AgyAdapter {
                 && err_str
                     .to_lowercase()
                     .contains("function call is empty - no input to parse")
-                && let Some(recovered) = recover_completed_agent_text(&events)
+                && let Some(recovered) =
+                    recover_agent_text_from_jsonl(&result.stdout, final_step_index)
             {
                 response.text = Some(recovered);
                 response.parsed = None;

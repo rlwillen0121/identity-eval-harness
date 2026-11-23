@@ -349,7 +349,7 @@ pub fn generate_usernames(
                 if !forbidden_handles.contains(&candidate.to_ascii_lowercase()) {
                     break candidate;
                 }
-                counter = counter.saturating_add(1);
+                counter = next_collision_counter(counter)?;
             }
         };
 
@@ -377,7 +377,7 @@ pub fn generate_usernames(
                     {
                         break cand_upn;
                     }
-                    counter = counter.saturating_add(1);
+                    counter = next_collision_counter(counter)?;
                 }
             }
         } else {
@@ -391,7 +391,7 @@ pub fn generate_usernames(
                     if !forbidden_upns.contains(&cand_upn.to_ascii_lowercase()) {
                         break cand_upn;
                     }
-                    counter = counter.saturating_add(1);
+                    counter = next_collision_counter(counter)?;
                 }
             }
         };
@@ -438,4 +438,19 @@ fn join_dot(a: &str, b: &str) -> String {
 
 fn truncate_chars(s: &str, max_len: usize) -> String {
     s.chars().take(max_len).collect()
+}
+
+fn next_collision_counter(counter: u32) -> Result<u32, String> {
+    counter
+        .checked_add(1)
+        .ok_or_else(|| "username collision counter exhausted".to_owned())
+}
+
+#[cfg(test)]
+mod security_tests {
+    #[test]
+    fn collision_counter_exhaustion_returns_instead_of_looping() {
+        assert_eq!(super::next_collision_counter(u32::MAX - 1), Ok(u32::MAX));
+        assert!(super::next_collision_counter(u32::MAX).is_err());
+    }
 }

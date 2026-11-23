@@ -6,7 +6,7 @@
 //!   and reported as problems.
 
 use std::collections::BTreeMap;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -18,11 +18,18 @@ static EXPORT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^export\s+").expect("valid export regex"));
 static INLINE_COMMENT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?:^|\s)#").expect("valid inline comment regex"));
+const MAX_ENV_FILE_BYTES: usize = 1024 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EnvFile {
     pub values: BTreeMap<String, String>,
     pub problems: Vec<String>,
+}
+
+impl std::fmt::Debug for EnvFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EnvFile").finish_non_exhaustive()
+    }
 }
 
 fn double_quoted(body: &str) -> Option<(String, &str)> {
@@ -183,8 +190,8 @@ pub fn load_env_file_into(
     if !file.is_file() {
         return (Vec::new(), Vec::new());
     }
-    let bytes = match std::fs::read(file) {
-        Ok(b) => b,
+    let input = match ib_core::artifact::regular_file(file) {
+        Ok(file) => file,
         Err(err) => {
             let cls = match err.kind() {
                 ErrorKind::PermissionDenied => "PermissionError",
@@ -198,6 +205,53 @@ pub fn load_env_file_into(
             );
         }
     };
+    let size = match input.metadata() {
+        Ok(metadata) => metadata.len(),
+        Err(err) => {
+            let cls = match err.kind() {
+                ErrorKind::PermissionDenied => "PermissionError",
+                ErrorKind::NotFound => "FileNotFoundError",
+                ErrorKind::IsADirectory => "IsADirectoryError",
+                _ => "OSError",
+            };
+            return (
+                Vec::new(),
+                vec![format!("unreadable ({cls}); file skipped")],
+            );
+        }
+    };
+    if size > MAX_ENV_FILE_BYTES as u64 {
+        return (
+            Vec::new(),
+            vec![format!(
+                "file exceeds the {MAX_ENV_FILE_BYTES} byte limit; file skipped"
+            )],
+        );
+    }
+    let mut bytes = Vec::new();
+    if let Err(err) = input
+        .take((MAX_ENV_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+    {
+        let cls = match err.kind() {
+            ErrorKind::PermissionDenied => "PermissionError",
+            ErrorKind::NotFound => "FileNotFoundError",
+            ErrorKind::IsADirectory => "IsADirectoryError",
+            _ => "OSError",
+        };
+        return (
+            Vec::new(),
+            vec![format!("unreadable ({cls}); file skipped")],
+        );
+    }
+    if bytes.len() > MAX_ENV_FILE_BYTES {
+        return (
+            Vec::new(),
+            vec![format!(
+                "file exceeds the {MAX_ENV_FILE_BYTES} byte limit; file skipped"
+            )],
+        );
+    }
     let text = match std::str::from_utf8(&bytes) {
         Ok(s) => s.strip_prefix('\u{feff}').unwrap_or(s),
         Err(_) => {

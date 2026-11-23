@@ -20,7 +20,10 @@ use crate::http::{
     MAX_PROVIDER_RESPONSE_BYTES, PLACEHOLDER_API_KEY, Redactor, env_var, is_vendor_host,
     read_bounded_response_body, redirect_provider_error, status_error_class,
 };
-use crate::json::{bounded_token_count, load_object, raw_usage_payload, sanitize_response};
+use crate::json::{
+    BoundedJsonError, MAX_RESPONSE_DEPTH, MAX_RESPONSE_NODES, bounded_token_count, load_object,
+    parse_bounded_json, raw_usage_payload, sanitize_response,
+};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 pub const DEFAULT_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
@@ -30,17 +33,112 @@ pub const UNPARSED_ARGUMENTS_KEY: &str = "_unparsed_arguments";
 const VENDOR_HOST: &str = "api.openai.com";
 pub const NO_TEMPERATURE_MODELS: &[&str] = &["gpt-5", "o1", "o3", "o4"];
 
-const CREDENTIAL_HEADERS: &[&str] = &[
-    "authorization",
-    "api-key",
-    "x-api-key",
-    "x-goog-api-key",
-    "cookie",
-    "set-cookie",
-    "proxy-authorization",
-    "x-auth-token",
-    "x-access-token",
-];
+fn credential_header_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "www-authenticate"
+            | "proxy-authenticate"
+            | "api-key"
+            | "x-api-key"
+            | "x-goog-api-key"
+            | "anthropic-api-key"
+            | "cookie"
+            | "set-cookie"
+    ) {
+        return true;
+    }
+    let chars: Vec<char> = name.chars().collect();
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    for (index, ch) in chars.iter().copied().enumerate() {
+        if !ch.is_ascii_alphanumeric() {
+            if !current.is_empty() {
+                parts.push(std::mem::take(&mut current).to_ascii_lowercase());
+            }
+            continue;
+        }
+        let previous = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+        let next = chars.get(index + 1).copied();
+        let camel_boundary = previous.is_some_and(|prev| {
+            (prev.is_ascii_lowercase() || prev.is_ascii_digit()) && ch.is_ascii_uppercase()
+        }) || (previous.is_some_and(|prev| prev.is_ascii_uppercase())
+            && ch.is_ascii_uppercase()
+            && next.is_some_and(|next| next.is_ascii_lowercase()));
+        if camel_boundary && !current.is_empty() {
+            parts.push(std::mem::take(&mut current).to_ascii_lowercase());
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        parts.push(current.to_ascii_lowercase());
+    }
+    if parts.iter().any(|part| {
+        matches!(
+            part.as_str(),
+            "auth"
+                | "authz"
+                | "authenticate"
+                | "authentication"
+                | "authorization"
+                | "token"
+                | "secret"
+                | "password"
+                | "passwd"
+                | "credential"
+                | "credentials"
+                | "cookie"
+        )
+    }) {
+        return true;
+    }
+    (parts
+        .windows(2)
+        .any(|pair| pair[0] == "api" && pair[1] == "key")
+        && !parts
+            .windows(3)
+            .any(|triple| triple[0] == "api" && triple[1] == "key" && triple[2] == "id"))
+        || parts
+            .windows(2)
+            .any(|pair| pair[0] == "client" && pair[1] == "secret")
+        || parts.iter().any(|part| {
+            matches!(
+                part.as_str(),
+                "apikey" | "authtoken" | "accesstoken" | "refreshtoken" | "clientsecret"
+            )
+        })
+        || parts.iter().enumerate().any(|(index, part)| {
+            part == "key"
+                && !parts
+                    .get(index + 1)
+                    .is_some_and(|next| matches!(next.as_str(), "id" | "name" | "type" | "version"))
+        })
+}
+
+fn credential_auth_scheme(value: &str) -> bool {
+    let mut words = value.split_ascii_whitespace();
+    let Some(scheme) = words.next() else {
+        return false;
+    };
+    matches!(
+        scheme.to_ascii_lowercase().as_str(),
+        "bearer"
+            | "basic"
+            | "token"
+            | "apikey"
+            | "api-key"
+            | "oauth"
+            | "oauth1"
+            | "oauth2"
+            | "digest"
+            | "negotiate"
+            | "signature"
+            | "hmac"
+            | "aws4-hmac-sha256"
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -90,10 +188,9 @@ pub fn headers_problem(value: &Value) -> Option<String> {
         if name.trim().is_empty() || !val.is_string() {
             return Some("must map non-empty header names to string values".to_string());
         }
-        let lower = name.to_lowercase();
-        if CREDENTIAL_HEADERS.contains(&lower.as_str()) {
+        if credential_header_name(name) || val.as_str().is_some_and(credential_auth_scheme) {
             return Some(format!(
-                "must not set {name:?}: credentials come from api_key_env"
+                "must not set credential-bearing header {name:?}: credentials come from api_key_env"
             ));
         }
     }
@@ -263,7 +360,7 @@ fn gateway_raw(reply: &Map<String, Value>) -> Map<String, Value> {
     raw
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAICompatConfig {
     pub model: String,
     pub api_key_env: Option<String>,
@@ -279,6 +376,12 @@ pub struct OpenAICompatConfig {
     pub timeout_s: f64,
     pub retry_base_delay_s: f64,
     pub env_override: Option<BTreeMap<String, String>>,
+}
+
+impl std::fmt::Debug for OpenAICompatConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAICompatConfig").finish_non_exhaustive()
+    }
 }
 
 impl OpenAICompatConfig {
@@ -720,9 +823,21 @@ impl OpenAICompatProvider {
                             return last_resp.expect("set");
                         }
                     } else {
-                        let parsed_val: Value = match serde_json::from_str(&text_body) {
-                            Ok(v) => v,
-                            Err(err) => {
+                        let parsed_val: Value = match parse_bounded_json(
+                            &text_body,
+                            MAX_RESPONSE_NODES,
+                            MAX_RESPONSE_DEPTH,
+                        ) {
+                            Ok((value, _)) => value,
+                            Err(BoundedJsonError::TooManyNodes | BoundedJsonError::TooDeep) => {
+                                return self.fail(
+                                    "malformed response (response exceeds structural limits)",
+                                    None,
+                                );
+                            }
+                            Err(BoundedJsonError::Invalid) => {
+                                let err = serde_json::from_str::<Value>(&text_body)
+                                    .expect_err("bounded JSON scan rejected invalid JSON");
                                 let label = if err.to_string().contains("recursion limit exceeded")
                                 {
                                     "RecursionError"

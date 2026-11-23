@@ -255,11 +255,11 @@ fn parse_date_or_epoch(s: &str) -> Option<i64> {
     if parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
-    Some(days_from_civil(year, month, day) * 86_400)
+    Some((days_from_civil(i128::from(year), i128::from(month), i128::from(day)) * 86_400) as i64)
 }
 
 /// Howard Hinnant's civil-from-days inverse: days since 1970-01-01.
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+fn days_from_civil(year: i128, month: i128, day: i128) -> i128 {
     let y = if month <= 2 { year - 1 } else { year };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -443,5 +443,21 @@ pub const fn group_disposition_to_str(disp: GroupDispositionV52) -> &'static str
         GroupDispositionV52::PrivilegedAdminRequestOnly => "privileged_admin_request_only",
         GroupDispositionV52::OrphanedDeprecatedDoNotAssign => "orphaned_deprecated_do_not_assign",
         GroupDispositionV52::ServiceAccountOnlyDoNotAssign => "service_account_only_do_not_assign",
+    }
+}
+
+#[cfg(test)]
+mod date_overflow_tests {
+    use super::parse_date_or_epoch;
+
+    #[test]
+    fn date_conversion_preserves_wrapping_results_without_panicking() {
+        assert_eq!(parse_date_or_epoch("1970-01-01"), Some(0));
+        assert_eq!(parse_date_or_epoch("1969-12-31"), Some(-86_400));
+        assert_eq!(
+            parse_date_or_epoch("9223372036854775807-01-01"),
+            Some(-62_198_793_216)
+        );
+        assert_eq!(parse_date_or_epoch("-9223372036854775808-01-01"), None);
     }
 }

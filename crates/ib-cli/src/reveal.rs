@@ -7,9 +7,11 @@
 //! data: the verifier makes no network call.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use ib_core::artifact;
 use ib_core::hashing::sha256_hex;
 use ib_v52_generator::{
     PrecommitV52, PrivateSuiteCommitmentV52, PrivateSuitePublicSealV52, SecretKey32, V52Cell,
@@ -155,12 +157,19 @@ pub fn verify_reveal(
     checks.push(
         "key_matches_c_k",
         c_k == precommit.c_k,
-        format!("C_K(K) = {c_k}; PRECOMMIT.json c_k = {}", precommit.c_k),
+        format!(
+            "revealed key commitment {} PRECOMMIT.json c_k",
+            if c_k == precommit.c_k {
+                "matches"
+            } else {
+                "does not match"
+            }
+        ),
     );
     let mut public_seals: Vec<(PathBuf, Vec<u8>, PrivateSuitePublicSealV52)> = Vec::new();
     for path in &inputs.seals {
-        let bytes =
-            std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+        let bytes = artifact::read_limited(path, 4 * 1024 * 1024)
+            .with_context(|| format!("failed to read {}", path.display()))?;
         let seal: PrivateSuitePublicSealV52 = serde_json::from_slice(&bytes)
             .with_context(|| format!("{} is not a private suite's public seal", path.display()))?;
         public_seals.push((path.clone(), bytes, seal));
@@ -414,7 +423,7 @@ fn regenerate_private_suites(
     engine: &dyn IgaEngineBackendV52,
     checks: &mut Checks,
 ) -> Result<BTreeMap<String, RegeneratedSuite>> {
-    let spec_bytes = std::fs::read(&inputs.spec_path)
+    let spec_bytes = artifact::read_limited(&inputs.spec_path, 4 * 1024 * 1024)
         .with_context(|| format!("failed to read {}", inputs.spec_path.display()))?;
     let spec_sha = sha256_hex(&spec_bytes);
     let commitment = PrivateSuiteCommitmentV52 {
@@ -478,13 +487,21 @@ fn regenerate_private_suites(
         );
         // A revealed full private seal next to the public seal must also rebuild exactly.
         let private_path = path.with_file_name(ib_v52_generator::PRIVATE_SEAL_FILENAME_V52);
-        if let Ok(private_bytes) = std::fs::read(&private_path) {
-            let ok = ib_v52_generator::pretty_json(&full)?.as_bytes() == private_bytes.as_slice();
-            checks.push(
-                "regeneration_reproduces_private_seal",
-                ok,
-                format!("{}: {}", seal.suite_id, private_path.display()),
-            );
+        match artifact::read_limited(&private_path, 16 * 1024 * 1024) {
+            Ok(private_bytes) => {
+                let ok =
+                    ib_v52_generator::pretty_json(&full)?.as_bytes() == private_bytes.as_slice();
+                checks.push(
+                    "regeneration_reproduces_private_seal",
+                    ok,
+                    format!("{}: {}", seal.suite_id, private_path.display()),
+                );
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to read {}", private_path.display()));
+            }
         }
         regenerated.insert(
             seal.suite_id.clone(),
@@ -647,6 +664,15 @@ fn replay_bundle_scores(
     let mut problems = Vec::new();
     let mut replayed = 0;
     let mut memo: BTreeMap<(String, String), Result<Value, ()>> = BTreeMap::new();
+    let run_root = match ib_core::artifact::directory(&run.run_dir, false) {
+        Ok(root) => root,
+        Err(error) => {
+            return (
+                0,
+                vec![format!("run directory cannot be opened safely: {error}")],
+            );
+        }
+    };
     for record in &run.records {
         let stem = ib_v52_runtime::SlotIdV52::of_record(record).stem();
         let (Some(episode), Some(oracle)) = (
@@ -656,33 +682,20 @@ fn replay_bundle_scores(
             problems.push(format!("{stem}: not an episode of the regenerated suite"));
             continue;
         };
-        let config_dir = run.run_dir.join("configs").join(&stem);
         let Some(config) = &record.committed_config else {
-            if config_dir.exists() {
-                problems.push(format!("{stem}: configs present for an uncommitted slot"));
+            match has_config_entry(&run_root, &stem) {
+                Ok(true) => {
+                    problems.push(format!("{stem}: configs present for an uncommitted slot"))
+                }
+                Ok(false) => {}
+                Err(error) => problems.push(format!(
+                    "{stem}: configs directory is unsafe or unreadable: {error}"
+                )),
             }
             replayed += 1;
             continue;
         };
-        let mut sections = Map::new();
-        let mut readable = true;
-        for stem_name in CONFIG_FILES_V52
-            .iter()
-            .filter_map(|path| config_file_stem(path))
-        {
-            match std::fs::read(config_dir.join(format!("{stem_name}.json")))
-                .ok()
-                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-            {
-                Some(v) => {
-                    sections.insert(stem_name.to_owned(), v);
-                }
-                None => readable = false,
-            }
-        }
-        let persisted: Option<IgaDeploymentConfigV52> = readable
-            .then(|| IgaDeploymentConfigV52::from_sections(sections).ok())
-            .flatten();
+        let persisted = read_committed_config(&run_root, &stem);
         let Some(persisted) = persisted else {
             problems.push(format!("{stem}: committed config files missing or invalid"));
             continue;
@@ -722,6 +735,29 @@ fn replay_bundle_scores(
         }
     }
     (replayed, problems)
+}
+
+fn has_config_entry(run_root: &File, stem: &str) -> std::io::Result<bool> {
+    match artifact::entries_at(run_root, Path::new("configs")) {
+        Ok(entries) => Ok(entries.iter().any(|entry| entry.name == stem)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_committed_config(run_root: &File, stem: &str) -> Option<IgaDeploymentConfigV52> {
+    let config_dir = Path::new("configs").join(stem);
+    let mut sections = Map::new();
+    for stem_name in CONFIG_FILES_V52
+        .iter()
+        .filter_map(|path| config_file_stem(path))
+    {
+        let path = config_dir.join(format!("{stem_name}.json"));
+        let bytes = artifact::read_limited_at(run_root, &path, 16 * 1024 * 1024).ok()?;
+        let value = serde_json::from_slice::<Value>(&bytes).ok()?;
+        sections.insert(stem_name.to_owned(), value);
+    }
+    IgaDeploymentConfigV52::from_sections(sections).ok()
 }
 
 fn diff_values(path: &str, ours: &Value, theirs: &Value, skip: &[&str], out: &mut Vec<String>) {
@@ -911,5 +947,41 @@ pub fn reveal_report_json(report: &RevealReportV52) -> Value {
 /// Read a commit–reveal input file relative to `root`.
 pub fn read_input(root: &Path, path: &Path) -> Result<Vec<u8>> {
     let resolved = crate::paths::resolve(root, path);
-    std::fs::read(&resolved).with_context(|| format!("failed to read {}", resolved.display()))
+    artifact::read_limited(&resolved, 1024 * 1024)
+        .with_context(|| format!("failed to read {}", resolved.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn bundle_config_reads_reject_linked_config_directories_and_files() {
+        use std::os::unix::fs::symlink;
+
+        let run = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let config_dir = outside.path().join("slot");
+        std::fs::create_dir(&config_dir).unwrap();
+        std::fs::write(config_dir.join("golive_plan.json"), b"{}").unwrap();
+
+        let root_link = run.path().join("configs");
+        symlink(outside.path(), &root_link).unwrap();
+        let run_root = artifact::directory(run.path(), false).unwrap();
+        assert!(has_config_entry(&run_root, "slot").is_err());
+        assert!(read_committed_config(&run_root, "slot").is_none());
+
+        std::fs::remove_file(root_link).unwrap();
+        let local_config_dir = run.path().join("configs/slot");
+        std::fs::create_dir_all(&local_config_dir).unwrap();
+        symlink(
+            config_dir.join("golive_plan.json"),
+            local_config_dir.join("golive_plan.json"),
+        )
+        .unwrap();
+        let read_path = Path::new("configs/slot/golive_plan.json");
+        assert!(artifact::read_limited_at(&run_root, read_path, 16 * 1024 * 1024).is_err());
+        assert!(read_committed_config(&run_root, "slot").is_none());
+    }
 }

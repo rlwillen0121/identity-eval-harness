@@ -614,6 +614,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
@@ -621,8 +622,10 @@ name = "ib-core"
 version = "5.2.0"
 dependencies = [
  "hex",
+ "rustix",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror",
 ]
 
@@ -672,6 +675,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "zeroize",
 ]
 
 [[package]]

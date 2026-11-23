@@ -1,6 +1,7 @@
 //! Offline assessment of the two development-suite calibration gates in SPEC-v5.2 §11.2.
 use std::collections::BTreeSet;
-use std::fmt::Write;
+use std::fmt::Write as _;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::control::RunControlV52;
-use crate::fsutil::{atomic_write, read_json, write_pretty_json};
+use crate::fsutil::{atomic_write_at, read_json};
 use crate::integrity::{RunFingerprintInputsV52, SealDigestsV52};
 use crate::leaderboard::{LoadedRunV52, eligibility_item4_probe_receipt, load_run_v52};
 use crate::protocol::MAX_ASSISTANT_TURNS_V52;
@@ -540,13 +541,36 @@ pub fn build_calibration_report_v52(options: &CalibrationReportOptionsV52) -> Re
     )
 }
 
+/// Limit each rendered report before extending its buffer or publishing either file.
+struct ReportBytes(Vec<u8>);
+
+impl io::Write for ReportBytes {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        const LIMIT: usize = 64 * 1024 * 1024;
+        if bytes.len() > LIMIT - self.0.len() {
+            return Err(io::Error::other("calibration report exceeds 64 MiB"));
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 pub fn write_calibration_report_v52(out: &Path, report: &Value) -> Result<()> {
-    let mut md = format!(
-        "# v5.2 calibration report\n\nOverall **{}**\n",
+    let mut json = ReportBytes(Vec::new());
+    serde_json::to_writer_pretty(&mut json, report)?;
+    json.write_all(b"\n")?;
+    let mut md = ReportBytes(Vec::new());
+    writeln!(
+        md,
+        "# v5.2 calibration report\n\nOverall **{}**",
         report["overall_status"]
             .as_str()
             .context("missing overall calibration status")?
-    );
+    )?;
     for check in report["checks"]
         .as_array()
         .context("missing calibration checks")?
@@ -558,8 +582,7 @@ pub fn write_calibration_report_v52(out: &Path, report: &Value) -> Result<()> {
                 .as_str()
                 .context("missing gate identifier")?,
             check["status"].as_str().context("missing gate status")?
-        )
-        .unwrap();
+        )?;
         for row in check["measurements"]
             .as_array()
             .context("missing gate measurements")?
@@ -573,12 +596,12 @@ pub fn write_calibration_report_v52(out: &Path, report: &Value) -> Result<()> {
                 row["summary"]
                     .as_str()
                     .context("missing measurement summary")?
-            )
-            .unwrap();
+            )?;
         }
     }
-    write_pretty_json(&out.join("calibration_report.json"), report)?;
-    atomic_write(&out.join("calibration_report.md"), md.as_bytes())
+    let root = ib_core::artifact::directory(out, true)?;
+    atomic_write_at(&root, Path::new("calibration_report.json"), &json.0)?;
+    atomic_write_at(&root, Path::new("calibration_report.md"), &md.0)
 }
 
 #[cfg(test)]

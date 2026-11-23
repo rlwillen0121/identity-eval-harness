@@ -11,6 +11,7 @@ use std::fmt;
 pub use ib_core::hashing::decode_hex32;
 use ib_core::hashing::{sha256, sha256_parts};
 use sha2::{Digest, Sha256};
+use zeroize::Zeroize;
 
 /// Message prefix of the base-seed function: `"identitybench-v5.2|" + suite | family | regime | slot`.
 pub const BASE_SEED_MESSAGE_PREFIX_V52: &str = "identitybench-v5.2|";
@@ -80,6 +81,12 @@ pub struct SecretKey32(pub [u8; 32]);
 impl fmt::Debug for SecretKey32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("SecretKey32(<redacted>)")
+    }
+}
+
+impl Drop for SecretKey32 {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 

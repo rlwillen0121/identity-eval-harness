@@ -17,7 +17,11 @@ use crate::http::{
     MAX_PROVIDER_RESPONSE_BYTES, PLACEHOLDER_API_KEY, Redactor, env_var, is_vendor_host,
     read_bounded_response_body, redirect_provider_error, status_error_class,
 };
-use crate::json::{bounded_token_count, load_object, raw_usage_payload, sanitize_response};
+use crate::json::{
+    BoundedJsonError, MAX_RESPONSE_DEPTH, MAX_RESPONSE_NODES, MAX_USAGE_DEPTH, MAX_USAGE_NODES,
+    bounded_token_count, load_object, parse_bounded_json, raw_usage_payload, sanitize_response,
+    value_node_count,
+};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
@@ -60,7 +64,7 @@ fn parse_usage(usage_val: Option<&Value>) -> Usage {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AnthropicConfig {
     pub model: String,
     pub api_key_env: Option<String>,
@@ -71,6 +75,12 @@ pub struct AnthropicConfig {
     pub timeout_s: f64,
     pub retry_base_delay_s: f64,
     pub env_override: Option<BTreeMap<String, String>>,
+}
+
+impl std::fmt::Debug for AnthropicConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnthropicConfig").finish_non_exhaustive()
+    }
 }
 
 impl AnthropicConfig {
@@ -396,9 +406,21 @@ impl AnthropicProvider {
                                 }
                             }
                         } else {
-                            let val: Value = match serde_json::from_str(&text_body) {
-                                Ok(v) => v,
-                                Err(err) => {
+                            let val: Value = match parse_bounded_json(
+                                &text_body,
+                                MAX_RESPONSE_NODES,
+                                MAX_RESPONSE_DEPTH,
+                            ) {
+                                Ok((value, _)) => value,
+                                Err(BoundedJsonError::TooManyNodes | BoundedJsonError::TooDeep) => {
+                                    return self.fail(
+                                        "malformed response (response exceeds structural limits)",
+                                        None,
+                                    );
+                                }
+                                Err(BoundedJsonError::Invalid) => {
+                                    let err = serde_json::from_str::<Value>(&text_body)
+                                        .expect_err("bounded JSON scan rejected invalid JSON");
                                     let label =
                                         if err.to_string().contains("recursion limit exceeded") {
                                             "RecursionError"
@@ -622,9 +644,17 @@ impl Provider for AnthropicProvider {
 }
 
 fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
+    assemble_sse_message_with_limit(body, MAX_RESPONSE_NODES)
+}
+
+fn assemble_sse_message_with_limit(
+    body: &str,
+    max_response_nodes: usize,
+) -> Result<Map<String, Value>, String> {
     let mut message: Option<Map<String, Value>> = None;
     let mut blocks: Vec<Map<String, Value>> = Vec::new();
     let mut partial_json: HashMap<usize, String> = HashMap::new();
+    let mut retained_nodes = 0usize;
 
     for line in body.lines() {
         let Some(data) = line.strip_prefix("data: ") else {
@@ -633,63 +663,79 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
         if data == "[DONE]" {
             continue;
         }
-        let event = load_object(data).ok_or_else(|| "invalid SSE JSON event".to_string())?;
+        let (event_value, _) = parse_bounded_json(data, max_response_nodes, MAX_RESPONSE_DEPTH)
+            .map_err(|error| match error {
+                BoundedJsonError::TooManyNodes | BoundedJsonError::TooDeep => {
+                    "SSE response exceeds structural limits".to_string()
+                }
+                BoundedJsonError::Invalid => "invalid SSE JSON event".to_string(),
+            })?;
+        let Some(event) = event_value.as_object() else {
+            return Err("invalid SSE JSON event".to_string());
+        };
         match event.get("type").and_then(Value::as_str) {
             Some("message_start") => {
-                if let Some(Value::Object(m)) = event.get("message") {
+                if let Some(message_value) = event.get("message").filter(|v| v.is_object()) {
+                    if message.is_some() {
+                        return Err("duplicate SSE message_start event".to_string());
+                    }
+                    retained_nodes =
+                        value_node_count(message_value, max_response_nodes, MAX_RESPONSE_DEPTH)
+                            .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+                    let Value::Object(m) = message_value else {
+                        return Err("invalid SSE message_start event".to_string());
+                    };
+                    if let Some(usage) = m.get("usage") {
+                        value_node_count(usage, MAX_USAGE_NODES, MAX_USAGE_DEPTH)
+                            .map_err(|_| "SSE usage exceeds structural limits".to_string())?;
+                    }
                     message = Some(m.clone());
                 }
             }
             Some("content_block_start") => {
-                if let Some(Value::Object(cb)) = event.get("content_block") {
+                if let Some(block_value) = event.get("content_block").filter(|v| v.is_object()) {
+                    if blocks.len() >= max_response_nodes {
+                        return Err("SSE response exceeds structural limits".to_string());
+                    }
+                    let block_nodes = value_node_count(
+                        block_value,
+                        max_response_nodes.saturating_sub(retained_nodes),
+                        MAX_RESPONSE_DEPTH,
+                    )
+                    .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+                    retained_nodes = retained_nodes.saturating_add(block_nodes);
+                    let Value::Object(cb) = block_value else {
+                        return Err("invalid SSE content block".to_string());
+                    };
                     blocks.push(cb.clone());
                 }
             }
             Some("content_block_delta") => {
-                let idx = event
-                    .get("index")
-                    .and_then(Value::as_u64)
-                    .map(|u| u as usize)
-                    .unwrap_or_else(|| blocks.len().saturating_sub(1));
-                if let (Some(block), Some(Value::Object(delta))) =
-                    (blocks.get_mut(idx), event.get("delta"))
+                let idx = match event.get("index") {
+                    Some(index) => index.as_u64().and_then(|value| usize::try_from(value).ok()),
+                    None => Some(blocks.len().saturating_sub(1)),
+                };
+                if let Some(idx) = idx
+                    && let (Some(block), Some(Value::Object(delta))) =
+                        (blocks.get_mut(idx), event.get("delta"))
                 {
                     match delta.get("type").and_then(Value::as_str) {
                         Some("text_delta") => {
                             if let Some(t) = delta.get("text").and_then(Value::as_str) {
-                                let cur = block
-                                    .get("text")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string();
-                                block
-                                    .insert("text".to_string(), Value::String(format!("{cur}{t}")));
+                                retained_nodes +=
+                                    usize::from(append_string_field(block, "text", t));
                             }
                         }
                         Some("thinking_delta") => {
                             if let Some(t) = delta.get("thinking").and_then(Value::as_str) {
-                                let cur = block
-                                    .get("thinking")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string();
-                                block.insert(
-                                    "thinking".to_string(),
-                                    Value::String(format!("{cur}{t}")),
-                                );
+                                retained_nodes +=
+                                    usize::from(append_string_field(block, "thinking", t));
                             }
                         }
                         Some("signature_delta") => {
                             if let Some(s) = delta.get("signature").and_then(Value::as_str) {
-                                let cur = block
-                                    .get("signature")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string();
-                                block.insert(
-                                    "signature".to_string(),
-                                    Value::String(format!("{cur}{s}")),
-                                );
+                                retained_nodes +=
+                                    usize::from(append_string_field(block, "signature", s));
                             }
                         }
                         Some("input_json_delta") => {
@@ -705,31 +751,50 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
                 if let Some(idx) = event
                     .get("index")
                     .and_then(Value::as_u64)
-                    .map(|u| u as usize)
+                    .and_then(|value| usize::try_from(value).ok())
                     && let Some(json_str) = partial_json.remove(&idx)
                     && let Some(block) = blocks.get_mut(idx)
-                    && let Some(parsed) = load_object(&json_str)
+                    && json_str.chars().count() <= crate::json::MAX_JSON_TEXT
+                    && let Ok((Value::Object(parsed), parsed_nodes)) = parse_bounded_json(
+                        &json_str,
+                        max_response_nodes.saturating_sub(retained_nodes),
+                        MAX_RESPONSE_DEPTH,
+                    )
                 {
+                    retained_nodes = retained_nodes.saturating_add(parsed_nodes);
                     block.insert("input".to_string(), Value::Object(parsed));
                 }
             }
             Some("message_delta") => {
                 if let Some(ref mut msg) = message {
                     if let Some(Value::Object(delta)) = event.get("delta") {
-                        for (k, v) in delta {
-                            msg.insert(k.clone(), v.clone());
-                        }
+                        merge_object(msg, delta, &mut retained_nodes, max_response_nodes)?;
                     }
                     if let Some(Value::Object(delta_usage)) = event.get("usage") {
-                        let mut existing = msg
-                            .get("usage")
-                            .and_then(Value::as_object)
-                            .cloned()
-                            .unwrap_or_default();
-                        for (k, v) in delta_usage {
-                            existing.insert(k.clone(), v.clone());
+                        let usage_value = event.get("usage").expect("matched usage object");
+                        value_node_count(usage_value, MAX_USAGE_NODES, MAX_USAGE_DEPTH)
+                            .map_err(|_| "SSE usage exceeds structural limits".to_string())?;
+                        if let Some(Value::Object(existing)) = msg.get_mut("usage") {
+                            merge_object(
+                                existing,
+                                delta_usage,
+                                &mut retained_nodes,
+                                max_response_nodes,
+                            )?;
+                            let usage_value =
+                                msg.get("usage").expect("usage object remains present");
+                            value_node_count(usage_value, MAX_USAGE_NODES, MAX_USAGE_DEPTH)
+                                .map_err(|_| "SSE usage exceeds structural limits".to_string())?;
+                        } else {
+                            let usage_nodes = value_node_count(
+                                usage_value,
+                                max_response_nodes.saturating_sub(retained_nodes),
+                                MAX_RESPONSE_DEPTH,
+                            )
+                            .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+                            retained_nodes = retained_nodes.saturating_add(usage_nodes);
+                            msg.insert("usage".to_string(), Value::Object(delta_usage.clone()));
                         }
-                        msg.insert("usage".to_string(), Value::Object(existing));
                     }
                 }
             }
@@ -747,11 +812,56 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
     }
 
     let mut msg = message.ok_or_else(|| "missing message_start event".to_string())?;
+    if retained_nodes >= max_response_nodes {
+        return Err("SSE response exceeds structural limits".to_string());
+    }
     msg.insert(
         "content".to_string(),
         Value::Array(blocks.into_iter().map(Value::Object).collect()),
     );
     Ok(msg)
+}
+
+fn append_string_field(map: &mut Map<String, Value>, key: &str, suffix: &str) -> bool {
+    match map.entry(key.to_string()) {
+        serde_json::map::Entry::Vacant(entry) => {
+            entry.insert(Value::String(suffix.to_string()));
+            true
+        }
+        serde_json::map::Entry::Occupied(mut entry) => {
+            if let Value::String(value) = entry.get_mut() {
+                value.push_str(suffix);
+            }
+            false
+        }
+    }
+}
+
+fn merge_object(
+    target: &mut Map<String, Value>,
+    source: &Map<String, Value>,
+    retained_nodes: &mut usize,
+    max_nodes: usize,
+) -> Result<(), String> {
+    for (key, value) in source {
+        let old_nodes = target.get(key).map_or(0, |old| {
+            value_node_count(old, max_nodes, MAX_RESPONSE_DEPTH).unwrap_or(max_nodes)
+        });
+        let new_nodes = value_node_count(
+            value,
+            max_nodes.saturating_sub(retained_nodes.saturating_sub(old_nodes)),
+            MAX_RESPONSE_DEPTH,
+        )
+        .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+        *retained_nodes = retained_nodes
+            .saturating_sub(old_nodes)
+            .saturating_add(new_nodes);
+        if *retained_nodes > max_nodes {
+            return Err("SSE response exceeds structural limits".to_string());
+        }
+        target.insert(key.clone(), value.clone());
+    }
+    Ok(())
 }
 
 fn resolve_base_url(
@@ -767,4 +877,43 @@ fn resolve_base_url(
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
     Some(val.trim_end_matches('/').to_string())
+}
+
+#[cfg(test)]
+mod sse_security_tests {
+    use super::assemble_sse_message_with_limit;
+
+    #[test]
+    fn sse_events_share_a_preparse_node_budget_and_deltas_append_in_order() {
+        let mut body =
+            String::from("data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\"}}\n\n");
+        body.push_str(
+            "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+        );
+        for _ in 0..1_000 {
+            body.push_str(
+                "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}\n\n",
+            );
+        }
+        let assembled = assemble_sse_message_with_limit(&body, 64).unwrap();
+        assert_eq!(
+            assembled["content"][0]["text"].as_str().unwrap(),
+            "x".repeat(1_000)
+        );
+
+        let invalid_index = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\"}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":18446744073709551615,\"delta\":{\"type\":\"text_delta\",\"text\":\"ignored\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":\"bad\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ignored\"}}\n\n",
+        );
+        let assembled = assemble_sse_message_with_limit(invalid_index, 64).unwrap();
+        assert_eq!(assembled["content"][0]["text"], "");
+
+        let small_budget = "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\"}}\n\n";
+        assert!(matches!(
+            assemble_sse_message_with_limit(small_budget, 2),
+            Err(message) if message == "SSE response exceeds structural limits"
+        ));
+    }
 }

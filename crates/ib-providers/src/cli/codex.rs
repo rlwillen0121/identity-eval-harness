@@ -1,6 +1,6 @@
 //! `codex exec` (OpenAI Codex CLI, headless) provider.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -9,12 +9,13 @@ use serde_json::{Map, Value};
 use crate::base::{ModelRequest, ModelResponse, SystemChannel, Usage};
 use crate::cli::{
     CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int, link_credentials,
-    parse_jsonl, prepend_system, read_sidecar_text, render_transcript,
+    prepend_system, read_sidecar_text, render_transcript, visit_jsonl,
 };
 use crate::subprocess::{ProcessResult, user_home_dir};
 
 pub const OUTPUT_FILE: &str = "last_message.txt";
 pub const DEFAULT_EFFORT: &str = "medium";
+const MAX_RETAINED_RAW_USAGE_EVENTS: usize = 32;
 
 pub const DISABLED_FEATURES: &[&str] = &[
     "apps",
@@ -198,15 +199,14 @@ impl CliAdapter for CodexAdapter {
         io_dir: &Path,
     ) -> ModelResponse {
         let helper = CliProvider::new(*self, CliConfig::new("", "", 0.0));
-        let events = parse_jsonl(&result.stdout);
         let mut usage = Usage::default();
         let mut raw = Map::new();
-        let mut raw_usage: Vec<Value> = Vec::new();
-        let mut errors: Vec<String> = Vec::new();
+        let mut raw_usage: VecDeque<Value> = VecDeque::new();
+        let mut last_error: Option<String> = None;
         let mut streamed_text: Option<String> = None;
         let mut turn_completed = false;
 
-        for event in &events {
+        visit_jsonl(&result.stdout, |event| {
             let kind = event.get("type").and_then(Value::as_str);
             if kind == Some("thread.started")
                 && let Some(tid) = event.get("thread_id")
@@ -217,7 +217,10 @@ impl CliAdapter for CodexAdapter {
             } else if kind == Some("turn.completed") {
                 turn_completed = true;
                 let counts = as_dict(event.get("usage"));
-                raw_usage.push(Value::Object(counts.clone()));
+                if raw_usage.len() == MAX_RETAINED_RAW_USAGE_EVENTS {
+                    raw_usage.pop_front();
+                }
+                raw_usage.push_back(Value::Object(counts.clone()));
                 let total_in = as_int(counts.get("input_tokens"));
                 let cached = as_int(counts.get("cached_input_tokens")).min(total_in);
                 usage.add(&Usage {
@@ -227,12 +230,34 @@ impl CliAdapter for CodexAdapter {
                     output_tokens: as_int(counts.get("output_tokens")),
                     reasoning_tokens: as_int(counts.get("reasoning_output_tokens")),
                 });
+            } else if matches!(
+                kind,
+                Some("item.started" | "item.updated" | "item.completed")
+            ) && event.get("item").is_some_and(|item| {
+                matches!(
+                    item.get("type")
+                        .or_else(|| item.get("item_type"))
+                        .and_then(Value::as_str),
+                    Some(
+                        "command_execution"
+                            | "file_change"
+                            | "mcp_tool_call"
+                            | "dynamic_tool_call"
+                            | "web_search"
+                            | "collab_tool_call"
+                    )
+                )
+            }) {
+                raw.insert(
+                    crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                    Value::Bool(true),
+                );
             } else if let Some(message) = agent_message(event) {
                 streamed_text = Some(message);
             } else if let Some(err) = event_error(event) {
-                errors.push(err);
+                last_error = Some(err);
             }
-        }
+        });
 
         let (mut text, output_file_rejected) = match read_sidecar_text(&io_dir.join(OUTPUT_FILE)) {
             Ok(sidecar) => {
@@ -256,7 +281,10 @@ impl CliAdapter for CodexAdapter {
             }
         }
         if !raw_usage.is_empty() {
-            raw.insert("raw_usage".to_string(), Value::Array(raw_usage));
+            raw.insert(
+                "raw_usage".to_string(),
+                Value::Array(raw_usage.into_iter().collect()),
+            );
         }
         if output_file_rejected {
             raw.insert("output_file_rejected".to_string(), Value::Bool(true));
@@ -278,19 +306,15 @@ impl CliAdapter for CodexAdapter {
             let reason = if output_file_rejected {
                 "final output sidecar was rejected"
             } else {
-                errors
-                    .last()
-                    .map(String::as_str)
-                    .unwrap_or("no final message")
+                last_error.as_deref().unwrap_or("no final message")
             };
             response.error = Some(helper.error_text(reason, Some(result), Some(request)));
             return response;
         }
 
         if result.returncode != 0 && !turn_completed {
-            let reason = errors
-                .last()
-                .map(String::as_str)
+            let reason = last_error
+                .as_deref()
                 .unwrap_or("exited without completing the turn");
             response.error = Some(helper.error_text(reason, Some(result), Some(request)));
             return response;

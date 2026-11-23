@@ -177,6 +177,24 @@ fn round_half_up_and_saturating_micros_overflow_guards() {
 }
 
 #[test]
+fn disjoint_input_subsets_exceeding_total_decline_before_subtraction() {
+    let usage = Usage {
+        input_total: Some(0),
+        output_total: Some(0),
+        cached: Some(i64::MAX),
+        cache_write: Some(i64::MAX),
+        ..Usage::default()
+    };
+    let pricing = FrozenPricingRate {
+        cached_input_cost_per_million_micros: Some(1),
+        cache_write_cost_per_million_micros: Some(1),
+        ..rate(1, 1)
+    };
+
+    assert_eq!(estimate_frozen_cost_micros(&usage, &pricing), None);
+}
+
+#[test]
 fn validation_and_serde_shape() {
     assert!(rate(0, 0).validate().is_ok());
     let negative = FrozenPricingRate {

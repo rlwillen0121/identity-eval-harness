@@ -7,9 +7,11 @@
 //!   the operator's output directory and never committed.
 
 use std::collections::HashSet;
-use std::fs;
+use std::ffi::OsStr;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
+use ib_core::artifact;
 use ib_core::hashing::sha256_hex;
 use ib_v52_schemas::jsonl::JsonlError;
 use ib_v52_schemas::{
@@ -273,26 +275,19 @@ pub fn derive_private_public_seal(
 
 /// Write `bytes` atomically: a synced sibling temp file renamed over `path`, so an interrupted
 /// build never leaves a truncated dataset or seal.
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), V52GeneratorError> {
+fn write_file(
+    root: &File,
+    output_dir: &Path,
+    name: &str,
+    bytes: &[u8],
+    private: bool,
+) -> Result<(), V52GeneratorError> {
+    let relative = Path::new(name);
     let io_err = |source| V52GeneratorError::Io {
-        path: path.display().to_string(),
+        path: output_dir.join(name).display().to_string(),
         source,
     };
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("artifact");
-    let tmp = path.with_file_name(format!(".{file_name}.tmp.{}", std::process::id()));
-    let written = fs::File::create(&tmp)
-        .and_then(|mut file| {
-            std::io::Write::write_all(&mut file, bytes)?;
-            file.sync_all()
-        })
-        .and_then(|()| fs::rename(&tmp, path));
-    if written.is_err() {
-        let _ = fs::remove_file(&tmp);
-    }
-    written.map_err(io_err)
+    artifact::write_at(root, relative, bytes, private).map_err(io_err)
 }
 
 /// Pretty-printed JSON plus one LF: the exact bytes of every written seal file.
@@ -314,11 +309,44 @@ pub fn write_v52_dataset(
     out_dir: &Path,
     spec_path: &Path,
 ) -> Result<WrittenSealsV52, V52GeneratorError> {
-    fs::create_dir_all(out_dir).map_err(|source| V52GeneratorError::Io {
-        path: out_dir.display().to_string(),
-        source,
-    })?;
-    let spec_bytes = fs::read(spec_path).map_err(|source| V52GeneratorError::Io {
+    let private = dataset.suite.is_private();
+    let output_root =
+        artifact::directory(out_dir, true).map_err(|source| V52GeneratorError::Io {
+            path: out_dir.display().to_string(),
+            source,
+        })?;
+    let _private_build_lock = if private {
+        artifact::require_private_dir(&output_root).map_err(|source| V52GeneratorError::Io {
+            path: out_dir.display().to_string(),
+            source,
+        })?;
+        let lock_file = artifact::named_lock_file(&output_root, OsStr::new(".dataset.lock"))
+            .map_err(|source| V52GeneratorError::Io {
+                path: out_dir.join(".dataset.lock").display().to_string(),
+                source,
+            })?;
+        match lock_file.try_lock() {
+            Ok(()) => Some(lock_file),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(V52GeneratorError::Io {
+                    path: out_dir.join(".dataset.lock").display().to_string(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::WouldBlock,
+                        "private dataset output is locked by another build",
+                    ),
+                });
+            }
+            Err(std::fs::TryLockError::Error(source)) => {
+                return Err(V52GeneratorError::Io {
+                    path: out_dir.join(".dataset.lock").display().to_string(),
+                    source,
+                });
+            }
+        }
+    } else {
+        None
+    };
+    let spec_bytes = artifact::read(spec_path).map_err(|source| V52GeneratorError::Io {
         path: spec_path.display().to_string(),
         source,
     })?;
@@ -328,24 +356,45 @@ pub fn write_v52_dataset(
     let oracles_bytes = serialize_jsonl(&dataset.oracles)?;
     let full_seal = build_full_seal(dataset, &episodes_bytes, &oracles_bytes, &spec_sha256)?;
 
-    write_file(&out_dir.join(EPISODES_FILENAME_V52), &episodes_bytes)?;
-    write_file(&out_dir.join(ORACLES_FILENAME_V52), &oracles_bytes)?;
+    write_file(
+        &output_root,
+        out_dir,
+        EPISODES_FILENAME_V52,
+        &episodes_bytes,
+        private,
+    )?;
+    write_file(
+        &output_root,
+        out_dir,
+        ORACLES_FILENAME_V52,
+        &oracles_bytes,
+        private,
+    )?;
 
     let private_public_seal = if dataset.suite.is_private() {
         let public_seal = derive_private_public_seal(&full_seal)?;
         write_file(
-            &out_dir.join(SEAL_FILENAME_V52),
+            &output_root,
+            out_dir,
+            SEAL_FILENAME_V52,
             pretty_json(&public_seal)?.as_bytes(),
+            true,
         )?;
         write_file(
-            &out_dir.join(PRIVATE_SEAL_FILENAME_V52),
+            &output_root,
+            out_dir,
+            PRIVATE_SEAL_FILENAME_V52,
             pretty_json(&full_seal)?.as_bytes(),
+            true,
         )?;
         Some(public_seal)
     } else {
         write_file(
-            &out_dir.join(SEAL_FILENAME_V52),
+            &output_root,
+            out_dir,
+            SEAL_FILENAME_V52,
             pretty_json(&full_seal)?.as_bytes(),
+            false,
         )?;
         None
     };
@@ -357,10 +406,25 @@ pub fn write_v52_dataset(
 }
 
 fn read_file(path: &Path) -> Result<Vec<u8>, V52GeneratorError> {
-    fs::read(path).map_err(|source| V52GeneratorError::Io {
+    artifact::read(path).map_err(|source| V52GeneratorError::Io {
         path: path.display().to_string(),
         source,
     })
+}
+
+fn read_optional_at(
+    root: &File,
+    relative: &Path,
+    display_path: &Path,
+) -> Result<Option<Vec<u8>>, V52GeneratorError> {
+    match artifact::read_at(root, relative) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(V52GeneratorError::Io {
+            path: display_path.display().to_string(),
+            source,
+        }),
+    }
 }
 
 /// Parse `SEAL.json` bytes into the full seal of a public suite or the public seal of a private suite.
@@ -397,33 +461,59 @@ pub fn load_v52_seal(
     oracles_bytes: &[u8],
     spec_path: Option<&Path>,
 ) -> Result<LoadedSealV52, V52GeneratorError> {
-    Ok(match parse_seal_v52(seal_bytes)? {
+    let dataset_root =
+        artifact::directory(dataset_dir, false).map_err(|source| V52GeneratorError::Io {
+            path: dataset_dir.display().to_string(),
+            source,
+        })?;
+    let parsed = parse_seal_v52(seal_bytes)?;
+    if parsed.is_err() {
+        artifact::require_private_dir(&dataset_root).map_err(|source| V52GeneratorError::Io {
+            path: dataset_dir.display().to_string(),
+            source,
+        })?;
+    }
+    load_v52_seal_at(
+        &dataset_root,
+        dataset_dir,
+        parsed,
+        episodes_bytes,
+        oracles_bytes,
+        spec_path,
+    )
+}
+
+fn load_v52_seal_at(
+    dataset_root: &File,
+    dataset_dir: &Path,
+    parsed: Result<DatasetSealV52, PrivateSuitePublicSealV52>,
+    episodes_bytes: &[u8],
+    oracles_bytes: &[u8],
+    spec_path: Option<&Path>,
+) -> Result<LoadedSealV52, V52GeneratorError> {
+    Ok(match parsed {
         Ok(full) => {
             verify_v52_seal(&full, episodes_bytes, oracles_bytes, spec_path)?;
             LoadedSealV52::Public(Box::new(full))
         }
         Err(public_seal) => {
             verify_private_public_seal(&public_seal, episodes_bytes, oracles_bytes, spec_path)?;
+            let private_relative = Path::new(PRIVATE_SEAL_FILENAME_V52);
             let private_path = dataset_dir.join(PRIVATE_SEAL_FILENAME_V52);
-            let full_seal =
-                if private_path
-                    .try_exists()
-                    .map_err(|source| V52GeneratorError::Io {
-                        path: private_path.display().to_string(),
-                        source,
-                    })?
-                {
-                    let full: DatasetSealV52 = serde_json::from_slice(&read_file(&private_path)?)?;
-                    verify_v52_seal(&full, episodes_bytes, oracles_bytes, spec_path)?;
-                    if derive_private_public_seal(&full)? != public_seal {
-                        return Err(V52GeneratorError::SealVerification(
-                            "PRIVATE_SEAL.json disagrees with the public SEAL.json".to_owned(),
-                        ));
-                    }
-                    Some(Box::new(full))
-                } else {
-                    None
-                };
+            let full_seal = if let Some(bytes) =
+                read_optional_at(dataset_root, private_relative, &private_path)?
+            {
+                let full: DatasetSealV52 = serde_json::from_slice(&bytes)?;
+                verify_v52_seal(&full, episodes_bytes, oracles_bytes, spec_path)?;
+                if derive_private_public_seal(&full)? != public_seal {
+                    return Err(V52GeneratorError::SealVerification(
+                        "PRIVATE_SEAL.json disagrees with the public SEAL.json".to_owned(),
+                    ));
+                }
+                Some(Box::new(full))
+            } else {
+                None
+            };
             LoadedSealV52::Private {
                 public_seal: Box::new(public_seal),
                 full_seal,
@@ -443,13 +533,47 @@ pub fn load_v52_dataset(
     dataset_dir: &Path,
     spec_path: Option<&Path>,
 ) -> Result<LoadedV52Dataset, V52GeneratorError> {
-    let seal_bytes = read_file(&dataset_dir.join(SEAL_FILENAME_V52))?;
-    let episodes_bytes = read_file(&dataset_dir.join(EPISODES_FILENAME_V52))?;
-    let oracles_bytes = read_file(&dataset_dir.join(ORACLES_FILENAME_V52))?;
+    let dataset_root =
+        artifact::directory(dataset_dir, false).map_err(|source| V52GeneratorError::Io {
+            path: dataset_dir.display().to_string(),
+            source,
+        })?;
+    let seal_relative = Path::new(SEAL_FILENAME_V52);
+    let seal_path = dataset_dir.join(SEAL_FILENAME_V52);
+    let seal_bytes = artifact::read_at(&dataset_root, seal_relative).map_err(|source| {
+        V52GeneratorError::Io {
+            path: seal_path.display().to_string(),
+            source,
+        }
+    })?;
+    let parsed = parse_seal_v52(&seal_bytes)?;
+    if parsed.is_err() {
+        artifact::require_private_dir(&dataset_root).map_err(|source| V52GeneratorError::Io {
+            path: dataset_dir.display().to_string(),
+            source,
+        })?;
+    }
+    let episodes_relative = Path::new(EPISODES_FILENAME_V52);
+    let episodes_path = dataset_dir.join(EPISODES_FILENAME_V52);
+    let episodes_bytes = artifact::read_at(&dataset_root, episodes_relative).map_err(|source| {
+        V52GeneratorError::Io {
+            path: episodes_path.display().to_string(),
+            source,
+        }
+    })?;
+    let oracles_relative = Path::new(ORACLES_FILENAME_V52);
+    let oracles_path = dataset_dir.join(ORACLES_FILENAME_V52);
+    let oracles_bytes = artifact::read_at(&dataset_root, oracles_relative).map_err(|source| {
+        V52GeneratorError::Io {
+            path: oracles_path.display().to_string(),
+            source,
+        }
+    })?;
 
-    let seal = load_v52_seal(
+    let seal = load_v52_seal_at(
+        &dataset_root,
         dataset_dir,
-        &seal_bytes,
+        parsed,
         &episodes_bytes,
         &oracles_bytes,
         spec_path,

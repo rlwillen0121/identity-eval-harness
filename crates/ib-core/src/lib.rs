@@ -4,6 +4,7 @@
 //! must be reproducible from Rust. These modules re-implement the exact CPython
 //! behaviours those bytes depend on.
 
+pub mod artifact;
 pub mod hashing;
 pub mod pyfloat;
 pub mod pyjson;

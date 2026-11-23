@@ -99,7 +99,21 @@ pub struct ModelRequest {
     pub params: GenerationParams,
 }
 
+/// Internal replay key for the transport eligibility check. Never sent to the model.
+pub const NATIVE_TOOL_PROBE_KEY: &str = "probe_native_tool";
+/// Adapter-local evidence of native tool activity, without storing commands or arguments.
+pub const NATIVE_TOOL_ACTIVITY: &str = "native_tool_activity";
+
 impl ModelRequest {
+    #[must_use]
+    pub fn is_native_tool_probe(&self) -> bool {
+        self.params
+            .extra
+            .get(crate::replay::CACHE_KEY_PARAM)
+            .and_then(Value::as_str)
+            == Some(NATIVE_TOOL_PROBE_KEY)
+    }
+
     #[must_use]
     pub fn new(system: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {

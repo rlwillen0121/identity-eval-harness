@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use ib_accounting::{TokenCounts, TokenRates, estimate_cost_micros};
+use ib_core::artifact;
 use ib_core::hashing::sha256_hex;
 use ib_providers::factory::{ModelSpec, ProviderKind};
 use ib_v52_schemas::{EpisodeV52, SealedEpisodeOracleV52};
@@ -68,7 +69,11 @@ impl PricingRatesV52 {
                 if !f.is_finite() || f < 0.0 {
                     bail!("pricing field '{key}' must be finite and non-negative");
                 }
-                Ok((f * 1_000_000.0).round() as i64)
+                let micros = (f * 1_000_000.0).round();
+                if !micros.is_finite() || micros >= i64::MAX as f64 {
+                    bail!("pricing field '{key}' is too large to represent in micros");
+                }
+                Ok(micros as i64)
             };
             let uncached = get_usd_micros("input_per_1m_usd")?;
             let cached = match obj.get("cached_input_per_1m_usd") {
@@ -258,7 +263,7 @@ fn validate_pricing_date(value: &str) -> Result<()> {
 }
 
 pub fn load_pricing_v52(path: &Path) -> Result<LoadedPricingV52> {
-    let raw_bytes = std::fs::read(path)
+    let raw_bytes = artifact::read_limited(path, 4 * 1024 * 1024)
         .with_context(|| format!("failed to read pricing {}", path.display()))?;
     let value: Value = serde_json::from_slice(&raw_bytes).context("pricing JSON is invalid")?;
     let artifact = match value
@@ -356,7 +361,7 @@ impl LoadedRunConfigV52 {
 ///   output tokens (§7.3). There is no harness default and no combined cap.
 /// - `timeout_s` defaults to the protocol's per-call timeout of 1800 s (§7.4).
 pub fn load_run_config_v52(path: &Path) -> Result<LoadedRunConfigV52> {
-    let raw = std::fs::read(path)
+    let raw = artifact::read_limited(path, 4 * 1024 * 1024)
         .with_context(|| format!("failed to read model config {}", path.display()))?;
     let text = std::str::from_utf8(&raw).context("model config must be UTF-8")?;
     let mut payload: Value =
@@ -510,15 +515,16 @@ pub struct LoadedV52Dataset {
 
 /// Load `episodes.jsonl`, `oracles.jsonl`, and `SEAL.json` from a v5.2 dataset directory.
 pub fn load_v52_dataset(dataset_dir: &Path) -> Result<LoadedV52Dataset> {
+    let root = artifact::directory(dataset_dir, false)?;
     let episodes_path = dataset_dir.join("episodes.jsonl");
     let oracles_path = dataset_dir.join("oracles.jsonl");
     let seal_path = dataset_dir.join("SEAL.json");
 
-    let episodes_bytes = std::fs::read(&episodes_path)
+    let episodes_bytes = artifact::read_at(&root, Path::new("episodes.jsonl"))
         .with_context(|| format!("failed to read {}", episodes_path.display()))?;
-    let oracles_bytes = std::fs::read(&oracles_path)
+    let oracles_bytes = artifact::read_at(&root, Path::new("oracles.jsonl"))
         .with_context(|| format!("failed to read {}", oracles_path.display()))?;
-    let seal_bytes = std::fs::read(&seal_path)
+    let seal_bytes = artifact::read_limited_at(&root, Path::new("SEAL.json"), 16 * 1024 * 1024)
         .with_context(|| format!("failed to read {}", seal_path.display()))?;
 
     let episodes = parse_jsonl::<EpisodeV52>(&episodes_bytes, "episodes.jsonl")?;
@@ -586,5 +592,28 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(usd.cache_write_micros_per_million, Some(3_750_000));
+    }
+
+    #[test]
+    fn pricing_rejects_usd_rates_that_overflow_micros() {
+        let err = PricingRatesV52::from_json_value(&serde_json::json!({
+            "input_per_1m_usd": 1.0e300,
+            "output_per_1m_usd": 0.0
+        }))
+        .unwrap_err();
+        assert!(err.to_string().contains("too large to represent in micros"));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod dataset_path_tests {
+    use super::load_v52_dataset;
+
+    #[test]
+    fn dataset_loader_requires_regular_sealed_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("episodes.jsonl")).unwrap();
+        let err = load_v52_dataset(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("episodes.jsonl"));
     }
 }

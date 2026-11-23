@@ -42,7 +42,7 @@ impl SlotMetricsV52 {
     /// Any `OG` or `AB` violation on a committed slot.
     #[must_use]
     pub fn has_violation(&self) -> bool {
-        self.overgrants + self.availability_breaches > 0
+        self.overgrants > 0 || self.availability_breaches > 0
     }
 }
 
@@ -239,5 +239,17 @@ mod tests {
         assert!(!m.observed && !m.committed);
         assert_eq!(m.g_srr, None);
         assert_eq!(m.iiq_to_isc_pass, None);
+    }
+
+    #[test]
+    fn violation_check_does_not_add_untrusted_counters() {
+        let mut m = slot_metrics_v52(&record(
+            AttemptStatusV52::Completed,
+            true,
+            Some(score(true, 0)),
+        ));
+        m.overgrants = usize::MAX;
+        m.availability_breaches = 1;
+        assert!(m.has_violation());
     }
 }

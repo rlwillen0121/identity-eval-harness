@@ -95,6 +95,22 @@ fn problems_name_lines_and_keys_never_values() {
 }
 
 #[test]
+fn parsed_env_debug_does_not_include_values() {
+    let marker = "synthetic-env-credential-marker";
+    let parsed = parse_env(&format!("TEST_API_KEY={marker}\n"));
+    let debug = format!("{parsed:?}");
+    assert!(debug.contains("EnvFile"));
+    assert!(!debug.contains(marker));
+}
+
+#[test]
+fn env_file_debug_output_omits_values() {
+    let marker = "synthetic-env-debug-marker";
+    let parsed = parse_env(&format!("API_TOKEN={marker}\n"));
+    assert!(!format!("{parsed:?}").contains(marker));
+}
+
+#[test]
 fn load_sets_only_missing_variables_and_returns_sorted_names() {
     let tmp = TempDir::new().unwrap();
     let env_path = tmp.path().join(".env");
@@ -110,6 +126,20 @@ fn load_sets_only_missing_variables_and_returns_sorted_names() {
     assert_eq!(environ["EXISTING"], "from-environment");
     assert_eq!(environ["A_KEY"], "secret-a");
     assert_eq!(environ["B_KEY"], "secret-b");
+}
+
+#[test]
+fn oversized_env_file_is_skipped_without_parsing_or_echoing_contents() {
+    let tmp = TempDir::new().unwrap();
+    let env_path = tmp.path().join(".env");
+    fs::write(&env_path, vec![b'X'; 1024 * 1024 + 1]).unwrap();
+    let mut environ = BTreeMap::new();
+    let (loaded, problems) = load_env_file_into(&env_path, &mut environ);
+    assert!(loaded.is_empty());
+    assert!(environ.is_empty());
+    assert_eq!(problems.len(), 1);
+    assert!(problems[0].contains("file exceeds the 1048576 byte limit"));
+    assert!(!problems[0].contains('X'));
 }
 
 #[test]

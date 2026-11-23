@@ -78,7 +78,7 @@ static HOME_USER_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(/(?:Users|home)/)[^/\s"'<>:,)]+"#).expect("valid user path regex")
 });
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Command {
     pub argv: Vec<String>,
     pub cwd: PathBuf,
@@ -87,7 +87,13 @@ pub struct Command {
     pub stdin: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl std::fmt::Debug for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Command").finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct ProcessResult {
     pub returncode: i32,
     pub stdout: String,
@@ -95,6 +101,17 @@ pub struct ProcessResult {
     pub duration_s: f64,
     pub timed_out: bool,
     pub launch_error: Option<String>,
+}
+
+impl std::fmt::Debug for ProcessResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProcessResult")
+            .field("returncode", &self.returncode)
+            .field("duration_s", &self.duration_s)
+            .field("timed_out", &self.timed_out)
+            .field("has_launch_error", &self.launch_error.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 #[async_trait]
@@ -597,7 +614,7 @@ pub fn redact(
     let source = match env {
         Some(m) => m,
         None => {
-            owned_env = std::env::vars().collect();
+            owned_env = crate::env::unicode_env_snapshot();
             &owned_env
         }
     };
@@ -606,7 +623,7 @@ pub fn redact(
     let mut hosts = BTreeSet::new();
     for (name, value) in source {
         let explicit = explicit_env_names.contains(&name.as_str());
-        if !explicit && !SECRET_NAME_RE.is_match(name) {
+        if !explicit && !name.eq_ignore_ascii_case("OPENROUTER") && !SECRET_NAME_RE.is_match(name) {
             continue;
         }
         if !value.is_empty() && (explicit || value.chars().count() >= MIN_SECRET_CHARS) {

@@ -688,3 +688,14 @@ fn control_scores_and_offline_parity_can_each_fail_their_gate() {
     }
     assert_eq!(check(&report, "G-CALIBRATION-V52 item 4")["status"], "fail");
 }
+
+#[test]
+fn calibration_output_refuses_a_linked_directory() {
+    let parent = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let out = parent.path().join("reports");
+    std::os::unix::fs::symlink(outside.path(), &out).unwrap();
+    let report = json!({"overall_status":"pass", "checks":[]});
+    assert!(super::write_calibration_report_v52(&out, &report).is_err());
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+}
