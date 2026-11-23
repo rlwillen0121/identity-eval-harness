@@ -50,6 +50,12 @@ fn path_arg(path: &Path) -> &str {
     path.to_str().expect("UTF-8 temp path")
 }
 
+/// Copy the committed sealed `v52_dev` suite into `out`. The determinism test proves `v52 build`
+/// reproduces it byte for byte, so the other tests need not rebuild it.
+fn committed_dev(out: &Path) {
+    copy_dir(&repo_root().join("datasets/v52/v52_dev"), out);
+}
+
 fn build_dev(out: &Path) {
     let output = identitybench(&["v52", "build", "--suite", "v52_dev", "--out", path_arg(out)]);
     assert_eq!(
@@ -433,7 +439,7 @@ fn private_suite_path_round_trips_with_the_test_key() {
 fn tampered_seal_fails_validation_with_exit_one() {
     let dir = tempfile::tempdir().unwrap();
     let built = dir.path().join("v52_dev");
-    build_dev(&built);
+    committed_dev(&built);
     let seal_path = built.join("SEAL.json");
     let mut seal: Value = serde_json::from_slice(&std::fs::read(&seal_path).unwrap()).unwrap();
     seal["episodes_sha256"] = Value::String("0".repeat(64));
@@ -465,7 +471,7 @@ fn write_recording(path: &Path, episode_ids: &[String], missing: Option<&str>) {
 fn offline_replay_run_interrupt_resume_and_report() {
     let dir = tempfile::tempdir().unwrap();
     let dataset = dir.path().join("v52_dev");
-    build_dev(&dataset);
+    committed_dev(&dataset);
     let episode_ids: Vec<String> = std::fs::read_to_string(dataset.join("episodes.jsonl"))
         .unwrap()
         .lines()
@@ -851,7 +857,7 @@ fn rounded6(x: f64) -> f64 {
 fn leaderboard_over_two_dev_replay_runs() {
     let dir = tempfile::tempdir().unwrap();
     let dataset = dir.path().join("v52_dev");
-    build_dev(&dataset);
+    committed_dev(&dataset);
     let seal = dataset.join("SEAL.json");
     let pricing = repo_root().join("examples/v52/pricing-example.json");
     let zero_pricing = repo_root().join("examples/v52/pricing-synthetic-zero.json");
