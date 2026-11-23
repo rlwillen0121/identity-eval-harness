@@ -278,6 +278,27 @@ pub async fn run_command(command: &Command) -> ProcessResult {
 }
 
 pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -> ProcessResult {
+    run_command_supervised(command, max_capture_bytes, None).await
+}
+
+/// Like [`run_command_with_cap`], but once the direct child has exited, wait at most `exit_grace`
+/// for its output pipes to close. A descendant that still holds an inherited pipe (a daemon or
+/// helper the CLI started) is then killed with the process group, and the result keeps the
+/// direct child's exit status and the output captured so far instead of waiting for the
+/// overall timeout. Used where only the direct child's output matters (`--version`).
+pub async fn run_command_with_exit_grace(
+    command: &Command,
+    max_capture_bytes: usize,
+    exit_grace: Duration,
+) -> ProcessResult {
+    run_command_supervised(command, max_capture_bytes, Some(exit_grace)).await
+}
+
+async fn run_command_supervised(
+    command: &Command,
+    max_capture_bytes: usize,
+    exit_grace: Option<Duration>,
+) -> ProcessResult {
     let start = Instant::now();
     if command.argv.is_empty() {
         return ProcessResult {
@@ -357,16 +378,39 @@ pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -
     let stdout_capture = Mutex::new(Capture::default());
     let stderr_capture = Mutex::new(Capture::default());
     let work = async {
-        let ((), (), ()) = tokio::join!(
-            drain_stream(stdout_pipe, max_capture_bytes, &stdout_capture),
-            drain_stream(stderr_pipe, max_capture_bytes, &stderr_capture),
-            async {
-                if let Some(bytes) = stdin_bytes {
-                    feed_stdin(stdin_pipe, bytes).await;
+        let pipes = async {
+            let ((), (), ()) = tokio::join!(
+                drain_stream(stdout_pipe, max_capture_bytes, &stdout_capture),
+                drain_stream(stderr_pipe, max_capture_bytes, &stderr_capture),
+                async {
+                    if let Some(bytes) = stdin_bytes {
+                        feed_stdin(stdin_pipe, bytes).await;
+                    }
+                }
+            );
+        };
+        let status = match exit_grace {
+            None => {
+                pipes.await;
+                child.wait().await
+            }
+            Some(grace) => {
+                let mut pipes = std::pin::pin!(pipes);
+                tokio::select! {
+                    biased;
+                    () = &mut pipes => child.wait().await,
+                    status = child.wait() => {
+                        // The direct child exited. Bound the wait for pipes a descendant may
+                        // still hold, then kill the group so they close.
+                        if tokio::time::timeout(grace, &mut pipes).await.is_err() {
+                            kill_stragglers(pgid);
+                            pipes.await;
+                        }
+                        status
+                    }
                 }
             }
-        );
-        let status = child.wait().await;
+        };
         kill_stragglers(pgid);
         status
     };

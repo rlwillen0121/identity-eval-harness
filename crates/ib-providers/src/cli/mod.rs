@@ -31,7 +31,8 @@ use crate::json::{
 };
 use crate::subprocess::{
     Command, DEFAULT_RETRY_BASE_DELAY_S, MAX_CAPTURE_BYTES, ProcessResult, ProcessRunner,
-    SystemProcessRunner, is_transient_error, redact, retry_transient, run_command_with_cap, tail,
+    SystemProcessRunner, is_transient_error, redact, retry_transient, run_command_with_exit_grace,
+    tail,
 };
 
 /// Header of the optional canonical system block (`SPEC-v5.2` §7.1 transcript grammar).
@@ -425,6 +426,9 @@ pub fn base_child_env(base: Option<&BTreeMap<String, String>>) -> BTreeMap<Strin
 static VERSION_CACHE: OnceLock<Mutex<HashMap<(String, EnvItems), String>>> = OnceLock::new();
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 const VERSION_PROBE_CAPTURE_BYTES: usize = 64 * 1024;
+/// After `<binary> --version` exits, how long its output pipes may stay open before the process
+/// group (for example a helper the CLI left running) is killed.
+const VERSION_PROBE_EXIT_GRACE: Duration = Duration::from_secs(1);
 
 /// `<binary> --version` (first non-empty line), cached per binary and environment.
 #[must_use]
@@ -480,7 +484,11 @@ fn probe_version_uncached_with_limits(
                 .enable_all()
                 .build()
                 .ok()?;
-            Some(runtime.block_on(run_command_with_cap(&command, max_capture_bytes)))
+            Some(runtime.block_on(run_command_with_exit_grace(
+                &command,
+                max_capture_bytes,
+                VERSION_PROBE_EXIT_GRACE,
+            )))
         })
     else {
         return "unknown".to_string();
@@ -496,8 +504,9 @@ fn probe_version_uncached_with_limits(
         };
     }
     // A direct child can exit successfully while a helper keeps its inherited pipes open. The
-    // supervised runner then reaches its deadline to reap the process group, but preserves the
-    // direct child's zero status and bounded output. Accept that completed probe result.
+    // supervised runner then waits only `VERSION_PROBE_EXIT_GRACE` before reaping the process
+    // group, and keeps the direct child's exit status and bounded output. A nonzero status,
+    // including a child killed at the deadline, is not a version.
     if result.returncode != 0 {
         return "unknown".to_string();
     }
@@ -531,27 +540,54 @@ mod version_probe_tests {
                 "[ \"$PROBE_MARKER\" = \"visible\" ] || exit 3\n",
                 "printf 'mock-version 1.2.3\\n'\n",
                 "head -c 131072 /dev/zero | tr '\\0' 'x'\n",
-                "sleep 30 &\n",
+                // A descendant that keeps the inherited stdout/stderr pipes open far past the
+                // deadline.
+                "sleep 120 &\n",
+                "printf '%s' \"$!\" > \"$PID_FILE\"\n",
                 "exit 0\n",
             ),
         )
         .expect("write mock version binary");
         fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
             .expect("make mock executable");
+        let pid_file = temp.path().join("descendant.pid");
         let env = BTreeMap::from([
             ("PATH".to_string(), "/usr/bin:/bin".to_string()),
             ("PROBE_MARKER".to_string(), "visible".to_string()),
+            (
+                "PID_FILE".to_string(),
+                pid_file.to_string_lossy().into_owned(),
+            ),
         ]);
+        // The production deadline: generous enough that the script always finishes under load, so
+        // the result never depends on scheduling. The bounded wait comes from the exit grace.
         let started = Instant::now();
         let version = probe_version_uncached_with_limits(
             &binary.to_string_lossy(),
             &env,
-            Duration::from_millis(250),
+            VERSION_PROBE_TIMEOUT,
             64,
         );
+        let elapsed = started.elapsed();
 
+        // First line of the direct child's bounded (64-byte) output.
         assert_eq!(version, "mock-version 1.2.3");
-        assert!(started.elapsed() < Duration::from_secs(5));
+        // Neither the 30 s deadline nor the 120 s descendant was waited for.
+        assert!(elapsed < VERSION_PROBE_TIMEOUT / 2, "{elapsed:?}");
+        // The pipe-holding descendant was killed with the process group.
+        let pid: i32 = fs::read_to_string(&pid_file)
+            .expect("descendant pid")
+            .trim()
+            .parse()
+            .expect("numeric pid");
+        let reap_deadline = Instant::now() + Duration::from_secs(20);
+        while kill(Pid::from_raw(pid), None).is_ok() {
+            assert!(
+                Instant::now() < reap_deadline,
+                "descendant {pid} survived the probe"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
 
         let failed_binary = temp.path().join("failed-version.sh");
         fs::write(&failed_binary, "#!/bin/sh\nexit 7\n").expect("write failing mock binary");
@@ -561,7 +597,7 @@ mod version_probe_tests {
             probe_version_uncached_with_limits(
                 &failed_binary.to_string_lossy(),
                 &env,
-                Duration::from_secs(1),
+                VERSION_PROBE_TIMEOUT,
                 64,
             ),
             "unknown"
