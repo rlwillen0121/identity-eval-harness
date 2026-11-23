@@ -854,10 +854,20 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
                     "error": e.to_string(),
                 })
             }),
-            Err(err) => json!({
-                "status": "ENGINE_ERROR",
-                "error": err,
-            }),
+            Err(err) => {
+                let diagnostic = ib_v52_schemas::JsonPointerDiagnosticV52 {
+                    document: "arguments".to_owned(),
+                    pointer: "/connector_id".to_owned(),
+                    message: err.clone(),
+                };
+                json!({
+                    "status": "ENGINE_ERROR",
+                    "error": err,
+                    "document": diagnostic.document,
+                    "pointer": diagnostic.pointer,
+                    "diagnostics": [diagnostic],
+                })
+            }
         }
     }
 
@@ -994,7 +1004,7 @@ fn workspace_listing(
 }
 
 /// The `config/*.json` text a tool reads: [`serialize_config_compact`] of the file's section.
-fn serialize_config_file(config: &IgaDeploymentConfigV52, path: &str) -> Option<String> {
+pub(crate) fn serialize_config_file(config: &IgaDeploymentConfigV52, path: &str) -> Option<String> {
     let section = config.section_json(config_file_stem(path)?)?;
     serialize_config_compact(&section).ok()
 }
@@ -1024,12 +1034,16 @@ fn serialize_config_compact(json_val: &Value) -> Result<String, serde_json::Erro
     Ok(out)
 }
 
-fn is_searchable_path(path: &str) -> bool {
-    CONFIG_FILES_V52.contains(&path)
-        || path.starts_with("engagement/")
-        || path.starts_with("legacy_iiq/")
-        || path.starts_with("sources/")
-        || path.starts_with("target_specs/")
+pub(crate) fn is_searchable_path(path: &str) -> bool {
+    let canonical = path
+        .split('/')
+        .all(|segment| !segment.is_empty() && segment != "." && segment != "..");
+    canonical
+        && (CONFIG_FILES_V52.contains(&path)
+            || path.starts_with("engagement/")
+            || path.starts_with("legacy_iiq/")
+            || path.starts_with("sources/")
+            || path.starts_with("target_specs/"))
 }
 
 fn glob_is_config_only(raw_glob: &str) -> bool {
@@ -1064,7 +1078,7 @@ fn compile_workspace_glob(pattern: &str) -> Result<Regex, String> {
     Regex::new(&expression).map_err(|_| "'path_glob' is invalid".to_owned())
 }
 
-fn marked_search_line(line: &str, match_start: usize) -> String {
+pub(crate) fn marked_search_line(line: &str, match_start: usize) -> String {
     const MARKER: &str = "...[truncated]";
     if line.len() <= MAX_SEARCH_LINE_BYTES {
         return line.to_owned();

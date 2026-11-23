@@ -683,12 +683,14 @@ dependencies = [
 name = "ib-v52-runtime"
 version = "5.2.0"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "async-trait",
  "hex",
  "ib-accounting",
  "ib-core",
  "ib-providers",
+ "ib-v52-engine",
  "ib-v52-schemas",
  "indexmap",
  "regex",

@@ -47,6 +47,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 
 # Text
+aho-corasick = "1"
 regex = "1"
 regex-automata = "0.4"
 

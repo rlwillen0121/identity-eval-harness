@@ -11,12 +11,14 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+aho-corasick.workspace = true
 anyhow.workspace = true
 hex.workspace = true
 ib-core.workspace = true
 ib-providers.workspace = true
 ib-accounting.workspace = true
 ib-v52-schemas.workspace = true
+ib-v52-engine.workspace = true
 indexmap.workspace = true
 regex.workspace = true
 serde.workspace = true
