@@ -10,7 +10,7 @@ use ib_v52_schemas::{
 };
 use indexmap::IndexMap;
 
-use crate::transforms::{TransformEvalContext, eval_transform_expr, parse_affiliation};
+use crate::transforms::{TransformBudget, TransformEvalContext, parse_affiliation};
 
 /// Coalesced identity cube before/after lifecycle & username resolution.
 #[derive(Debug, Clone)]
@@ -51,6 +51,15 @@ pub fn coalesce_identities<'a>(
     world: &'a EnterpriseBrownfieldWorldV52,
     config: &IgaDeploymentConfigV52,
     cutover_date: &str,
+) -> Result<(IndexMap<String, CoalescedIdentity<'a>>, HashSet<String>), String> {
+    coalesce_identities_with_budget(world, config, cutover_date, &mut TransformBudget::default())
+}
+
+pub(crate) fn coalesce_identities_with_budget<'a>(
+    world: &'a EnterpriseBrownfieldWorldV52,
+    config: &IgaDeploymentConfigV52,
+    cutover_date: &str,
+    budget: &mut TransformBudget,
 ) -> Result<(IndexMap<String, CoalescedIdentity<'a>>, HashSet<String>), String> {
     let mut sorted_rules: Vec<&AuthoritativeSourceRuleV52> = config
         .identity_profile
@@ -137,8 +146,10 @@ pub fn coalesce_identities<'a>(
 
         let mut attributes = IndexMap::new();
         for (attr_name, expr) in &config.identity_profile.attribute_mappings {
-            let val = eval_transform_expr(expr, &eval_ctx).map_err(|err| {
-                format!("person '{person_key}' attribute '{attr_name}' transform error: {err}")
+            let val = budget.evaluate(expr, &eval_ctx).map_err(|err| {
+                TransformBudget::with_context(err, || {
+                    format!("person '{person_key}' attribute '{attr_name}' transform error")
+                })
             })?;
             attributes.insert(attr_name.clone(), val);
         }

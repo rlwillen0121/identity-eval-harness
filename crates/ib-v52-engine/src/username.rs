@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use crate::coalescence::{CoalescedIdentity, SpokeCorrelationState};
 use crate::lifecycle::EvaluatedLifecycle;
-use crate::transforms::{TransformEvalContext, eval_transform_expr, strip_diacritics};
+use crate::transforms::{TransformBudget, TransformEvalContext, strip_diacritics};
 
 /// Generated username identifiers for a single identity.
 #[derive(Debug, Clone)]
@@ -40,6 +40,29 @@ pub fn generate_usernames(
     lifecycles: &IndexMap<String, EvaluatedLifecycle>,
     correlation: &SpokeCorrelationState,
     cutover_date: &str,
+) -> Result<IndexMap<String, GeneratedUsername>, String> {
+    generate_usernames_with_budget(
+        world,
+        config,
+        cubes,
+        declared_sources,
+        lifecycles,
+        correlation,
+        cutover_date,
+        &mut TransformBudget::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_usernames_with_budget(
+    world: &EnterpriseBrownfieldWorldV52,
+    config: &IgaDeploymentConfigV52,
+    cubes: &IndexMap<String, CoalescedIdentity<'_>>,
+    declared_sources: &HashSet<String>,
+    lifecycles: &IndexMap<String, EvaluatedLifecycle>,
+    correlation: &SpokeCorrelationState,
+    cutover_date: &str,
+    budget: &mut TransformBudget,
 ) -> Result<IndexMap<String, GeneratedUsername>, String> {
     let policy = &config.username_policy;
     let check_live = policy
@@ -308,15 +331,18 @@ pub fn generate_usernames(
                     matched_records: &cube.matched_records,
                     cutover_date,
                 };
-                let evaluated = eval_transform_expr(
-                    &TransformExprV52::RefTransform {
-                        name: transform_name.clone(),
-                    },
-                    &eval_ctx,
-                )
-                .map_err(|err| {
-                    format!("person '{person_key}' custom username transform error: {err}")
-                })?;
+                let evaluated = budget
+                    .evaluate(
+                        &TransformExprV52::RefTransform {
+                            name: transform_name.clone(),
+                        },
+                        &eval_ctx,
+                    )
+                    .map_err(|err| {
+                        TransformBudget::with_context(err, || {
+                            format!("person '{person_key}' custom username transform error")
+                        })
+                    })?;
                 let normed = normalize(&evaluated);
                 (
                     filter_sam_chars(&normed, &policy.allowed_sam_punctuation),

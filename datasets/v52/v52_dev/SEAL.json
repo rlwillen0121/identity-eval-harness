@@ -117,7 +117,7 @@
   "episodes_sha256": "932ed0b5bf73567490c15f22d12d2f8c5e3944dd682a2a9e95ccc1fa9c1de168",
   "oracles_sha256": "ba6b0ef2291c56e82466cca5c532b17f7353fd90d246fdca8313ec85941e5feb",
   "spec_version": "SPEC-v5.2",
-  "spec_sha256": "dc3bacedd04dd181d8360162f51a9c3fea69a8a8c21b566748296bd94aab21c2",
+  "spec_sha256": "4f0969fc25c8c48e52b0fb498d299ba36b8294a14e0d9423afa1a1b4fe6a8b80",
   "contract_id": "identitybench.v5.2.practitioner-contract.v1",
   "protocol_id": "identitybench.v5.2.protocol.v1",
   "generator_version": "5.2.0",

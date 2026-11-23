@@ -48,6 +48,7 @@ clap = { version = "4", features = ["derive", "env"] }
 
 # Text
 regex = "1"
+regex-automata = "0.4"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

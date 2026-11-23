@@ -16,6 +16,9 @@ pub use evaluation::*;
 pub use transforms::*;
 pub use world::*;
 
+/// Engine error returned when a world pass exhausts its transform allowance.
+pub const TRANSFORM_BUDGET_EXCEEDED: &str = "TRANSFORM_BUDGET_EXCEEDED";
+
 pub const SPEC_VERSION_V52: &str = "SPEC-v5.2";
 pub const CONTRACT_ID_V52: &str = "identitybench.v5.2.practitioner-contract.v1";
 pub const GENERATOR_VERSION_V52: &str = "5.2.0";

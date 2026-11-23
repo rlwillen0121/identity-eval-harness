@@ -26,7 +26,7 @@ use indexmap::IndexMap;
 
 use crate::cloud_ciem::evaluate_cloud_ciem;
 use crate::coalescence::{
-    CoalescedIdentity, SpokeCorrelationState, coalesce_identities,
+    CoalescedIdentity, SpokeCorrelationState, coalesce_identities, coalesce_identities_with_budget,
     correlate_spokes_and_classify_service_accounts,
 };
 use crate::connectors::test_connector_spec;
@@ -41,8 +41,9 @@ use crate::roles::{
     compute_person_effective_entitlements,
 };
 use crate::scoring::score_deployment;
+use crate::transforms::TransformBudget;
 use crate::uar::evaluate_uar_campaigns;
-use crate::username::{GeneratedUsername, generate_usernames};
+use crate::username::{GeneratedUsername, generate_usernames_with_budget};
 use crate::workflows::evaluate_day2_events;
 
 /// Deterministic Practitioner IGA execution & evaluation backend for `SPEC-v5.2`.
@@ -64,11 +65,13 @@ impl IgaEngineV52 {
         world: &'a EnterpriseBrownfieldWorldV52,
         config: &IgaDeploymentConfigV52,
         cutover_date: &str,
+        budget: &mut TransformBudget,
     ) -> Result<EvaluatedWorldState<'a>, String> {
-        let (cubes, declared_sources) = coalesce_identities(world, config, cutover_date)?;
+        let (cubes, declared_sources) =
+            coalesce_identities_with_budget(world, config, cutover_date, budget)?;
         let lifecycles = evaluate_lifecycle_states(world, config, &cubes, cutover_date);
         let correlation = correlate_spokes_and_classify_service_accounts(world, config, &cubes);
-        let usernames = generate_usernames(
+        let usernames = generate_usernames_with_budget(
             world,
             config,
             &cubes,
@@ -76,6 +79,7 @@ impl IgaEngineV52 {
             &lifecycles,
             &correlation,
             cutover_date,
+            budget,
         )?;
         let mut birthrights = IndexMap::with_capacity(cubes.len());
         for (pk, cube) in &cubes {
@@ -185,7 +189,8 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
         cutover_date: &str,
         person_keys: Option<&[String]>,
     ) -> Result<IdentityPreviewResultV52, String> {
-        let state = Self::evaluate_world(world, config, cutover_date)?;
+        let state =
+            Self::evaluate_world(world, config, cutover_date, &mut TransformBudget::default())?;
         let total_identities = state.cubes.len();
 
         let live_collisions =
@@ -286,7 +291,8 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
         config: &IgaDeploymentConfigV52,
         cutover_date: &str,
     ) -> Result<GoLiveDryRunResultV52, String> {
-        let state = Self::evaluate_world(world, config, cutover_date)?;
+        let state =
+            Self::evaluate_world(world, config, cutover_date, &mut TransformBudget::default())?;
         Ok(build_dry_run_result(
             state.cubes.len(),
             config,
@@ -301,7 +307,12 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
         gold_config: &IgaDeploymentConfigV52,
         day2_events: &[Day2EventV52],
     ) -> Result<ExpectedEngagementOutcomeV52, String> {
-        let state = Self::evaluate_world(&episode.world, gold_config, &episode.cutover_date)?;
+        let state = Self::evaluate_world(
+            &episode.world,
+            gold_config,
+            &episode.cutover_date,
+            &mut TransformBudget::default(),
+        )?;
         Ok(Self::build_expected_outcome(
             &episode.world,
             gold_config,
@@ -317,7 +328,12 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
         oracle: &SealedEpisodeOracleV52,
         submitted_config: &IgaDeploymentConfigV52,
     ) -> Result<DeploymentScoreV52, String> {
-        let state = Self::evaluate_world(&episode.world, submitted_config, &episode.cutover_date)?;
+        let state = Self::evaluate_world(
+            &episode.world,
+            submitted_config,
+            &episode.cutover_date,
+            &mut TransformBudget::default(),
+        )?;
         let actual_outcome = Self::build_expected_outcome(
             &episode.world,
             submitted_config,

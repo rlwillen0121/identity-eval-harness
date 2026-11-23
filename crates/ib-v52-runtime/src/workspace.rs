@@ -59,6 +59,14 @@ impl WorkspaceStateV52 {
     }
 }
 
+fn evaluation_tool_error(err: String) -> Value {
+    if err == ib_v52_schemas::TRANSFORM_BUDGET_EXCEEDED {
+        json!({"status":"ERROR", "error":err, "detail":"Transform evaluation exceeded the per-pass resource limits."})
+    } else {
+        json!({"status":"ENGINE_ERROR", "error":err})
+    }
+}
+
 /// Deterministic in-memory virtual engagement workspace for a single v5.2 episode.
 pub struct VirtualWorkspaceRuntimeV52<'a> {
     pub episode: &'a EpisodeV52,
@@ -475,10 +483,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
                     })
                 })
             }
-            Err(err) => json!({
-                "status": "ENGINE_ERROR",
-                "error": err,
-            }),
+            Err(err) => evaluation_tool_error(err),
         }
     }
 
@@ -538,10 +543,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
                     "error": err.to_string(),
                 }),
             },
-            Err(err) => json!({
-                "status": "ENGINE_ERROR",
-                "error": err,
-            }),
+            Err(err) => evaluation_tool_error(err),
         }
     }
 
@@ -561,12 +563,14 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
                 "committed": true,
             });
         }
+        // Budget exhaustion reaches evaluate_commit and its normal zero-score path.
         if let Err(err) = self.engine.preview_identities(
             &self.episode.world,
             &self.config,
             &self.episode.cutover_date,
             Some(&[]),
-        ) {
+        ) && err != ib_v52_schemas::TRANSFORM_BUDGET_EXCEEDED
+        {
             return json!({
                 "status": "SCHEMA_ERROR",
                 "errors": [err],
