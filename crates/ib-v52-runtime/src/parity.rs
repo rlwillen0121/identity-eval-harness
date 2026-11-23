@@ -755,7 +755,7 @@ mod tests {
         };
         let mut history: Vec<TurnRecordV52> = Vec::new();
         for turn in 1..=48 {
-            let record = match turn % 4 {
+            let record = match turn % 8 {
                 0 => rejected(
                     turn,
                     RejectionReasonV52::OutputLimit,
@@ -810,6 +810,12 @@ mod tests {
         let request =
             build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52)
                 .expect("the fallback bounds the request");
+        // The §7.2 arithmetic: every turn renders in under 2_000 bytes after the fallback.
+        assert!(
+            request.request_bytes <= MAX_OPENING_BYTES_V52 + 49 * 2_000,
+            "{}",
+            request.request_bytes
+        );
         assert!(request.request_bytes <= MAX_REQUEST_BYTES_V52);
         assert!(
             request
