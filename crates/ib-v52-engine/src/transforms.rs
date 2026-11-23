@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use ib_v52_schemas::TRANSFORM_BUDGET_EXCEEDED;
 use ib_v52_schemas::{
     AffiliationTypeV52, CompareOpV52, DateCompareOpV52, GroupDispositionV52, LifecycleStateIdV52,
-    RawSourceRecordV52, TransformExprV52, TransformsConfigV52,
+    RawSourceRecordV52, TransformExprV52, TransformsConfigV52, json_pointer_child,
 };
 use indexmap::IndexMap;
 use regex::Regex;
@@ -18,12 +18,82 @@ const MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REGEX_BYTES: usize = 8 * 1024;
 const MAX_REGEX_WORK: usize = 16 * 1024 * 1024;
 
+#[derive(Clone, Copy)]
+enum PointerSegment<'a> {
+    Key(&'a str),
+    KeyIndex(&'a str, usize),
+}
+
+struct EvalLocation<'a> {
+    document: &'a str,
+    base_pointer: &'a str,
+    parent: Option<&'a EvalLocation<'a>>,
+    segment: Option<PointerSegment<'a>>,
+}
+
+impl<'a> EvalLocation<'a> {
+    fn root(document: &'a str, base_pointer: &'a str) -> Self {
+        Self {
+            document,
+            base_pointer,
+            parent: None,
+            segment: None,
+        }
+    }
+
+    fn child<'b>(&'b self, segment: PointerSegment<'b>) -> EvalLocation<'b> {
+        EvalLocation {
+            document: self.document,
+            base_pointer: self.base_pointer,
+            parent: Some(self),
+            segment: Some(segment),
+        }
+    }
+
+    fn pointer(&self) -> (String, String) {
+        let mut parts = Vec::new();
+        let mut current = self;
+        while let Some(parent) = current.parent {
+            if let Some(part) = current.segment {
+                parts.push(part);
+            }
+            current = parent;
+        }
+        parts.reverse();
+
+        let mut pointer = current.base_pointer.to_owned();
+        for part in parts {
+            pointer = match part {
+                PointerSegment::Key(key) => json_pointer_child(&pointer, key),
+                PointerSegment::KeyIndex(key, index) => {
+                    let field_pointer = json_pointer_child(&pointer, key);
+                    json_pointer_child(&field_pointer, &index.to_string())
+                }
+            };
+        }
+        (self.document.to_owned(), pointer)
+    }
+
+    fn with_child_pointer(&self, segment: PointerSegment<'_>) -> (String, String) {
+        let (document, mut pointer) = self.pointer();
+        pointer = match segment {
+            PointerSegment::Key(key) => json_pointer_child(&pointer, key),
+            PointerSegment::KeyIndex(key, index) => {
+                let field_pointer = json_pointer_child(&pointer, key);
+                json_pointer_child(&field_pointer, &index.to_string())
+            }
+        };
+        (document, pointer)
+    }
+}
+
 /// One allowance shared by all attribute and username transforms in a world pass.
 #[derive(Default)]
 pub(crate) struct TransformBudget {
     nodes: usize,
     total_bytes: usize,
     regex_work: usize,
+    last_error_location: Option<(String, String)>,
     #[cfg(test)]
     peak_string: usize,
     #[cfg(test)]
@@ -55,7 +125,57 @@ impl TransformBudget {
         expr: &TransformExprV52,
         ctx: &TransformEvalContext<'_>,
     ) -> Result<String, String> {
-        eval_inner(expr, ctx, 0, &mut HashSet::new(), self)
+        self.evaluate_at(expr, ctx, "output", "")
+    }
+
+    pub(crate) fn evaluate_at(
+        &mut self,
+        expr: &TransformExprV52,
+        ctx: &TransformEvalContext<'_>,
+        document: &str,
+        pointer: &str,
+    ) -> Result<String, String> {
+        self.last_error_location = None;
+        let expression_location = EvalLocation::root(document, pointer);
+        eval_inner(
+            expr,
+            ctx,
+            0,
+            &mut HashSet::new(),
+            self,
+            &expression_location,
+        )
+    }
+
+    pub(crate) fn evaluate_named_at(
+        &mut self,
+        name: &str,
+        ctx: &TransformEvalContext<'_>,
+        document: &str,
+        pointer: &str,
+    ) -> Result<String, String> {
+        self.last_error_location = None;
+        self.nodes += 1;
+        if let Err(error) = check_limit(self.nodes, MAX_NODES) {
+            self.last_error_location = None;
+            return Err(error);
+        }
+        let Some(target) = ctx.transforms.transforms.get(name) else {
+            self.last_error_location = Some((document.to_owned(), pointer.to_owned()));
+            return Err(format!("unknown transform reference '{name}'"));
+        };
+
+        let mut visiting = HashSet::from([name.to_owned()]);
+        let transforms_root = EvalLocation::root("config/transforms.json", "");
+        let transforms_location = transforms_root.child(PointerSegment::Key("transforms"));
+        let transform_location = transforms_location.child(PointerSegment::Key(name));
+        eval_inner(target, ctx, 1, &mut visiting, self, &transform_location)
+    }
+
+    pub(crate) fn last_error_location(&self) -> Option<(&str, &str)> {
+        self.last_error_location
+            .as_ref()
+            .map(|(document, pointer)| (document.as_str(), pointer.as_str()))
     }
 
     /// The string-based backend interface reserves one exact error for budget exhaustion.
@@ -89,16 +209,31 @@ pub fn eval_transform_expr(
     TransformBudget::default().evaluate(expr, ctx)
 }
 
+fn eval_child(
+    expr: &TransformExprV52,
+    ctx: &TransformEvalContext<'_>,
+    depth: usize,
+    visiting: &mut HashSet<String>,
+    budget: &mut TransformBudget,
+    location: &EvalLocation<'_>,
+    segment: PointerSegment<'_>,
+) -> Result<String, String> {
+    let child_location = location.child(segment);
+    eval_inner(expr, ctx, depth + 1, visiting, budget, &child_location)
+}
+
 fn eval_inner(
     expr: &TransformExprV52,
     ctx: &TransformEvalContext<'_>,
     depth: usize,
     visiting: &mut HashSet<String>,
     budget: &mut TransformBudget,
+    location: &EvalLocation<'_>,
 ) -> Result<String, String> {
     budget.nodes += 1;
     check_limit(budget.nodes, MAX_NODES)?;
     if depth > MAX_TRANSFORM_DEPTH {
+        budget.last_error_location = Some(location.pointer());
         return Err(format!(
             "transform evaluation exceeded maximum recursion depth ({MAX_TRANSFORM_DEPTH})"
         ));
@@ -119,14 +254,27 @@ fn eval_inner(
         TransformExprV52::Literal { value } => bounded_copy(value),
         TransformExprV52::RefTransform { name } => {
             if !visiting.insert(name.clone()) {
+                budget.last_error_location =
+                    Some(location.with_child_pointer(PointerSegment::Key("name")));
                 return Err(format!("cyclic transform reference detected at '{name}'"));
             }
-            let target = ctx
-                .transforms
-                .transforms
-                .get(name)
-                .ok_or_else(|| format!("unknown transform reference '{name}'"))?;
-            let result = eval_inner(target, ctx, depth + 1, visiting, budget);
+            let Some(target) = ctx.transforms.transforms.get(name) else {
+                budget.last_error_location =
+                    Some(location.with_child_pointer(PointerSegment::Key("name")));
+                visiting.remove(name);
+                return Err(format!("unknown transform reference '{name}'"));
+            };
+            let transforms_root = EvalLocation::root("config/transforms.json", "");
+            let transforms_location = transforms_root.child(PointerSegment::Key("transforms"));
+            let result = eval_child(
+                target,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                &transforms_location,
+                PointerSegment::Key(name),
+            );
             visiting.remove(name);
             result
         }
@@ -135,8 +283,16 @@ fn eval_inner(
             ignore_blank,
         } => {
             let mut chosen = String::new();
-            for candidate in values {
-                let evaluated = eval_inner(candidate, ctx, depth + 1, visiting, budget)?;
+            for (index, candidate) in values.iter().enumerate() {
+                let evaluated = eval_child(
+                    candidate,
+                    ctx,
+                    depth,
+                    visiting,
+                    budget,
+                    location,
+                    PointerSegment::KeyIndex("values", index),
+                )?;
                 let valid = if *ignore_blank {
                     !evaluated.trim().is_empty()
                 } else {
@@ -154,38 +310,90 @@ fn eval_inner(
             table,
             default_value,
         } => {
-            let key = eval_inner(input, ctx, depth + 1, visiting, budget)?;
+            let key = eval_child(
+                input,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("input"),
+            )?;
             if let Some(mapped) = table.get(&key) {
                 bounded_copy(mapped)
             } else if let Some(default_expr) = default_value {
-                eval_inner(default_expr, ctx, depth + 1, visiting, budget)
+                eval_child(
+                    default_expr,
+                    ctx,
+                    depth,
+                    visiting,
+                    budget,
+                    location,
+                    PointerSegment::Key("default_value"),
+                )
             } else {
                 Ok(String::new())
             }
         }
         TransformExprV52::Concat { parts } => {
             let mut out = String::new();
-            for part in parts {
+            for (index, part) in parts.iter().enumerate() {
                 append(
                     &mut out,
-                    &eval_inner(part, ctx, depth + 1, visiting, budget)?,
+                    &eval_child(
+                        part,
+                        ctx,
+                        depth,
+                        visiting,
+                        budget,
+                        location,
+                        PointerSegment::KeyIndex("parts", index),
+                    )?,
                 )?;
             }
             Ok(out)
         }
-        TransformExprV52::Trim { input } => {
-            Ok(eval_inner(input, ctx, depth + 1, visiting, budget)?
-                .trim()
-                .to_owned())
-        }
-        TransformExprV52::Lower { input } => {
-            Ok(eval_inner(input, ctx, depth + 1, visiting, budget)?.to_lowercase())
-        }
-        TransformExprV52::Upper { input } => {
-            Ok(eval_inner(input, ctx, depth + 1, visiting, budget)?.to_uppercase())
-        }
+        TransformExprV52::Trim { input } => Ok(eval_child(
+            input,
+            ctx,
+            depth,
+            visiting,
+            budget,
+            location,
+            PointerSegment::Key("input"),
+        )?
+        .trim()
+        .to_owned()),
+        TransformExprV52::Lower { input } => Ok(eval_child(
+            input,
+            ctx,
+            depth,
+            visiting,
+            budget,
+            location,
+            PointerSegment::Key("input"),
+        )?
+        .to_lowercase()),
+        TransformExprV52::Upper { input } => Ok(eval_child(
+            input,
+            ctx,
+            depth,
+            visiting,
+            budget,
+            location,
+            PointerSegment::Key("input"),
+        )?
+        .to_uppercase()),
         TransformExprV52::StripDiacritics { input } => {
-            let raw = eval_inner(input, ctx, depth + 1, visiting, budget)?;
+            let raw = eval_child(
+                input,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("input"),
+            )?;
             Ok(strip_diacritics(&raw))
         }
         TransformExprV52::RegexReplace {
@@ -193,7 +401,15 @@ fn eval_inner(
             pattern,
             replacement,
         } => {
-            let raw = eval_inner(input, ctx, depth + 1, visiting, budget)?;
+            let raw = eval_child(
+                input,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("input"),
+            )?;
             bounded_replace(&raw, pattern, replacement, budget)
         }
         TransformExprV52::Substring {
@@ -201,11 +417,27 @@ fn eval_inner(
             start,
             max_len,
         } => {
-            let raw = eval_inner(input, ctx, depth + 1, visiting, budget)?;
+            let raw = eval_child(
+                input,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("input"),
+            )?;
             Ok(raw.chars().skip(*start).take(*max_len).collect())
         }
         TransformExprV52::IsoCountry2 { input } => {
-            let raw = eval_inner(input, ctx, depth + 1, visiting, budget)?;
+            let raw = eval_child(
+                input,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("input"),
+            )?;
             Ok(iso_country_2(&raw))
         }
         TransformExprV52::Conditional {
@@ -215,16 +447,48 @@ fn eval_inner(
             if_true,
             if_false,
         } => {
-            let left_val = eval_inner(left, ctx, depth + 1, visiting, budget)?;
+            let left_val = eval_child(
+                left,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("left"),
+            )?;
             let right_val = match right {
-                Some(r) => Some(eval_inner(r, ctx, depth + 1, visiting, budget)?),
+                Some(r) => Some(eval_child(
+                    r,
+                    ctx,
+                    depth,
+                    visiting,
+                    budget,
+                    location,
+                    PointerSegment::Key("right"),
+                )?),
                 None => None,
             };
             let matched = eval_compare_op(&left_val, *cmp, right_val.as_deref());
             if matched {
-                eval_inner(if_true, ctx, depth + 1, visiting, budget)
+                eval_child(
+                    if_true,
+                    ctx,
+                    depth,
+                    visiting,
+                    budget,
+                    location,
+                    PointerSegment::Key("if_true"),
+                )
             } else {
-                eval_inner(if_false, ctx, depth + 1, visiting, budget)
+                eval_child(
+                    if_false,
+                    ctx,
+                    depth,
+                    visiting,
+                    budget,
+                    location,
+                    PointerSegment::Key("if_false"),
+                )
             }
         }
         TransformExprV52::DateCompare {
@@ -234,13 +498,45 @@ fn eval_inner(
             if_true,
             if_false,
         } => {
-            let left_val = eval_inner(left, ctx, depth + 1, visiting, budget)?;
-            let right_val = eval_inner(right, ctx, depth + 1, visiting, budget)?;
+            let left_val = eval_child(
+                left,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("left"),
+            )?;
+            let right_val = eval_child(
+                right,
+                ctx,
+                depth,
+                visiting,
+                budget,
+                location,
+                PointerSegment::Key("right"),
+            )?;
             let matched = eval_date_compare(&left_val, *cmp, &right_val, ctx.cutover_date);
             if matched {
-                eval_inner(if_true, ctx, depth + 1, visiting, budget)
+                eval_child(
+                    if_true,
+                    ctx,
+                    depth,
+                    visiting,
+                    budget,
+                    location,
+                    PointerSegment::Key("if_true"),
+                )
             } else {
-                eval_inner(if_false, ctx, depth + 1, visiting, budget)
+                eval_child(
+                    if_false,
+                    ctx,
+                    depth,
+                    visiting,
+                    budget,
+                    location,
+                    PointerSegment::Key("if_false"),
+                )
             }
         }
     }?;

@@ -48,6 +48,7 @@ impl IgaEngineBackendV52 for StructuralMockEngine {
             schema_extraction_ok: true,
             sample_extracted_entitlements: vec![],
             errors: vec![],
+            error_diagnostics: Vec::new(),
         })
     }
 
@@ -67,6 +68,7 @@ impl IgaEngineBackendV52 for StructuralMockEngine {
             sample_null_overwrite_targets: vec![],
             schema_validation_error_count: 0,
             sample_schema_errors: vec![],
+            sample_schema_error_diagnostics: Vec::new(),
             live_directory_handle_collisions: vec![],
             attribute_modify_ratio_bps: 0,
             max_cohort_disable_ratio_bps: 0,
@@ -74,6 +76,7 @@ impl IgaEngineBackendV52 for StructuralMockEngine {
             cohort_disable_ratios_bps: IndexMap::new(),
             would_abort_on_configured_gates: false,
             operational_warnings: vec![],
+            operational_warning_diagnostics: Vec::new(),
         })
     }
 

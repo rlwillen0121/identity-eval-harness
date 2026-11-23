@@ -64,6 +64,10 @@ pub use validation::{
     find_budget_statements_v52, validate_loaded_v52_dataset, validate_v52_dataset,
 };
 pub use workspace::{
-    DEFAULT_READ_LINE_WINDOW, MAX_PREVIEW_CUBES, MAX_READ_LINES_PER_CALL,
-    VirtualWorkspaceRuntimeV52, WorkspaceStateV52, tool_definitions_v52,
+    DEFAULT_READ_LINE_WINDOW, DEFAULT_SEARCH_MAX_MATCHES, MAX_CONFIG_PATCH_BYTES,
+    MAX_CONFIG_WRITE_BYTES, MAX_PREVIEW_CUBES, MAX_READ_LINES_PER_CALL, MAX_SEARCH_CANDIDATE_FILES,
+    MAX_SEARCH_GLOB_BYTES, MAX_SEARCH_INVENTORY_FILES, MAX_SEARCH_LINE_BYTES, MAX_SEARCH_MATCHES,
+    MAX_SEARCH_PATH_BYTES, MAX_SEARCH_PATTERN_BYTES, MAX_SEARCH_WORKSPACE_BYTES,
+    VirtualWorkspaceRuntimeV52, WorkspaceStateV52, read_identity_sha256, search_identity_sha256,
+    tool_definitions_v52,
 };

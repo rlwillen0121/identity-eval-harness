@@ -1,6 +1,7 @@
 //! Wire schemas, declarative IGA configuration ASTs, and evaluation contracts for IdentityBench v5.2.
 
 pub mod configs;
+pub mod diagnostics;
 pub mod evaluation;
 pub mod jsonl;
 pub mod transforms;
@@ -12,6 +13,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 pub use configs::*;
+pub use diagnostics::*;
 pub use evaluation::*;
 pub use transforms::*;
 pub use world::*;

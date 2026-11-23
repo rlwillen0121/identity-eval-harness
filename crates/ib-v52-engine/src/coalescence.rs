@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashSet};
 use ib_v52_schemas::{
     AffiliationTypeV52, AuthoritativeSourceRuleV52, BrownfieldSpokeAccountV52,
     EnterpriseBrownfieldWorldV52, IgaDeploymentConfigV52, RawSourceRecordV52,
-    ServiceAccountClassifierV52,
+    ServiceAccountClassifierV52, json_pointer_child,
 };
 use indexmap::IndexMap;
 
@@ -146,11 +146,18 @@ pub(crate) fn coalesce_identities_with_budget<'a>(
 
         let mut attributes = IndexMap::new();
         for (attr_name, expr) in &config.identity_profile.attribute_mappings {
-            let val = budget.evaluate(expr, &eval_ctx).map_err(|err| {
-                TransformBudget::with_context(err, || {
-                    format!("person '{person_key}' attribute '{attr_name}' transform error")
-                })
-            })?;
+            let val = budget
+                .evaluate_at(
+                    expr,
+                    &eval_ctx,
+                    "config/identity_profile.json",
+                    &json_pointer_child("/attribute_mappings", attr_name),
+                )
+                .map_err(|err| {
+                    TransformBudget::with_context(err, || {
+                        format!("person '{person_key}' attribute '{attr_name}' transform error")
+                    })
+                })?;
             attributes.insert(attr_name.clone(), val);
         }
 

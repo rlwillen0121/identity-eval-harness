@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use ib_v52_schemas::{
     BrownfieldSpokeAccountV52, EnterpriseBrownfieldWorldV52, GoLiveDryRunResultV52,
-    IgaDeploymentConfigV52, SpokeStateDispositionV52,
+    IgaDeploymentConfigV52, JsonPointerDiagnosticV52, SpokeStateDispositionV52, json_pointer_child,
 };
 use indexmap::IndexMap;
 
@@ -35,10 +35,14 @@ pub struct AttributeSyncRunOutput {
     pub null_overwrite_targets: Vec<String>,
     /// Every target directory/API schema validation error observed during sync & handle checks.
     pub schema_errors: Vec<String>,
+    /// Config locations for each `schema_errors` entry, in the same order.
+    pub schema_error_diagnostics: Vec<JsonPointerDiagnosticV52>,
     /// Live/disabled directory handle collisions against `world.spoke_accounts` (never tombstones).
     pub live_directory_handle_collisions: Vec<String>,
     /// Operational warnings (strictly non-oracle).
     pub operational_warnings: Vec<String>,
+    /// Config or output locations for each operational warning, in the same order.
+    pub operational_warning_diagnostics: Vec<JsonPointerDiagnosticV52>,
     /// Number of spoke accounts with >= 1 attribute modification.
     pub modified_account_count: usize,
     /// Total number of spoke accounts evaluated across all spokes.
@@ -99,7 +103,9 @@ pub fn execute_attribute_sync(
     let mut saw_any_admin_secondary = false;
     let mut null_overwrite_targets: Vec<String> = Vec::new();
     let mut schema_errors: Vec<String> = Vec::new();
+    let mut schema_error_diagnostics: Vec<JsonPointerDiagnosticV52> = Vec::new();
     let mut operational_warnings: Vec<String> = Vec::new();
+    let mut operational_warning_diagnostics: Vec<JsonPointerDiagnosticV52> = Vec::new();
     let mut modified_accounts: BTreeSet<String> = BTreeSet::new();
     let mut total_spoke_account_count: usize = 0;
 
@@ -152,7 +158,7 @@ pub fn execute_attribute_sync(
                 let mut synced_attrs = acct.attributes.clone();
                 let mut admin_sec_modified = false;
 
-                for mapping in &config.attribute_sync.mappings {
+                for (mapping_index, mapping) in config.attribute_sync.mappings.iter().enumerate() {
                     if mapping.spoke_id != *spoke_id {
                         continue;
                     }
@@ -208,8 +214,10 @@ pub fn execute_attribute_sync(
                             spoke_id,
                             &acct_key,
                             mapping,
+                            mapping_index,
                             &value_to_write,
                             &mut schema_errors,
+                            &mut schema_error_diagnostics,
                         );
                         if existing_val != value_to_write {
                             modified_accounts.insert(acct_key.clone());
@@ -260,17 +268,26 @@ pub fn execute_attribute_sync(
     if !config.attribute_sync.exclude_service_accounts
         && !correlation.exempt_service_accounts.is_empty()
     {
-        operational_warnings.push(
-            "attribute_sync.exclude_service_accounts is false; exempt service accounts are exposed to sync"
-                .to_owned(),
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            "attribute_sync.exclude_service_accounts is false; exempt service accounts are exposed to sync",
+            "config/attribute_sync.json",
+            "/exclude_service_accounts",
         );
     }
 
     if !config.attribute_sync.exclude_admin_secondary_accounts && saw_any_admin_secondary {
-        operational_warnings.push(format!(
-            "attribute_sync.exclude_admin_secondary_accounts is false; {} privileged admin secondary account(s) modified by collaboration attribute sync",
-            contaminated_admin_secondary_sorted.len()
-        ));
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            &format!(
+                "attribute_sync.exclude_admin_secondary_accounts is false; {} privileged admin secondary account(s) modified by collaboration attribute sync",
+                contaminated_admin_secondary_sorted.len()
+            ),
+            "config/attribute_sync.json",
+            "/exclude_admin_secondary_accounts",
+        );
     }
 
     // Compute per-department cohort disable ratios over currently-enabled correlated AD primary accounts.
@@ -284,23 +301,35 @@ pub fn execute_attribute_sync(
             .abort_if_cohort_disable_ratio_bps_gt
         && let Some(ref cohort) = max_cohort_name
     {
-        operational_warnings.push(format!(
-            "cohort '{cohort}' disable ratio {max_cohort_disable_ratio_bps} bps exceeds configured gate {} bps",
-            config
-                .golive_plan
-                .safety_gates
-                .abort_if_cohort_disable_ratio_bps_gt
-        ));
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            &format!(
+                "cohort '{cohort}' disable ratio {max_cohort_disable_ratio_bps} bps exceeds configured gate {} bps",
+                config
+                    .golive_plan
+                    .safety_gates
+                    .abort_if_cohort_disable_ratio_bps_gt
+            ),
+            "config/golive_plan.json",
+            "/safety_gates/abort_if_cohort_disable_ratio_bps_gt",
+        );
     }
 
     // Check AD sAMAccountName 20-char schema limit across all evaluated identities.
     for (person_key, uname) in usernames {
         if uname.sam_account_name.chars().count() > 20 {
-            schema_errors.push(format!(
-                "ad:{person_key}.sAMAccountName '{}' exceeds 20-character AD schema limit (len={})",
-                uname.sam_account_name,
-                uname.sam_account_name.chars().count()
-            ));
+            push_schema_error(
+                &mut schema_errors,
+                &mut schema_error_diagnostics,
+                format!(
+                    "ad:{person_key}.sAMAccountName '{}' exceeds 20-character AD schema limit (len={})",
+                    uname.sam_account_name,
+                    uname.sam_account_name.chars().count()
+                ),
+                "config/username_policy.json",
+                "/sam_account_name_max_len",
+            );
         }
     }
 
@@ -309,35 +338,65 @@ pub fn execute_attribute_sync(
         detect_live_directory_collisions(world, usernames, correlation);
 
     if !correlation.uncorrelated_non_exempt_accounts.is_empty() {
-        operational_warnings.push(format!(
-            "{} uncorrelated spoke account(s) would be targeted for disablement",
-            correlation.uncorrelated_non_exempt_accounts.len()
-        ));
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            &format!(
+                "{} uncorrelated spoke account(s) would be targeted for disablement",
+                correlation.uncorrelated_non_exempt_accounts.len()
+            ),
+            "output",
+            "/uncorrelated_accounts_targeted_for_disable",
+        );
     }
     if !null_overwrite_targets.is_empty() {
-        operational_warnings.push(format!(
-            "{} populated target attribute(s) would be overwritten with null/blank values",
-            null_overwrite_targets.len()
-        ));
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            &format!(
+                "{} populated target attribute(s) would be overwritten with null/blank values",
+                null_overwrite_targets.len()
+            ),
+            "output",
+            "/sample_null_overwrite_targets",
+        );
     }
     if !schema_errors.is_empty() {
-        operational_warnings.push(format!(
-            "{} target schema validation error(s) detected in dry-run",
-            schema_errors.len()
-        ));
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            &format!(
+                "{} target schema validation error(s) detected in dry-run",
+                schema_errors.len()
+            ),
+            "output",
+            "/sample_schema_errors",
+        );
     }
     if !live_directory_handle_collisions.is_empty() {
-        operational_warnings.push(format!(
-            "{} sAMAccountName collision(s) detected against existing directory accounts",
-            live_directory_handle_collisions.len()
-        ));
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            &format!(
+                "{} sAMAccountName collision(s) detected against existing directory accounts",
+                live_directory_handle_collisions.len()
+            ),
+            "output",
+            "/live_directory_handle_collisions",
+        );
     }
 
     if !service_like_targeted_sorted.is_empty() {
-        operational_warnings.push(format!(
-            "{} uncorrelated service-like account(s) would be targeted for disablement",
-            service_like_targeted_sorted.len()
-        ));
+        push_operational_warning(
+            &mut operational_warnings,
+            &mut operational_warning_diagnostics,
+            &format!(
+                "{} uncorrelated service-like account(s) would be targeted for disablement",
+                service_like_targeted_sorted.len()
+            ),
+            "output",
+            "/uncorrelated_accounts_targeted_for_disable",
+        );
     }
 
     AttributeSyncRunOutput {
@@ -350,8 +409,10 @@ pub fn execute_attribute_sync(
             .collect(),
         null_overwrite_targets,
         schema_errors,
+        schema_error_diagnostics,
         live_directory_handle_collisions,
         operational_warnings,
+        operational_warning_diagnostics,
         modified_account_count: modified_accounts.len(),
         total_spoke_account_count,
         cohort_disable_ratios_bps,
@@ -454,48 +515,114 @@ fn validate_target_attribute_schema(
     spoke_id: &str,
     acct_key: &str,
     mapping: &ib_v52_schemas::AttributeSyncMappingV52,
+    mapping_index: usize,
     value: &str,
     schema_errors: &mut Vec<String>,
+    schema_error_diagnostics: &mut Vec<JsonPointerDiagnosticV52>,
 ) {
+    let mapping_pointer = json_pointer_child("/mappings", &mapping_index.to_string());
     let is_iso_c_check =
         mapping.require_iso_country_2 || (spoke_id == "ad" && mapping.target_attribute == "c");
     if is_iso_c_check {
         let chars: Vec<char> = value.chars().collect();
         let valid_iso2 = chars.len() == 2 && chars.iter().all(char::is_ascii_uppercase);
         if !valid_iso2 {
-            schema_errors.push(format!(
+            let message = format!(
                 "{acct_key}.{}: expected 2-character uppercase ISO-3166-1 alpha-2 code, got '{value}'",
                 mapping.target_attribute
-            ));
+            );
+            let field = if mapping.require_iso_country_2 {
+                "require_iso_country_2"
+            } else {
+                "target_attribute"
+            };
+            push_schema_error(
+                schema_errors,
+                schema_error_diagnostics,
+                message,
+                "config/attribute_sync.json",
+                &json_pointer_child(&mapping_pointer, field),
+            );
         }
     }
 
     if let Some(max_len) = mapping.max_length
         && value.chars().count() > max_len
     {
-        schema_errors.push(format!(
-            "{acct_key}.{}: value '{}' exceeds configured max_length {max_len}",
-            mapping.target_attribute, value
-        ));
+        push_schema_error(
+            schema_errors,
+            schema_error_diagnostics,
+            format!(
+                "{acct_key}.{}: value '{}' exceeds configured max_length {max_len}",
+                mapping.target_attribute, value
+            ),
+            "config/attribute_sync.json",
+            &json_pointer_child(&mapping_pointer, "max_length"),
+        );
     }
 
     if spoke_id == "ad"
         && mapping.target_attribute == "sAMAccountName"
         && value.chars().count() > 20
     {
-        schema_errors.push(format!(
-            "{acct_key}.sAMAccountName: value '{value}' exceeds 20-character AD limit"
-        ));
+        push_schema_error(
+            schema_errors,
+            schema_error_diagnostics,
+            format!("{acct_key}.sAMAccountName: value '{value}' exceeds 20-character AD limit"),
+            "config/attribute_sync.json",
+            &json_pointer_child(&mapping_pointer, "target_attribute"),
+        );
     }
 
     if spoke_id == "ad" && mapping.target_attribute == "manager" {
         let looks_like_dn = value.contains('=') && value.contains(',');
         if !mapping.resolve_manager_to_ad_dn || !looks_like_dn {
-            schema_errors.push(format!(
-                "{acct_key}.manager: AD manager attribute requires an LDAP DN (CN=...,OU=...), got '{value}'"
-            ));
+            let field = if mapping.resolve_manager_to_ad_dn {
+                "target_attribute"
+            } else {
+                "resolve_manager_to_ad_dn"
+            };
+            push_schema_error(
+                schema_errors,
+                schema_error_diagnostics,
+                format!(
+                    "{acct_key}.manager: AD manager attribute requires an LDAP DN (CN=...,OU=...), got '{value}'"
+                ),
+                "config/attribute_sync.json",
+                &json_pointer_child(&mapping_pointer, field),
+            );
         }
     }
+}
+
+fn push_schema_error(
+    errors: &mut Vec<String>,
+    diagnostics: &mut Vec<JsonPointerDiagnosticV52>,
+    message: String,
+    document: &str,
+    pointer: &str,
+) {
+    errors.push(message.clone());
+    diagnostics.push(JsonPointerDiagnosticV52 {
+        document: document.to_owned(),
+        pointer: pointer.to_owned(),
+        message,
+    });
+}
+
+fn push_operational_warning(
+    warnings: &mut Vec<String>,
+    diagnostics: &mut Vec<JsonPointerDiagnosticV52>,
+    message: &str,
+    document: &str,
+    pointer: &str,
+) {
+    warnings.push(message.to_owned());
+    diagnostics.push(JsonPointerDiagnosticV52 {
+        document: document.to_owned(),
+        pointer: pointer.to_owned(),
+        message: message.to_owned(),
+    });
 }
 
 /// Detect `sAMAccountName` collisions against live/disabled AD & Entra directory objects
@@ -619,6 +746,12 @@ pub fn build_dry_run_result(
             .collect(),
         schema_validation_error_count: sync.schema_errors.len(),
         sample_schema_errors: sync.schema_errors.iter().take(5).cloned().collect(),
+        sample_schema_error_diagnostics: sync
+            .schema_error_diagnostics
+            .iter()
+            .take(5)
+            .cloned()
+            .collect(),
         live_directory_handle_collisions: sync
             .live_directory_handle_collisions
             .iter()
@@ -631,5 +764,6 @@ pub fn build_dry_run_result(
         cohort_disable_ratios_bps: sync.cohort_disable_ratios_bps.clone(),
         would_abort_on_configured_gates,
         operational_warnings: sync.operational_warnings.clone(),
+        operational_warning_diagnostics: sync.operational_warning_diagnostics.clone(),
     }
 }

@@ -20,7 +20,7 @@ use ib_v52_schemas::{
     ConnectorSandboxResultV52, Day2EventV52, DeploymentScoreV52, EnterpriseBrownfieldWorldV52,
     EpisodeV52, ExpectedEngagementOutcomeV52, ExpectedIdentityOutcomeV52, GoLiveDryRunResultV52,
     IdentityCubePreviewV52, IdentityPreviewResultV52, IgaDeploymentConfigV52, IgaEngineBackendV52,
-    SealedEpisodeOracleV52,
+    JsonPointerDiagnosticV52, SealedEpisodeOracleV52, json_pointer_child,
 };
 use indexmap::IndexMap;
 
@@ -45,6 +45,15 @@ use crate::transforms::TransformBudget;
 use crate::uar::evaluate_uar_campaigns;
 use crate::username::{GeneratedUsername, generate_usernames_with_budget};
 use crate::workflows::evaluate_day2_events;
+
+fn engine_error_diagnostic(budget: &TransformBudget, message: String) -> JsonPointerDiagnosticV52 {
+    let (document, pointer) = budget.last_error_location().unwrap_or(("output", ""));
+    JsonPointerDiagnosticV52 {
+        document: document.to_owned(),
+        pointer: pointer.to_owned(),
+        message,
+    }
+}
 
 /// Deterministic Practitioner IGA execution & evaluation backend for `SPEC-v5.2`.
 #[derive(Debug, Default, Clone, Copy)]
@@ -189,8 +198,20 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
         cutover_date: &str,
         person_keys: Option<&[String]>,
     ) -> Result<IdentityPreviewResultV52, String> {
-        let state =
-            Self::evaluate_world(world, config, cutover_date, &mut TransformBudget::default())?;
+        self.preview_identities_diagnostic(world, config, cutover_date, person_keys)
+            .map_err(|error| error.message)
+    }
+
+    fn preview_identities_diagnostic(
+        &self,
+        world: &EnterpriseBrownfieldWorldV52,
+        config: &IgaDeploymentConfigV52,
+        cutover_date: &str,
+        person_keys: Option<&[String]>,
+    ) -> Result<IdentityPreviewResultV52, JsonPointerDiagnosticV52> {
+        let mut budget = TransformBudget::default();
+        let state = Self::evaluate_world(world, config, cutover_date, &mut budget)
+            .map_err(|message| engine_error_diagnostic(&budget, message))?;
         let total_identities = state.cubes.len();
 
         let live_collisions =
@@ -230,27 +251,53 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
                 .unwrap_or_default();
 
             let mut warnings = Vec::new();
+            let mut warning_diagnostics = Vec::new();
+            let cube_pointer = json_pointer_child("/cubes", &previews.len().to_string());
             if cube.matched_sources.is_empty() {
-                warnings.push("no authoritative source records matched this identity".to_owned());
+                let message = "no authoritative source records matched this identity";
+                warnings.push(message.to_owned());
+                warning_diagnostics.push(JsonPointerDiagnosticV52 {
+                    document: "output".to_owned(),
+                    pointer: json_pointer_child(&cube_pointer, "matched_sources"),
+                    message: message.to_owned(),
+                });
             }
             if uname.sam_account_name.chars().count() > 20 {
-                warnings.push(format!(
+                let message = format!(
                     "sAMAccountName '{}' exceeds 20-character AD limit",
                     uname.sam_account_name
-                ));
+                );
+                warnings.push(message.clone());
+                warning_diagnostics.push(JsonPointerDiagnosticV52 {
+                    document: "output".to_owned(),
+                    pointer: json_pointer_child(&cube_pointer, "generated_sam_account_name"),
+                    message,
+                });
             }
             if let Some(c) = cube.attributes.get("country_iso2")
                 && !c.trim().is_empty()
                 && (c.len() != 2 || !c.chars().all(|ch| ch.is_ascii_uppercase()))
             {
-                warnings.push(format!(
+                let message = format!(
                     "country_iso2 '{c}' is not a valid 2-character uppercase ISO-3166-1 alpha-2 code"
-                ));
+                );
+                warnings.push(message.clone());
+                let attributes_pointer = json_pointer_child(&cube_pointer, "attributes");
+                warning_diagnostics.push(JsonPointerDiagnosticV52 {
+                    document: "output".to_owned(),
+                    pointer: json_pointer_child(&attributes_pointer, "country_iso2"),
+                    message,
+                });
             }
             let prefix = format!("{pk}:");
             for col in &live_collisions {
                 if col.starts_with(&prefix) {
                     warnings.push(col.clone());
+                    warning_diagnostics.push(JsonPointerDiagnosticV52 {
+                        document: "output".to_owned(),
+                        pointer: json_pointer_child(&cube_pointer, "generated_sam_account_name"),
+                        message: col.clone(),
+                    });
                 }
             }
 
@@ -266,6 +313,7 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
                 correlated_spoke_accounts,
                 correlated_admin_secondary_accounts,
                 warnings,
+                warning_diagnostics,
             });
         }
 
@@ -291,8 +339,19 @@ impl IgaEngineBackendV52 for IgaEngineV52 {
         config: &IgaDeploymentConfigV52,
         cutover_date: &str,
     ) -> Result<GoLiveDryRunResultV52, String> {
-        let state =
-            Self::evaluate_world(world, config, cutover_date, &mut TransformBudget::default())?;
+        self.simulate_dry_run_diagnostic(world, config, cutover_date)
+            .map_err(|error| error.message)
+    }
+
+    fn simulate_dry_run_diagnostic(
+        &self,
+        world: &EnterpriseBrownfieldWorldV52,
+        config: &IgaDeploymentConfigV52,
+        cutover_date: &str,
+    ) -> Result<GoLiveDryRunResultV52, JsonPointerDiagnosticV52> {
+        let mut budget = TransformBudget::default();
+        let state = Self::evaluate_world(world, config, cutover_date, &mut budget)
+            .map_err(|message| engine_error_diagnostic(&budget, message))?;
         Ok(build_dry_run_result(
             state.cubes.len(),
             config,

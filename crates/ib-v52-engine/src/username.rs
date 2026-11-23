@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use ib_v52_schemas::{
     BrownfieldSpokeAccountV52, CollisionSourceV52, EnterpriseBrownfieldWorldV52,
-    IgaDeploymentConfigV52, LifecycleStateIdV52, TransformExprV52, UsernameBasePatternV52,
+    IgaDeploymentConfigV52, LifecycleStateIdV52, UsernameBasePatternV52,
 };
 use indexmap::IndexMap;
 
@@ -332,11 +332,11 @@ pub(crate) fn generate_usernames_with_budget(
                     cutover_date,
                 };
                 let evaluated = budget
-                    .evaluate(
-                        &TransformExprV52::RefTransform {
-                            name: transform_name.clone(),
-                        },
+                    .evaluate_named_at(
+                        transform_name,
                         &eval_ctx,
+                        "config/username_policy.json",
+                        "/base_pattern/custom_transform_ref/transform_name",
                     )
                     .map_err(|err| {
                         TransformBudget::with_context(err, || {

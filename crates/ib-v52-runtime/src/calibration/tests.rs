@@ -58,6 +58,8 @@ fn make_record(
                 arguments: json!({}),
                 status: "OK".to_owned(),
                 normalized_path: Some(format!("sources/fixture-{source_index}.csv")),
+                read_identity: None,
+                search_hits: None,
                 resolved_start_line: Some(1),
                 resolved_end_line: Some(4),
                 file_sha256: Some(format!("{source_index:064x}")),
