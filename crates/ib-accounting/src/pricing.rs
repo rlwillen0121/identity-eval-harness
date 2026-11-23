@@ -182,7 +182,7 @@ fn estimate_inclusive(rates: &TokenRates, usage: &InclusiveCounts) -> Option<i64
             return None;
         }
         cached_tokens = usage.cached_input?;
-        if cached_tokens < 0 {
+        if cached_tokens < 0 || cached_tokens > remaining_input {
             return None;
         }
         remaining_input -= cached_tokens;
@@ -194,7 +194,7 @@ fn estimate_inclusive(rates: &TokenRates, usage: &InclusiveCounts) -> Option<i64
             return None;
         }
         cache_write_tokens = usage.cache_write_input?;
-        if cache_write_tokens < 0 {
+        if cache_write_tokens < 0 || cache_write_tokens > remaining_input {
             return None;
         }
         remaining_input -= cache_write_tokens;
