@@ -354,8 +354,9 @@ impl OpenAICompatProvider {
                 ..DumpOptions::default()
             };
             let canonical = dumps(&val, &opts).map_err(|e| format!("provider_routing {e}"))?;
-            let copy = load_object(&canonical);
-            (Some(canonical), copy)
+            // The canonical (key-sorted) form feeds `endpoint_identity`; the request body carries
+            // the configured object verbatim.
+            (Some(canonical), Some(routing.clone()))
         } else {
             (None, None)
         };

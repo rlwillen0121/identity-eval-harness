@@ -545,3 +545,40 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     );
     assert_eq!(reqs[1].body["stream"], json!(true));
 }
+
+#[test]
+fn provider_routing_is_sent_verbatim_and_bound_into_endpoint_identity() {
+    let make = |routing: Option<Value>| {
+        let mut cfg = OpenAICompatConfig::new("deepseek/deepseek-v4");
+        cfg.base_url_env = Some("OPENROUTER_BASE_URL".to_string());
+        cfg.env_override = Some(BTreeMap::from([(
+            "OPENROUTER_BASE_URL".to_string(),
+            "https://openrouter.ai/api/v1".to_string(),
+        )]));
+        cfg.provider_routing = routing.map(|r| r.as_object().unwrap().clone());
+        OpenAICompatProvider::new(cfg).unwrap()
+    };
+    // Members deliberately out of sorted order: the body keeps the configured object verbatim.
+    let pinned = json!({"order": ["deepinfra"], "allow_fallbacks": false});
+    let reordered = json!({"allow_fallbacks": false, "order": ["deepinfra"]});
+    let other = json!({"order": ["together"], "allow_fallbacks": false});
+    let req = ModelRequest::new("SYS", vec![Message::user("x")]);
+
+    let unpinned = make(None);
+    assert!(unpinned.request_params(&req).get("provider").is_none());
+    let p = make(Some(pinned.clone()));
+    let body = p.request_params(&req);
+    assert_eq!(body["provider"], pinned);
+    assert_eq!(
+        serde_json::to_string(&body["provider"]).unwrap(),
+        r#"{"order":["deepinfra"],"allow_fallbacks":false}"#
+    );
+
+    // Upstream routing is part of the transport identity; member order is not.
+    assert_ne!(p.endpoint_identity(), unpinned.endpoint_identity());
+    assert_ne!(p.endpoint_identity(), make(Some(other)).endpoint_identity());
+    assert_eq!(
+        p.endpoint_identity(),
+        make(Some(reordered)).endpoint_identity()
+    );
+}

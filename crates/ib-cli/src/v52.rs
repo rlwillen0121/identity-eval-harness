@@ -385,6 +385,11 @@ async fn probe(root: &Path, env_file: Option<&Path>, args: V52ProbeArgs) -> Resu
         requested_output_tokens: loaded_config.requested_output_tokens,
         temperature: loaded_config.temperature,
         context_window_tokens: loaded_config.run_config.context_window_tokens,
+        provider_routing: loaded_config
+            .model_spec
+            .extra
+            .get("provider_routing")
+            .cloned(),
         sandbox_dir: out_dir.join("native_tool_sandbox"),
         nonces: None,
         canary_token: None,

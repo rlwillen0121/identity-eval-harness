@@ -21,6 +21,12 @@ model:
   timeout_s: 1800
   extra:
     max_retries: 0
+    # Optional upstream pinning for gateways such as OpenRouter, sent verbatim as the request
+    # body's `provider` object. It is part of the transport identity (endpoint_identity and the
+    # probe receipt). Pin the upstream whose prices match the frozen pricing artifact.
+    # provider_routing:
+    #   order: [deepinfra]
+    #   allow_fallbacks: false
 model_tier: frontier
 run_config:
   # Declared context window, recorded in the G-PROBE-V52 receipt (>= 128000 to be eligible).

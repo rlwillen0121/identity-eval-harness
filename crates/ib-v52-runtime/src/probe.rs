@@ -44,6 +44,10 @@ pub struct ProbeOptionsV52 {
     pub requested_output_tokens: Option<u64>,
     pub temperature: Option<f64>,
     pub context_window_tokens: Option<u64>,
+    /// `openai_compatible` upstream routing (`model.extra.provider_routing`), sent verbatim as the
+    /// request body's `provider` object. It is part of the transport identity (§7.3) and is also
+    /// bound through `endpoint_identity`; `None` when not configured.
+    pub provider_routing: Option<Value>,
     /// Empty directory watched for native-tool side effects.
     pub sandbox_dir: PathBuf,
     /// Fixed nonces for deterministic tests; `None` draws fresh CSPRNG nonces.
@@ -344,6 +348,7 @@ Reply with exactly one JSON object and nothing else: {{\"canary\":\"<token>\"}},
         "reasoning_effort": options.reasoning_effort,
         "transport_id": options.transport_id,
         "endpoint_identity": options.endpoint_identity,
+        "provider_routing": options.provider_routing,
         "binary_sha256": options.binary_sha256,
         "system_prompt_sha256": sha256_hex(system_prompt.as_bytes()),
         "system_prompt_channel": channel.as_str(),

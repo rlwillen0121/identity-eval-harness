@@ -1576,6 +1576,7 @@ fn probe_options(dir: &Path) -> ProbeOptionsV52 {
         requested_output_tokens: Some(64_000),
         temperature: None,
         context_window_tokens: Some(1_000_000),
+        provider_routing: None,
         sandbox_dir: dir.join("sandbox"),
         nonces: None,
         canary_token: None,
@@ -2022,4 +2023,20 @@ async fn resume_folds_in_slot_records_left_by_an_interrupted_invocation() {
     assert_eq!(records, completed);
     assert_eq!(std::fs::read(b.join("episodes.jsonl")).unwrap(), final_a);
     assert!(!slot_dir.exists());
+}
+
+#[tokio::test]
+async fn probe_receipt_records_the_provider_routing() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = MockProvider::responding("openai_compatible", probe_responder(usize::MAX, None));
+    let unpinned = run_v52_probe(&provider, &probe_options(&dir.path().join("a")))
+        .await
+        .unwrap();
+    assert_eq!(unpinned["provider_routing"], Value::Null);
+    let routing = json!({"order": ["deepinfra"], "allow_fallbacks": false});
+    let mut options = probe_options(&dir.path().join("b"));
+    options.provider_routing = Some(routing.clone());
+    let receipt = run_v52_probe(&provider, &options).await.unwrap();
+    assert_eq!(receipt["passed"], json!(true));
+    assert_eq!(receipt["provider_routing"], routing);
 }
