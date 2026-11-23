@@ -24,6 +24,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::config::LoadedPricingV52;
+use crate::fsutil::{atomic_write, write_pretty_json};
 use crate::integrity::{RunFingerprintInputsV52, withheld_bundle_sha256};
 use crate::metrics::{SlotMetricsV52, slot_metrics_v52};
 use crate::probe::verify_probe_receipt_binding;
@@ -32,7 +33,7 @@ use crate::protocol::{
     MIN_CONTEXT_WINDOW_TOKENS_V52, PROTOCOL_ID_V52, render_v52_system_prompt,
 };
 use crate::report::{RunMetadataHintV52, read_manifest_hint, summarize_v52_records};
-use crate::runner::{SlotCheckpointV52, atomic_write_bytes};
+use crate::runner::SlotCheckpointV52;
 use crate::stats::{
     BOOTSTRAP_REPLICATES_V52, BootstrapDrawsV52, EntryOutcomesV52, GsrrIntervalV52,
     LeaderboardOrderKeyV52, RankIntervalV52, RatioV52, bootstrap_key_v52,
@@ -1165,10 +1166,8 @@ pub fn render_leaderboard_markdown_v52(board: &Value) -> String {
 pub fn write_leaderboard_v52(out_dir: &Path, board: &Value) -> Result<()> {
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("failed to create {}", out_dir.display()))?;
-    let mut bytes = serde_json::to_vec_pretty(board)?;
-    bytes.push(b'\n');
-    atomic_write_bytes(&out_dir.join("leaderboard.json"), &bytes)?;
-    atomic_write_bytes(
+    write_pretty_json(&out_dir.join("leaderboard.json"), board)?;
+    atomic_write(
         &out_dir.join("leaderboard.md"),
         render_leaderboard_markdown_v52(board).as_bytes(),
     )?;

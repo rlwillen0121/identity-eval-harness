@@ -14,6 +14,7 @@ use ib_v52_generator::{
     LoadedSealV52, LoadedV52Dataset, PrecommitV52, SEED_TEST_VECTORS_V52, SecretKey32,
     SuiteKeyMaterialV52, TEST_KEY_HEX_V52, V52Cell,
 };
+use ib_v52_runtime::fsutil::{atomic_write, pretty_json_bytes};
 use ib_v52_runtime::integrity::{current_binary_sha256, run_endpoint_identity};
 use ib_v52_runtime::leaderboard::{
     LeaderboardOptionsV52, build_leaderboard_v52, write_leaderboard_v52,
@@ -910,8 +911,7 @@ fn precommit(root: &Path, args: V52PrecommitArgs) -> Result<Value> {
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut bytes = serde_json::to_vec_pretty(&precommit)?;
-    bytes.push(b'\n');
+    let bytes = pretty_json_bytes(&precommit)?;
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -1047,10 +1047,9 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
         if ib_core::hashing::sha256_hex(&bytes) != loaded.receipt_sha256 {
             bail!("probe receipt changed while starting the run");
         }
-        std::fs::create_dir_all(&out_dir)?;
-        std::fs::write(
-            out_dir.join(ib_v52_runtime::leaderboard::RUN_PROBE_RECEIPT_FILENAME_V52),
-            bytes,
+        atomic_write(
+            &out_dir.join(ib_v52_runtime::leaderboard::RUN_PROBE_RECEIPT_FILENAME_V52),
+            &bytes,
         )?;
     }
 

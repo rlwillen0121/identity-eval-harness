@@ -11,8 +11,8 @@ use ib_v52_schemas::{
 use indexmap::IndexMap;
 use serde_json::Value;
 
+use crate::fsutil::{atomic_write, write_pretty_json};
 use crate::metrics::slot_metrics_v52;
-use crate::runner::atomic_write_bytes;
 
 /// Optional run metadata extracted from `manifest.json` when present.
 #[derive(Debug, Clone, Default)]
@@ -570,10 +570,8 @@ pub fn report_v52_run(run_dir: &Path, out_dir: &Path) -> Result<SuiteReportSumma
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("failed to create report directory {}", out_dir.display()))?;
 
-    let mut summary_bytes = serde_json::to_vec_pretty(&summary)?;
-    summary_bytes.push(b'\n');
-    atomic_write_bytes(&out_dir.join("summary.json"), &summary_bytes)?;
-    atomic_write_bytes(&out_dir.join("report.md"), markdown.as_bytes())?;
+    write_pretty_json(&out_dir.join("summary.json"), &summary)?;
+    atomic_write(&out_dir.join("report.md"), markdown.as_bytes())?;
 
     Ok(summary)
 }

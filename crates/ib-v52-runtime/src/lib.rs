@@ -2,6 +2,7 @@
 
 pub mod baselines;
 pub mod config;
+pub mod fsutil;
 pub mod integrity;
 pub mod leaderboard;
 pub mod metrics;

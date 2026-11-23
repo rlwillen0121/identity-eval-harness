@@ -374,10 +374,7 @@ pub fn verify_reveal(
         let ep_bytes = serialize_jsonl(&generated.episodes)?;
         let or_bytes = serialize_jsonl(&generated.oracles)?;
         let full = build_full_seal(&generated, &ep_bytes, &or_bytes, &seal.spec_sha256)?;
-        let rebuilt = format!(
-            "{}\n",
-            serde_json::to_string_pretty(&derive_private_public_seal(&full)?)?
-        );
+        let rebuilt = ib_v52_generator::pretty_json(&derive_private_public_seal(&full)?)?;
         let exact = rebuilt.as_bytes() == bytes.as_slice();
         checks.push(
             "regeneration_reproduces_seal",
@@ -398,8 +395,7 @@ pub fn verify_reveal(
         // A revealed full private seal next to the public seal must also rebuild exactly.
         let private_path = path.with_file_name(ib_v52_generator::PRIVATE_SEAL_FILENAME_V52);
         if let Ok(private_bytes) = std::fs::read(&private_path) {
-            let ok = format!("{}\n", serde_json::to_string_pretty(&full)?).as_bytes()
-                == private_bytes.as_slice();
+            let ok = ib_v52_generator::pretty_json(&full)?.as_bytes() == private_bytes.as_slice();
             checks.push(
                 "regeneration_reproduces_private_seal",
                 ok,

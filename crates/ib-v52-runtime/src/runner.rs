@@ -9,7 +9,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -30,6 +29,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
 use crate::config::{LoadedV52Dataset, PricingRatesV52};
+use crate::fsutil::{atomic_write, write_pretty_json};
 use crate::integrity::{
     RunDirLockV52, RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, round_stratified_order,
     seal_summary_json, utc_timestamp_now, verify_v52_seal, withheld_bundle_sha256,
@@ -295,7 +295,7 @@ impl CheckpointSink for RunDirSink {
         let stem = self.slot.stem();
         let mut bytes = serde_json::to_vec(checkpoint)?;
         bytes.push(b'\n');
-        atomic_write_bytes(
+        atomic_write(
             &self
                 .out_dir
                 .join("checkpoints")
@@ -322,7 +322,7 @@ fn write_transcript_jsonl(
         bytes.extend(serde_json::to_vec(&value)?);
         bytes.push(b'\n');
     }
-    atomic_write_bytes(
+    atomic_write(
         &out_dir
             .join("transcripts")
             .join(format!("{}.jsonl", slot.stem())),
@@ -968,9 +968,7 @@ fn write_committed_configs(
     for path in CONFIG_FILE_PATHS_V52 {
         let stem = path.trim_start_matches("config/").trim_end_matches(".json");
         let section = value.get(stem).cloned().unwrap_or(Value::Null);
-        let mut bytes = serde_json::to_vec_pretty(&section)?;
-        bytes.push(b'\n');
-        atomic_write_bytes(&dir.join(format!("{stem}.json")), &bytes)?;
+        write_pretty_json(&dir.join(format!("{stem}.json")), &section)?;
     }
     Ok(())
 }
@@ -998,7 +996,7 @@ fn assemble_records(
     for record in records.values() {
         bytes.extend(record_line(record)?);
     }
-    atomic_write_bytes(&out_dir.join("episodes.jsonl"), &bytes)?;
+    atomic_write(&out_dir.join("episodes.jsonl"), &bytes)?;
     match std::fs::remove_dir_all(out_dir.join(SLOT_RECORDS_DIR_V52)) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1012,7 +1010,7 @@ fn write_slot_record(
     slot: &SlotIdV52,
     record: &EpisodeExecutionRecordV52,
 ) -> Result<()> {
-    atomic_write_bytes(
+    atomic_write(
         &out_dir
             .join(SLOT_RECORDS_DIR_V52)
             .join(format!("{}.json", slot.stem())),
@@ -1298,7 +1296,7 @@ pub async fn run_v52_suite(
                 Value::String(withheld_bundle_sha256(&out_dir)?),
             );
         }
-        atomic_write_json(&manifest_path, &manifest)
+        write_pretty_json(&manifest_path, &manifest).map(drop)
     };
     assemble_records(&out_dir, &records)?;
     write_manifest(&records, &invocations, false)?;
@@ -1453,43 +1451,4 @@ fn invalid_commit_zero_score(episode: &EpisodeV52, eval_err: String) -> Deployme
 #[must_use]
 pub fn count_tokens_v52(text: &str) -> usize {
     tiktoken_rs::o200k_base_singleton().count_ordinary(text)
-}
-
-static ATOMIC_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
-
-pub(crate) fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
-    use std::io::Write;
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)?;
-    let seq = ATOMIC_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("artifact");
-    let tmp_path = parent.join(format!(".{file_name}.tmp.{pid}.{seq}"));
-    let write_res = (|| -> Result<()> {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp_path)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        Ok(())
-    })();
-    if let Err(err) = write_res {
-        let _ = std::fs::remove_file(&tmp_path);
-        return Err(err);
-    }
-    if let Err(err) = std::fs::rename(&tmp_path, path) {
-        let _ = std::fs::remove_file(&tmp_path);
-        return Err(err.into());
-    }
-    Ok(())
-}
-
-pub(crate) fn atomic_write_json(path: &Path, value: &Value) -> Result<()> {
-    let mut bytes = serde_json::to_vec_pretty(value)?;
-    bytes.push(b'\n');
-    atomic_write_bytes(path, &bytes)
 }

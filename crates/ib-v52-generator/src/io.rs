@@ -270,14 +270,35 @@ pub fn derive_private_public_seal(
     })
 }
 
+/// Write `bytes` atomically: a synced sibling temp file renamed over `path`, so an interrupted
+/// build never leaves a truncated dataset or seal.
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), V52GeneratorError> {
-    fs::write(path, bytes).map_err(|source| V52GeneratorError::Io {
+    let io_err = |source| V52GeneratorError::Io {
         path: path.display().to_string(),
         source,
-    })
+    };
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("artifact");
+    let tmp = path.with_file_name(format!(".{file_name}.tmp.{}", std::process::id()));
+    let written = fs::File::create(&tmp)
+        .and_then(|mut file| {
+            std::io::Write::write_all(&mut file, bytes)?;
+            file.sync_all()
+        })
+        .and_then(|()| fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written.map_err(io_err)
 }
 
-fn pretty_json<T: Serialize>(value: &T) -> Result<String, V52GeneratorError> {
+/// Pretty-printed JSON plus one LF: the exact bytes of every written seal file.
+///
+/// # Errors
+/// Returns [`V52GeneratorError::Json`] when `value` cannot be serialized.
+pub fn pretty_json<T: Serialize>(value: &T) -> Result<String, V52GeneratorError> {
     Ok(format!("{}\n", serde_json::to_string_pretty(value)?))
 }
 
