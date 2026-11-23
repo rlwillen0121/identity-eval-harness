@@ -40,8 +40,8 @@ export function heroFigures(data, topModel) {
   const suite = data.suite;
   return [
     [int(data.models.length), 'ranked models'],
-    [int(suite.slots_per_run), `slots (${int(suite.episodes)} engagements × ${int(suite.repeats)})`],
-    [int(suite.config_files), 'config files authored per engagement'],
+    [int(suite.slots_per_run), `slots (${int(suite.episodes)} episodes × ${int(suite.repeats)})`],
+    [int(suite.config_files), 'config files authored per episode'],
     [endToEndPct(topModel?.g_srr ?? 0), 'top end-to-end'],
   ];
 }
@@ -62,7 +62,7 @@ export function provenanceRows(data) {
 }
 
 export function leaderboardLede(data) {
-  return `Ranked by how many of ${int(data.suite.slots_per_run)} client engagements each resolves end to end: every category correct, nothing unsafe, committed within the turn cap.`;
+  return `Ranked by how many of ${int(data.suite.slots_per_run)} episodes each resolves end to end: every category correct, nothing unsafe, committed within the turn cap.`;
 }
 
 export async function boot() {

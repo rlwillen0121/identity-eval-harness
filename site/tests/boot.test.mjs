@@ -155,8 +155,8 @@ test('full DOM boot hides #load-status, mounts 4 SVG charts, populates provenanc
     const figures = byId.get('hero-figures').children.map((group) => group.children.map((node) => node.textContent));
     assert.deepEqual(figures, [
       ['ranked models', String(data.models.length)],
-      ['slots (48 engagements × 1)', '48'],
-      ['config files authored per engagement', '12'],
+      ['slots (48 episodes × 1)', '48'],
+      ['config files authored per episode', '12'],
       ['top end-to-end', '87.5%'],
     ]);
     const provenance = byId.get('provenance').children.map((node) => node.textContent);
@@ -165,7 +165,7 @@ test('full DOM boot hides #load-status, mounts 4 SVG charts, populates provenanc
     assert.ok(provenance.includes(data.suite.seal_sha256));
     assert.ok(provenance.includes(data.suite.spec_sha256));
     assert.match(byId.get('interval-method').textContent, /^Wilson score interval/);
-    assert.match(byId.get('leaderboard-lede').textContent, /of 48 client engagements/);
+    assert.match(byId.get('leaderboard-lede').textContent, /of 48 episodes/);
     assert.match(byId.get('updated-date').textContent, /^Updated /);
     assert.match(byId.get('leaderboard-root').innerHTML, /Show reference replay/);
     assert.match(byId.get('leaderboard-root').innerHTML, /In progress · not ranked/);

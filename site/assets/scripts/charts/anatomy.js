@@ -36,7 +36,7 @@ export function columnLabelLines(column, cellWidth, mobile = false) {
 export function mount(root, data, store) {
   const models = data.models.slice().sort((a, b) => a.rank - b.rank);
   const slots = Number(data.suite?.slots_per_run);
-  const subtitle = `Pass rate by IGA category (${int(slots)} engagements) and end-to-end rate by engagement family (F01–F12).`;
+  const subtitle = `Pass rate by IGA category (${int(slots)} episodes) and end-to-end rate by scenario family (F01–F12).`;
   const families = Array.isArray(data.families) ? data.families : [];
   const medians = data.categories.map((c) => ({
     ...c,
@@ -54,14 +54,14 @@ export function mount(root, data, store) {
     const top = 64;
     const height = top + models.length * 20 + 8;
     const svg = svgCanvas(canvas, width, height,
-      `${models.length} model rows compare ${data.categories.length} categories${mobile ? '' : ` and ${families.length} engagement families`}. ${medians[0].label} has the lowest median category pass rate at ${pct(medians[0].rate, 1)}; ${medians.at(-1).label} has the highest at ${pct(medians.at(-1).rate, 1)}.`);
+      `${models.length} model rows compare ${data.categories.length} categories${mobile ? '' : ` and ${families.length} scenario families`}. ${medians[0].label} has the lowest median category pass rate at ${pct(medians[0].rate, 1)}; ${medians.at(-1).label} has the highest at ${pct(medians.at(-1).rate, 1)}.`);
     const cx = (i) => left + i * cellWidth + (!mobile && i >= data.categories.length ? gap : 0);
 
     svg.append(text(left + (data.categories.length * cellWidth) / 2, 13, `${data.categories.length} Categories`,
       { class: 'chart-column-group', 'text-anchor': 'middle' }));
     if (!mobile && families.length) {
       svg.append(text(left + data.categories.length * cellWidth + gap + (families.length * cellWidth) / 2, 13,
-        `${families.length} Engagement families`, { class: 'chart-column-group', 'text-anchor': 'middle' }));
+        `${families.length} Scenario families`, { class: 'chart-column-group', 'text-anchor': 'middle' }));
     }
 
     for (const [i, column] of columns.entries()) {
@@ -139,7 +139,7 @@ export function mount(root, data, store) {
   if (families.length) {
     const familyKey = document.createElement('p');
     familyKey.className = 'chart-family-key';
-    familyKey.textContent = `Engagement families: ${families.map((f) => `${f.id} ${f.label}`).join(' · ')}`;
+    familyKey.textContent = `Scenario families: ${families.map((f) => `${f.id} ${f.label}`).join(' · ')}`;
     root.append(familyKey);
   }
 

@@ -30,7 +30,7 @@ function plotHeight(root, peer) {
   return Math.max(minimumHeight, peer.getBoundingClientRect().height - chromeHeight(root));
 }
 
-// Both axes are the share of engagements with at least one committed violation of that kind.
+// Both axes are the share of episodes with at least one committed violation of that kind.
 export const SAFE_ZONE = 0.05;
 
 export function safetyRates(model) {
@@ -43,10 +43,10 @@ export function safetyRates(model) {
 
 export function mount(root, data, store) {
   const slots = Number(data.suite?.slots_per_run);
-  const subtitle = `Share of the ${int(slots)} engagements with at least one committed violation of each kind.`;
+  const subtitle = `Share of the ${int(slots)} episodes with at least one committed violation of each kind.`;
   const legend = document.createElement('p');
   legend.className = 'chart-legend';
-  legend.textContent = `Shaded: violations in ≤ ${pct(SAFE_ZONE, 0)} of engagements on both axes · Compressed scales`;
+  legend.textContent = `Shaded: violations in ≤ ${pct(SAFE_ZONE, 0)} of episodes on both axes · Compressed scales`;
   const peer = outcomesPeer(root);
   const view = chart(root, 'Overgrants vs. availability breaches', subtitle, store, ({ width, canvas, tip }) => {
     canvas.append(legend);
@@ -59,7 +59,7 @@ export function mount(root, data, store) {
       return m.g_srr > 0 || (og <= SAFE_ZONE && ab <= SAFE_ZONE);
     });
     const svg = svgCanvas(canvas, width, height,
-      `Scatter plot of the share of engagements with overgrants vs. availability breaches across ${int(data.models.length)} ranked models.`);
+      `Scatter plot of the share of episodes with overgrants vs. availability breaches across ${int(data.models.length)} ranked models.`);
     svg.append(el('rect', {
       x: x(0),
       y: y(SAFE_ZONE),
@@ -73,8 +73,8 @@ export function mount(root, data, store) {
       svg.append(text(x(value), plot.bottom + 20, pct(value, 0), { 'text-anchor': 'middle', class: 'chart-tick' }));
     }
     svg.append(
-      text(plot.left, 13, 'Engagements with overgrants', { class: 'chart-axis-title' }),
-      text((plot.left + plot.right) / 2, height - 10, 'Engagements with availability breaches', { 'text-anchor': 'middle', class: 'chart-axis-title' }),
+      text(plot.left, 13, 'Episodes with overgrants', { class: 'chart-axis-title' }),
+      text((plot.left + plot.right) / 2, height - 10, 'Episodes with availability breaches', { 'text-anchor': 'middle', class: 'chart-axis-title' }),
       el('line', { x1: x(SAFE_ZONE), x2: x(SAFE_ZONE), y1: plot.top, y2: plot.bottom, class: 'chart-threshold' }),
       el('line', { x1: plot.left, x2: plot.right, y1: y(SAFE_ZONE), y2: y(SAFE_ZONE), class: 'chart-threshold' }),
     );
@@ -88,9 +88,9 @@ export function mount(root, data, store) {
         y: y(og),
         color: inLowZone ? 'var(--good)' : m.overgrant_count === 0 && m.g_srr > 0 ? 'var(--accent)' : 'var(--ink-2)',
         lines: [
-          ['Overgrants', `${int(m.overgrant_count)} in ${int(m.overgrant_slots)} engagements (${pct(og, 1)})`],
-          ['Availability breaches', `${int(m.avail_breach_count)} in ${int(m.avail_breach_slots)} engagements (${pct(ab, 1)})`],
-          ['Any violation', `${int(m.unsafe_slots)} of ${int(m.planned_slots)} engagements`],
+          ['Overgrants', `${int(m.overgrant_count)} in ${int(m.overgrant_slots)} episodes (${pct(og, 1)})`],
+          ['Availability breaches', `${int(m.avail_breach_count)} in ${int(m.avail_breach_slots)} episodes (${pct(ab, 1)})`],
+          ['Any violation', `${int(m.unsafe_slots)} of ${int(m.planned_slots)} episodes`],
           ['End to end', endToEndPct(m.g_srr)],
         ],
       };

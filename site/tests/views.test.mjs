@@ -180,7 +180,7 @@ test('table columns and titles describe v5.1 metrics', () => {
   const titles = new Map(columns.map(([key, , title]) => [key, title]));
   assert.match(titles.get('rank'), /^Rank by .*then model name\.$/);
   assert.ok(titles.get('g_srr').includes(END_TO_END_INTERVAL_METHOD));
-  assert.match(titles.get('g_srr'), /out of 48 \(48 engagements × 1 run\)/);
+  assert.match(titles.get('g_srr'), /out of 48 \(48 episodes × 1 run\)/);
   assert.match(titles.get('g_srr'), /24-turn cap with all 8 categories/);
   assert.match(titles.get('state_accuracy'), /assertions/);
   assert.match(titles.get('categories'), /8 IGA categories/);
@@ -192,7 +192,7 @@ test('table columns and titles describe v5.1 metrics', () => {
 test('model cells show interval, state accuracy, violation share and estimated cost', () => {
   const zeroWhisker = whisker({ g_srr: 0, g_srr_ci: [0, 0.0741], g_srr_slots: 0 }, 48);
   assert.match(zeroWhisker, /resolution-number muted">0%<\/span>/);
-  assert.match(zeroWhisker, /aria-label="0 of 48 engagements resolved end to end">0<\/span>/);
+  assert.match(zeroWhisker, /aria-label="0 of 48 episodes resolved end to end">0<\/span>/);
   assert.match(zeroWhisker, /95% interval for end-to-end rate: 0% to 7\.4%/);
 
   const top = data.models[0];
@@ -212,12 +212,12 @@ test('model cells show interval, state accuracy, violation share and estimated c
   if (unsafe) {
     const unsafeCells = modelCellsMarkup(unsafe, data);
     assert.match(unsafeCells, /class="unsafe-fill"/);
-    assert.match(unsafeSummary(unsafe, 48), new RegExp(`^${unsafe.unsafe_slots} engagements? of 48 with a committed violation`));
+    assert.match(unsafeSummary(unsafe, 48), new RegExp(`^${unsafe.unsafe_slots} episodes? of 48 with a committed violation`));
   }
   const clean = data.models.find((m) => m.unsafe_slots === 0);
   if (clean) assert.doesNotMatch(modelCellsMarkup(clean, data), /class="unsafe-fill"/);
   assert.equal(unsafeSummary({ unsafe_slots: 1, unsafe_count: 2, overgrant_count: 1, avail_breach_count: 1 }, 48),
-    '1 engagement of 48 with a committed violation · 2 violations (1 overgrant, 1 availability breach)');
+    '1 episode of 48 with a committed violation · 2 violations (1 overgrant, 1 availability breach)');
 
   const css = readFileSync(new URL('../assets/styles/table.css', import.meta.url), 'utf8');
   const mobile = css.split('@media (max-width: 759px)')[1];
@@ -228,13 +228,13 @@ test('model cells show interval, state accuracy, violation share and estimated c
 test('hero figures, lede and provenance are derived from the v5.1 suite', () => {
   assert.deepEqual(heroFigures(data, data.models[0]), [
     [String(data.models.length), 'ranked models'],
-    ['48', 'slots (48 engagements × 1)'],
-    ['12', 'config files authored per engagement'],
+    ['48', 'slots (48 episodes × 1)'],
+    ['12', 'config files authored per episode'],
     ['87.5%', 'top end-to-end'],
   ]);
   assert.equal(
     leaderboardLede(data),
-    'Ranked by how many of 48 client engagements each resolves end to end: every category correct, nothing unsafe, committed within the turn cap.',
+    'Ranked by how many of 48 episodes each resolves end to end: every category correct, nothing unsafe, committed within the turn cap.',
   );
   const rows = new Map(provenanceRows(data));
   assert.equal(rows.get('Suite'), 'v51_core');
@@ -331,7 +331,7 @@ test('updates group history by date, carry the launch note, and list ranked mode
   const root = { innerHTML: '', addEventListener() {}, removeEventListener() {}, querySelectorAll: () => [] };
   mountUpdates(root, data, makeStore());
   assert.match(root.innerHTML, /<p class="updates-note">IdentityBench v5\.1 launches/);
-  assert.match(root.innerHTML, /When each model's 48-engagement run was first published\./);
+  assert.match(root.innerHTML, /When each model's 48-episode run was first published\./);
 });
 
 test('every vendor in the data has a mark, and unknown vendors fall back to an escaped monogram', async () => {
@@ -394,7 +394,7 @@ test('mounted table renders pending and reference blocks, the v5.1 detail panel,
     }
     assert.equal((body.innerHTML.match(/class="model-row"/g) || []).length, data.models.length);
     assert.match(body.innerHTML, /<tr class="detail-row"><td colspan="8"><div class="model-detail"/);
-    for (const heading of ['IGA categories', 'Subscores', 'Resolution &amp; safety', 'Engagement outcomes', 'Engagement families (F01–F12)']) {
+    for (const heading of ['IGA categories', 'Subscores', 'Resolution &amp; safety', 'Episode outcomes', 'Scenario families (F01–F12)']) {
       assert.ok(detail.innerHTML.includes(heading), heading);
     }
     for (const category of data.categories) assert.ok(detail.innerHTML.includes(escapeHTML(category.title)), category.title);

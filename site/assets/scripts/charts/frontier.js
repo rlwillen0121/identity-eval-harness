@@ -15,7 +15,7 @@ export function paretoFrontier(models, metric = 'g_srr') {
 export function mount(root, data, store) {
   let metric = 'g_srr';
   const slots = Number(data.suite?.slots_per_run);
-  const subtitle = `Estimated run cost (retail API prices) on a log scale across ${int(slots)} engagements. The line traces the best result at each cost.`;
+  const subtitle = `Estimated run cost (retail API prices) on a log scale across ${int(slots)} episodes. The line traces the best result at each cost.`;
   const view = chart(root, 'What does resolution cost?', subtitle, store, ({ width, canvas, tip }) => {
     const plot = { left: 44, right: width - 18, top: 22, bottom: 312 };
     const paid = data.models.filter((m) => m.cost_basis !== 'local' && m.cost_usd > 0);

@@ -148,11 +148,11 @@ test('outcomes preserves rank, five v5.1 outcome segments, and computed caption'
   const count = data.models.filter((m) => m.outcomes.end_to_end > data.suite.slots_per_run / 2).length;
   const lead = count === data.models.length ? 'All' : `Only ${count} of`;
   assert.equal(root.querySelector('.chart-caption').textContent,
-    `${lead} ${data.models.length} models resolve more than half of the 48 engagements end to end.`);
+    `${lead} ${data.models.length} models resolve more than half of the 48 episodes end to end.`);
   destroy();
 });
 
-test('anatomy displays 8 categories on mobile and 8 categories + 12 engagement families on desktop', () => {
+test('anatomy displays 8 categories on mobile and 8 categories + 12 scenario families on desktop', () => {
   const dom = installDOM();
   for (const width of [328, 1120, 1600]) {
     const root = dom.root(width);
@@ -220,7 +220,7 @@ test('chart interaction rectangles stay inside the SVG at narrow widths', () => 
   }
 });
 
-test('chart copy and accessible labels describe v5.1 engagements with no retired references', () => {
+test('chart copy and accessible labels describe v5.1 episodes with no retired references', () => {
   const dom = installDOM();
   const retired = [/\bv5(?![.\d])/, /\bv5_core\b/, /(?<![\d,.])144(?![\d,]| ?k)/, /\btrials\b/, /[Cc]oupling famil/];
   for (const [name, chart] of Object.entries(charts)) {
@@ -229,7 +229,7 @@ test('chart copy and accessible labels describe v5.1 engagements with no retired
     const labels = root.querySelectorAll('*').flatMap((node) => [node.getAttribute('aria-label') || '', node.innerHTML || '']);
     const copy = [root.textContent, ...labels].join('\n');
     for (const pattern of retired) assert.doesNotMatch(copy, pattern, `${name}: ${pattern}`);
-    assert.match(copy, /engagements/, `${name} talks about engagements`);
+    assert.match(copy, /episodes/, `${name} talks about episodes`);
     destroy();
   }
 });

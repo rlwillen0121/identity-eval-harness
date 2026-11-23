@@ -123,7 +123,7 @@ export const FAMILIES = [
 export const SUBSCORES = [
   { id: 'nhi_custody', label: 'NHI custody', blurb: 'Machine identity custody decisions (part of NHI & agents).' },
   { id: 'agent_delegation', label: 'Agent delegation', blurb: 'AI agent and on-behalf-of delegation decisions (part of NHI & agents).' },
-  { id: 'iiq_to_isc', label: 'IIQ → ISC migration', blurb: 'Engagements with legacy IdentityIQ rules that must be refactored for Identity Security Cloud.' },
+  { id: 'iiq_to_isc', label: 'IIQ → ISC migration', blurb: 'Episodes with legacy IdentityIQ rules that must be refactored for Identity Security Cloud.' },
 ];
 
 // Reference row: SPEC-v5.1 §6.2 gate G-GOLD-REPLAY-V51 requires the sealed gold configuration to
@@ -132,7 +132,7 @@ export const SUBSCORES = [
 const REFERENCE = {
   id: 'gold_config_replay',
   name: 'Sealed gold configuration',
-  description: 'Replays the sealed reference configuration for every engagement (spec gate G-GOLD-REPLAY-V51), showing each engagement is fully solvable without a violation.',
+  description: 'Replays the sealed reference configuration for every episode (spec gate G-GOLD-REPLAY-V51), showing each episode is fully solvable without a violation.',
   gate: 'G-GOLD-REPLAY-V51',
   g_srr: 1,
   state_accuracy: 1,

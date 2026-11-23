@@ -7,7 +7,7 @@ export { OUTCOME_SEGMENTS };
 export function mount(root, data, store) {
   const models = data.models.slice().sort((a, b) => a.rank - b.rank);
   const slots = Number(data.suite?.slots_per_run);
-  const subtitle = `Each model's ${int(slots)} engagements, by outcome.`;
+  const subtitle = `Each model's ${int(slots)} episodes, by outcome.`;
   const view = chart(root, 'How far do models get?', subtitle, store, ({ width, canvas, tip }) => {
     const left = nameColumn(width, models);
     const top = 6;
@@ -15,7 +15,7 @@ export function mount(root, data, store) {
     const height = top + models.length * pitch + 4;
     const barWidth = width - left - 4;
     const svg = svgCanvas(canvas, width, height,
-      `${int(models.length)} models in rank order. Each bar divides ${int(slots)} engagements into ${OUTCOME_SEGMENTS.map(([, label]) => label).join(', ')}.`);
+      `${int(models.length)} models in rank order. Each bar divides ${int(slots)} episodes into ${OUTCOME_SEGMENTS.map(([, label]) => label).join(', ')}.`);
     const rows = models.map((model, i) => {
       const rowTop = top + i * pitch;
       const frame = modelRow(svg, model, { left, width, top: rowTop, pitch, height: 9 });
@@ -62,7 +62,7 @@ export function mount(root, data, store) {
   const caption = document.createElement('p');
   caption.className = 'chart-caption';
   const count = models.filter((m) => (m.outcomes?.end_to_end || 0) > slots / 2).length;
-  caption.textContent = `${count === models.length ? 'All' : `Only ${int(count)} of`} ${int(models.length)} models resolve more than half of the ${int(slots)} engagements end to end.`;
+  caption.textContent = `${count === models.length ? 'All' : `Only ${int(count)} of`} ${int(models.length)} models resolve more than half of the ${int(slots)} episodes end to end.`;
   root.append(caption);
   return () => view.destroy();
 }
