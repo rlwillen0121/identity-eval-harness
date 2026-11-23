@@ -26,10 +26,11 @@ use ib_v52_runtime::leaderboard::{
 };
 use ib_v52_runtime::report::report_v52_run_with_slot_rows;
 use ib_v52_runtime::{
-    CalibrationReportOptionsV52, LoadedRunConfigV52, ProbeOptionsV52, RunControlV52,
-    RunV52SuiteOptions, build_calibration_report_v52, load_pricing_v52, load_probe_receipt,
-    load_run_config_v52, load_v52_dataset, report_v52_run, run_v52_probe, run_v52_suite_with_seal,
-    validate_loaded_v52_dataset, verify_probe_receipt_binding, write_calibration_report_v52,
+    CalibrationReportOptionsV52, DIAGNOSTIC_K3_PHASE_V52, LoadedRunConfigV52, ProbeOptionsV52,
+    RunControlV52, RunV52SuiteOptions, build_calibration_report_v52, load_pricing_v52,
+    load_probe_receipt, load_run_config_v52, load_v52_dataset, report_v52_run, run_v52_probe,
+    run_v52_suite_with_seal, validate_loaded_v52_dataset, verify_probe_receipt_binding,
+    write_calibration_report_v52,
 };
 use ib_v52_schemas::{IgaEngineBackendV52, V52Suite};
 use serde_json::{Value, json};
@@ -143,9 +144,12 @@ pub struct V52RunArgs {
     /// Run artifact output directory.
     #[arg(short = 'o', long)]
     pub out: Option<PathBuf>,
-    /// Planned repeats per episode (1 or 3).
+    /// Planned repeats per episode (1 or 3); v52_core k=3 is an unranked diagnostic.
     #[arg(long, default_value = "1", value_parser = v52_repeat_arg)]
     pub repeats: usize,
+    /// Run only repeats 2 and 3 in a new directory, linked to this completed v52_core k=1 run.
+    #[arg(long)]
+    pub reliability_base: Option<PathBuf>,
     /// Resume an interrupted run directory from its per-turn checkpoints. Refused unless the run
     /// fingerprint (config, pricing, repeats, shuffle seed, receipt, endpoint, binary, seal) matches.
     #[arg(long, default_value_t = false)]
@@ -187,6 +191,9 @@ pub struct V52LeaderboardArgs {
     /// Run directories (one per entry); repeat the flag or pass several paths.
     #[arg(long, required = true, num_args = 1..)]
     pub runs: Vec<PathBuf>,
+    /// Reliability extension directories for every min(3, ranked-entry-count) top entry.
+    #[arg(long, num_args = 1..)]
+    pub reliability_runs: Vec<PathBuf>,
     /// Output directory for leaderboard.json and leaderboard.md.
     #[arg(long, short)]
     pub out: PathBuf,
@@ -920,6 +927,11 @@ fn leaderboard(root: &Path, args: V52LeaderboardArgs) -> Result<Value> {
     };
     let options = LeaderboardOptionsV52 {
         runs,
+        reliability_runs: args
+            .reliability_runs
+            .iter()
+            .map(|p| paths::resolve(root, p))
+            .collect(),
         published_seal,
         pricing,
         include_slot_rows: args.include_slot_rows,
@@ -1098,6 +1110,29 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
     if control.is_some() && args.repeats != 1 {
         bail!("§8.2 validity controls require k = 1 (--repeats 1)");
     }
+    let reliability_base = args
+        .reliability_base
+        .as_deref()
+        .map(|path| paths::resolve(root, path));
+    if reliability_base.is_some() {
+        if suite != V52Suite::V52Core {
+            bail!("--reliability-base is available only for suite v52_core");
+        }
+        if args.repeats != 1 {
+            bail!("--reliability-base runs exactly repeats 2 and 3; omit --repeats");
+        }
+        if args.out.is_none() {
+            bail!("--reliability-base requires an independent explicit --out directory");
+        }
+    }
+    let effective_repeats = if reliability_base.is_some() {
+        2
+    } else {
+        args.repeats
+    };
+    let diagnostic_k3 =
+        suite == V52Suite::V52Core && reliability_base.is_none() && args.repeats == 3;
+    let run_phase = diagnostic_k3.then(|| DIAGNOSTIC_K3_PHASE_V52.to_owned());
 
     let config_path = paths::resolve(root, &args.config);
     let pricing_path = paths::resolve(root, &args.pricing);
@@ -1115,7 +1150,7 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
     let spec_bytes = artifact::read_limited(&root.join("SPEC-v5.2.md"), 4 * 1024 * 1024)
         .context("failed to read SPEC-v5.2.md")?;
     // Seal check before anything else runs (SPEC-v5.2 §7.5); the runner reuses the result.
-    let ranked = suite == V52Suite::V52Core;
+    let ranked = suite == V52Suite::V52Core && !diagnostic_k3;
     let seal = ib_v52_runtime::verify_v52_seal(&dataset, &spec_bytes, ranked)?;
     let loaded_config = load_run_config_v52(&config_path)?;
     let loaded_pricing = load_pricing_v52(&pricing_path)?;
@@ -1147,6 +1182,9 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
             .join(format!("{}-{component}{suffix}", suite.as_str()))
     };
     paths::ensure_output_separate(&out_dir, &dataset_path)?;
+    if let Some(base_dir) = &reliability_base {
+        paths::ensure_output_separate_from_run(&out_dir, base_dir)?;
+    }
 
     let engine = engine_backend();
     let provider = construct_provider(&loaded_config.model_spec, env_file)?;
@@ -1167,7 +1205,7 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
         suite_id: suite.as_str().to_owned(),
         model_label: loaded_config.model_spec.display_label(),
         effort: loaded_config.effort.clone(),
-        repeats: args.repeats,
+        repeats: effective_repeats,
         concurrency: usize::try_from(loaded_config.model_spec.concurrency.unwrap_or(1))
             .unwrap_or(1),
         shuffle_seed: args.shuffle_seed,
@@ -1182,6 +1220,8 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
         receipt_bytes: receipt.as_ref().map(|r| r.bytes.clone()),
         ranked,
         control,
+        reliability_base_dir: reliability_base.clone(),
+        run_phase: run_phase.clone(),
         out_dir: out_dir.clone(),
         resume: args.resume,
         ..RunV52SuiteOptions::default()
@@ -1193,8 +1233,12 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
     Ok(json!({
         "run_dir": out_dir,
         "episode_count": records.len(),
-        "repeats": args.repeats,
+        "repeats": effective_repeats,
         "shuffle_seed": args.shuffle_seed,
+        "phase": reliability_base
+            .as_ref()
+            .map(|_| "reliability_extension")
+            .or(run_phase.as_deref()),
         "model_id": loaded_config.model_spec.display_label(),
         "summary": summary,
     }))

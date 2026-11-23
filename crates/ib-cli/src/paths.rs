@@ -39,6 +39,19 @@ pub fn ensure_output_separate(output: &Path, dataset: &Path) -> Result<()> {
     Ok(())
 }
 
+/// An extra-reliability run must occupy its own directory and must not contain or be contained by
+/// the base run directory, so the base's artifacts cannot be replaced or shadowed.
+pub fn ensure_output_separate_from_run(output: &Path, base_run: &Path) -> Result<()> {
+    let source = base_run.canonicalize()?;
+    let target = canonicalize_available(output)?;
+    if target.starts_with(&source) || source.starts_with(&target) {
+        bail!(
+            "reliability extension output overlaps its base run; choose a separate output directory"
+        );
+    }
+    Ok(())
+}
+
 /// Private suites are never committed (`SPEC-v5.2` §2.2): refuse any output inside the repository,
 /// including through directory aliases.
 pub fn ensure_outside_repository(output: &Path, root: &Path) -> Result<()> {
@@ -107,6 +120,25 @@ mod tests {
             let alias = dir.path().join("dataset-alias");
             std::os::unix::fs::symlink(&dataset, &alias).unwrap();
             assert!(ensure_output_separate(&alias.join("run"), &dataset).is_err());
+        }
+    }
+
+    #[test]
+    fn reliability_extension_output_must_be_separate_from_its_base_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("runs/base");
+        std::fs::create_dir_all(&base).unwrap();
+
+        assert!(ensure_output_separate_from_run(&dir.path().join("runs/extension"), &base).is_ok());
+        assert!(ensure_output_separate_from_run(&base, &base).is_err());
+        assert!(ensure_output_separate_from_run(&base.join("nested"), &base).is_err());
+        assert!(ensure_output_separate_from_run(&dir.path().join("runs"), &base).is_err());
+
+        #[cfg(unix)]
+        {
+            let alias = dir.path().join("base-alias");
+            std::os::unix::fs::symlink(&base, &alias).unwrap();
+            assert!(ensure_output_separate_from_run(&alias.join("extension"), &base).is_err());
         }
     }
 

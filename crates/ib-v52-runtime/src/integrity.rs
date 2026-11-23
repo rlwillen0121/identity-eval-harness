@@ -210,6 +210,36 @@ pub fn round_stratified_order(
     order
 }
 
+/// The round-stratified order for selected global repeat indices. The helper generates the full
+/// deterministic schedule through the greatest requested repeat and then keeps only the selected
+/// rounds. This lets a reliability extension execute repeats 2 and 3 without repeating round 1,
+/// while preserving the same per-round ordering as an ordinary three-repeat run.
+pub fn round_stratified_order_for_indices(
+    episode_ids: &[String],
+    repeat_indices: &[usize],
+    concurrency: usize,
+    shuffle_seed: u64,
+) -> Result<Vec<SlotIdV52>> {
+    if repeat_indices.is_empty()
+        || repeat_indices.contains(&0)
+        || repeat_indices
+            .windows(2)
+            .any(|window| window[0] >= window[1])
+    {
+        bail!("repeat indices must be a non-empty, strictly increasing list of positive integers");
+    }
+    let selected: BTreeSet<usize> = repeat_indices.iter().copied().collect();
+    Ok(round_stratified_order(
+        episode_ids,
+        *repeat_indices.last().expect("non-empty repeat indices"),
+        concurrency,
+        shuffle_seed,
+    )
+    .into_iter()
+    .filter(|slot| selected.contains(&slot.repeat_index))
+    .collect())
+}
+
 // --------------------------------------------------------------------------------------------
 // Seal verification (§7.5)
 // --------------------------------------------------------------------------------------------
@@ -350,6 +380,49 @@ pub fn verify_v52_seal(
 // Fingerprint (§7.5)
 // --------------------------------------------------------------------------------------------
 
+pub const RELIABILITY_EXTENSION_PHASE_V52: &str = "reliability_extension";
+pub const RELIABILITY_EXTENSION_REPEAT_INDICES_V52: [usize; 2] = [2, 3];
+pub const DIAGNOSTIC_K3_PHASE_V52: &str = "diagnostic_k3";
+
+/// Explicit linkage for the optional extra-reliability run. This object is omitted from ordinary
+/// runs, preserving their existing fingerprint inputs and bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReliabilityExtensionV52 {
+    pub phase: String,
+    pub base_fingerprint: String,
+    pub base_withheld_bundle_sha256: String,
+    pub repeat_indices: Vec<usize>,
+}
+
+impl ReliabilityExtensionV52 {
+    /// Reject malformed or unsupported extensions before fingerprinting or dispatching slots.
+    pub fn validate(&self) -> Result<()> {
+        if self.phase != RELIABILITY_EXTENSION_PHASE_V52 {
+            bail!("unsupported reliability extension phase");
+        }
+        if self.base_fingerprint.len() != 64
+            || !self
+                .base_fingerprint
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            bail!("reliability extension base_fingerprint must be a SHA-256 hex digest");
+        }
+        if self.base_withheld_bundle_sha256.len() != 64
+            || !self
+                .base_withheld_bundle_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            bail!("reliability extension base_withheld_bundle_sha256 must be a SHA-256 hex digest");
+        }
+        if self.repeat_indices != RELIABILITY_EXTENSION_REPEAT_INDICES_V52 {
+            bail!("reliability extensions must contain only repeat indices 2 and 3");
+        }
+        Ok(())
+    }
+}
+
 /// Every input bound into the run fingerprint (§7.5).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunFingerprintInputsV52 {
@@ -365,8 +438,17 @@ pub struct RunFingerprintInputsV52 {
     pub endpoint_identity: String,
     pub binary_sha256: String,
     pub seal: SealDigestsV52,
+    /// Configured canonical request byte ceiling; absent only in legacy manifests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_byte_ceiling: Option<usize>,
+    /// Non-default run phase; omitted for ordinary runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_phase: Option<String>,
+    /// Base-run linkage and selected global repeat indices; absent for ordinary runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reliability_extension: Option<ReliabilityExtensionV52>,
     /// Validity control identity; absent for ordinary runs to preserve their fingerprint bytes.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<RunControlV52>,
 }
 

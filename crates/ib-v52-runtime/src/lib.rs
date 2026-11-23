@@ -34,8 +34,10 @@ pub use config::{
 };
 pub use control::RunControlV52;
 pub use integrity::{
-    RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, round_stratified_order, verify_v52_seal,
-    withheld_bundle_sha256,
+    DIAGNOSTIC_K3_PHASE_V52, RELIABILITY_EXTENSION_PHASE_V52,
+    RELIABILITY_EXTENSION_REPEAT_INDICES_V52, ReliabilityExtensionV52, RunFingerprintInputsV52,
+    SealDigestsV52, SlotIdV52, round_stratified_order, round_stratified_order_for_indices,
+    verify_v52_seal, withheld_bundle_sha256,
 };
 pub use mutations::{GoldMutationV52, MutationOriginV52, gold_replay_mutations_v52};
 pub use opening::{
@@ -57,8 +59,8 @@ pub use report::{
 };
 pub use runner::{
     RunV52EpisodeOptions, RunV52SuiteOptions, SLOT_RECORDS_DIR_V52, SlotCheckpointV52,
-    load_run_records_v52, opening_request_bytes_v52, run_v52_episode,
-    run_v52_episode_from_checkpoint, run_v52_suite, run_v52_suite_with_seal,
+    load_completed_assembled_records_v52, load_run_records_v52, opening_request_bytes_v52,
+    run_v52_episode, run_v52_episode_from_checkpoint, run_v52_suite, run_v52_suite_with_seal,
 };
 pub use validation::{
     BaselineReportV52, BaselineRowV52, GateResultV52, ShortcutCeilingV52, ValidationReportV52,

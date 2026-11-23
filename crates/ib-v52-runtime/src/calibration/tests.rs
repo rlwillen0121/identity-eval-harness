@@ -257,6 +257,9 @@ fn create_run(root: &Path, spec: &RunSpec<'_>) -> PathBuf {
         endpoint_identity: "synthetic-endpoint".to_owned(),
         binary_sha256: "synthetic-binary".to_owned(),
         seal: seal.clone(),
+        request_byte_ceiling: None,
+        run_phase: None,
+        reliability_extension: None,
         control: spec.control,
     };
     let fingerprint = fingerprint_inputs.fingerprint();
