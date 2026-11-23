@@ -10,7 +10,7 @@ use crate::artifacts_render::render_readonly_workspace_files;
 use crate::cells::{V52Cell, plan_v52_cells};
 use crate::configs_gen::{build_gold_config, build_starter_config};
 use crate::error::V52GeneratorError;
-use crate::seeds::{SecretKey32, decode_hex32, encode_hex32, key_commitment, private_suite_key};
+use crate::seeds::{SecretKey32, decode_hex32, key_commitment, private_suite_key};
 use crate::world_gen::generate_scenario_blueprint;
 
 /// `PRECOMMIT.json` (§2.2): committed and pushed before `round_unix_time`, with exactly these members.
@@ -80,11 +80,11 @@ impl SuiteKeyMaterialV52 {
         Ok(Self::Private {
             s_priv: private_suite_key(key, &beacon),
             commitment: PrivateSuiteCommitmentV52 {
-                c_k: encode_hex32(&committed),
+                c_k: hex::encode(committed),
                 drand_chain_hash: precommit.drand_chain_hash.trim().to_owned(),
                 round: precommit.round,
                 round_unix_time: precommit.round_unix_time,
-                beacon_randomness_hex: encode_hex32(&beacon),
+                beacon_randomness_hex: hex::encode(beacon),
             },
         })
     }

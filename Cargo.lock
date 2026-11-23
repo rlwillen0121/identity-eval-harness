@@ -604,6 +604,7 @@ version = "5.2.0"
 dependencies = [
  "anyhow",
  "clap",
+ "hex",
  "ib-core",
  "ib-providers",
  "ib-v52-engine",
@@ -689,7 +690,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
- "sha2",
  "tempfile",
  "thiserror",
  "tokio",

@@ -8,10 +8,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use ib_core::hashing::sha256_hex;
+use ib_core::hashing::{sha256_hex, sha256_parts};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 use crate::config::LoadedV52Dataset;
 use crate::protocol::PROTOCOL_ID_V52;
@@ -152,9 +151,7 @@ pub fn round_stratified_order(
     canonical.dedup();
     let n = canonical.len();
     let w = concurrency.min(n / 2);
-    let mut key_input = b"identitybench-v5.2-shuffle|".to_vec();
-    key_input.extend_from_slice(&shuffle_seed.to_be_bytes());
-    let key: [u8; 32] = Sha256::digest(&key_input).into();
+    let key = sha256_parts(&[b"identitybench-v5.2-shuffle|", &shuffle_seed.to_be_bytes()]);
     let mut rng = ChaCha20RngV52::from_key(key);
 
     let mut order = Vec::with_capacity(n * repeats);
@@ -584,9 +581,10 @@ mod tests {
     fn slot_order_pins_the_first_round_of_seed_zero() {
         // Regression vector for the pinned key derivation, keystream and Fisher-Yates.
         let order = round_stratified_order(&ids(6), 1, 1, 0);
-        let mut key_input = b"identitybench-v5.2-shuffle|".to_vec();
-        key_input.extend_from_slice(&0_u64.to_be_bytes());
-        let mut rng = ChaCha20RngV52::from_key(Sha256::digest(&key_input).into());
+        let mut rng = ChaCha20RngV52::from_key(sha256_parts(&[
+            b"identitybench-v5.2-shuffle|",
+            &0_u64.to_be_bytes(),
+        ]));
         let mut expected = ids(6);
         for i in (1..6).rev() {
             let j = (rng.next_u64() % (i as u64 + 1)) as usize;

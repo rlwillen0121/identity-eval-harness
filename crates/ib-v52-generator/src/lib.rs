@@ -40,8 +40,7 @@ pub use io::{
 };
 pub use seeds::{
     SEED_TEST_VECTORS_V52, SecretKey32, SeedTestVectorV52, TEST_KEY_HEX_V52, base_seed,
-    decode_hex32, encode_hex32, key_commitment, private_suite_key, public_suite_key,
-    retired_seed_set,
+    decode_hex32, key_commitment, private_suite_key, public_suite_key, retired_seed_set,
 };
 pub use world_gen::{
     ClientParametersV52, GroupBlueprintV52, GroupRoleTagV52, KeyPersonHandlesV52,
@@ -228,7 +227,7 @@ mod tests {
         let engine = StructuralMockEngine;
         let k_test = SecretKey32(decode_hex32(TEST_KEY_HEX_V52).expect("K_test"));
         let precommit = PrecommitV52 {
-            c_k: encode_hex32(&key_commitment(&k_test)),
+            c_k: hex::encode(key_commitment(&k_test)),
             drand_chain_hash: "ab".repeat(32),
             round: 1_000_000,
             round_unix_time: 1_800_000_000,

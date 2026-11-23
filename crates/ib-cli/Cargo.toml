@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+hex.workspace = true
 ib-core.workspace = true
 ib-providers.workspace = true
 ib-v52-engine.workspace = true

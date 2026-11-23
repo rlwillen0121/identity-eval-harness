@@ -8,6 +8,8 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+pub use ib_core::hashing::decode_hex32;
+use ib_core::hashing::{sha256, sha256_parts};
 use sha2::{Digest, Sha256};
 
 /// Message prefix of the base-seed function: `"identitybench-v5.2|" + suite | family | regime | slot`.
@@ -107,40 +109,10 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     outer.finalize().into()
 }
 
-/// Decode exactly 64 lowercase hex characters into 32 raw bytes (§2.1 hex encoding).
-///
-/// # Errors
-/// Returns a description (never containing the input) if the text is not 64 lowercase hex characters.
-pub fn decode_hex32(text: &str) -> Result<[u8; 32], String> {
-    let trimmed = text.trim();
-    if trimmed.len() != 64 {
-        return Err(format!(
-            "expected 64 lowercase hex characters, got {} characters",
-            trimmed.len()
-        ));
-    }
-    if !trimmed
-        .bytes()
-        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    {
-        return Err("expected lowercase hex characters [0-9a-f] only".to_owned());
-    }
-    let bytes = hex::decode(trimmed).map_err(|e| format!("invalid hex: {e}"))?;
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&bytes);
-    Ok(out)
-}
-
-/// Encode 32 bytes as 64 lowercase hex characters.
-#[must_use]
-pub fn encode_hex32(bytes: &[u8; 32]) -> String {
-    hex::encode(bytes)
-}
-
 /// `S_pub = SHA-256(ASCII("identitybench-v5.2-public|20261201"))`.
 #[must_use]
 pub fn public_suite_key() -> [u8; 32] {
-    Sha256::digest(PUBLIC_KEY_PREIMAGE_V52.as_bytes()).into()
+    sha256(PUBLIC_KEY_PREIMAGE_V52)
 }
 
 /// `S_priv = HMAC-SHA256(K, ASCII("identitybench-v5.2-private|") || B)`.
@@ -155,10 +127,7 @@ pub fn private_suite_key(key: &SecretKey32, beacon_randomness: &[u8; 32]) -> Sec
 /// `C_K = SHA-256(ASCII("identitybench-v5.2-commit|") || K)`.
 #[must_use]
 pub fn key_commitment(key: &SecretKey32) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(KEY_COMMITMENT_PREFIX_V52.as_bytes());
-    hasher.update(key.0);
-    hasher.finalize().into()
+    sha256_parts(&[KEY_COMMITMENT_PREFIX_V52.as_bytes(), &key.0])
 }
 
 /// Render the `seed_slot` text used in `M`: the two-digit slot plus the §2.1 collision suffix
@@ -318,9 +287,9 @@ mod tests {
             base_seed(&k_test, "v52_dev", "F05", "R1", "00"),
             0x6dbb_a234_e5f0_8aff
         );
-        assert_eq!(encode_hex32(&public_suite_key()), PUBLISHED_S_PUB_HEX_V52);
+        assert_eq!(hex::encode(public_suite_key()), PUBLISHED_S_PUB_HEX_V52);
         assert_eq!(
-            encode_hex32(&key_commitment(&SecretKey32(k_test))),
+            hex::encode(key_commitment(&SecretKey32(k_test))),
             PUBLISHED_TEST_KEY_COMMITMENT_HEX_V52
         );
     }

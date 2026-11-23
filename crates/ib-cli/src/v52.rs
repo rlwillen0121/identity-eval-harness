@@ -548,11 +548,10 @@ fn det_gate(
                 == v.base_seed
         })
         .count();
-    let s_pub_ok = ib_v52_generator::encode_hex32(&ib_v52_generator::public_suite_key())
+    let s_pub_ok = hex::encode(ib_v52_generator::public_suite_key())
         == ib_v52_generator::seeds::PUBLISHED_S_PUB_HEX_V52;
-    let c_k_ok =
-        ib_v52_generator::encode_hex32(&ib_v52_generator::key_commitment(&SecretKey32(k_test)))
-            == ib_v52_generator::seeds::PUBLISHED_TEST_KEY_COMMITMENT_HEX_V52;
+    let c_k_ok = hex::encode(ib_v52_generator::key_commitment(&SecretKey32(k_test)))
+        == ib_v52_generator::seeds::PUBLISHED_TEST_KEY_COMMITMENT_HEX_V52;
     details.push(format!(
         "test_vectors={vectors_ok}/{}, s_pub_matches={s_pub_ok}, c_k_of_k_test_matches={c_k_ok}",
         SEED_TEST_VECTORS_V52.len()

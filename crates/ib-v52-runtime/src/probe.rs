@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use ib_core::hashing::sha256_hex;
+use ib_core::hashing::{is_lower_hex, sha256_hex};
 use ib_providers::base::{GenerationParams, Message, ModelRequest, Provider, SystemChannel};
 use serde_json::{Map, Value, json};
 
@@ -233,11 +233,7 @@ pub async fn run_v52_probe(provider: &dyn Provider, options: &ProbeOptionsV52) -
         None => [csprng_hex(16)?, csprng_hex(16)?, csprng_hex(16)?],
     };
     for nonce in &nonces {
-        if nonce.len() != 32
-            || !nonce
-                .bytes()
-                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        {
+        if nonce.len() != 32 || !is_lower_hex(nonce) {
             bail!("probe nonces must be 32 lowercase hex characters");
         }
     }

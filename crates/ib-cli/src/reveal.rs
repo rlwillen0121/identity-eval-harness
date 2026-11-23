@@ -14,8 +14,8 @@ use ib_core::hashing::sha256_hex;
 use ib_v52_generator::{
     PrecommitV52, PrivateSuiteCommitmentV52, PrivateSuitePublicSealV52, SecretKey32, V52Cell,
     build_full_seal, build_v52_dataset_from_cells, decode_hex32, derive_private_public_seal,
-    encode_hex32, key_commitment, plan_public_v52_suites, plan_v52_cells, private_suite_key,
-    retired_seed_set, serialize_jsonl,
+    key_commitment, plan_public_v52_suites, plan_v52_cells, private_suite_key, retired_seed_set,
+    serialize_jsonl,
 };
 use ib_v52_runtime::integrity::{withheld_bundle_listing, withheld_bundle_sha256};
 use ib_v52_runtime::leaderboard::{
@@ -44,7 +44,7 @@ pub fn build_precommit(
 ) -> Result<PrecommitV52> {
     decode_hex32(drand_chain_hash).map_err(|e| anyhow::anyhow!("drand chain hash: {e}"))?;
     Ok(PrecommitV52 {
-        c_k: encode_hex32(&key_commitment(key)),
+        c_k: hex::encode(key_commitment(key)),
         drand_chain_hash: drand_chain_hash.to_owned(),
         round,
         round_unix_time,
@@ -133,18 +133,6 @@ struct RegeneratedSuite {
     oracles: BTreeMap<String, SealedEpisodeOracleV52>,
 }
 
-/// Lowercase/uppercase hex decoding without an extra dependency.
-fn decode_hex(text: &str) -> Option<Vec<u8>> {
-    let t = text.trim();
-    if !t.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..t.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(t.get(i..i + 2)?, 16).ok())
-        .collect()
-}
-
 /// Run `G-REVEAL-V52`.
 ///
 /// # Errors
@@ -162,7 +150,7 @@ pub fn verify_reveal(
             "PRECOMMIT.json must hold exactly c_k, drand_chain_hash, round, round_unix_time: {e}"
         )
     })?;
-    let c_k = encode_hex32(&key_commitment(&inputs.key));
+    let c_k = hex::encode(key_commitment(&inputs.key));
     checks.push(
         "key_matches_c_k",
         c_k == precommit.c_k,
@@ -276,7 +264,8 @@ pub fn verify_reveal(
         );
     }
     if let Some(sig_hex) = &inputs.beacon_signature_hex {
-        let sig = decode_hex(sig_hex).ok_or_else(|| anyhow::anyhow!("signature is not hex"))?;
+        let sig =
+            hex::decode(sig_hex.trim()).map_err(|_| anyhow::anyhow!("signature is not hex"))?;
         let derived = sha256_hex(&sig);
         checks.push(
             "beacon_randomness_is_sha256_of_signature",
@@ -338,7 +327,7 @@ pub fn verify_reveal(
         drand_chain_hash: precommit.drand_chain_hash.clone(),
         round: precommit.round,
         round_unix_time: precommit.round_unix_time,
-        beacon_randomness_hex: encode_hex32(&beacon),
+        beacon_randomness_hex: hex::encode(beacon),
     };
     let mut regenerated: BTreeMap<String, RegeneratedSuite> = BTreeMap::new();
     for (path, bytes, seal) in &public_seals {

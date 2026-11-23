@@ -14,7 +14,7 @@
 
 use std::cmp::Ordering;
 
-use sha2::{Digest, Sha256};
+use ib_core::hashing::sha256_parts;
 
 use crate::integrity::ChaCha20RngV52;
 
@@ -33,10 +33,10 @@ pub const QUANTILE_HI_V52: f64 = 0.975;
 /// digest.
 #[must_use]
 pub fn bootstrap_key_v52(episodes_sha256_hex: &str) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(BOOTSTRAP_KEY_PREFIX_V52.as_bytes());
-    hasher.update(episodes_sha256_hex.as_bytes());
-    hasher.finalize().into()
+    sha256_parts(&[
+        BOOTSTRAP_KEY_PREFIX_V52.as_bytes(),
+        episodes_sha256_hex.as_bytes(),
+    ])
 }
 
 /// Type-7 (linear interpolation, the R/NumPy default) quantile of an ascending-sorted slice:

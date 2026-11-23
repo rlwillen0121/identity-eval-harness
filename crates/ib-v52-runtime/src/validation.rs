@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
-use ib_core::hashing::sha256_hex;
+use ib_core::hashing::{is_lower_hex, sha256_hex};
 use ib_v52_schemas::{
     CONTRACT_ID_V52, CategoryIdV52, Day2EventV52, DeploymentScoreV52, EpisodeV52,
     GENERATOR_VERSION_V52, IgaEngineBackendV52, PROTOCOL_ID_V52, SPEC_VERSION_V52,
@@ -384,7 +384,7 @@ fn check_seal(
             if !seal
                 .get(key)
                 .and_then(Value::as_str)
-                .is_some_and(is_lower_hex64)
+                .is_some_and(|text| text.len() == 64 && is_lower_hex(text))
             {
                 errors.push(format!("{key} must be 64 lowercase hex characters"));
             }
@@ -449,13 +449,6 @@ fn find_seed_material(value: &Value, path: &str, found: &mut Vec<String>) {
         }
         _ => {}
     }
-}
-
-fn is_lower_hex64(text: &str) -> bool {
-    text.len() == 64
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 // ---------------------------------------------------------------------------
