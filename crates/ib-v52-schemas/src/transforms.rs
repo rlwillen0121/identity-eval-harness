@@ -35,7 +35,7 @@ pub enum CompareOpV52 {
 }
 
 /// Comparison operator for `date_compare` transforms (supports `YYYY-MM-DD` and integer epoch seconds;
-/// `"CUTOVER_DATE"` resolves to the engagement's cutover date).
+/// `"CUTOVER_DATE"` resolves to the scenario's cutover date).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DateCompareOpV52 {

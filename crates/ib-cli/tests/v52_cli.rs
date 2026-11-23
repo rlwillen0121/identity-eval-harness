@@ -1467,7 +1467,7 @@ fn leaderboard_over_two_dev_replay_runs() {
     let table_bytes = serde_json::to_vec_pretty(&table).unwrap();
     std::fs::write(&pricing, &table_bytes).unwrap();
     let table_sha = ib_core::hashing::sha256_hex(&table_bytes);
-    // A resolves engagements 0–4 always and engagement 5 on repeats 1 and 3; B resolves 0 only.
+    // A resolves scenarios 0–4 always and scenario 5 on repeats 1 and 3; B resolves 0 only.
     let run_a = replay_dev_run_with_usage(
         dir.path(),
         &dataset,
@@ -1881,8 +1881,8 @@ fn commit_reveal_round_trip_with_the_test_key() {
         String::from_utf8_lossy(&built.stderr)
     );
 
-    // Offline replay run over all 48 engagements: every 4th commits gold, the rest commit the
-    // starter configs, and one engagement fails to parse.
+    // Offline replay run over all 48 scenarios: every 4th commits gold, the rest commit the
+    // starter configs, and one scenario fails to parse.
     let run_dir = dir.path().join("run-core");
     let responses = scripted_responses(&core, 1, |i, _| match (i % 4, i) {
         (_, 5) => Behaviour::Prose,

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::transforms::{CompareOpV52, TransformExprV52, TransformsConfigV52};
 
-/// Complete bundle of all 12 editable `config/*.json` files in the virtual engagement workspace.
+/// Complete bundle of all 12 editable `config/*.json` files in the virtual scenario workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IgaDeploymentConfigV52 {

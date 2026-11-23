@@ -26,9 +26,9 @@ pub struct RunMetadataHintV52 {
     pub provider_kind: Option<String>,
     pub effort: Option<String>,
     pub planned_slots: Option<usize>,
-    /// Repeats per engagement (`k`) from the manifest.
+    /// Repeats per scenario (`k`) from the manifest.
     pub repeats: Option<usize>,
-    /// Engagements in the suite (`N`) from the manifest.
+    /// Scenarios in the suite (`N`) from the manifest.
     pub episode_count: Option<usize>,
 }
 
@@ -132,7 +132,7 @@ pub(crate) fn summarize_with_slots(
 
     let mut family_records: BTreeMap<String, Vec<(&EpisodeExecutionRecordV52, &SlotMetricsV52)>> =
         BTreeMap::new();
-    // (resolved, observed) per family / regime / engagement.
+    // (resolved, observed) per family / regime / scenario.
     let mut family_g: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     let mut regime_g: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     let mut engagement_g: BTreeMap<String, (usize, usize)> = BTreeMap::new();
@@ -385,7 +385,7 @@ fn family_outcomes(
     (passed_families, failed_families, provider_error_families)
 }
 
-/// `pass^k` and `pass@k` (§6.2), defined for `k ≥ 3` over complete engagements.
+/// `pass^k` and `pass@k` (§6.2), defined for `k ≥ 3` over complete scenarios.
 fn pass_k(
     engagement_g: &BTreeMap<String, (usize, usize)>,
     is_complete: bool,
@@ -765,7 +765,7 @@ fn render_suite_metrics_section(summary: &SuiteReportSummaryV52) -> String {
          Metrics over `P` are `null` unless the run is complete.\n\n\
          | Metric | Value |\n\
          | :--- | :--- |\n\
-         | `P` / engagements / repeats `k` | {} / {} / {} |\n\
+         | `P` / scenarios / repeats `k` | {} / {} / {} |\n\
          | Resolved / committed slots | {} / {} |\n\
          | `commit_rate` | {} |\n\
          | `State-Acc` (over P) | {} |\n\

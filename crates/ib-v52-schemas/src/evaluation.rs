@@ -188,9 +188,9 @@ pub struct AssertionFailureV52 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeploymentScoreV52 {
-    /// Strict end-to-end engagement resolution (`1` iff all 8 categories pass AND `OG == 0` AND `AB == 0`).
+    /// Strict end-to-end scenario resolution (`1` iff all 8 categories pass AND `OG == 0` AND `AB == 0`).
     pub g_srr: u8,
-    /// Continuous `[0.0, 1.0]` fraction of atomic engagement assertions satisfied.
+    /// Continuous `[0.0, 1.0]` fraction of atomic scenario assertions satisfied.
     pub state_accuracy: f64,
     pub passed_assertions: usize,
     pub total_assertions: usize,
@@ -388,10 +388,10 @@ pub struct SuiteReportSummaryV52 {
     #[serde(default)]
     pub output_limit_turns: usize,
     // ---- `SPEC-v5.2` §6.2 suite metrics. "Over P" metrics are `None` unless `is_complete`. ----
-    /// Distinct engagements planned (`N`).
+    /// Distinct scenarios planned (`N`).
     #[serde(default)]
     pub engagement_count: usize,
-    /// Repeats per engagement (`k`).
+    /// Repeats per scenario (`k`).
     #[serde(default)]
     pub repeats: usize,
     /// Observed slots that committed (`Cm`).
@@ -415,10 +415,10 @@ pub struct SuiteReportSummaryV52 {
     /// Per-category pass rates over `P` (uncommitted slots fail every category).
     #[serde(default)]
     pub category_pass_rates: Option<IndexMap<CategoryIdV52, f64>>,
-    /// `pass^k`: fraction of engagements whose `k` repeats all resolve; `None` when `k < 3`.
+    /// `pass^k`: fraction of scenarios whose `k` repeats all resolve; `None` when `k < 3`.
     #[serde(default)]
     pub pass_hat_k: Option<f64>,
-    /// `pass@k`: fraction of engagements with at least one resolved repeat; `None` when `k < 3`.
+    /// `pass@k`: fraction of scenarios with at least one resolved repeat; `None` when `k < 3`.
     #[serde(default)]
     pub pass_at_k: Option<f64>,
     /// `(OG + AB) / Cm` over committed slots; `None` when `Cm = 0`.

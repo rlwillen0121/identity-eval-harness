@@ -46,7 +46,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Build, validate, run, and report v5.2 practitioner IGA engagements.
+    /// Build, validate, run, and report v5.2 holistic identity governance scenarios.
     V52 {
         #[command(subcommand)]
         command: v52::V52Command,

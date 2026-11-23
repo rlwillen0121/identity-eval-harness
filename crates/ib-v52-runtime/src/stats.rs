@@ -6,7 +6,7 @@
 //! Nothing here reads files, clocks, or global state: every result is a function of its inputs.
 //!
 //! **Normative configuration.** On the ranked suite (`v52_core`) the strata are the `12` families
-//! `F01..F12`, each holding its `4` engagements ordered `R1..R4` (indices `0..3`), with `k = 3`
+//! `F01..F12`, each holding its `4` scenarios ordered `R1..R4` (indices `0..3`), with `k = 3`
 //! repeats. [`BootstrapDrawsV52::generate`] then consumes exactly the §9 loop
 //! `for b in 0..10_000 { for f in 0..12 { for d in 0..3 { idx = (rng.next_u32() & 3) } } }`.
 //! The general form (`idx = next_u32() % n_h`, which equals `& 3` for `n_h = 4`) exists only so
@@ -124,13 +124,13 @@ pub fn clopper_pearson_upper(k: u64, n: u64, alpha: f64) -> f64 {
 pub enum StatsErrorV52 {
     #[error("the bootstrap needs at least one stratum")]
     NoStrata,
-    #[error("every stratum needs at least 2 engagements (m_h = n_h − 1 ≥ 1); got sizes {0:?}")]
+    #[error("every stratum needs at least 2 scenarios (m_h = n_h − 1 ≥ 1); got sizes {0:?}")]
     StratumTooSmall(Vec<usize>),
     #[error("strata must be equal-sized; got sizes {0:?}")]
     UnequalStrata(Vec<usize>),
-    #[error("an entry has {got} engagement counts; the strata hold {expected}")]
+    #[error("an entry has {got} scenario counts; the strata hold {expected}")]
     EngagementCountMismatch { expected: usize, got: usize },
-    #[error("an engagement has {resolved} resolved slots out of {repeats} repeats")]
+    #[error("a scenario has {resolved} resolved slots out of {repeats} repeats")]
     ResolvedExceedsRepeats { resolved: u32, repeats: u32 },
     #[error("repeats must be at least 1")]
     ZeroRepeats,
@@ -139,13 +139,13 @@ pub enum StatsErrorV52 {
 }
 
 /// The shared bootstrap draws of one suite (§9 "Sharing"): for every replicate and stratum, the
-/// `m_h = n_h − 1` drawn engagement indices (within the stratum), in draw order.
+/// `m_h = n_h − 1` drawn scenario indices (within the stratum), in draw order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BootstrapDrawsV52 {
     replicates: usize,
     /// Number of strata `H`.
     strata: usize,
-    /// Engagements per stratum `n` (equal-sized strata).
+    /// Scenarios per stratum `n` (equal-sized strata).
     stratum_size: usize,
     /// `replicates · strata · (stratum_size − 1)` indices in loop order.
     indices: Vec<u8>,
@@ -157,8 +157,8 @@ impl BootstrapDrawsV52 {
     /// (stream `0`, block `0`, word `0`). For `n = 4` the draw is exactly `next_u32() & 3`.
     ///
     /// # Errors
-    /// Rejects no strata, strata with fewer than `2` engagements, unequal strata, or strata
-    /// larger than `256` engagements.
+    /// Rejects no strata, strata with fewer than `2` scenarios, unequal strata, or strata
+    /// larger than `256` scenarios.
     pub fn generate(
         key: [u8; 32],
         stratum_sizes: &[usize],
@@ -235,7 +235,7 @@ impl BootstrapDrawsV52 {
         self.stratum_size
     }
 
-    /// Engagements drawn per stratum, `m = n − 1`.
+    /// Scenarios drawn per stratum, `m = n − 1`.
     #[must_use]
     pub const fn draws_per_stratum(&self) -> usize {
         self.stratum_size - 1
@@ -249,11 +249,11 @@ impl BootstrapDrawsV52 {
     }
 
     /// Integer replicate totals `T_b = Σ_h Σ_d r[h·n + idx_{b,h,d}]` for one entry, where
-    /// `resolved[e]` is the number of resolved repeats of engagement `e` (strata contiguous, in
+    /// `resolved[e]` is the number of resolved repeats of scenario `e` (strata contiguous, in
     /// stratum order). The replicate statistic is `T_b / (H · m · k)`; ranking on `T_b` is exact.
     ///
     /// # Errors
-    /// Rejects an engagement vector that does not match the strata.
+    /// Rejects a scenario vector that does not match the strata.
     pub fn replicate_totals(&self, resolved: &[u32]) -> Result<Vec<u64>, StatsErrorV52> {
         let expected = self.strata * self.stratum_size;
         if resolved.len() != expected {
@@ -298,12 +298,12 @@ fn validate_strata(stratum_sizes: &[usize]) -> Result<usize, StatsErrorV52> {
     Ok(n)
 }
 
-/// One entry's per-engagement outcome vector, in stratum order.
+/// One entry's per-scenario outcome vector, in stratum order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryOutcomesV52 {
-    /// Resolved repeats per engagement, `0..=repeats`.
+    /// Resolved repeats per scenario, `0..=repeats`.
     pub resolved: Vec<u32>,
-    /// Repeats per engagement `k`.
+    /// Repeats per scenario `k`.
     pub repeats: u32,
 }
 
@@ -342,7 +342,7 @@ pub struct GsrrIntervalV52 {
     /// Type-7 bootstrap quantiles at `0.025` and `0.975`.
     pub boot_lo: f64,
     pub boot_hi: f64,
-    /// Clopper–Pearson counts `k_lo = ⌊R / k⌋`, `k_hi = ⌈R / k⌉` out of `n = N` engagements.
+    /// Clopper–Pearson counts `k_lo = ⌊R / k⌋`, `k_hi = ⌈R / k⌉` out of `n = N` scenarios.
     pub cp_n: u64,
     pub cp_k_lo: u64,
     pub cp_k_hi: u64,
@@ -469,7 +469,7 @@ impl RatioV52 {
 pub struct LeaderboardOrderKeyV52 {
     /// 1. `G-SRR` point estimate (`R / P`), descending.
     pub g_srr: RatioV52,
-    /// 2. `pass^3` (engagements resolved on every repeat / engagements), descending; `None` last.
+    /// 2. `pass^3` (scenarios resolved on every repeat / scenarios), descending; `None` last.
     pub pass_hat_3: Option<RatioV52>,
     /// 3. `Macro-Cat-Acc`, descending.
     pub macro_cat_acc: f64,
@@ -703,7 +703,7 @@ mod tests {
         assert_eq!(first, "101120212232221311100000013301300332");
     }
 
-    /// A hand-checked example: 2 strata × 3 engagements (m = 2), k = 2 repeats, 4 replicates.
+    /// A hand-checked example: 2 strata × 3 scenarios (m = 2), k = 2 repeats, 4 replicates.
     #[test]
     fn hand_checked_small_bootstrap() {
         // Stratum 0 resolved [2, 0, 1]; stratum 1 resolved [1, 1, 0].
@@ -732,7 +732,7 @@ mod tests {
         assert!(close(iv.point, 5.0 / 12.0, 1e-15));
         assert!(close(iv.boot_lo, 0.028_125, 1e-15));
         assert!(close(iv.boot_hi, 0.5, 1e-15));
-        // CP over n = 6 engagements at k_lo = ⌊5/2⌋ = 2 and k_hi = ⌈5/2⌉ = 3.
+        // CP over n = 6 scenarios at k_lo = ⌊5/2⌋ = 2 and k_hi = ⌈5/2⌉ = 3.
         assert_eq!((iv.cp_n, iv.cp_k_lo, iv.cp_k_hi), (6, 2, 3));
         assert!(close(iv.cp_lo, clopper_pearson_lower(2, 6, 0.05), 0.0));
         assert!(close(iv.cp_hi, clopper_pearson_upper(3, 6, 0.05), 0.0));
@@ -843,7 +843,7 @@ mod tests {
         let b = BootstrapDrawsV52::generate(key, &[4; 12], BOOTSTRAP_REPLICATES_V52).unwrap();
         assert_eq!(a, b);
         assert_eq!(a.replicates(), 10_000);
-        // A fixed mixed entry: engagement e resolves (e mod 4) repeats capped at 3.
+        // A fixed mixed entry: scenario e resolves (e mod 4) repeats capped at 3.
         let resolved: Vec<u32> = (0..48).map(|e| (e % 4).min(3)).collect();
         let entry = EntryOutcomesV52 {
             resolved,

@@ -1,4 +1,4 @@
-//! CLI subcommands for IdentityBench v5.2 practitioner IGA engagements.
+//! CLI subcommands for IdentityBench v5.2 holistic identity governance scenarios.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;

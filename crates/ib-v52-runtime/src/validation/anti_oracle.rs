@@ -218,7 +218,7 @@ pub(super) fn exercise(
     }
     if check_repeatability {
         // An operational tool can only observe Day-1 state. Identical public workspaces must
-        // return identical results even when evaluated as independent engagements.
+        // return identical results even when evaluated as independent scenarios.
         let mut left = VirtualWorkspaceRuntimeV52::new(episode, engine);
         let mut right = VirtualWorkspaceRuntimeV52::new(episode, engine);
         left.config = config.clone();

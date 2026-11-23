@@ -207,11 +207,11 @@ fn rejected(turn: usize, reason: RejectionReasonV52, raw: String) -> TurnRecordV
 #[must_use]
 pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
     let opening = format!(
-        "=== ENGAGEMENT ===\n{}\n\n# Engagement Assignment (parity fixture)\n\n{}",
+        "=== SCENARIO ===\n{}\n\n# Scenario Assignment (parity fixture)\n\n{}",
         filler("platform reference", 20_000),
         compact_json(&json!({"status": "OK", "readonly_files": [], "config_files": []}))
     );
-    let listing = json!({"status": "OK", "readonly_files": [{"path": "engagement/brief.md", "byte_len": 1200, "line_count": 40}], "config_files": [], "dry_runs_used": 0, "dry_runs_remaining": 3, "note": filler("listing", 1_500)});
+    let listing = json!({"status": "OK", "readonly_files": [{"path": "context/change_request.md", "byte_len": 1200, "line_count": 40}], "config_files": [], "dry_runs_used": 0, "dry_runs_remaining": 3, "note": filler("listing", 1_500)});
     let write_string = |bytes: usize| {
         (
             json!({"action": "write_workspace_file", "arguments": {"path": "config/transforms.json", "content": filler("{\"schema_version\":\"v5.2\"}", bytes)}}),
@@ -287,7 +287,7 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
                     None,
                 ),
                 {
-                    let (action, result) = read("engagement/brief.md", 15_000);
+                    let (action, result) = read("context/change_request.md", 15_000);
                     (action, result, None)
                 },
                 repeated_search(15_000),
@@ -359,15 +359,15 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
             11,
             vec![
                 {
-                    let (action, result) = read("engagement/workshop_notes.md", 39_000);
+                    let (action, result) = read("context/stakeholder_requests.md", 39_000);
                     (action, result, None)
                 },
                 search_with_identity(
                     "cutover",
-                    "engagement/**",
+                    "context/**",
                     12_000,
                     &[(
-                        "engagement/brief.md".to_owned(),
+                        "context/change_request.md".to_owned(),
                         sha256_hex(b"unique search scope"),
                     )],
                 ),
@@ -377,14 +377,14 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
         accepted(
             12,
             (0..8)
-                .map(|i| read(&format!("engagement/notes_{i}.md"), 23_000))
+                .map(|i| read(&format!("context/notes_{i}.md"), 23_000))
                 .collect(),
         ),
         accepted(13, vec![big_preview("gamma")]),
         // A large most-recent write: step 7.
         accepted(14, vec![write_string(49_000)]),
         // A large most-recent read after it: steps 6, then 8.
-        accepted(15, vec![read("engagement/security_charter.md", 47_000)]),
+        accepted(15, vec![read("context/security_policy.md", 47_000)]),
         accepted(
             16,
             vec![(
@@ -805,10 +805,10 @@ mod tests {
     fn fallback_fits_a_worst_case_turn_fifty_request_under_the_ceiling() {
         let system_prompt = render_v52_system_prompt();
         let opening = format!(
-            "=== ENGAGEMENT ===\n{}",
+            "=== SCENARIO ===\n{}",
             filler(
                 "opening",
-                MAX_OPENING_BYTES_V52 - system_prompt.len() - "=== ENGAGEMENT ===\n".len()
+                MAX_OPENING_BYTES_V52 - system_prompt.len() - "=== SCENARIO ===\n".len()
             )
         );
         assert_eq!(system_prompt.len() + opening.len(), MAX_OPENING_BYTES_V52);
@@ -987,13 +987,13 @@ mod tests {
             transport_id: "cli".to_owned(),
             system_channel: false,
             system_prompt: "SYS\n".to_owned(),
-            user_message: "=== SYSTEM ===\nSYS\n=== ENGAGEMENT ===\nX".to_owned(),
+            user_message: "=== SYSTEM ===\nSYS\n=== SCENARIO ===\nX".to_owned(),
         };
         let with_channel = ParityRequestV52 {
             transport_id: "api".to_owned(),
             system_channel: true,
             system_prompt: "SYS\n".to_owned(),
-            user_message: "=== ENGAGEMENT ===\nX".to_owned(),
+            user_message: "=== SCENARIO ===\nX".to_owned(),
         };
         assert_eq!(
             with_block.transcript_without_system_block(),

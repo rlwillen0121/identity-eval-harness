@@ -123,7 +123,7 @@ pub fn fisher_yates<T>(rng: &mut ChaCha20RngV52, list: &mut [T]) {
     }
 }
 
-/// One planned slot: an engagement and its 1-based repeat index (round `r` runs repeat `r + 1`).
+/// One planned slot: a scenario and its 1-based repeat index (round `r` runs repeat `r + 1`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SlotIdV52 {
     pub episode_id: String,
