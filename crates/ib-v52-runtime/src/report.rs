@@ -560,25 +560,8 @@ pub fn render_v52_report_markdown(
 
 /// Score/aggregate raw run artifacts in `run_dir` and write `<out_dir>/summary.json` and `<out_dir>/report.md`.
 pub fn report_v52_run(run_dir: &Path, out_dir: &Path) -> Result<SuiteReportSummaryV52> {
-    let episodes_path = run_dir.join("episodes.jsonl");
-    let raw = std::fs::read_to_string(&episodes_path)
-        .with_context(|| format!("failed to read {}", episodes_path.display()))?;
-
-    let mut records = Vec::new();
-    for (idx, line) in raw.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let rec: EpisodeExecutionRecordV52 = serde_json::from_str(trimmed).with_context(|| {
-            format!(
-                "invalid execution record in {} line {}",
-                episodes_path.display(),
-                idx + 1
-            )
-        })?;
-        records.push(rec);
-    }
+    // `episodes.jsonl`, plus slot records an interrupted invocation has not yet assembled.
+    let records = crate::runner::load_run_records_v52(run_dir)?;
 
     let hint = read_manifest_hint(&run_dir.join("manifest.json"));
     let summary = summarize_v52_records(&records, &hint);

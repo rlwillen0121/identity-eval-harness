@@ -975,22 +975,97 @@ fn write_committed_configs(
     Ok(())
 }
 
-fn write_records(
+/// Directory of per-slot execution records (`<episode_id>_r<repeat>.json`, one JSON line each).
+/// A finished slot writes only its own file, so per-slot persistence costs O(1) in the number of
+/// slots. When an invocation returns, the records are assembled into `episodes.jsonl` and the
+/// directory is removed; `--resume` folds in any slot records an interrupted invocation left
+/// behind. The directory is not part of the withheld bundle (§2.2).
+pub const SLOT_RECORDS_DIR_V52: &str = "slot_records";
+
+fn record_line(record: &EpisodeExecutionRecordV52) -> Result<Vec<u8>> {
+    let mut bytes = serde_json::to_vec(record)?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+/// Assemble `episodes.jsonl` (one line per slot, in slot order) and drop the per-slot record
+/// files it now contains.
+fn assemble_records(
     out_dir: &Path,
     records: &BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>,
 ) -> Result<()> {
     let mut bytes = Vec::new();
     for record in records.values() {
-        bytes.extend(serde_json::to_vec(record)?);
-        bytes.push(b'\n');
+        bytes.extend(record_line(record)?);
     }
-    atomic_write_bytes(&out_dir.join("episodes.jsonl"), &bytes)
+    atomic_write_bytes(&out_dir.join("episodes.jsonl"), &bytes)?;
+    match std::fs::remove_dir_all(out_dir.join(SLOT_RECORDS_DIR_V52)) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err).context("failed to remove assembled slot records"),
+    }
 }
 
-fn load_records(path: &Path) -> Result<BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>> {
+/// Persist one finished slot's record atomically in its own file.
+fn write_slot_record(
+    out_dir: &Path,
+    slot: &SlotIdV52,
+    record: &EpisodeExecutionRecordV52,
+) -> Result<()> {
+    atomic_write_bytes(
+        &out_dir
+            .join(SLOT_RECORDS_DIR_V52)
+            .join(format!("{}.json", slot.stem())),
+        &record_line(record)?,
+    )
+}
+
+/// Execution records of a run directory in slot order: `episodes.jsonl`, overlaid by any per-slot
+/// record files an interrupted invocation left before assembling it.
+///
+/// # Errors
+/// Returns an error when neither `episodes.jsonl` nor a slot record exists, or a record is invalid.
+pub fn load_run_records_v52(out_dir: &Path) -> Result<Vec<EpisodeExecutionRecordV52>> {
+    if !out_dir.join("episodes.jsonl").is_file() && !out_dir.join(SLOT_RECORDS_DIR_V52).is_dir() {
+        bail!(
+            "failed to read {}: no episodes.jsonl or slot records",
+            out_dir.join("episodes.jsonl").display()
+        );
+    }
+    Ok(load_records(out_dir)?.into_values().collect())
+}
+
+/// Records of a run directory: `episodes.jsonl`, overlaid by any per-slot record files left by an
+/// interrupted invocation (always written after the last assembly, so they are newer).
+fn load_records(out_dir: &Path) -> Result<BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>> {
     let mut out = BTreeMap::new();
+    load_record_lines(&out_dir.join("episodes.jsonl"), &mut out)?;
+    let slot_dir = out_dir.join(SLOT_RECORDS_DIR_V52);
+    if slot_dir.is_dir() {
+        let mut paths = Vec::new();
+        for entry in std::fs::read_dir(&slot_dir)
+            .with_context(|| format!("failed to read {}", slot_dir.display()))?
+        {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if entry.file_type()?.is_file() && name.ends_with(".json") && !name.starts_with('.') {
+                paths.push(entry.path());
+            }
+        }
+        paths.sort();
+        for path in paths {
+            load_record_lines(&path, &mut out)?;
+        }
+    }
+    Ok(out)
+}
+
+fn load_record_lines(
+    path: &Path,
+    out: &mut BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>,
+) -> Result<()> {
     if !path.is_file() {
-        return Ok(out);
+        return Ok(());
     }
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
@@ -1008,7 +1083,7 @@ fn load_records(path: &Path) -> Result<BTreeMap<SlotIdV52, EpisodeExecutionRecor
             record,
         );
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Work item for one planned slot.
@@ -1120,6 +1195,7 @@ pub async fn run_v52_suite(
     } else if manifest_path.exists()
         || out_dir.join("episodes.jsonl").exists()
         || checkpoints_dir.exists()
+        || out_dir.join(SLOT_RECORDS_DIR_V52).exists()
     {
         bail!(
             "run directory {} already holds a run; use --resume with identical inputs or a fresh --out",
@@ -1132,7 +1208,7 @@ pub async fn run_v52_suite(
     let window = concurrency.min(episode_ids.len() / 2);
 
     let mut records = if options.resume {
-        load_records(&out_dir.join("episodes.jsonl"))?
+        load_records(&out_dir)?
     } else {
         BTreeMap::new()
     };
@@ -1224,7 +1300,7 @@ pub async fn run_v52_suite(
         }
         atomic_write_json(&manifest_path, &manifest)
     };
-    write_records(&out_dir, &records)?;
+    assemble_records(&out_dir, &records)?;
     write_manifest(&records, &invocations, false)?;
 
     let shared_records = Arc::new(Mutex::new(records));
@@ -1279,9 +1355,9 @@ pub async fn run_v52_suite(
             };
             let (record, _final) = drive_slot(&ctx, checkpoint).await?;
             write_committed_configs(&out_dir, &slot, &record)?;
-            let mut guard = records.lock().await;
-            guard.insert(slot, record);
-            write_records(&out_dir, &guard)?;
+            // O(1) per slot: only this slot's record file is written (assembled below).
+            write_slot_record(&out_dir, &slot, &record)?;
+            records.lock().await.insert(slot, record);
             Ok(())
         });
     }
@@ -1298,7 +1374,7 @@ pub async fn run_v52_suite(
     let records = Arc::try_unwrap(shared_records)
         .map_err(|_| anyhow::anyhow!("record store still shared"))?
         .into_inner();
-    write_records(&out_dir, &records)?;
+    assemble_records(&out_dir, &records)?;
     let completed = order.iter().all(|slot| {
         records
             .get(slot)

@@ -46,8 +46,9 @@ pub use report::{
     RunMetadataHintV52, render_v52_report_markdown, report_v52_run, summarize_v52_records,
 };
 pub use runner::{
-    RunV52EpisodeOptions, RunV52SuiteOptions, SlotCheckpointV52, opening_request_bytes_v52,
-    run_v52_episode, run_v52_episode_from_checkpoint, run_v52_suite,
+    RunV52EpisodeOptions, RunV52SuiteOptions, SLOT_RECORDS_DIR_V52, SlotCheckpointV52,
+    load_run_records_v52, opening_request_bytes_v52, run_v52_episode,
+    run_v52_episode_from_checkpoint, run_v52_suite,
 };
 pub use validation::{
     BaselineReportV52, BaselineRowV52, GateResultV52, PendingGateV52, ShortcutCeilingV52,
