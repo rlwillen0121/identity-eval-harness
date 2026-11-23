@@ -7,6 +7,7 @@
 use std::borrow::Cow;
 
 use ib_core::hashing::sha256_hex;
+use ib_v52_schemas::TransportIntegrityEvidenceV52;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -82,6 +83,11 @@ pub enum TurnOutcomeV52 {
     },
     /// A structured provider refusal (§7.4). Ends the slot; never rendered.
     Refused,
+    /// Structured native-tool activity ended the slot before interpreting actions (§7.4).
+    /// Ends the slot; never rendered.
+    TransportIntegrity {
+        evidence: TransportIntegrityEvidenceV52,
+    },
 }
 
 /// Where a generation was cut at a canonical delimiter line (§7.1).
@@ -314,7 +320,7 @@ fn render_assistant_text(turn: &TurnRecordV52, state: &TurnCompaction) -> String
             turn,
             rejected_generation_marker(*reason, &turn.raw_sha256, turn.raw_bytes),
         ),
-        TurnOutcomeV52::Refused => String::new(),
+        TurnOutcomeV52::Refused | TurnOutcomeV52::TransportIntegrity { .. } => String::new(),
     }
 }
 
@@ -347,7 +353,9 @@ fn render_accepted_action_object(turn: &TurnRecordV52, state: &TurnCompaction) -
             }
             compact_json(&object)
         }
-        TurnOutcomeV52::Rejected { .. } | TurnOutcomeV52::Refused => String::new(),
+        TurnOutcomeV52::Rejected { .. }
+        | TurnOutcomeV52::Refused
+        | TurnOutcomeV52::TransportIntegrity { .. } => String::new(),
     }
 }
 
@@ -411,7 +419,7 @@ fn render_results(turn: &TurnRecordV52, state: &TurnCompaction) -> String {
         TurnOutcomeV52::Rejected { reason, .. } => {
             compact_json(&json!([{"error": reason.as_str()}]))
         }
-        TurnOutcomeV52::Refused => "[]".to_owned(),
+        TurnOutcomeV52::Refused | TurnOutcomeV52::TransportIntegrity { .. } => "[]".to_owned(),
     }
 }
 
@@ -499,6 +507,10 @@ fn classify_output(turn: &TurnRecordV52, idx: usize) -> OutputClass {
     };
     match result.action.as_str() {
         "read_workspace_file" => {
+            // SPEC-v5.2 §7.2 step 5 classifies failed reads before successful-read path rules.
+            if result.result.get("status").and_then(Value::as_str) != Some("OK") {
+                return OutputClass::OtherRead;
+            }
             let path = turn
                 .action_items()
                 .get(idx)
@@ -713,7 +725,9 @@ impl Compactor<'_> {
                     rolled_back: None,
                     ..
                 } => Some((false, results.len())),
-                TurnOutcomeV52::Rejected { .. } | TurnOutcomeV52::Refused => None,
+                TurnOutcomeV52::Rejected { .. }
+                | TurnOutcomeV52::Refused
+                | TurnOutcomeV52::TransportIntegrity { .. } => None,
             };
             if let Some((is_rollback, result_count)) = output_shape {
                 if !self.states[idx].generation_compacted {
@@ -1560,5 +1574,110 @@ mod tests {
             panic!("expected accepted turn to retain its rollback audit record");
         };
         assert!(outputs[0].bytes > 0);
+    }
+
+    #[test]
+    fn failed_workspace_reads_are_classified_under_step_5_at_exact_fit_boundary() {
+        let opening = "=== SCENARIO ===\nO";
+        let failed_read_turn = |turn: usize, path: &str, status: &str, err_bytes: usize| {
+            let action_object = json!({
+                "actions": [{"action": "read_workspace_file", "arguments": {"path": path}}]
+            });
+            let raw = compact_json(&action_object);
+            TurnRecordV52 {
+                turn,
+                raw_sha256: sha256_hex(raw.as_bytes()),
+                raw_bytes: raw.len(),
+                delimiter_cut: None,
+                raw_text: Some(raw),
+                outcome: TurnOutcomeV52::Accepted {
+                    action_object,
+                    results: vec![ActionResultV52 {
+                        action: "read_workspace_file".to_owned(),
+                        result: json!({
+                            "status": status,
+                            "path": path,
+                            "error": "e".repeat(err_bytes),
+                        }),
+                        read_identity: None,
+                    }],
+                    rolled_back: None,
+                },
+                stop_reason: None,
+                usage: TurnUsageV52::default(),
+                provider_attempts: 1,
+            }
+        };
+
+        // Older turns (<= t-3) have failed reads on config/* and sources/* BEFORE successful reads
+        // on config/* and sources/*, so step-2 / step-4 bugs would evict the failed reads first.
+        let turns = vec![
+            failed_read_turn(1, "config/missing.json", "FILE_NOT_FOUND", 400),
+            failed_read_turn(2, "sources/bad_offset.csv", "SCHEMA_ERROR", 400),
+            read_turn(3, "config/transforms.json", 400),
+            read_turn(4, "sources/workday_hr.csv", 400),
+            read_turn(5, "context/security_policy.md", 100),
+            read_turn(6, "context/change_request.md", 100),
+        ];
+
+        // 1. Exact-fit boundary after step 2: only turn 3 (successful config/* read) is compacted.
+        let mut expected_step2 = TurnCompaction::for_turn(&turns[2]);
+        expected_step2.output_compacted[0] = true;
+        let step2_exact_bytes = "S".len()
+            + opening.len()
+            + turns
+                .iter()
+                .enumerate()
+                .map(|(i, t)| {
+                    if i == 2 {
+                        render_turn(t, &expected_step2).len()
+                    } else {
+                        render_turn(t, &TurnCompaction::for_turn(t)).len()
+                    }
+                })
+                .sum::<usize>();
+        let at_step2 = build_canonical_request("S", opening, &turns, step2_exact_bytes).unwrap();
+        assert_eq!(at_step2.request_bytes, step2_exact_bytes);
+        assert_eq!(at_step2.stats.last_step, Some(2));
+        assert_eq!(at_step2.stats.per_step[2], 1);
+        assert!(at_step2.transcript.contains("FILE_NOT_FOUND"));
+        assert!(at_step2.transcript.contains("SCHEMA_ERROR"));
+
+        // 2. Exact-fit boundary after step 4: turns 3 (step 2) and 4 (step 4) are compacted;
+        //    both failed reads (turns 1 and 2) stay verbatim!
+        let mut expected_step4 = TurnCompaction::for_turn(&turns[3]);
+        expected_step4.output_compacted[0] = true;
+        let step4_exact_bytes = "S".len()
+            + opening.len()
+            + turns
+                .iter()
+                .enumerate()
+                .map(|(i, t)| match i {
+                    2 => render_turn(t, &expected_step2).len(),
+                    3 => render_turn(t, &expected_step4).len(),
+                    _ => render_turn(t, &TurnCompaction::for_turn(t)).len(),
+                })
+                .sum::<usize>();
+        let at_step4 = build_canonical_request("S", opening, &turns, step4_exact_bytes).unwrap();
+        assert_eq!(at_step4.request_bytes, step4_exact_bytes);
+        assert_eq!(at_step4.stats.last_step, Some(4));
+        assert_eq!(at_step4.stats.per_step[2], 1);
+        assert_eq!(at_step4.stats.per_step[4], 1);
+        assert_eq!(at_step4.stats.per_step[5], 0);
+        assert!(at_step4.transcript.contains("FILE_NOT_FOUND"));
+        assert!(at_step4.transcript.contains("SCHEMA_ERROR"));
+
+        // 3. One byte tighter crosses into step 5 and compacts the oldest failed read (turn 1).
+        let into_step5 =
+            build_canonical_request("S", opening, &turns, step4_exact_bytes - 1).unwrap();
+        assert_eq!(into_step5.stats.last_step, Some(5));
+        assert_eq!(into_step5.stats.per_step[5], 1);
+        assert!(!into_step5.transcript.contains("FILE_NOT_FOUND"));
+        assert!(
+            into_step5
+                .transcript
+                .contains("\"tool\":\"read_workspace_file\",\"turn\":1,")
+        );
+        assert!(into_step5.transcript.contains("SCHEMA_ERROR"));
     }
 }

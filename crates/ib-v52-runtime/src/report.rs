@@ -133,6 +133,7 @@ pub(crate) fn summarize_with_slots(
     let mut parse_failure_slots = 0_usize;
     let mut refusal_slots = 0_usize;
     let mut provider_error_slots = 0_usize;
+    let mut transport_integrity_slots = 0_usize;
     let mut total_ok_reads = 0_usize;
     let mut total_duplicate_ok_reads = 0_usize;
     let mut format_error_turns = 0_usize;
@@ -200,6 +201,10 @@ pub(crate) fn summarize_with_slots(
                 provider_error_slots += 1;
                 continue;
             }
+            AttemptStatusV52::IncompleteTransportIntegrity => {
+                transport_integrity_slots += 1;
+                continue;
+            }
         }
         let (ok_reads, duplicate_reads) = count_ok_and_duplicate_reads(rec);
         total_ok_reads += ok_reads;
@@ -256,8 +261,10 @@ pub(crate) fn summarize_with_slots(
     let ratio = |num: usize, den: usize| (den > 0).then(|| num as f64 / den as f64);
     let or_zero = |num: usize, den: usize| ratio(num, den).unwrap_or(0.0);
     let duplicate_read_rate = ratio(total_duplicate_ok_reads, total_ok_reads);
-    let is_complete =
-        provider_error_slots == 0 && planned_slots > 0 && observed_slots == planned_slots;
+    let is_complete = provider_error_slots == 0
+        && transport_integrity_slots == 0
+        && planned_slots > 0
+        && observed_slots == planned_slots;
 
     let observed_g_srr = or_zero(resolved_slots, observed_slots);
     let g_srr = is_complete.then_some(observed_g_srr);
@@ -313,6 +320,7 @@ pub(crate) fn summarize_with_slots(
         parse_failure_slots,
         refusal_slots,
         provider_error_slots,
+        transport_integrity_slots,
         is_complete,
         g_srr,
         observed_g_srr,
@@ -408,9 +416,12 @@ fn family_outcomes(
         let has_provider_err = fam_recs
             .iter()
             .any(|(r, _)| r.attempt_status == AttemptStatusV52::IncompleteProviderFailure);
+        let has_incomplete = fam_recs
+            .iter()
+            .any(|(r, _)| r.attempt_status.is_incomplete());
         let observed_in_fam: Vec<&SlotMetricsV52> = fam_recs
             .iter()
-            .filter(|(r, _)| r.attempt_status != AttemptStatusV52::IncompleteProviderFailure)
+            .filter(|(r, _)| !r.attempt_status.is_incomplete())
             .map(|(_, slot)| *slot)
             .collect();
         if has_provider_err {
@@ -418,7 +429,7 @@ fn family_outcomes(
         }
         if !observed_in_fam.is_empty() {
             let all_passed = observed_in_fam.iter().all(|slot| slot.resolved());
-            if all_passed && !has_provider_err {
+            if all_passed && !has_incomplete {
                 passed_families.push(family_id);
             } else if !all_passed {
                 failed_families.push(family_id);

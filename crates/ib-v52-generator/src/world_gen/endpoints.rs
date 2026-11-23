@@ -1,16 +1,38 @@
 //! Mock spoke connector endpoints per active spoke.
 
-use ib_v52_schemas::{ConnectorKindV52, MockSpokeEndpointV52, PaginationKindV52};
+use ib_v52_schemas::{
+    BrownfieldSpokeAccountV52, ConnectorKindV52, MockSpokeEndpointV52, PaginationKindV52,
+};
 use indexmap::IndexMap;
 
 use crate::archetypes::FamilyRegimeSpecV52;
 
 use super::types::ClientParametersV52;
 
+/// Ensure any endpoint that injects HTTP 429 on page 2 actually requires at least two pages even
+/// when the client configures `page_size == max_page_size` (`SPEC-v5.2` §2.4, §4.2).
+fn max_page_size_for_endpoint(
+    raw_max_page_size: usize,
+    account_count: usize,
+    injects_http_429_on_page_2: bool,
+) -> usize {
+    if !injects_http_429_on_page_2 || account_count < 2 || raw_max_page_size < account_count {
+        return raw_max_page_size;
+    }
+    const CANDIDATES: &[usize] = &[100, 50, 25, 20, 15, 10, 5, 4, 3, 2, 1];
+    CANDIDATES
+        .iter()
+        .copied()
+        .find(|&size| size < account_count)
+        .unwrap_or(1)
+}
+
 pub(super) fn build_mock_endpoints(
     spec: &FamilyRegimeSpecV52,
     client: &ClientParametersV52,
+    spoke_accounts: &IndexMap<String, Vec<BrownfieldSpokeAccountV52>>,
 ) -> IndexMap<String, MockSpokeEndpointV52> {
+    let account_count = |spoke_id: &str| spoke_accounts.get(spoke_id).map_or(0, Vec::len);
     let mut map = IndexMap::new();
 
     map.insert(
@@ -41,7 +63,11 @@ pub(super) fn build_mock_endpoints(
             expected_pagination: PaginationKindV52::LinkHeader,
             expected_cursor_request_param: Some("$skiptoken".to_owned()),
             expected_cursor_response_field: Some("@odata.nextLink".to_owned()),
-            max_page_size: client.entra_max_page_size,
+            max_page_size: max_page_size_for_endpoint(
+                client.entra_max_page_size,
+                account_count("entra"),
+                true,
+            ),
             injects_http_429_on_page_2: true,
             injects_http_207_partial_on_write: false,
             expected_account_id_field: "userPrincipalName".to_owned(),
@@ -84,7 +110,7 @@ pub(super) fn build_mock_endpoints(
                 expected_pagination: PaginationKindV52::CursorToken,
                 expected_cursor_request_param: Some("epic_cursor".to_owned()),
                 expected_cursor_response_field: Some("next_epic_cursor".to_owned()),
-                max_page_size: 50,
+                max_page_size: max_page_size_for_endpoint(50, account_count("epic"), true),
                 injects_http_429_on_page_2: true,
                 injects_http_207_partial_on_write: false,
                 expected_account_id_field: "emp_id".to_owned(),
@@ -106,7 +132,11 @@ pub(super) fn build_mock_endpoints(
                 expected_pagination: PaginationKindV52::CursorToken,
                 expected_cursor_request_param: Some("NextToken".to_owned()),
                 expected_cursor_response_field: Some("NextToken".to_owned()),
-                max_page_size: client.aws_max_page_size,
+                max_page_size: max_page_size_for_endpoint(
+                    client.aws_max_page_size,
+                    account_count("aws"),
+                    true,
+                ),
                 injects_http_429_on_page_2: true,
                 injects_http_207_partial_on_write: false,
                 expected_account_id_field: "user_name".to_owned(),
@@ -132,7 +162,11 @@ pub(super) fn build_mock_endpoints(
             expected_pagination: PaginationKindV52::CursorToken,
             expected_cursor_request_param: Some(client.custom_rest_cursor_param.clone()),
             expected_cursor_response_field: Some(client.custom_rest_cursor_response.clone()),
-            max_page_size: client.custom_rest_page_size,
+            max_page_size: max_page_size_for_endpoint(
+                client.custom_rest_page_size,
+                account_count("custom_rest"),
+                client.custom_rest_injects_429,
+            ),
             injects_http_429_on_page_2: client.custom_rest_injects_429,
             injects_http_207_partial_on_write: client.custom_rest_injects_207,
             expected_account_id_field: client.custom_rest_account_id_field.clone(),

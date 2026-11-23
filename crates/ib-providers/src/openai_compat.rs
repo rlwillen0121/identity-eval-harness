@@ -1108,6 +1108,7 @@ impl OpenAICompatProvider {
         let mut texts = Vec::new();
         let mut refusals = Vec::new();
         let mut calls = Vec::new();
+        let mut native_tool_events = std::collections::BTreeSet::new();
         for item_val in output {
             let item = item_val
                 .as_object()
@@ -1166,7 +1167,29 @@ impl OpenAICompatProvider {
                     name: name.to_string(),
                     arguments,
                 });
+            } else if matches!(
+                item_type,
+                "web_search_call"
+                    | "mcp_call"
+                    | "local_shell_call"
+                    | "code_interpreter_call"
+                    | "file_search_call"
+                    | "computer_call"
+            ) {
+                native_tool_events.insert(item_type.to_owned());
             }
+        }
+        if !native_tool_events.is_empty()
+            && let Some(ref mut r) = response.raw
+        {
+            r.insert(
+                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                Value::Bool(true),
+            );
+            r.insert(
+                crate::base::NATIVE_TOOL_EVENTS.to_owned(),
+                Value::Array(native_tool_events.into_iter().map(Value::String).collect()),
+            );
         }
 
         let joined_text = texts.concat();

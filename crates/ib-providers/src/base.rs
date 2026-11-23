@@ -103,6 +103,8 @@ pub struct ModelRequest {
 pub const NATIVE_TOOL_PROBE_KEY: &str = "probe_native_tool";
 /// Adapter-local evidence of native tool activity, without storing commands or arguments.
 pub const NATIVE_TOOL_ACTIVITY: &str = "native_tool_activity";
+/// Structured native-tool event kinds observed by the adapter, without commands or arguments.
+pub const NATIVE_TOOL_EVENTS: &str = "native_tool_events";
 
 impl ModelRequest {
     #[must_use]

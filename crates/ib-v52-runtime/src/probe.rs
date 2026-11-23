@@ -175,6 +175,15 @@ async fn call(
             error: Some("structured provider refusal".to_owned()),
             tool_calls: 0,
         },
+        GenerationOutcome::NativeToolActivity {
+            text,
+            native_tool_calls,
+            ..
+        } => ProbeCall {
+            text,
+            error: Some("native tool activity observed".to_owned()),
+            tool_calls: native_tool_calls.max(1),
+        },
         GenerationOutcome::ProviderFailure(err) => ProbeCall {
             text: None,
             error: Some(err),

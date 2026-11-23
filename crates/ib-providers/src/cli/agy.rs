@@ -1,6 +1,6 @@
 //! `agy -p` (Google Antigravity CLI, headless) provider.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -108,11 +108,7 @@ impl CompletedStepText {
     }
 
     fn finish(self) -> Option<String> {
-        if !self.done {
-            return None;
-        }
-        let candidate = self.chunks.trim();
-        (!candidate.is_empty()).then(|| candidate.to_string())
+        self.done.then_some(self.chunks)
     }
 }
 
@@ -276,9 +272,28 @@ impl CliAdapter for AgyAdapter {
         let helper = CliProvider::new(*self, CliConfig::new("", "", 0.0));
         let mut result_payload: Option<Map<String, Value>> = None;
         let mut final_step_index = None;
+        let mut native_tool_events: BTreeSet<String> = BTreeSet::new();
         visit_jsonl(&result.stdout, |event| {
             if let Some(step_index) = agent_response_step_index(event) {
                 final_step_index = Some(step_index);
+            }
+            if event.get("event").and_then(Value::as_str) == Some("step_update")
+                && let Some(step_type) = event
+                    .get("step_update")
+                    .and_then(Value::as_object)
+                    .and_then(|u| u.get("step_type"))
+                    .and_then(Value::as_str)
+                && matches!(
+                    step_type,
+                    "command_execution"
+                        | "file_change"
+                        | "mcp_tool_call"
+                        | "tool_call"
+                        | "function_call"
+                        | "web_search"
+                )
+            {
+                native_tool_events.insert(step_type.to_owned());
             }
             if event.get("event").and_then(Value::as_str) == Some("result") {
                 result_payload = Some(as_dict(event.get("result")));
@@ -318,6 +333,16 @@ impl CliAdapter for AgyAdapter {
         }
         if let Some(ct) = cli_text {
             raw.insert("cli_text".to_string(), Value::String(ct));
+        }
+        if !native_tool_events.is_empty() {
+            raw.insert(
+                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                Value::Bool(true),
+            );
+            raw.insert(
+                crate::base::NATIVE_TOOL_EVENTS.to_owned(),
+                Value::Array(native_tool_events.into_iter().map(Value::String).collect()),
+            );
         }
 
         let log_path = io_dir.join(LOG_FILE);

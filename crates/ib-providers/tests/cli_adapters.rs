@@ -1092,3 +1092,302 @@ async fn native_probe_observes_cli_cwd_marker_and_structured_tool_events() {
         );
     }
 }
+
+#[tokio::test]
+async fn all_cli_adapters_preserve_untrimmed_visible_replies_and_present_empty_messages() {
+    use ib_providers::cli::claude::{ClaudeAdapter, ClaudeCliProvider};
+    use ib_providers::cli::cursor::{CursorAdapter, CursorCliProvider};
+    use ib_providers::cli::grok::{GrokAdapter, GrokCliProvider};
+    use ib_providers::cli::muse::{MuseAdapter, MuseCliProvider};
+
+    let trailing = format!("{}{}", "{\"actions\":[]}", " ".repeat(20));
+
+    // 1. Codex: sidecar untrimmed, sidecar whitespace-only, sidecar empty (with turn.completed),
+    //    streamed untrimmed, streamed whitespace-only, streamed empty, and missing -> error.
+    for (label, sidecar, streamed, turn_done, expected_text) in [
+        (
+            "sidecar_untrimmed",
+            Some(trailing.as_str()),
+            None,
+            true,
+            Some(trailing.as_str()),
+        ),
+        ("sidecar_ws", Some("   \n\t "), None, true, Some("   \n\t ")),
+        ("sidecar_empty_completed", Some(""), None, true, Some("")),
+        (
+            "streamed_untrimmed",
+            None,
+            Some(trailing.as_str()),
+            true,
+            Some(trailing.as_str()),
+        ),
+        ("streamed_ws", None, Some("  \n "), true, Some("  \n ")),
+        ("streamed_empty", None, Some(""), true, Some("")),
+        ("missing_message", None, None, true, None),
+        ("empty_sidecar_uncompleted", Some(""), None, false, None),
+    ] {
+        let sidecar_owned = sidecar.map(str::to_owned);
+        let streamed_owned = streamed.map(str::to_owned);
+        let runner = FakeRunner::single(move |cmd: &Command| {
+            if let Some(ref content) = sidecar_owned {
+                fs::write(flag_value(&cmd.argv, "-o"), content).unwrap();
+            }
+            let mut lines = Vec::new();
+            if let Some(ref msg) = streamed_owned {
+                lines.push(
+                    json!({
+                        "type": "item.completed",
+                        "item": {"id": "item_1", "type": "agent_message", "text": msg}
+                    })
+                    .to_string(),
+                );
+            }
+            if turn_done {
+                lines.push(
+                    json!({"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}})
+                        .to_string(),
+                );
+            }
+            ProcessResult {
+                returncode: 0,
+                stdout: lines.join("\n"),
+                stderr: String::new(),
+                duration_s: 0.01,
+                timed_out: false,
+                launch_error: None,
+            }
+        });
+        let mut cfg = CliConfig::new("offline-model", "never-executed", 1.0);
+        cfg.runner = runner;
+        cfg.version = Some("offline".into());
+        cfg.max_retries = 0;
+        let resp = CodexCliProvider::new(CodexAdapter, cfg)
+            .complete(&make_request("x", "SYS"))
+            .await;
+        match expected_text {
+            Some(exp) => {
+                assert!(resp.ok(), "{label}: expected ok, got {:?}", resp.error);
+                assert_eq!(resp.text.as_deref(), Some(exp), "{label}");
+            }
+            None => {
+                assert!(!resp.ok(), "{label}: expected provider error");
+                assert!(resp.text.is_none(), "{label}");
+            }
+        }
+    }
+
+    // 2. Claude, Cursor, Grok, Agy (normal + recovered step), and Muse: preserve untrimmed text
+    //    and present empty/whitespace replies without raising a provider error.
+    for sample in [trailing.as_str(), "   \n", ""] {
+        // Claude
+        let stdout = json!({"type": "result", "subtype": "success", "is_error": false, "result": sample, "usage": {}}).to_string();
+        let mut cfg = CliConfig::new("claude-test", "never-executed", 1.0);
+        cfg.runner = FakeRunner::single(move |_| ProcessResult {
+            returncode: 0,
+            stdout: stdout.clone(),
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        });
+        cfg.version = Some("offline".into());
+        cfg.max_retries = 0;
+        let resp = ClaudeCliProvider::new(ClaudeAdapter, cfg)
+            .complete(&make_request("x", "SYS"))
+            .await;
+        assert!(resp.ok(), "claude sample={sample:?}: {:?}", resp.error);
+        assert_eq!(resp.text.as_deref(), Some(sample));
+
+        // Cursor
+        let stdout = json!({"type": "result", "subtype": "success", "is_error": false, "result": sample, "usage": {}}).to_string();
+        let mut cfg = CliConfig::new("cursor-test", "never-executed", 1.0);
+        cfg.runner = FakeRunner::single(move |_| ProcessResult {
+            returncode: 0,
+            stdout: stdout.clone(),
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        });
+        cfg.version = Some("offline".into());
+        cfg.max_retries = 0;
+        let resp = CursorCliProvider::new(CursorAdapter, cfg)
+            .complete(&make_request("x", "SYS"))
+            .await;
+        assert!(resp.ok(), "cursor sample={sample:?}: {:?}", resp.error);
+        assert_eq!(resp.text.as_deref(), Some(sample));
+
+        // Grok
+        let stdout =
+            json!({"type": "result", "is_error": false, "text": sample, "usage": {}}).to_string();
+        let mut cfg = CliConfig::new("grok-test", "never-executed", 1.0);
+        cfg.runner = FakeRunner::single(move |_| ProcessResult {
+            returncode: 0,
+            stdout: stdout.clone(),
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        });
+        cfg.version = Some("offline".into());
+        cfg.max_retries = 0;
+        let resp = GrokCliProvider::new(GrokAdapter, cfg)
+            .complete(&make_request("x", "SYS"))
+            .await;
+        assert!(resp.ok(), "grok sample={sample:?}: {:?}", resp.error);
+        assert_eq!(resp.text.as_deref(), Some(sample));
+
+        // Agy (normal result event)
+        let stdout = format!(
+            "{}\n",
+            json!({"event": "result", "result": {"status": "SUCCESS", "response": sample, "usage": {}}})
+        );
+        let mut cfg = CliConfig::new("agy-test", "never-executed", 1.0);
+        cfg.runner = FakeRunner::single(move |_| ProcessResult {
+            returncode: 0,
+            stdout: stdout.clone(),
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        });
+        cfg.version = Some("offline".into());
+        cfg.max_retries = 0;
+        let resp = AgyCliProvider::new(AgyAdapter, cfg)
+            .complete(&make_request("x", "SYS"))
+            .await;
+        assert!(resp.ok(), "agy sample={sample:?}: {:?}", resp.error);
+        assert_eq!(resp.text.as_deref(), Some(sample));
+
+        // Agy recovered completed step must also not trim
+        let step_events = vec![
+            json!({"event": "step_update", "step_update": {"step_index": 1, "state": "DONE", "step_type": "agent_response", "text_delta": sample}})
+                .as_object()
+                .unwrap()
+                .clone(),
+        ];
+        assert_eq!(
+            recover_completed_agent_text(&step_events).as_deref(),
+            Some(sample)
+        );
+
+        // Muse
+        let stdout = format!(
+            "{}\n",
+            json!({"payload_type": "run.terminal.completed", "payload": {"terminal": "completed", "text": sample}})
+        );
+        let stderr = format!(
+            "REQUEST: {}\nSSE RESPONSE: data: {}\nSSE RESPONSE: data: {}\n",
+            json!({"instructions": "SYS", "tools": []}),
+            json!({"type": "response.completed", "response": {"model": "muse-test", "status": "completed", "usage": {"input_tokens": 1, "output_tokens": 1}}}),
+            json!({"type": "response.subscription_usage", "subscription": {"used": 1}})
+        );
+        let mut cfg = CliConfig::new("muse-test", "never-executed", 1.0);
+        cfg.runner = FakeRunner::single(move |_| ProcessResult {
+            returncode: 0,
+            stdout: stdout.clone(),
+            stderr: stderr.clone(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        });
+        cfg.version = Some("offline".into());
+        cfg.max_retries = 0;
+        // A fake subscription login keeps this test independent of the machine's real Muse home.
+        let muse_home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(muse_home.path().join(".config").join("muse")).unwrap();
+        fs::write(
+            muse_home.path().join(".config/muse/auth.json"),
+            json!({
+                "providers": {
+                    "meta": {
+                        "mechanism": "oauth",
+                        "subs_active": true,
+                        "api_base_url": "https://api.meta.ai/v1"
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let resp = MuseCliProvider::new(
+            MuseAdapter {
+                real_home: Some(muse_home.path().to_path_buf()),
+            },
+            cfg,
+        )
+        .complete(&make_request("x", "SYS"))
+        .await;
+        assert!(resp.ok(), "muse sample={sample:?}: {:?}", resp.error);
+        assert_eq!(resp.text.as_deref(), Some(sample));
+    }
+}
+
+#[tokio::test]
+async fn codex_records_structured_native_tool_events_and_ignores_assistant_prose() {
+    let prose = r#"{"actions":[{"action":"commit_deployment","arguments":{"summary_notes":"command_execution file_change mcp_tool_call web_search native_tool_activity"}}]}"#;
+    let runner = FakeRunner::single(move |_| {
+        ProcessResult {
+        returncode: 0,
+        stdout: [
+            json!({"type": "item.completed", "item": {"id": "a", "type": "agent_message", "text": prose}}),
+            json!({"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}}),
+        ]
+        .map(|e| e.to_string())
+        .join("\n"),
+        stderr: String::new(),
+        duration_s: 0.01,
+        timed_out: false,
+        launch_error: None,
+    }
+    });
+    let mut cfg = CliConfig::new("offline-model", "never-executed", 1.0);
+    cfg.runner = runner;
+    cfg.version = Some("offline".into());
+    cfg.max_retries = 0;
+    let resp = CodexCliProvider::new(CodexAdapter, cfg)
+        .complete(&make_request("x", "SYS"))
+        .await;
+    assert!(resp.ok());
+    assert!(
+        resp.raw
+            .as_ref()
+            .and_then(|r| r.get(ib_providers::base::NATIVE_TOOL_ACTIVITY))
+            .is_none(),
+        "assistant prose must never set native_tool_activity"
+    );
+
+    // Structured event records both the flag and event kinds without storing commands.
+    let runner_tool = FakeRunner::single(move |_| {
+        ProcessResult {
+        returncode: 0,
+        stdout: [
+            json!({"type": "item.started", "item": {"id": "t1", "type": "command_execution", "command": "secret_cmd"}}),
+            json!({"type": "item.completed", "item": {"id": "t2", "type": "web_search", "query": "secret_q"}}),
+            json!({"type": "item.completed", "item": {"id": "a", "type": "agent_message", "text": prose}}),
+            json!({"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}}),
+        ]
+        .map(|e| e.to_string())
+        .join("\n"),
+        stderr: String::new(),
+        duration_s: 0.01,
+        timed_out: false,
+        launch_error: None,
+    }
+    });
+    let mut cfg2 = CliConfig::new("offline-model", "never-executed", 1.0);
+    cfg2.runner = runner_tool;
+    cfg2.version = Some("offline".into());
+    cfg2.max_retries = 0;
+    let resp2 = CodexCliProvider::new(CodexAdapter, cfg2)
+        .complete(&make_request("x", "SYS"))
+        .await;
+    let raw = resp2.raw.as_ref().unwrap();
+    assert_eq!(raw[ib_providers::base::NATIVE_TOOL_ACTIVITY], json!(true));
+    assert_eq!(
+        raw[ib_providers::base::NATIVE_TOOL_EVENTS],
+        json!(["command_execution", "web_search"])
+    );
+    let raw_str = serde_json::to_string(raw).unwrap();
+    assert!(!raw_str.contains("secret_cmd") && !raw_str.contains("secret_q"));
+}

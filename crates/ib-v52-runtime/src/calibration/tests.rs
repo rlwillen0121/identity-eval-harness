@@ -143,6 +143,7 @@ fn make_record(
         context_rollbacks: 0,
         compacted_requests: 0,
         max_request_bytes: MAX_REQUEST_BYTES_V52,
+        transport_integrity_evidence: None,
     }
 }
 

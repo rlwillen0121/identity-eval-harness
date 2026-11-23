@@ -1,6 +1,6 @@
 //! `codex exec` (OpenAI Codex CLI, headless) provider.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -205,6 +205,7 @@ impl CliAdapter for CodexAdapter {
         let mut last_error: Option<String> = None;
         let mut streamed_text: Option<String> = None;
         let mut turn_completed = false;
+        let mut native_tool_events: BTreeSet<String> = BTreeSet::new();
 
         visit_jsonl(&result.stdout, |event| {
             let kind = event.get("type").and_then(Value::as_str);
@@ -233,25 +234,24 @@ impl CliAdapter for CodexAdapter {
             } else if matches!(
                 kind,
                 Some("item.started" | "item.updated" | "item.completed")
-            ) && event.get("item").is_some_and(|item| {
-                matches!(
-                    item.get("type")
-                        .or_else(|| item.get("item_type"))
-                        .and_then(Value::as_str),
-                    Some(
-                        "command_execution"
-                            | "file_change"
-                            | "mcp_tool_call"
-                            | "dynamic_tool_call"
-                            | "web_search"
-                            | "collab_tool_call"
-                    )
-                )
-            }) {
+            ) && let Some(item_kind) = event.get("item").and_then(|item| {
+                item.get("type")
+                    .or_else(|| item.get("item_type"))
+                    .and_then(Value::as_str)
+            }) && matches!(
+                item_kind,
+                "command_execution"
+                    | "file_change"
+                    | "mcp_tool_call"
+                    | "dynamic_tool_call"
+                    | "web_search"
+                    | "collab_tool_call"
+            ) {
                 raw.insert(
                     crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
                     Value::Bool(true),
                 );
+                native_tool_events.insert(item_kind.to_owned());
             } else if let Some(message) = agent_message(event) {
                 streamed_text = Some(message);
             } else if let Some(err) = event_error(event) {
@@ -259,26 +259,28 @@ impl CliAdapter for CodexAdapter {
             }
         });
 
-        let (mut text, output_file_rejected) = match read_sidecar_text(&io_dir.join(OUTPUT_FILE)) {
-            Ok(sidecar) => {
-                let trimmed = sidecar.trim();
-                let text = if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                };
-                (text, false)
+        let (sidecar_text, output_file_rejected) =
+            match read_sidecar_text(&io_dir.join(OUTPUT_FILE)) {
+                Ok(sidecar) => (Some(sidecar), false),
+                Err(error) if error.kind() == ErrorKind::NotFound => (None, false),
+                Err(_) => (None, true),
+            };
+        // Preserve the full visible reply without trimming, and keep a present empty or
+        // whitespace-only message distinct from a missing transport event (SPEC-v5.2 §3.1, §7.1).
+        let text = match (sidecar_text, streamed_text) {
+            (Some(sidecar), Some(streamed)) if sidecar.is_empty() && !streamed.is_empty() => {
+                Some(streamed)
             }
-            Err(error) if error.kind() == ErrorKind::NotFound => (None, false),
-            Err(_) => (None, true),
+            (Some(sidecar), None) if sidecar.is_empty() && !turn_completed => None,
+            (Some(sidecar), _) => Some(sidecar),
+            (None, Some(streamed)) => Some(streamed),
+            (None, None) => None,
         };
-        if text.is_none()
-            && let Some(ref st) = streamed_text
-        {
-            let t = st.trim();
-            if !t.is_empty() {
-                text = Some(t.to_string());
-            }
+        if !native_tool_events.is_empty() {
+            raw.insert(
+                crate::base::NATIVE_TOOL_EVENTS.to_owned(),
+                Value::Array(native_tool_events.into_iter().map(Value::String).collect()),
+            );
         }
         if !raw_usage.is_empty() {
             raw.insert(
@@ -290,8 +292,9 @@ impl CliAdapter for CodexAdapter {
             raw.insert("output_file_rejected".to_string(), Value::Bool(true));
         }
 
+        let missing_text = text.is_none();
         let mut response = ModelResponse {
-            text: text.clone(),
+            text,
             usage,
             stop_reason: if turn_completed {
                 Some("completed".to_string())
@@ -302,7 +305,7 @@ impl CliAdapter for CodexAdapter {
             ..ModelResponse::default()
         };
 
-        if text.is_none() {
+        if missing_text {
             let reason = if output_file_rejected {
                 "final output sidecar was rejected"
             } else {

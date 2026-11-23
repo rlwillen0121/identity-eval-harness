@@ -158,7 +158,7 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
     );
     let reserved_aliases = tombstones::reserved_aliases();
 
-    let mock_endpoints = build_mock_endpoints(&spec, &client);
+    let mock_endpoints = build_mock_endpoints(&spec, &client, &spoke_accounts);
 
     let nhi_agents::NhiWorkloadBuild {
         corp_slug,

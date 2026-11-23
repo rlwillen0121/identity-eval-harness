@@ -410,7 +410,7 @@ fn eval_inner(
                 location,
                 PointerSegment::Key("input"),
             )?;
-            bounded_replace(&raw, pattern, replacement, budget)
+            bounded_replace(&raw, pattern, replacement, budget, Some(location))
         }
         TransformExprV52::Substring {
             input,
@@ -557,6 +557,7 @@ fn bounded_replace(
     pattern: &str,
     replacement: &str,
     budget: &mut TransformBudget,
+    location: Option<&EvalLocation<'_>>,
 ) -> Result<String, String> {
     let largest = raw.len().max(pattern.len()).max(replacement.len());
     check_limit(largest, MAX_REGEX_BYTES)?;
@@ -565,8 +566,13 @@ fn bounded_replace(
         budget.peak_regex = budget.peak_regex.max(largest);
     }
     budget.charge_regex(65_536 + pattern.len())?;
-    let re = Regex::new(pattern)
-        .map_err(|err| format!("invalid regex_replace pattern '{pattern}': {err}"))?;
+    let re = Regex::new(pattern).map_err(|err| {
+        if let Some(loc) = location {
+            budget.last_error_location =
+                Some(loc.with_child_pointer(PointerSegment::Key("pattern")));
+        }
+        format!("invalid regex_replace pattern '{pattern}': {err}")
+    })?;
     let names: std::collections::HashMap<_, _> = re
         .capture_names()
         .enumerate()
@@ -977,8 +983,14 @@ mod budget_tests {
         ] {
             let expected = Regex::new(pattern).unwrap().replace_all(raw, replacement);
             assert_eq!(
-                bounded_replace(raw, pattern, replacement, &mut TransformBudget::default())
-                    .unwrap(),
+                bounded_replace(
+                    raw,
+                    pattern,
+                    replacement,
+                    &mut TransformBudget::default(),
+                    None
+                )
+                .unwrap(),
                 expected
             );
         }
@@ -1022,7 +1034,7 @@ mod budget_tests {
             ..Default::default()
         };
         assert_eq!(
-            bounded_replace("a", "a", "x", &mut regex_budget).unwrap_err(),
+            bounded_replace("a", "a", "x", &mut regex_budget, None).unwrap_err(),
             TRANSFORM_BUDGET_EXCEEDED
         );
     }
@@ -1035,7 +1047,8 @@ mod budget_tests {
                 &raw,
                 "(.+)",
                 &"$1".repeat(8),
-                &mut TransformBudget::default()
+                &mut TransformBudget::default(),
+                None,
             )
             .unwrap()
             .len(),
@@ -1046,7 +1059,8 @@ mod budget_tests {
                 &raw,
                 "(.+)",
                 &"$1".repeat(9),
-                &mut TransformBudget::default()
+                &mut TransformBudget::default(),
+                None,
             )
             .unwrap_err(),
             TRANSFORM_BUDGET_EXCEEDED

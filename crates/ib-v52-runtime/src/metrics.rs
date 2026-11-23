@@ -73,7 +73,7 @@ fn macro_of(rates: &IndexMap<CategoryIdV52, f64>) -> f64 {
 /// Derive the §6.1 metrics of one slot from its execution record.
 #[must_use]
 pub fn slot_metrics_v52(record: &EpisodeExecutionRecordV52) -> SlotMetricsV52 {
-    let observed = record.attempt_status != AttemptStatusV52::IncompleteProviderFailure;
+    let observed = !record.attempt_status.is_incomplete();
     let committed = record.attempt_status == AttemptStatusV52::Completed && record.committed;
     let score = record.score.as_ref().filter(|_| committed);
     let category_pass: IndexMap<CategoryIdV52, bool> = CategoryIdV52::ALL

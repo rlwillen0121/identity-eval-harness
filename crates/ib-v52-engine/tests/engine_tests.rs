@@ -710,7 +710,7 @@ fn build_fixture() -> (EpisodeV52, SealedEpisodeOracleV52) {
             expected_pagination: PaginationKindV52::CursorToken,
             expected_cursor_request_param: Some("next_page_token".to_owned()),
             expected_cursor_response_field: Some("meta.next_token".to_owned()),
-            max_page_size: 25,
+            max_page_size: 1,
             injects_http_429_on_page_2: true,
             injects_http_207_partial_on_write: true,
             expected_account_id_field: "uid".to_owned(),
@@ -1229,7 +1229,7 @@ fn build_fixture() -> (EpisodeV52, SealedEpisodeOracleV52) {
                 pagination: PaginationKindV52::CursorToken,
                 cursor_request_param: Some("next_page_token".to_owned()),
                 cursor_response_field: Some("meta.next_token".to_owned()),
-                page_size: 25,
+                page_size: 1,
                 retry_on_http_429: true,
                 inspect_http_207_item_errors: true,
                 account_id_field: "uid".to_owned(),
@@ -5150,4 +5150,74 @@ fn test_astra_fix5_abort_all_svc_gate_three_hop_cap_and_pending_itsm_isolation()
             Some("denied")
         );
     }
+}
+
+#[test]
+fn connector_sandbox_page2_throttling_matches_real_traversal() {
+    let (mut episode, oracle) = build_fixture();
+    let engine = IgaEngineV52;
+    let total_accounts = episode.world.spoke_accounts["custom_rest"].len();
+    assert_eq!(total_accounts, 2);
+
+    // Single-page target: max_page_size >= total_accounts -> page 2 is never traversed,
+    // so disabling retry_on_http_429 must NOT emit an unreachable "HTTP 429 on page 2" error.
+    episode
+        .world
+        .mock_endpoints
+        .get_mut("custom_rest")
+        .unwrap()
+        .max_page_size = total_accounts;
+    let mut cfg = oracle.gold_config.clone();
+    {
+        let cr = cfg.connectors.connectors.get_mut("custom_rest").unwrap();
+        cr.page_size = total_accounts;
+        cr.retry_on_http_429 = false;
+    }
+    let single_page = engine
+        .test_connector(&episode.world, &cfg, "custom_rest")
+        .unwrap();
+    assert!(single_page.http_429_retried_cleanly);
+    assert!(single_page.pagination_complete);
+    assert_eq!(single_page.pages_traversed, 1);
+    assert_eq!(single_page.accounts_read, total_accounts);
+    assert!(
+        !single_page.errors.iter().any(|e| e.contains("HTTP 429")),
+        "single-page traversal must not report page-2 429: {:?}",
+        single_page.errors
+    );
+
+    // Multi-page traversal (page_size = 1 -> 2 pages): page 2 is reached and triggers HTTP 429.
+    cfg.connectors
+        .connectors
+        .get_mut("custom_rest")
+        .unwrap()
+        .page_size = 1;
+    let multi_page_fail = engine
+        .test_connector(&episode.world, &cfg, "custom_rest")
+        .unwrap();
+    assert!(!multi_page_fail.http_429_retried_cleanly);
+    assert!(!multi_page_fail.pagination_complete);
+    assert_eq!(multi_page_fail.pages_traversed, 1);
+    assert_eq!(multi_page_fail.accounts_read, 1);
+    assert!(
+        multi_page_fail
+            .errors
+            .iter()
+            .any(|e| e.contains("HTTP 429 Too Many Requests on page 2"))
+    );
+
+    // Enabling retry completes both pages.
+    cfg.connectors
+        .connectors
+        .get_mut("custom_rest")
+        .unwrap()
+        .retry_on_http_429 = true;
+    let multi_page_ok = engine
+        .test_connector(&episode.world, &cfg, "custom_rest")
+        .unwrap();
+    assert!(multi_page_ok.http_429_retried_cleanly);
+    assert!(multi_page_ok.pagination_complete);
+    assert_eq!(multi_page_ok.pages_traversed, 2);
+    assert_eq!(multi_page_ok.accounts_read, total_accounts);
+    assert!(multi_page_ok.errors.is_empty());
 }

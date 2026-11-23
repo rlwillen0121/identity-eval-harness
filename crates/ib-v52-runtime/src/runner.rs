@@ -20,7 +20,7 @@ use ib_providers::json::{OVERSIZED_TEXT_BYTES, OVERSIZED_TEXT_SHA256};
 use ib_v52_schemas::{
     AssertionFailureV52, AttemptStatusV52, CONFIG_FILES_V52, CategoryIdV52, DeploymentScoreV52,
     EpisodeExecutionRecordV52, EpisodeV52, IgaEngineBackendV52, SealedEpisodeOracleV52,
-    ToolCallTraceV52, config_file_stem,
+    ToolCallTraceV52, TransportIntegrityEvidenceV52, config_file_stem,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -227,6 +227,8 @@ pub struct SlotCheckpointV52 {
     pub max_request_bytes: usize,
     pub invocations: usize,
     pub end: Option<SlotEndV52>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_integrity_evidence: Option<TransportIntegrityEvidenceV52>,
 }
 
 impl SlotCheckpointV52 {
@@ -250,6 +252,7 @@ impl SlotCheckpointV52 {
             max_request_bytes: 0,
             invocations: 0,
             end: None,
+            transport_integrity_evidence: None,
         }
     }
 }
@@ -325,7 +328,52 @@ pub(crate) enum GenerationOutcome {
         text: Option<String>,
         stop_reason: Option<String>,
     },
+    NativeToolActivity {
+        text: Option<String>,
+        stop_reason: Option<String>,
+        observed_events: Vec<String>,
+        native_tool_calls: usize,
+        adapter_flag: bool,
+    },
     ProviderFailure(String),
+}
+
+/// Detect structured native-tool activity reported by the transport adapter or provider API.
+/// Never inspects assistant prose (`response.text`).
+fn detect_native_tool_activity(response: &ModelResponse) -> Option<(Vec<String>, usize, bool)> {
+    let adapter_flag = response
+        .raw
+        .as_ref()
+        .and_then(|r| r.get(ib_providers::base::NATIVE_TOOL_ACTIVITY))
+        .and_then(Value::as_bool)
+        == Some(true);
+    let native_tool_calls = response.tool_calls.len();
+    if !adapter_flag && native_tool_calls == 0 {
+        return None;
+    }
+    let mut events = BTreeSet::new();
+    if let Some(items) = response
+        .raw
+        .as_ref()
+        .and_then(|r| r.get(ib_providers::base::NATIVE_TOOL_EVENTS))
+        .and_then(Value::as_array)
+    {
+        for item in items {
+            if let Some(kind) = item.as_str()
+                && !kind.is_empty()
+            {
+                events.insert(kind.to_owned());
+            }
+        }
+    }
+    if native_tool_calls > 0 {
+        events.insert("tool_call".to_owned());
+    }
+    Some((
+        events.into_iter().collect(),
+        native_tool_calls,
+        adapter_flag,
+    ))
 }
 
 fn response_is_refusal(response: &ModelResponse) -> bool {
@@ -371,20 +419,26 @@ pub(crate) async fn generate_with_retries(
             output_tokens: response.usage.output_tokens,
             reasoning_tokens: response.usage.reasoning_tokens,
         });
-        if request.is_native_tool_probe()
-            && (!response.tool_calls.is_empty()
-                || response
-                    .raw
-                    .as_ref()
-                    .and_then(|r| r.get(ib_providers::base::NATIVE_TOOL_ACTIVITY))
-                    .and_then(Value::as_bool)
-                    == Some(true))
+        if let Some((observed_events, native_tool_calls, adapter_flag)) =
+            detect_native_tool_activity(&response)
         {
-            // Retrying must not erase evidence from this attempt.
+            // Retrying must not erase structured native-tool evidence from this attempt.
+            if request.is_native_tool_probe() {
+                return (
+                    GenerationOutcome::ProviderFailure(
+                        "native tool activity observed during eligibility probe".into(),
+                    ),
+                    attempts,
+                );
+            }
             return (
-                GenerationOutcome::ProviderFailure(
-                    "native tool activity observed during eligibility probe".into(),
-                ),
+                GenerationOutcome::NativeToolActivity {
+                    text: response.text.clone(),
+                    stop_reason: response.stop_reason.clone(),
+                    observed_events,
+                    native_tool_calls,
+                    adapter_flag,
+                },
                 attempts,
             );
         }
@@ -815,6 +869,50 @@ async fn drive_slot(
                     Some("structured provider refusal signal".to_owned()),
                 );
             }
+            GenerationOutcome::NativeToolActivity {
+                text,
+                stop_reason,
+                observed_events,
+                native_tool_calls,
+                adapter_flag,
+            } => {
+                let raw = text.unwrap_or_default();
+                let evidence = TransportIntegrityEvidenceV52 {
+                    turn,
+                    reason: "native_tool_activity".to_owned(),
+                    observed_events: observed_events.clone(),
+                    native_tool_calls,
+                    adapter_flag,
+                };
+                checkpoint.workspace_before_last_turn = Some(checkpoint.workspace.clone());
+                checkpoint.turns.push(TurnRecordV52 {
+                    turn,
+                    raw_sha256: sha256_hex(raw.as_bytes()),
+                    raw_bytes: raw.len(),
+                    delimiter_cut: None,
+                    raw_text: Some(raw),
+                    outcome: TurnOutcomeV52::TransportIntegrity {
+                        evidence: evidence.clone(),
+                    },
+                    stop_reason,
+                    usage: turn_usage,
+                    provider_attempts: attempts,
+                });
+                checkpoint.transport_integrity_evidence = Some(evidence);
+                let detail = if observed_events.is_empty() {
+                    "structured native tool activity reported by transport".to_owned()
+                } else {
+                    format!(
+                        "structured native tool activity reported by transport: {}",
+                        observed_events.join(", ")
+                    )
+                };
+                break slot_end(
+                    AttemptStatusV52::IncompleteTransportIntegrity,
+                    "NATIVE_TOOL_ACTIVITY",
+                    Some(detail),
+                );
+            }
             GenerationOutcome::Text {
                 text,
                 sha256,
@@ -883,7 +981,11 @@ fn finalize_record(
     let mut termination_reason = end.termination_reason;
     let mut error_message = end.error_message;
     let score = match (end.attempt_status, ctx.oracle) {
-        (AttemptStatusV52::IncompleteProviderFailure, _) => None,
+        (
+            AttemptStatusV52::IncompleteProviderFailure
+            | AttemptStatusV52::IncompleteTransportIntegrity,
+            _,
+        ) => None,
         (AttemptStatusV52::Completed, Some(oracle)) => {
             match ctx
                 .engine
@@ -969,6 +1071,7 @@ fn finalize_record(
         context_rollbacks: checkpoint.context_rollbacks,
         compacted_requests: checkpoint.compacted_requests,
         max_request_bytes: checkpoint.max_request_bytes,
+        transport_integrity_evidence: checkpoint.transport_integrity_evidence.clone(),
     }
 }
 
@@ -1534,7 +1637,7 @@ fn write_manifest(
 ) -> Result<()> {
     manifest.observed_slots = records
         .values()
-        .filter(|r| r.attempt_status != AttemptStatusV52::IncompleteProviderFailure)
+        .filter(|r| !r.attempt_status.is_incomplete())
         .count();
     manifest.written_records = records.len();
     manifest.completed = completed;
@@ -1809,7 +1912,7 @@ fn validate_reliability_base_v52(
     let mut observed_episode_ids = BTreeSet::new();
     for record in &assembled_records {
         if record.repeat_index != 1
-            || record.attempt_status == AttemptStatusV52::IncompleteProviderFailure
+            || record.attempt_status.is_incomplete()
             || record.max_request_bytes == 0
             || record.max_request_bytes > options.max_request_bytes
             || !observed_episode_ids.insert(record.episode_id.clone())
@@ -2015,7 +2118,7 @@ pub async fn run_v52_suite_with_seal(
     let completed = order.iter().all(|slot| {
         records
             .get(slot)
-            .is_some_and(|r| r.attempt_status != AttemptStatusV52::IncompleteProviderFailure)
+            .is_some_and(|r| !r.attempt_status.is_incomplete())
     });
     write_manifest(run_lock.root(), &mut manifest, &records, completed)?;
     if let Some(err) = first_error {

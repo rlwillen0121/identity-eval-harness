@@ -129,8 +129,18 @@ pub fn test_connector_spec(
         );
     }
 
+    // Compute realistic page traversal counts before evaluating page-2 throttling.
+    let effective_page_size = spec.page_size.clamp(1, endpoint.max_page_size.max(1));
+    let needed_pages = if total_accounts == 0 {
+        1
+    } else {
+        total_accounts.div_ceil(effective_page_size)
+    };
+
     // 4. HTTP 429 & 207 handling.
-    let http_429_retried_cleanly = !endpoint.injects_http_429_on_page_2 || spec.retry_on_http_429;
+    // Page-2 throttling is encountered only when traversal actually needs a second page.
+    let page_2_throttled = needed_pages > 1 && endpoint.injects_http_429_on_page_2;
+    let http_429_retried_cleanly = !page_2_throttled || spec.retry_on_http_429;
     if !http_429_retried_cleanly {
         push_error(
             &mut errors,
@@ -153,14 +163,6 @@ pub fn test_connector_spec(
             )],
         );
     }
-
-    // Simulate realistic page traversal and accounts read.
-    let effective_page_size = spec.page_size.clamp(1, endpoint.max_page_size.max(1));
-    let needed_pages = if total_accounts == 0 {
-        1
-    } else {
-        total_accounts.div_ceil(effective_page_size)
-    };
 
     let (pagination_complete, pages_traversed, accounts_read) = if !connection_ok || !page_size_ok {
         (false, 0, 0)
