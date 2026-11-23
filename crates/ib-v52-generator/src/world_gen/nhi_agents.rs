@@ -63,9 +63,7 @@ pub(super) fn build_nhi_workloads(
         .unwrap_or_else(|| nonprod_group.clone());
     let has_ledger_mech_b = hardening.nhi_governance_ledger;
     let nhi_count = if has_ledger_mech_b { 9usize } else { 8usize };
-    let mut nhi_ids: Vec<String> = (1..=nhi_count)
-        .map(|i| format!("nhi_workload_{i:02}"))
-        .collect();
+    let mut nhi_ids: Vec<String> = (1..=nhi_count).map(|i| format!("nhi_{i:02}")).collect();
     rng.shuffle(&mut nhi_ids);
     let mut nhi_workloads = vec![
         NhiWorkloadRecordV52 {
@@ -253,7 +251,7 @@ pub(super) fn build_ai_agents(
         ..
     } = ctx.group_ids.clone();
     // 6 Enterprise AI Agents covering all 4 AgentGovernanceActionV52 outcomes with seed-shuffled neutral IDs.
-    let mut agt_ids: Vec<String> = (1..=6).map(|i| format!("agt_enterprise_{i:02}")).collect();
+    let mut agt_ids: Vec<String> = (1..=6).map(|i| format!("agt_{i:02}")).collect();
     rng.shuffle(&mut agt_ids);
     let mut ai_agents = vec![
         EnterpriseAiAgentRecordV52 {

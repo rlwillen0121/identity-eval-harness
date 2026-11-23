@@ -321,7 +321,7 @@ pub(super) fn build_person_accounts(
                 entra_attrs.insert("legal_hold".to_owned(), "true".to_owned());
             }
             entra_accounts.push(BrownfieldSpokeAccountV52 {
-                account_id: format!("oid_{sam}"),
+                account_id: format!("e{:02}", person_ord + 1),
                 spoke_id: "entra".to_owned(),
                 native_dn_or_key: format!("entra://users/{sam}"),
                 enabled: p.ad_enabled,
@@ -338,7 +338,7 @@ pub(super) fn build_person_accounts(
         }
 
         if p.has_ad_account && spec.has_sap && (p.has_sap_account || !sap_ents.is_empty()) {
-            let bname = format!("SAP{}", p.person_key.replace("pers_", "")).to_uppercase();
+            let bname = format!("SAP{:02}", person_ord + 1);
             let mut attrs = IndexMap::new();
             attrs.insert("BNAME".to_owned(), bname.clone());
             attrs.insert("PERNR".to_owned(), spoke_badge.clone());
@@ -369,8 +369,8 @@ pub(super) fn build_person_accounts(
         }
 
         if p.has_ad_account && spec.has_epic && (p.has_epic_account || !epic_ents.is_empty()) {
-            let emp_id = format!("EMP{}", p.person_key.replace("pers_", ""));
-            let ser_id = format!("SER{}", p.person_key.replace("pers_", ""));
+            let emp_id = format!("EMP{:02}", person_ord + 1);
+            let ser_id = format!("SER{:02}", person_ord + 1);
             let mut attrs = IndexMap::new();
             attrs.insert("emp_id".to_owned(), emp_id.clone());
             attrs.insert("employee_badge".to_owned(), spoke_badge.clone());
@@ -399,7 +399,7 @@ pub(super) fn build_person_accounts(
         }
 
         if p.has_ad_account && spec.has_aws && (p.has_aws_account || !aws_ents.is_empty()) {
-            let aws_id = format!("aws_{}", p.person_key);
+            let aws_id = format!("w{:02}", person_ord + 1);
             let mut attrs = IndexMap::new();
             attrs.insert("user_name".to_owned(), aws_id.clone());
             attrs.insert("employee_id".to_owned(), spoke_badge.clone());
@@ -426,7 +426,7 @@ pub(super) fn build_person_accounts(
         }
 
         if p.has_ad_account && (p.has_custom_rest_account || !rest_ents.is_empty()) {
-            let rest_id = format!("usr_{}", p.person_key);
+            let rest_id = format!("r{:02}", person_ord + 1);
             let mut attrs = IndexMap::new();
             attrs.insert(client.custom_rest_account_id_field.clone(), rest_id.clone());
             attrs.insert("badge_id".to_owned(), spoke_badge);

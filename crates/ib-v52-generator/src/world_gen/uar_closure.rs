@@ -87,7 +87,7 @@ pub(super) fn build_uar_closure_tables(
                 ticket_id: "INC-88412".to_owned(),
                 item_id: uar_ids[4].clone(),
                 spoke_id: "custom_rest".to_owned(),
-                account_id: format!("usr_{ceo_vp}"),
+                account_id: format!("r{}", &ceo_vp[1..]),
                 entitlement_id: req_clean_b.clone(),
                 status: "CLOSED_COMPLETE".to_owned(),
                 closed_at: Some(format!("{d_m2}T10:15:00Z")),

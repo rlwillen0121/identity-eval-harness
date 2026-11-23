@@ -293,14 +293,11 @@ pub(super) fn assign_entitlements(
         };
 
     let br_take_count = |len: usize| -> usize {
-        if !is_multi_or_full {
-            len
-        } else if len >= 50 {
-            len.saturating_sub((len + 5) / 10)
-        } else if len >= 15 {
-            len.saturating_sub(2)
+        if is_multi_or_full {
+            // Keep small cohorts above the 80% boundary and larger cohorts near 90%.
+            len - (len + 5).saturating_div(10).min(len / 5)
         } else {
-            len.saturating_sub(1)
+            len
         }
     };
     let decoy_take_count = |len: usize, is_all_emp: bool| -> usize {
