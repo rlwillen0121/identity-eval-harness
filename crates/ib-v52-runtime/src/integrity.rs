@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use ib_core::hashing::{sha256_hex, sha256_parts};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::config::LoadedV52Dataset;
 use crate::protocol::PROTOCOL_ID_V52;
@@ -130,6 +130,15 @@ pub struct SlotIdV52 {
 }
 
 impl SlotIdV52 {
+    /// The slot an execution record belongs to.
+    #[must_use]
+    pub fn of_record(record: &ib_v52_schemas::EpisodeExecutionRecordV52) -> Self {
+        Self {
+            episode_id: record.episode_id.clone(),
+            repeat_index: record.repeat_index,
+        }
+    }
+
     /// `<episode_id>_r<repeat>` used for transcript, config and checkpoint file names.
     #[must_use]
     pub fn stem(&self) -> String {
@@ -203,10 +212,70 @@ pub struct SealDigestsV52 {
     pub protocol_id: Option<String>,
 }
 
+/// The digest members compared between a run's seal and a published seal (§10.1 item 2), in
+/// published order.
+pub const SEAL_DIGEST_FIELDS_V52: [&str; 5] = [
+    "episodes_sha256",
+    "oracles_sha256",
+    "spec_sha256",
+    "contract_id",
+    "protocol_id",
+];
+
 fn seal_str<'a>(seal: &'a Value, key: &str) -> Result<&'a str> {
     seal.get(key)
         .and_then(Value::as_str)
         .with_context(|| format!("SEAL.json is missing string field '{key}'"))
+}
+
+impl SealDigestsV52 {
+    /// Read the digests a `SEAL.json` records (a full seal or a private suite's public seal). The
+    /// suite is `suite`, else `suite_id`; `protocol_id` may be absent or `null`.
+    ///
+    /// # Errors
+    /// Fails when the suite, a digest, or `contract_id` is missing or not a string, or
+    /// `protocol_id` is neither a string nor `null`.
+    pub fn from_seal_json(seal: &Value) -> Result<Self> {
+        let suite_id = seal_str(seal, "suite")
+            .or_else(|_| seal_str(seal, "suite_id"))?
+            .to_owned();
+        let protocol_id = match seal.get("protocol_id") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(p)) => Some(p.clone()),
+            Some(other) => bail!("SEAL.json protocol_id {other} is not a string"),
+        };
+        Ok(Self {
+            suite_id,
+            episodes_sha256: seal_str(seal, "episodes_sha256")?.to_owned(),
+            oracles_sha256: seal_str(seal, "oracles_sha256")?.to_owned(),
+            spec_sha256: seal_str(seal, "spec_sha256")?.to_owned(),
+            contract_id: seal_str(seal, "contract_id")?.to_owned(),
+            protocol_id,
+        })
+    }
+
+    /// The [`SEAL_DIGEST_FIELDS_V52`] whose values differ between `self` and `other`, then
+    /// `suite_id` when the suites differ.
+    #[must_use]
+    pub fn differing_fields(&self, other: &Self) -> Vec<&'static str> {
+        let digests = [
+            self.episodes_sha256 == other.episodes_sha256,
+            self.oracles_sha256 == other.oracles_sha256,
+            self.spec_sha256 == other.spec_sha256,
+            self.contract_id == other.contract_id,
+            self.protocol_id == other.protocol_id,
+        ];
+        let mut differing: Vec<&'static str> = SEAL_DIGEST_FIELDS_V52
+            .into_iter()
+            .zip(digests)
+            .filter(|(_, same)| !same)
+            .map(|(field, _)| field)
+            .collect();
+        if self.suite_id != other.suite_id {
+            differing.push("suite_id");
+        }
+        differing
+    }
 }
 
 /// Verify a loaded dataset against its seal before the first slot (§7.5): the episode and oracle
@@ -218,37 +287,40 @@ pub fn verify_v52_seal(
     require_protocol_id: bool,
 ) -> Result<SealDigestsV52> {
     let seal = &dataset.seal;
-    let suite_id = seal_str(seal, "suite")
-        .or_else(|_| seal_str(seal, "suite_id"))?
-        .to_owned();
-    let checks = [
-        ("episodes_sha256", sha256_hex(&dataset.episodes_bytes)),
-        ("oracles_sha256", sha256_hex(&dataset.oracles_bytes)),
-        ("spec_sha256", sha256_hex(spec_bytes)),
-    ];
-    for (key, actual) in &checks {
-        let expected = seal_str(seal, key)?;
-        if expected != actual {
+    let recorded = SealDigestsV52::from_seal_json(seal)?;
+    for (key, actual, expected) in [
+        (
+            "episodes_sha256",
+            sha256_hex(&dataset.episodes_bytes),
+            &recorded.episodes_sha256,
+        ),
+        (
+            "oracles_sha256",
+            sha256_hex(&dataset.oracles_bytes),
+            &recorded.oracles_sha256,
+        ),
+        ("spec_sha256", sha256_hex(spec_bytes), &recorded.spec_sha256),
+    ] {
+        if *expected != actual {
             bail!("seal check failed: {key} is {actual}, SEAL.json records {expected}");
         }
     }
-    let contract_id = seal_str(seal, "contract_id")?;
-    if contract_id != ib_v52_schemas::CONTRACT_ID_V52 {
+    if recorded.contract_id != ib_v52_schemas::CONTRACT_ID_V52 {
         bail!(
-            "seal check failed: contract_id {contract_id:?} != {:?}",
+            "seal check failed: contract_id {:?} != {:?}",
+            recorded.contract_id,
             ib_v52_schemas::CONTRACT_ID_V52
         );
     }
-    let protocol_id = match seal.get("protocol_id") {
-        None | Some(Value::Null) => {
-            if require_protocol_id {
-                bail!("seal check failed: SEAL.json has no protocol_id (required for ranked runs)");
-            }
-            None
+    match &recorded.protocol_id {
+        None if require_protocol_id => {
+            bail!("seal check failed: SEAL.json has no protocol_id (required for ranked runs)")
         }
-        Some(Value::String(p)) if p == PROTOCOL_ID_V52 => Some(p.clone()),
-        Some(other) => bail!("seal check failed: protocol_id {other} != {PROTOCOL_ID_V52:?}"),
-    };
+        Some(p) if p != PROTOCOL_ID_V52 => {
+            bail!("seal check failed: protocol_id {p:?} != {PROTOCOL_ID_V52:?}")
+        }
+        _ => {}
+    }
     if let Some(count) = seal.get("episode_count").and_then(Value::as_u64)
         && count as usize != dataset.episodes.len()
     {
@@ -257,14 +329,7 @@ pub fn verify_v52_seal(
             dataset.episodes.len()
         );
     }
-    Ok(SealDigestsV52 {
-        suite_id,
-        episodes_sha256: checks[0].1.clone(),
-        oracles_sha256: checks[1].1.clone(),
-        spec_sha256: checks[2].1.clone(),
-        contract_id: contract_id.to_owned(),
-        protocol_id,
-    })
+    Ok(recorded)
 }
 
 // --------------------------------------------------------------------------------------------
@@ -435,13 +500,18 @@ pub fn withheld_bundle_sha256(run_dir: &Path) -> Result<String> {
 // Misc
 // --------------------------------------------------------------------------------------------
 
+/// Current UNIX time in whole seconds (`0` if the clock is before the epoch).
+#[must_use]
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 /// RFC 3339 UTC timestamp with second precision (no external date dependency).
 #[must_use]
 pub fn utc_timestamp_now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    utc_timestamp(secs)
+    utc_timestamp(unix_now())
 }
 
 /// Format UNIX seconds as `YYYY-MM-DDTHH:MM:SSZ`.
@@ -476,19 +546,6 @@ pub fn utc_timestamp(unix_secs: u64) -> String {
 #[must_use]
 pub fn run_endpoint_identity(transport_id: &str, provider_endpoint_identity: &str) -> String {
     sha256_hex(format!("{transport_id}|{provider_endpoint_identity}").as_bytes())
-}
-
-/// JSON summary of seal digests for manifests.
-#[must_use]
-pub fn seal_summary_json(seal: &SealDigestsV52) -> Value {
-    json!({
-        "suite_id": seal.suite_id,
-        "episodes_sha256": seal.episodes_sha256,
-        "oracles_sha256": seal.oracles_sha256,
-        "spec_sha256": seal.spec_sha256,
-        "contract_id": seal.contract_id,
-        "protocol_id": seal.protocol_id,
-    })
 }
 
 #[cfg(test)]

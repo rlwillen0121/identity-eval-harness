@@ -11,8 +11,9 @@ use ib_v52_schemas::{
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::metrics::slot_metrics_v52;
-use crate::runner::atomic_write_bytes;
+use crate::fsutil::{atomic_write, write_pretty_json};
+use crate::metrics::{SlotMetricsV52, slot_metrics_v52};
+use crate::stats::type7_quantile;
 
 /// Optional run metadata extracted from `manifest.json` when present.
 #[derive(Debug, Clone, Default)]
@@ -66,29 +67,26 @@ pub fn summarize_v52_records(
     records: &[EpisodeExecutionRecordV52],
     hint: &RunMetadataHintV52,
 ) -> SuiteReportSummaryV52 {
-    let first = records.first();
-    let pick = |h: &Option<String>, f: fn(&EpisodeExecutionRecordV52) -> &String| {
-        h.clone()
-            .or_else(|| first.map(|r| f(r).clone()))
-            .unwrap_or_else(|| "unknown".to_owned())
-    };
-    let suite_id = pick(&hint.suite_id, |r| &r.suite_id);
-    let model_label = pick(&hint.model_label, |r| &r.model_label);
-    let model_id = pick(&hint.model_id, |r| &r.model_id);
-    let provider_kind = pick(&hint.provider_kind, |r| &r.provider_kind);
-    let effort = pick(&hint.effort, |r| &r.effort);
+    let slots: Vec<SlotMetricsV52> = records.iter().map(slot_metrics_v52).collect();
+    summarize_with_slots(records, &slots, hint)
+}
 
-    let planned_slots = hint.planned_slots.unwrap_or(records.len());
-    let repeats = hint
-        .repeats
-        .unwrap_or_else(|| records.iter().map(|r| r.repeat_index).max().unwrap_or(0));
-    let engagement_count = hint.episode_count.unwrap_or_else(|| {
-        records
-            .iter()
-            .map(|r| r.episode_id.as_str())
-            .collect::<BTreeSet<_>>()
-            .len()
-    });
+/// [`summarize_v52_records`] over precomputed per-slot metrics (`slots[i]` of `records[i]`).
+pub(crate) fn summarize_with_slots(
+    records: &[EpisodeExecutionRecordV52],
+    slots: &[SlotMetricsV52],
+    hint: &RunMetadataHintV52,
+) -> SuiteReportSummaryV52 {
+    let RunShapeV52 {
+        suite_id,
+        model_label,
+        model_id,
+        provider_kind,
+        effort,
+        planned_slots,
+        repeats,
+        engagement_count,
+    } = RunShapeV52::of(records, hint);
 
     let mut completed_slots = 0_usize;
     let mut step_limit_slots = 0_usize;
@@ -126,13 +124,14 @@ pub fn summarize_v52_records(
     let mut iiq_to_isc_observed_slots = 0_usize;
     let mut iiq_to_isc_pass_count = 0_usize;
 
-    let mut family_records: BTreeMap<String, Vec<&EpisodeExecutionRecordV52>> = BTreeMap::new();
+    let mut family_records: BTreeMap<String, Vec<(&EpisodeExecutionRecordV52, &SlotMetricsV52)>> =
+        BTreeMap::new();
     // (resolved, observed) per family / regime / engagement.
     let mut family_g: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     let mut regime_g: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     let mut engagement_g: BTreeMap<String, (usize, usize)> = BTreeMap::new();
 
-    for rec in records {
+    for (rec, slot) in records.iter().zip(slots) {
         total_input_tokens = total_input_tokens.saturating_add(rec.input_tokens);
         total_cached_input_tokens =
             total_cached_input_tokens.saturating_add(rec.cached_input_tokens);
@@ -146,7 +145,7 @@ pub fn summarize_v52_records(
         family_records
             .entry(rec.family_id.clone())
             .or_default()
-            .push(rec);
+            .push((rec, slot));
 
         match rec.attempt_status {
             AttemptStatusV52::Completed => completed_slots += 1,
@@ -158,7 +157,6 @@ pub fn summarize_v52_records(
                 continue;
             }
         }
-        let slot = slot_metrics_v52(rec);
         let (ok_reads, duplicate_reads) = count_ok_and_duplicate_reads(rec);
         total_ok_reads += ok_reads;
         total_duplicate_ok_reads += duplicate_reads;
@@ -236,58 +234,15 @@ pub fn summarize_v52_records(
         .map(|(cat, count)| (*cat, or_zero(*count, observed_slots)))
         .collect();
 
-    // pass^k / pass@k (§6.2): defined for k ≥ 3 over complete engagements.
-    let (pass_hat_k, pass_at_k) = if is_complete
-        && repeats >= 3
-        && !engagement_g.is_empty()
-        && engagement_g.values().all(|&(_, n)| n == repeats)
-    {
-        let all = engagement_g
-            .values()
-            .filter(|&&(r, _)| r == repeats)
-            .count();
-        let any = engagement_g.values().filter(|&&(r, _)| r > 0).count();
-        (
-            ratio(all, engagement_g.len()),
-            ratio(any, engagement_g.len()),
-        )
-    } else {
-        (None, None)
-    };
+    let (pass_hat_k, pass_at_k) = pass_k(&engagement_g, is_complete, repeats);
 
     wall_ms_observed.sort_unstable();
-    let median_active_wall_ms = match wall_ms_observed.len() {
-        0 => None,
-        n if n % 2 == 1 => Some(wall_ms_observed[n / 2] as f64),
-        n => Some((wall_ms_observed[n / 2 - 1] as f64 + wall_ms_observed[n / 2] as f64) / 2.0),
-    };
+    let wall_ms_sorted: Vec<f64> = wall_ms_observed.iter().map(|&ms| ms as f64).collect();
+    let median_active_wall_ms = type7_quantile(&wall_ms_sorted, 0.5);
     let turns_total = turns_observed_sum;
 
-    let mut passed_families = Vec::new();
-    let mut failed_families = Vec::new();
-    let mut provider_error_families = Vec::new();
-    for (family_id, fam_recs) in family_records {
-        let has_provider_err = fam_recs
-            .iter()
-            .any(|r| r.attempt_status == AttemptStatusV52::IncompleteProviderFailure);
-        let observed_in_fam: Vec<&&EpisodeExecutionRecordV52> = fam_recs
-            .iter()
-            .filter(|r| r.attempt_status != AttemptStatusV52::IncompleteProviderFailure)
-            .collect();
-        if has_provider_err {
-            provider_error_families.push(family_id.clone());
-        }
-        if !observed_in_fam.is_empty() {
-            let all_passed = observed_in_fam
-                .iter()
-                .all(|r| slot_metrics_v52(r).resolved());
-            if all_passed && !has_provider_err {
-                passed_families.push(family_id);
-            } else if !all_passed {
-                failed_families.push(family_id);
-            }
-        }
-    }
+    let (passed_families, failed_families, provider_error_families) =
+        family_outcomes(family_records);
 
     SuiteReportSummaryV52 {
         spec_version: SPEC_VERSION_V52.to_owned(),
@@ -374,11 +329,128 @@ pub fn summarize_v52_records(
     }
 }
 
+/// Families whose observed slots all resolved (and none failed on the provider), families with an
+/// unresolved observed slot, and families with a provider-failure slot.
+fn family_outcomes(
+    family_records: BTreeMap<String, Vec<(&EpisodeExecutionRecordV52, &SlotMetricsV52)>>,
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut passed_families = Vec::new();
+    let mut failed_families = Vec::new();
+    let mut provider_error_families = Vec::new();
+    for (family_id, fam_recs) in family_records {
+        let has_provider_err = fam_recs
+            .iter()
+            .any(|(r, _)| r.attempt_status == AttemptStatusV52::IncompleteProviderFailure);
+        let observed_in_fam: Vec<&SlotMetricsV52> = fam_recs
+            .iter()
+            .filter(|(r, _)| r.attempt_status != AttemptStatusV52::IncompleteProviderFailure)
+            .map(|(_, slot)| *slot)
+            .collect();
+        if has_provider_err {
+            provider_error_families.push(family_id.clone());
+        }
+        if !observed_in_fam.is_empty() {
+            let all_passed = observed_in_fam.iter().all(|slot| slot.resolved());
+            if all_passed && !has_provider_err {
+                passed_families.push(family_id);
+            } else if !all_passed {
+                failed_families.push(family_id);
+            }
+        }
+    }
+    (passed_families, failed_families, provider_error_families)
+}
+
+/// `pass^k` and `pass@k` (§6.2), defined for `k ≥ 3` over complete engagements.
+fn pass_k(
+    engagement_g: &BTreeMap<String, (usize, usize)>,
+    is_complete: bool,
+    repeats: usize,
+) -> (Option<f64>, Option<f64>) {
+    let ratio = |num: usize, den: usize| (den > 0).then(|| num as f64 / den as f64);
+    if is_complete
+        && repeats >= 3
+        && !engagement_g.is_empty()
+        && engagement_g.values().all(|&(_, n)| n == repeats)
+    {
+        let all = engagement_g
+            .values()
+            .filter(|&&(r, _)| r == repeats)
+            .count();
+        let any = engagement_g.values().filter(|&&(r, _)| r > 0).count();
+        (
+            ratio(all, engagement_g.len()),
+            ratio(any, engagement_g.len()),
+        )
+    } else {
+        (None, None)
+    }
+}
+
+/// The entry identity and planned shape of a run: the manifest hint, else the first record.
+struct RunShapeV52 {
+    suite_id: String,
+    model_label: String,
+    model_id: String,
+    provider_kind: String,
+    effort: String,
+    planned_slots: usize,
+    repeats: usize,
+    engagement_count: usize,
+}
+
+impl RunShapeV52 {
+    fn of(records: &[EpisodeExecutionRecordV52], hint: &RunMetadataHintV52) -> Self {
+        let first = records.first();
+        let pick = |h: &Option<String>, f: fn(&EpisodeExecutionRecordV52) -> &String| {
+            h.clone()
+                .or_else(|| first.map(|r| f(r).clone()))
+                .unwrap_or_else(|| "unknown".to_owned())
+        };
+        let suite_id = pick(&hint.suite_id, |r| &r.suite_id);
+        let model_label = pick(&hint.model_label, |r| &r.model_label);
+        let model_id = pick(&hint.model_id, |r| &r.model_id);
+        let provider_kind = pick(&hint.provider_kind, |r| &r.provider_kind);
+        let effort = pick(&hint.effort, |r| &r.effort);
+
+        let planned_slots = hint.planned_slots.unwrap_or(records.len());
+        let repeats = hint
+            .repeats
+            .unwrap_or_else(|| records.iter().map(|r| r.repeat_index).max().unwrap_or(0));
+        let engagement_count = hint.episode_count.unwrap_or_else(|| {
+            records
+                .iter()
+                .map(|r| r.episode_id.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
+        });
+        Self {
+            suite_id,
+            model_label,
+            model_id,
+            provider_kind,
+            effort,
+            planned_slots,
+            repeats,
+            engagement_count,
+        }
+    }
+}
+
 /// Render a concise GitHub-style Markdown report from `SuiteReportSummaryV52` and execution records.
 #[must_use]
 pub fn render_v52_report_markdown(
     summary: &SuiteReportSummaryV52,
     records: &[EpisodeExecutionRecordV52],
+) -> String {
+    let slots: Vec<SlotMetricsV52> = records.iter().map(slot_metrics_v52).collect();
+    render_markdown_with_slots(summary, records, &slots)
+}
+
+fn render_markdown_with_slots(
+    summary: &SuiteReportSummaryV52,
+    records: &[EpisodeExecutionRecordV52],
+    slots: &[SlotMetricsV52],
 ) -> String {
     let cost_usd = summary.total_cost_usd_micros as f64 / 1_000_000.0;
     let g_srr_display = summary.g_srr.map_or_else(
@@ -519,8 +591,7 @@ pub fn render_v52_report_markdown(
         join_or_none(&evaluator_error_episodes),
     ));
 
-    for rec in records {
-        let slot = slot_metrics_v52(rec);
+    for (rec, slot) in records.iter().zip(slots) {
         let row = if slot.observed {
             format!(
                 "{} | {:.1}% | {:.1}% | {}/8 | {} | {}",
@@ -564,57 +635,49 @@ pub fn report_v52_run(run_dir: &Path, out_dir: &Path) -> Result<SuiteReportSumma
     let records = crate::runner::load_run_records_v52(run_dir)?;
 
     let hint = read_manifest_hint(&run_dir.join("manifest.json"));
-    let summary = summarize_v52_records(&records, &hint);
-    let markdown = render_v52_report_markdown(&summary, &records);
+    let slots: Vec<SlotMetricsV52> = records.iter().map(slot_metrics_v52).collect();
+    let summary = summarize_with_slots(&records, &slots, &hint);
+    let markdown = render_markdown_with_slots(&summary, &records, &slots);
 
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("failed to create report directory {}", out_dir.display()))?;
 
-    let mut summary_bytes = serde_json::to_vec_pretty(&summary)?;
-    summary_bytes.push(b'\n');
-    atomic_write_bytes(&out_dir.join("summary.json"), &summary_bytes)?;
-    atomic_write_bytes(&out_dir.join("report.md"), markdown.as_bytes())?;
+    write_pretty_json(&out_dir.join("summary.json"), &summary)?;
+    atomic_write(&out_dir.join("report.md"), markdown.as_bytes())?;
 
     Ok(summary)
 }
 
+/// The summary hint of a run directory's `manifest.json` (default when absent or invalid).
 pub(crate) fn read_manifest_hint(manifest_path: &Path) -> RunMetadataHintV52 {
-    let Ok(raw) = std::fs::read(manifest_path) else {
-        return RunMetadataHintV52::default();
-    };
-    let Ok(val) = serde_json::from_slice::<Value>(&raw) else {
-        return RunMetadataHintV52::default();
-    };
-    RunMetadataHintV52 {
-        suite_id: val
-            .get("suite_id")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        model_label: val
-            .get("model_label")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        model_id: val
-            .get("model_id")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        provider_kind: val
-            .get("provider_kind")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        effort: val.get("effort").and_then(Value::as_str).map(str::to_owned),
-        planned_slots: val
-            .get("planned_slots")
-            .and_then(Value::as_u64)
-            .and_then(|n| usize::try_from(n).ok()),
-        repeats: val
-            .get("repeats")
-            .and_then(Value::as_u64)
-            .and_then(|n| usize::try_from(n).ok()),
-        episode_count: val
-            .get("episode_count")
-            .and_then(Value::as_u64)
-            .and_then(|n| usize::try_from(n).ok()),
+    std::fs::read(manifest_path)
+        .ok()
+        .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
+        .map(|manifest| RunMetadataHintV52::from_manifest(&manifest))
+        .unwrap_or_default()
+}
+
+impl RunMetadataHintV52 {
+    /// The summary hint carried by a parsed `manifest.json`.
+    #[must_use]
+    pub fn from_manifest(manifest: &Value) -> Self {
+        let text = |key: &str| manifest.get(key).and_then(Value::as_str).map(str::to_owned);
+        let count = |key: &str| {
+            manifest
+                .get(key)
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+        };
+        Self {
+            suite_id: text("suite_id"),
+            model_label: text("model_label"),
+            model_id: text("model_id"),
+            provider_kind: text("transport_id"),
+            effort: text("reasoning_effort"),
+            planned_slots: count("planned_slots"),
+            repeats: count("repeats"),
+            episode_count: count("episode_count"),
+        }
     }
 }
 

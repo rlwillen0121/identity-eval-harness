@@ -116,17 +116,24 @@ pub fn compact_json(value: &Value) -> String {
 }
 
 /// The byte-identical `v5.2` system prompt (§7.1). It is independent of the episode, the model,
-/// and the transport.
+/// and the transport, and is built once per process.
 #[must_use]
-pub fn render_v52_system_prompt() -> String {
+pub fn system_prompt_v52() -> &'static str {
     static PROMPT: OnceLock<String> = OnceLock::new();
-    PROMPT.get_or_init(build_system_prompt).clone()
+    PROMPT.get_or_init(build_system_prompt)
 }
 
-/// SHA-256 (lowercase hex) of [`render_v52_system_prompt`].
+/// An owned copy of [`system_prompt_v52`].
 #[must_use]
-pub fn system_prompt_sha256_v52() -> String {
-    sha256_hex(render_v52_system_prompt().as_bytes())
+pub fn render_v52_system_prompt() -> String {
+    system_prompt_v52().to_owned()
+}
+
+/// SHA-256 (lowercase hex) of [`system_prompt_v52`], computed once per process.
+#[must_use]
+pub fn system_prompt_sha256_v52() -> &'static str {
+    static DIGEST: OnceLock<String> = OnceLock::new();
+    DIGEST.get_or_init(|| sha256_hex(system_prompt_v52().as_bytes()))
 }
 
 fn build_system_prompt() -> String {

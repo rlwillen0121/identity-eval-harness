@@ -13,9 +13,7 @@ use ib_providers::base::{
 };
 use ib_providers::cli::prepend_system;
 use ib_v52_runtime::integrity::round_stratified_order;
-use ib_v52_runtime::parity::{
-    ParityOutcomeV52, evaluate_parity_gate_v52, registered_parity_renderer_v52,
-};
+use ib_v52_runtime::parity::evaluate_parity_gate_v52;
 use ib_v52_runtime::protocol::OUTPUT_LIMIT_BYTES_V52;
 use ib_v52_runtime::{
     LoadedV52Dataset, MAX_ASSISTANT_TURNS_V52, ProbeOptionsV52, RunV52EpisodeOptions,
@@ -482,15 +480,8 @@ async fn uncompacted_requests_satisfy_the_prefix_property_and_turn_one_grammar()
 
 #[test]
 fn offline_parity_gate_passes_on_v52_dev() {
-    let renderer = registered_parity_renderer_v52().expect("the runner registers its renderer");
-    match evaluate_parity_gate_v52(
-        Some(renderer.as_ref()),
-        &dev_dataset().episodes,
-        &MockEngine,
-    ) {
-        ParityOutcomeV52::Evaluated(gate) => assert!(gate.passed, "{:?}", gate.details),
-        ParityOutcomeV52::Pending { reason, .. } => panic!("G-PARITY-V52 pending: {reason}"),
-    }
+    let gate = evaluate_parity_gate_v52(&dev_dataset().episodes);
+    assert!(gate.passed, "{:?}", gate.details);
 }
 
 #[test]

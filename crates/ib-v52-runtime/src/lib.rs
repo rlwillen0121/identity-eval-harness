@@ -2,8 +2,10 @@
 
 pub mod baselines;
 pub mod config;
+pub mod fsutil;
 pub mod integrity;
 pub mod leaderboard;
+pub mod manifest;
 pub mod metrics;
 pub mod mutations;
 pub mod opening;
@@ -30,9 +32,10 @@ pub use integrity::{
 };
 pub use mutations::{GoldMutationV52, MutationOriginV52, gold_replay_mutations_v52};
 pub use opening::{
-    render_v52_assignment_header, render_v52_initial_listing, render_v52_turn1_message,
+    render_v52_assignment_header, render_v52_episode_opening, render_v52_initial_listing,
+    render_v52_turn1_message,
 };
-pub use parity::{CanonicalParityRendererV52, registered_parity_renderer_v52};
+pub use parity::{CanonicalParityRendererV52, evaluate_parity_gate_v52};
 pub use probe::{
     LoadedProbeReceiptV52, ProbeOptionsV52, load_probe_receipt, run_v52_probe,
     verify_probe_receipt_binding, write_probe_receipt,
@@ -48,13 +51,13 @@ pub use report::{
 pub use runner::{
     RunV52EpisodeOptions, RunV52SuiteOptions, SLOT_RECORDS_DIR_V52, SlotCheckpointV52,
     load_run_records_v52, opening_request_bytes_v52, run_v52_episode,
-    run_v52_episode_from_checkpoint, run_v52_suite,
+    run_v52_episode_from_checkpoint, run_v52_suite, run_v52_suite_with_seal,
 };
 pub use validation::{
-    BaselineReportV52, BaselineRowV52, GateResultV52, PendingGateV52, ShortcutCeilingV52,
-    ValidationReportV52, find_budget_statements_v52, validate_v52_dataset,
+    BaselineReportV52, BaselineRowV52, GateResultV52, ShortcutCeilingV52, ValidationReportV52,
+    find_budget_statements_v52, validate_loaded_v52_dataset, validate_v52_dataset,
 };
 pub use workspace::{
-    CONFIG_FILE_PATHS_V52, DEFAULT_READ_LINE_WINDOW, MAX_PREVIEW_CUBES, MAX_READ_LINES_PER_CALL,
+    DEFAULT_READ_LINE_WINDOW, MAX_PREVIEW_CUBES, MAX_READ_LINES_PER_CALL,
     VirtualWorkspaceRuntimeV52, WorkspaceStateV52, tool_definitions_v52,
 };

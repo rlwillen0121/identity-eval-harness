@@ -17,7 +17,8 @@ use ib_v52_generator::{
     key_commitment, plan_public_v52_suites, plan_v52_cells, private_suite_key, retired_seed_set,
     serialize_jsonl,
 };
-use ib_v52_runtime::integrity::{withheld_bundle_listing, withheld_bundle_sha256};
+use ib_v52_runtime::fsutil::read_json;
+use ib_v52_runtime::integrity::withheld_bundle_listing;
 use ib_v52_runtime::leaderboard::{
     LoadedRunV52, interval_json, load_run_v52, published_entry_view_v52, rank_json,
     ranked_strata_v52,
@@ -25,9 +26,9 @@ use ib_v52_runtime::leaderboard::{
 use ib_v52_runtime::stats::{
     BOOTSTRAP_REPLICATES_V52, BootstrapDrawsV52, bootstrap_key_v52, joint_statistics_v52,
 };
-use ib_v52_runtime::workspace::CONFIG_FILE_PATHS_V52;
 use ib_v52_schemas::{
-    EpisodeV52, IgaDeploymentConfigV52, IgaEngineBackendV52, SealedEpisodeOracleV52, V52Suite,
+    CONFIG_FILES_V52, EpisodeV52, IgaDeploymentConfigV52, IgaEngineBackendV52,
+    SealedEpisodeOracleV52, V52Suite, config_file_stem,
 };
 use serde_json::{Map, Value, json};
 
@@ -167,7 +168,115 @@ pub fn verify_reveal(
     if public_seals.is_empty() {
         bail!("reveal-verify needs at least one private suite public seal (--seal)");
     }
-    for (path, _, seal) in &public_seals {
+    check_precommit_binds_seals(&precommit, &public_seals, &mut checks);
+
+    // ---- Timing: committed and pushed before round_unix_time; schedule; beacon value. ----
+    check_precommit_timing(inputs, &precommit, &mut checks);
+    let beacon = decode_hex32(&inputs.beacon_randomness_hex)
+        .map_err(|e| anyhow::anyhow!("beacon randomness: {e}"))?;
+    for (_, _, seal) in &public_seals {
+        checks.push(
+            "beacon_matches_seal",
+            seal.beacon_randomness_hex == inputs.beacon_randomness_hex,
+            format!(
+                "{}: sealed beacon_randomness_hex {} the published round randomness",
+                seal.suite_id,
+                if seal.beacon_randomness_hex == inputs.beacon_randomness_hex {
+                    "equals"
+                } else {
+                    "differs from"
+                }
+            ),
+        );
+    }
+    if let Some(sig_hex) = &inputs.beacon_signature_hex {
+        let sig =
+            hex::decode(sig_hex.trim()).map_err(|_| anyhow::anyhow!("signature is not hex"))?;
+        let derived = sha256_hex(&sig);
+        checks.push(
+            "beacon_randomness_is_sha256_of_signature",
+            derived == inputs.beacon_randomness_hex,
+            format!("SHA-256(signature) = {derived}"),
+        );
+    }
+
+    // ---- S_priv derives from K and B; private seeds are disjoint. ----
+    let s_priv = private_suite_key(&inputs.key, &beacon);
+    checks.push(
+        "s_priv_derived",
+        true,
+        "S_priv = HMAC-SHA256(K, \"identitybench-v5.2-private|\" || B) computed (never printed)",
+    );
+    let (core_cells, full_cells) = check_private_seeds(&s_priv, &mut checks)?;
+
+    // ---- Regeneration reproduces the private seals byte-exactly. ----
+    let regenerated = regenerate_private_suites(
+        inputs,
+        &precommit,
+        &beacon,
+        &public_seals,
+        (&core_cells, &full_cells),
+        engine,
+        &mut checks,
+    )?;
+
+    // ---- Withheld bundles and score replay. ----
+    let leaderboard: Option<Value> = inputs
+        .leaderboard
+        .as_deref()
+        .map(read_json::<Value>)
+        .transpose()?;
+    let published_entries: Vec<&Value> = leaderboard
+        .as_ref()
+        .map(|lb| {
+            ["entries", "unranked_entries"]
+                .iter()
+                .filter_map(|k| lb.get(*k).and_then(Value::as_array))
+                .flatten()
+                .collect()
+        })
+        .unwrap_or_default();
+    let loaded_bundles = check_bundles(
+        inputs,
+        leaderboard.is_some(),
+        &published_entries,
+        &regenerated,
+        engine,
+        &mut checks,
+    )?;
+
+    // ---- Published intervals and joint rank intervals replay (§9). ----
+    if let Some(lb) = &leaderboard {
+        replay_intervals(
+            lb,
+            &published_entries,
+            &loaded_bundles,
+            &regenerated,
+            inputs.replicates,
+            &mut checks,
+        );
+    } else if !inputs.bundles.is_empty() {
+        checks.missing(
+            "published_scores_replay",
+            "supply --leaderboard to replay the published scores",
+        );
+    }
+
+    let passed = checks.0.iter().all(|c| c.status == "pass");
+    Ok(RevealReportV52 {
+        gate_id: "G-REVEAL-V52".to_owned(),
+        passed,
+        checks: checks.0,
+    })
+}
+
+/// `precommit_binds_seal`: each public seal records PRECOMMIT.json's commitment and round.
+fn check_precommit_binds_seals(
+    precommit: &PrecommitV52,
+    public_seals: &[(PathBuf, Vec<u8>, PrivateSuitePublicSealV52)],
+    checks: &mut Checks,
+) {
+    for (path, _, seal) in public_seals {
         let binds = seal.c_k == precommit.c_k
             && seal.drand_chain_hash == precommit.drand_chain_hash
             && seal.round == precommit.round
@@ -183,8 +292,11 @@ pub fn verify_reveal(
             ),
         );
     }
+}
 
-    // ---- Timing: committed and pushed before round_unix_time; schedule; beacon value. ----
+/// Timing evidence: PRECOMMIT.json was committed and pushed before `round_unix_time`, which
+/// matches the drand chain's schedule.
+fn check_precommit_timing(inputs: &RevealInputsV52, precommit: &PrecommitV52, checks: &mut Checks) {
     match inputs.precommit_commit_unix_time {
         Some(t) => {
             checks.push(
@@ -246,41 +358,14 @@ pub fn verify_reveal(
             "supply --drand-genesis-time and --drand-period of chain drand_chain_hash",
         ),
     }
-    let beacon = decode_hex32(&inputs.beacon_randomness_hex)
-        .map_err(|e| anyhow::anyhow!("beacon randomness: {e}"))?;
-    for (_, _, seal) in &public_seals {
-        checks.push(
-            "beacon_matches_seal",
-            seal.beacon_randomness_hex == inputs.beacon_randomness_hex,
-            format!(
-                "{}: sealed beacon_randomness_hex {} the published round randomness",
-                seal.suite_id,
-                if seal.beacon_randomness_hex == inputs.beacon_randomness_hex {
-                    "equals"
-                } else {
-                    "differs from"
-                }
-            ),
-        );
-    }
-    if let Some(sig_hex) = &inputs.beacon_signature_hex {
-        let sig =
-            hex::decode(sig_hex.trim()).map_err(|_| anyhow::anyhow!("signature is not hex"))?;
-        let derived = sha256_hex(&sig);
-        checks.push(
-            "beacon_randomness_is_sha256_of_signature",
-            derived == inputs.beacon_randomness_hex,
-            format!("SHA-256(signature) = {derived}"),
-        );
-    }
+}
 
-    // ---- S_priv derives from K and B; private seeds are disjoint. ----
-    let s_priv = private_suite_key(&inputs.key, &beacon);
-    checks.push(
-        "s_priv_derived",
-        true,
-        "S_priv = HMAC-SHA256(K, \"identitybench-v5.2-private|\" || B) computed (never printed)",
-    );
+/// `private_seeds_disjoint`: plan both private suites from `S_priv` and check their seeds against
+/// the retired and public seeds in the §2.1 order. Returns the `v52_core` and `v52_full` cells.
+fn check_private_seeds(
+    s_priv: &SecretKey32,
+    checks: &mut Checks,
+) -> Result<(Vec<V52Cell>, Vec<V52Cell>)> {
     let mut accepted: BTreeSet<u64> = retired_seed_set();
     let retired_count = accepted.len();
     let mut public_seed_count = 0;
@@ -291,10 +376,8 @@ pub fn verify_reveal(
             public_unique &= accepted.insert(cell.seed);
         }
     }
-    let core_cells =
-        plan_v52_cells(V52Suite::V52Core, Some(&s_priv)).map_err(anyhow::Error::msg)?;
-    let full_cells =
-        plan_v52_cells(V52Suite::V52Full, Some(&s_priv)).map_err(anyhow::Error::msg)?;
+    let core_cells = plan_v52_cells(V52Suite::V52Core, Some(s_priv)).map_err(anyhow::Error::msg)?;
+    let full_cells = plan_v52_cells(V52Suite::V52Full, Some(s_priv)).map_err(anyhow::Error::msg)?;
     let mut private_unique = true;
     let mut suffixed = Vec::new();
     for cell in core_cells.iter().chain(&full_cells) {
@@ -317,8 +400,20 @@ pub fn verify_reveal(
             }
         ),
     );
+    Ok((core_cells, full_cells))
+}
 
-    // ---- Regeneration reproduces the private seals byte-exactly. ----
+/// Regenerate every private suite named by a public seal and check that its public seal (and a
+/// revealed `PRIVATE_SEAL.json` beside it) rebuilds byte-exactly.
+fn regenerate_private_suites(
+    inputs: &RevealInputsV52,
+    precommit: &PrecommitV52,
+    beacon: &[u8; 32],
+    public_seals: &[(PathBuf, Vec<u8>, PrivateSuitePublicSealV52)],
+    cells: (&[V52Cell], &[V52Cell]),
+    engine: &dyn IgaEngineBackendV52,
+    checks: &mut Checks,
+) -> Result<BTreeMap<String, RegeneratedSuite>> {
     let spec_bytes = std::fs::read(&inputs.spec_path)
         .with_context(|| format!("failed to read {}", inputs.spec_path.display()))?;
     let spec_sha = sha256_hex(&spec_bytes);
@@ -330,14 +425,14 @@ pub fn verify_reveal(
         beacon_randomness_hex: hex::encode(beacon),
     };
     let mut regenerated: BTreeMap<String, RegeneratedSuite> = BTreeMap::new();
-    for (path, bytes, seal) in &public_seals {
+    for (path, bytes, seal) in public_seals {
         let suite: V52Suite = seal
             .suite_id
             .parse()
             .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
-        let cells: Vec<V52Cell> = match suite {
-            V52Suite::V52Core => core_cells.clone(),
-            V52Suite::V52Full => full_cells.clone(),
+        let suite_cells: Vec<V52Cell> = match suite {
+            V52Suite::V52Core => cells.0.to_vec(),
+            V52Suite::V52Full => cells.1.to_vec(),
             other => {
                 checks.push(
                     "seal_is_private_suite",
@@ -358,15 +453,12 @@ pub fn verify_reveal(
             ),
         );
         let generated =
-            build_v52_dataset_from_cells(suite, cells, Some(commitment.clone()), engine)
+            build_v52_dataset_from_cells(suite, suite_cells, Some(commitment.clone()), engine)
                 .with_context(|| format!("failed to regenerate {suite}"))?;
         let ep_bytes = serialize_jsonl(&generated.episodes)?;
         let or_bytes = serialize_jsonl(&generated.oracles)?;
         let full = build_full_seal(&generated, &ep_bytes, &or_bytes, &seal.spec_sha256)?;
-        let rebuilt = format!(
-            "{}\n",
-            serde_json::to_string_pretty(&derive_private_public_seal(&full)?)?
-        );
+        let rebuilt = ib_v52_generator::pretty_json(&derive_private_public_seal(&full)?)?;
         let exact = rebuilt.as_bytes() == bytes.as_slice();
         checks.push(
             "regeneration_reproduces_seal",
@@ -387,8 +479,7 @@ pub fn verify_reveal(
         // A revealed full private seal next to the public seal must also rebuild exactly.
         let private_path = path.with_file_name(ib_v52_generator::PRIVATE_SEAL_FILENAME_V52);
         if let Ok(private_bytes) = std::fs::read(&private_path) {
-            let ok = format!("{}\n", serde_json::to_string_pretty(&full)?).as_bytes()
-                == private_bytes.as_slice();
+            let ok = ib_v52_generator::pretty_json(&full)?.as_bytes() == private_bytes.as_slice();
             checks.push(
                 "regeneration_reproduces_private_seal",
                 ok,
@@ -412,28 +503,20 @@ pub fn verify_reveal(
             },
         );
     }
+    Ok(regenerated)
+}
 
-    // ---- Withheld bundles and score replay. ----
-    let leaderboard: Option<Value> = match &inputs.leaderboard {
-        Some(path) => Some(
-            serde_json::from_slice(
-                &std::fs::read(path)
-                    .with_context(|| format!("failed to read {}", path.display()))?,
-            )
-            .with_context(|| format!("{} is invalid JSON", path.display()))?,
-        ),
-        None => None,
-    };
-    let published_entries: Vec<&Value> = leaderboard
-        .as_ref()
-        .map(|lb| {
-            ["entries", "unranked_entries"]
-                .iter()
-                .filter_map(|k| lb.get(*k).and_then(Value::as_array))
-                .flatten()
-                .collect()
-        })
-        .unwrap_or_default();
+/// Check every revealed bundle: its withheld set hashes to the manifest (and published) digest,
+/// it ran on a regenerated suite, its slot scores re-score from its committed configs, and its
+/// published scores and marginals recompute. Returns the loaded bundles.
+fn check_bundles(
+    inputs: &RevealInputsV52,
+    has_leaderboard: bool,
+    published_entries: &[&Value],
+    regenerated: &BTreeMap<String, RegeneratedSuite>,
+    engine: &dyn IgaEngineBackendV52,
+    checks: &mut Checks,
+) -> Result<Vec<LoadedRunV52>> {
     let find_entry = |run: &LoadedRunV52| {
         published_entries.iter().copied().find(|e| {
             e.pointer("/entry/model_id").and_then(Value::as_str) == Some(run.model_id.as_str())
@@ -454,14 +537,16 @@ pub fn verify_reveal(
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        let actual = withheld_bundle_sha256(dir)?;
-        let files = withheld_bundle_listing(dir)?.lines().count();
+        // Hash the withheld set once: its listing yields both the digest and the file count.
+        let listing = withheld_bundle_listing(dir)?;
+        let actual = sha256_hex(listing.as_bytes());
+        let files = listing.lines().count();
         checks.push(
             "withheld_bundle_matches_manifest",
             actual == recorded,
             format!("{label}: {files} files hash to {actual}; manifest records {recorded}"),
         );
-        if leaderboard.is_some() {
+        if has_leaderboard {
             match find_entry(&run) {
                 Some(entry) => {
                     let published = entry
@@ -550,30 +635,7 @@ pub fn verify_reveal(
         }
         loaded_bundles.push(run);
     }
-
-    // ---- Published intervals and joint rank intervals replay (§9). ----
-    if let Some(lb) = &leaderboard {
-        replay_intervals(
-            lb,
-            &published_entries,
-            &loaded_bundles,
-            &regenerated,
-            inputs.replicates,
-            &mut checks,
-        );
-    } else if !inputs.bundles.is_empty() {
-        checks.missing(
-            "published_scores_replay",
-            "supply --leaderboard to replay the published scores",
-        );
-    }
-
-    let passed = checks.0.iter().all(|c| c.status == "pass");
-    Ok(RevealReportV52 {
-        gate_id: "G-REVEAL-V52".to_owned(),
-        passed,
-        checks: checks.0,
-    })
+    Ok(loaded_bundles)
 }
 
 /// Re-score every slot record of a bundle from its persisted committed configuration.
@@ -586,7 +648,7 @@ fn replay_bundle_scores(
     let mut replayed = 0;
     let mut memo: BTreeMap<(String, String), Result<Value, ()>> = BTreeMap::new();
     for record in &run.records {
-        let stem = format!("{}_r{}", record.episode_id, record.repeat_index);
+        let stem = ib_v52_runtime::SlotIdV52::of_record(record).stem();
         let (Some(episode), Some(oracle)) = (
             suite.episodes.get(&record.episode_id),
             suite.oracles.get(&record.episode_id),
@@ -604,8 +666,10 @@ fn replay_bundle_scores(
         };
         let mut sections = Map::new();
         let mut readable = true;
-        for path in CONFIG_FILE_PATHS_V52 {
-            let stem_name = path.trim_start_matches("config/").trim_end_matches(".json");
+        for stem_name in CONFIG_FILES_V52
+            .iter()
+            .filter_map(|path| config_file_stem(path))
+        {
             match std::fs::read(config_dir.join(format!("{stem_name}.json")))
                 .ok()
                 .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
@@ -617,7 +681,7 @@ fn replay_bundle_scores(
             }
         }
         let persisted: Option<IgaDeploymentConfigV52> = readable
-            .then(|| serde_json::from_value(Value::Object(sections)).ok())
+            .then(|| IgaDeploymentConfigV52::from_sections(sections).ok())
             .flatten();
         let Some(persisted) = persisted else {
             problems.push(format!("{stem}: committed config files missing or invalid"));

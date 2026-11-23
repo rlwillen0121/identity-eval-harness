@@ -11,17 +11,18 @@ use ib_providers::envfile::load_env_file_into;
 use ib_providers::factory::ProviderKind;
 use ib_providers::factory::{ModelSpec, make_provider_with_env};
 use ib_v52_generator::{
-    LoadedSealV52, LoadedV52Dataset, PrecommitV52, SEED_TEST_VECTORS_V52, SecretKey32,
-    SuiteKeyMaterialV52, TEST_KEY_HEX_V52, V52Cell,
+    LoadedSealV52, PrecommitV52, SEED_TEST_VECTORS_V52, SecretKey32, SuiteKeyMaterialV52,
+    TEST_KEY_HEX_V52, V52Cell,
 };
-use ib_v52_runtime::integrity::{current_binary_sha256, run_endpoint_identity};
+use ib_v52_runtime::fsutil::{atomic_write, pretty_json_bytes, read_json};
+use ib_v52_runtime::integrity::{current_binary_sha256, run_endpoint_identity, unix_now};
 use ib_v52_runtime::leaderboard::{
     LeaderboardOptionsV52, build_leaderboard_v52, write_leaderboard_v52,
 };
 use ib_v52_runtime::{
     LoadedRunConfigV52, ProbeOptionsV52, RunV52SuiteOptions, load_pricing_v52, load_probe_receipt,
-    load_run_config_v52, load_v52_dataset, report_v52_run, run_v52_probe, run_v52_suite,
-    validate_v52_dataset, verify_probe_receipt_binding, write_probe_receipt,
+    load_run_config_v52, load_v52_dataset, report_v52_run, run_v52_probe, run_v52_suite_with_seal,
+    validate_loaded_v52_dataset, verify_probe_receipt_binding, write_probe_receipt,
 };
 use ib_v52_schemas::{IgaEngineBackendV52, V52Suite};
 use serde_json::{Value, json};
@@ -255,8 +256,28 @@ fn default_v52_dataset(root: &Path, suite: &str) -> PathBuf {
     root.join("datasets/v52").join(suite)
 }
 
-fn engine_backend() -> Result<Arc<dyn IgaEngineBackendV52>> {
-    Ok(Arc::new(ib_v52_engine::IgaEngineV52))
+fn engine_backend() -> Arc<dyn IgaEngineBackendV52> {
+    Arc::new(ib_v52_engine::IgaEngineV52)
+}
+
+/// The environment file `run` and `probe` read: none with `--no-env-file`, else an explicit
+/// `--env-file` (which must exist), else `<root>/.env`.
+fn resolve_env_file(
+    root: &Path,
+    env_file: Option<PathBuf>,
+    no_env_file: bool,
+) -> Result<Option<PathBuf>> {
+    if no_env_file {
+        return Ok(None);
+    }
+    let Some(explicit) = env_file else {
+        return Ok(Some(root.join(".env")));
+    };
+    let path = paths::resolve(root, &explicit);
+    if !path.is_file() {
+        return Err(usage_error("explicit --env-file does not exist"));
+    }
+    Ok(Some(path))
 }
 
 pub async fn execute(
@@ -273,31 +294,11 @@ pub async fn execute(
         V52Command::Precommit(args) => Ok((precommit(root, args)?, 0)),
         V52Command::RevealVerify(args) => reveal_verify(root, args),
         V52Command::Run(args) => {
-            let resolved_env = if no_env_file {
-                None
-            } else if let Some(explicit) = env_file {
-                let path = paths::resolve(root, &explicit);
-                if !path.is_file() {
-                    return Err(usage_error("explicit --env-file does not exist"));
-                }
-                Some(path)
-            } else {
-                Some(root.join(".env"))
-            };
+            let resolved_env = resolve_env_file(root, env_file, no_env_file)?;
             Ok((run(root, resolved_env.as_deref(), args).await?, 0))
         }
         V52Command::Probe(args) => {
-            let resolved_env = if no_env_file {
-                None
-            } else if let Some(explicit) = env_file {
-                let path = paths::resolve(root, &explicit);
-                if !path.is_file() {
-                    return Err(usage_error("explicit --env-file does not exist"));
-                }
-                Some(path)
-            } else {
-                Some(root.join(".env"))
-            };
+            let resolved_env = resolve_env_file(root, env_file, no_env_file)?;
             probe(root, resolved_env.as_deref(), args).await
         }
     }
@@ -497,8 +498,10 @@ fn validate(root: &Path, args: V52ValidateArgs) -> Result<(Value, u8)> {
         None => default_v52_dataset(root, &args.suite),
     };
     let spec_path = root.join("SPEC-v5.2.md");
-    let engine = engine_backend()?;
-    let mut report = validate_v52_dataset(&dataset, &spec_path, engine.as_ref())?;
+    let engine = engine_backend();
+    // Read and parse the dataset once for every gate.
+    let loaded = load_v52_dataset(&dataset)?;
+    let mut report = validate_loaded_v52_dataset(&loaded, &spec_path, engine.as_ref())?;
     if report.suite_id != suite.as_str() {
         return Err(usage_error(format!(
             "dataset seal suite_id '{}' does not match --suite {suite}",
@@ -506,19 +509,12 @@ fn validate(root: &Path, args: V52ValidateArgs) -> Result<(Value, u8)> {
         )));
     }
     if args.double_build {
-        let gate = det_gate(
-            root,
-            &args.key,
-            suite,
-            &dataset,
-            &spec_path,
-            engine.as_ref(),
-        )?;
+        let gate = det_gate(root, &args.key, suite, &loaded, &spec_path, engine.as_ref())?;
         report.passed = report.passed && gate.passed;
         report.gates.push(gate);
     }
     if let Some(blind_path) = args.blind_configs.as_deref() {
-        let gate = blind_gate(root, blind_path, &dataset, &spec_path, engine.as_ref())?;
+        let gate = blind_gate(root, blind_path, &loaded, engine.as_ref())?;
         report.passed = report.passed && gate.passed;
         report.gates.push(gate);
     }
@@ -532,7 +528,7 @@ fn det_gate(
     root: &Path,
     key_args: &V52PrivateKeyArgs,
     suite: V52Suite,
-    dataset_dir: &Path,
+    dataset: &ib_v52_runtime::LoadedV52Dataset,
     spec_path: &Path,
     engine: &dyn IgaEngineBackendV52,
 ) -> Result<ib_v52_runtime::GateResultV52> {
@@ -593,14 +589,20 @@ fn det_gate(
     }
 
     // 3. Byte-exact rebuild from the suite key.
-    let loaded = match ib_v52_generator::load_v52_dataset(dataset_dir, Some(spec_path)) {
-        Ok(loaded) => loaded,
+    let sealed = match ib_v52_generator::load_v52_seal(
+        &dataset.dataset_dir,
+        &dataset.seal_bytes,
+        &dataset.episodes_bytes,
+        &dataset.oracles_bytes,
+        Some(spec_path),
+    ) {
+        Ok(sealed) => sealed,
         Err(e) => {
             errors.push(format!("failed to load dataset for rebuild: {e}"));
             return Ok(det_result(details, errors));
         }
     };
-    let (cells, commitment): (Vec<V52Cell>, _) = match &loaded.seal {
+    let (cells, commitment): (Vec<V52Cell>, _) = match &sealed {
         LoadedSealV52::Public(_) => {
             let cells = public
                 .iter()
@@ -654,9 +656,9 @@ fn det_gate(
         .context("failed to rebuild v5.2 dataset for --double-build check")?;
     let ep_bytes = ib_v52_generator::serialize_jsonl(&rebuilt.episodes)?;
     let or_bytes = ib_v52_generator::serialize_jsonl(&rebuilt.oracles)?;
-    let ep_eq = ep_bytes == loaded.episodes_bytes;
-    let or_eq = or_bytes == loaded.oracles_bytes;
-    let seal_eq = rebuilt_seal_matches(&loaded, &rebuilt, &ep_bytes, &or_bytes);
+    let ep_eq = ep_bytes == dataset.episodes_bytes;
+    let or_eq = or_bytes == dataset.oracles_bytes;
+    let seal_eq = rebuilt_seal_matches(&sealed, &rebuilt, &ep_bytes, &or_bytes);
     details.push(format!(
         "episodes_byte_exact={ep_eq}, oracles_byte_exact={or_eq}, seal_rebuilds_exactly={seal_eq}"
     ));
@@ -667,12 +669,12 @@ fn det_gate(
 }
 
 fn rebuilt_seal_matches(
-    loaded: &LoadedV52Dataset,
+    sealed: &LoadedSealV52,
     rebuilt: &ib_v52_generator::GeneratedV52Dataset,
     ep_bytes: &[u8],
     or_bytes: &[u8],
 ) -> bool {
-    let sealed_spec = match &loaded.seal {
+    let sealed_spec = match sealed {
         LoadedSealV52::Public(full) => full.spec_sha256.clone(),
         LoadedSealV52::Private { public_seal, .. } => public_seal.spec_sha256.clone(),
     };
@@ -680,7 +682,7 @@ fn rebuilt_seal_matches(
     else {
         return false;
     };
-    match &loaded.seal {
+    match sealed {
         LoadedSealV52::Public(sealed) => **sealed == full,
         LoadedSealV52::Private {
             public_seal,
@@ -709,16 +711,11 @@ fn det_result(details: Vec<String>, errors: Vec<String>) -> ib_v52_runtime::Gate
 fn blind_gate(
     root: &Path,
     blind_path: &Path,
-    dataset: &Path,
-    spec_path: &Path,
+    loaded: &ib_v52_runtime::LoadedV52Dataset,
     engine: &dyn IgaEngineBackendV52,
 ) -> Result<ib_v52_runtime::GateResultV52> {
-    let resolved_blind = paths::resolve(root, blind_path);
-    let raw = std::fs::read_to_string(&resolved_blind)
-        .with_context(|| format!("failed reading blind configs {}", resolved_blind.display()))?;
     let blind_map: BTreeMap<String, ib_v52_schemas::IgaDeploymentConfigV52> =
-        serde_json::from_str(&raw).context("failed parsing blind_configs JSON")?;
-    let loaded = ib_v52_generator::load_v52_dataset(dataset, Some(spec_path))?;
+        read_json(&paths::resolve(root, blind_path)).context("failed reading blind configs")?;
     let oracle_map: BTreeMap<&str, &ib_v52_schemas::SealedEpisodeOracleV52> = loaded
         .oracles
         .iter()
@@ -731,7 +728,10 @@ fn blind_gate(
             blind_details.push(format!("{}: missing from blind_configs", ep.episode_id));
             continue;
         };
-        let oracle = oracle_map[ep.episode_id.as_str()];
+        let Some(oracle) = oracle_map.get(ep.episode_id.as_str()) else {
+            blind_details.push(format!("{}: missing from oracles.jsonl", ep.episode_id));
+            continue;
+        };
         let score = engine
             .evaluate_commit(ep, oracle, cfg)
             .map_err(anyhow::Error::msg)?;
@@ -797,11 +797,7 @@ fn leaderboard(root: &Path, args: V52LeaderboardArgs) -> Result<Value> {
         Some(p) => Some(paths::resolve(root, p)),
         None => {
             // Default: the repository's published seal of the runs' suite, when present.
-            let manifest: Value = serde_json::from_slice(
-                &std::fs::read(runs[0].join("manifest.json")).with_context(|| {
-                    format!("failed to read {}/manifest.json", runs[0].display())
-                })?,
-            )?;
+            let manifest: Value = read_json(&runs[0].join("manifest.json"))?;
             manifest
                 .get("suite_id")
                 .and_then(Value::as_str)
@@ -809,15 +805,7 @@ fn leaderboard(root: &Path, args: V52LeaderboardArgs) -> Result<Value> {
                 .filter(|p| p.is_file())
         }
     };
-    let published_seal = match &seal_path {
-        Some(p) => Some(
-            serde_json::from_slice::<Value>(
-                &std::fs::read(p).with_context(|| format!("failed to read {}", p.display()))?,
-            )
-            .with_context(|| format!("{} is invalid JSON", p.display()))?,
-        ),
-        None => None,
-    };
+    let published_seal = seal_path.as_deref().map(read_json::<Value>).transpose()?;
     let pricing = args
         .pricing
         .as_deref()
@@ -825,10 +813,7 @@ fn leaderboard(root: &Path, args: V52LeaderboardArgs) -> Result<Value> {
         .transpose()?;
     let shortcut_ceiling = match &args.validation_report {
         Some(p) => {
-            let report: Value = serde_json::from_slice(
-                &std::fs::read(paths::resolve(root, p))
-                    .with_context(|| format!("failed to read {}", p.display()))?,
-            )?;
+            let report: Value = read_json(&paths::resolve(root, p))?;
             Some(
                 report
                     .pointer("/baselines/shortcut_ceiling")
@@ -868,12 +853,6 @@ fn leaderboard(root: &Path, args: V52LeaderboardArgs) -> Result<Value> {
     }))
 }
 
-fn now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 fn precommit(root: &Path, args: V52PrecommitArgs) -> Result<Value> {
     let out = paths::resolve(root, &args.out);
     if out.try_exists()? {
@@ -882,7 +861,7 @@ fn precommit(root: &Path, args: V52PrecommitArgs) -> Result<Value> {
             out.display()
         );
     }
-    if args.round_unix_time <= now_unix() {
+    if args.round_unix_time <= unix_now() {
         return Err(usage_error(
             "round_unix_time must be in the future: PRECOMMIT.json is pushed before the round is emitted (SPEC-v5.2 §2.2)",
         ));
@@ -909,8 +888,7 @@ fn precommit(root: &Path, args: V52PrecommitArgs) -> Result<Value> {
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut bytes = serde_json::to_vec_pretty(&precommit)?;
-    bytes.push(b'\n');
+    let bytes = pretty_json_bytes(&precommit)?;
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -974,9 +952,9 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
     }
     let spec_bytes =
         std::fs::read(root.join("SPEC-v5.2.md")).context("failed to read SPEC-v5.2.md")?;
-    // Seal check before anything else runs (SPEC-v5.2 §7.5); the runner re-checks it.
+    // Seal check before anything else runs (SPEC-v5.2 §7.5); the runner reuses the result.
     let ranked = args.suite == V52Suite::V52Core.as_str();
-    ib_v52_runtime::verify_v52_seal(&dataset, &spec_bytes, ranked)?;
+    let seal = ib_v52_runtime::verify_v52_seal(&dataset, &spec_bytes, ranked)?;
     let loaded_config = load_run_config_v52(&config_path)?;
     let loaded_pricing = load_pricing_v52(&pricing_path)?;
     let receipt = match &args.probe_receipt {
@@ -1002,7 +980,7 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
         });
     paths::ensure_output_separate(&out_dir, &dataset_path)?;
 
-    let engine = engine_backend()?;
+    let engine = engine_backend();
     let provider = construct_provider(&loaded_config.model_spec, env_file)?;
     let binary_sha256 = current_binary_sha256()?;
     let endpoint_identity = entry_endpoint_identity(root, &loaded_config, provider.as_ref());
@@ -1039,21 +1017,16 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
         ..RunV52SuiteOptions::default()
     };
 
-    // Publish the receipt with the entry (SPEC-v5.2 §11.2.1): copy its exact bytes into the run
-    // directory, where `v52 leaderboard` checks it against the bound receipt_sha256.
-    if let (Some(path), Some(loaded)) = (&args.probe_receipt, &receipt) {
-        let bytes = std::fs::read(paths::resolve(root, path))?;
-        if ib_core::hashing::sha256_hex(&bytes) != loaded.receipt_sha256 {
-            bail!("probe receipt changed while starting the run");
-        }
-        std::fs::create_dir_all(&out_dir)?;
-        std::fs::write(
-            out_dir.join(ib_v52_runtime::leaderboard::RUN_PROBE_RECEIPT_FILENAME_V52),
-            bytes,
+    // Publish the receipt with the entry (SPEC-v5.2 §11.2.1): copy the exact bytes that were
+    // hashed into the run directory, where `v52 leaderboard` checks them against receipt_sha256.
+    if let Some(loaded) = &receipt {
+        atomic_write(
+            &out_dir.join(ib_v52_runtime::leaderboard::RUN_PROBE_RECEIPT_FILENAME_V52),
+            &loaded.bytes,
         )?;
     }
 
-    let records = run_v52_suite(&dataset, &spec_bytes, engine, provider, &suite_options).await?;
+    let records = run_v52_suite_with_seal(&dataset, seal, engine, provider, &suite_options).await?;
     let summary = report_v52_run(&out_dir, &out_dir)?;
 
     Ok(json!({

@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ib_core::hashing::sha256_hex;
+use ib_v52_schemas::jsonl::JsonlError;
 use ib_v52_schemas::{
     CONTRACT_ID_V52, EpisodeV52, GENERATOR_VERSION_V52, PROTOCOL_ID_V52, SPEC_VERSION_V52,
     SealedEpisodeOracleV52, V52Suite,
@@ -270,14 +271,35 @@ pub fn derive_private_public_seal(
     })
 }
 
+/// Write `bytes` atomically: a synced sibling temp file renamed over `path`, so an interrupted
+/// build never leaves a truncated dataset or seal.
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), V52GeneratorError> {
-    fs::write(path, bytes).map_err(|source| V52GeneratorError::Io {
+    let io_err = |source| V52GeneratorError::Io {
         path: path.display().to_string(),
         source,
-    })
+    };
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("artifact");
+    let tmp = path.with_file_name(format!(".{file_name}.tmp.{}", std::process::id()));
+    let written = fs::File::create(&tmp)
+        .and_then(|mut file| {
+            std::io::Write::write_all(&mut file, bytes)?;
+            file.sync_all()
+        })
+        .and_then(|()| fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written.map_err(io_err)
 }
 
-fn pretty_json<T: Serialize>(value: &T) -> Result<String, V52GeneratorError> {
+/// Pretty-printed JSON plus one LF: the exact bytes of every written seal file.
+///
+/// # Errors
+/// Returns [`V52GeneratorError::Json`] when `value` cannot be serialized.
+pub fn pretty_json<T: Serialize>(value: &T) -> Result<String, V52GeneratorError> {
     Ok(format!("{}\n", serde_json::to_string_pretty(value)?))
 }
 
@@ -363,6 +385,53 @@ pub fn parse_seal_v52(
     }
 }
 
+/// Parse and verify a dataset's `SEAL.json` bytes against already-read dataset bytes, loading and
+/// cross-checking `PRIVATE_SEAL.json` from `dataset_dir` for a private suite when present.
+///
+/// # Errors
+/// Returns [`V52GeneratorError::SealVerification`], [`V52GeneratorError::Io`], or [`V52GeneratorError::Json`].
+pub fn load_v52_seal(
+    dataset_dir: &Path,
+    seal_bytes: &[u8],
+    episodes_bytes: &[u8],
+    oracles_bytes: &[u8],
+    spec_path: Option<&Path>,
+) -> Result<LoadedSealV52, V52GeneratorError> {
+    Ok(match parse_seal_v52(seal_bytes)? {
+        Ok(full) => {
+            verify_v52_seal(&full, episodes_bytes, oracles_bytes, spec_path)?;
+            LoadedSealV52::Public(Box::new(full))
+        }
+        Err(public_seal) => {
+            verify_private_public_seal(&public_seal, episodes_bytes, oracles_bytes, spec_path)?;
+            let private_path = dataset_dir.join(PRIVATE_SEAL_FILENAME_V52);
+            let full_seal =
+                if private_path
+                    .try_exists()
+                    .map_err(|source| V52GeneratorError::Io {
+                        path: private_path.display().to_string(),
+                        source,
+                    })?
+                {
+                    let full: DatasetSealV52 = serde_json::from_slice(&read_file(&private_path)?)?;
+                    verify_v52_seal(&full, episodes_bytes, oracles_bytes, spec_path)?;
+                    if derive_private_public_seal(&full)? != public_seal {
+                        return Err(V52GeneratorError::SealVerification(
+                            "PRIVATE_SEAL.json disagrees with the public SEAL.json".to_owned(),
+                        ));
+                    }
+                    Some(Box::new(full))
+                } else {
+                    None
+                };
+            LoadedSealV52::Private {
+                public_seal: Box::new(public_seal),
+                full_seal,
+            }
+        }
+    })
+}
+
 /// Load and cryptographically verify a sealed v5.2 dataset directory.
 ///
 /// If `spec_path` is provided, also verifies `spec_sha256` against the file at `spec_path`.
@@ -378,39 +447,13 @@ pub fn load_v52_dataset(
     let episodes_bytes = read_file(&dataset_dir.join(EPISODES_FILENAME_V52))?;
     let oracles_bytes = read_file(&dataset_dir.join(ORACLES_FILENAME_V52))?;
 
-    let seal = match parse_seal_v52(&seal_bytes)? {
-        Ok(full) => {
-            verify_v52_seal(&full, &episodes_bytes, &oracles_bytes, spec_path)?;
-            LoadedSealV52::Public(Box::new(full))
-        }
-        Err(public_seal) => {
-            verify_private_public_seal(&public_seal, &episodes_bytes, &oracles_bytes, spec_path)?;
-            let private_path = dataset_dir.join(PRIVATE_SEAL_FILENAME_V52);
-            let full_seal =
-                if private_path
-                    .try_exists()
-                    .map_err(|source| V52GeneratorError::Io {
-                        path: private_path.display().to_string(),
-                        source,
-                    })?
-                {
-                    let full: DatasetSealV52 = serde_json::from_slice(&read_file(&private_path)?)?;
-                    verify_v52_seal(&full, &episodes_bytes, &oracles_bytes, spec_path)?;
-                    if derive_private_public_seal(&full)? != public_seal {
-                        return Err(V52GeneratorError::SealVerification(
-                            "PRIVATE_SEAL.json disagrees with the public SEAL.json".to_owned(),
-                        ));
-                    }
-                    Some(Box::new(full))
-                } else {
-                    None
-                };
-            LoadedSealV52::Private {
-                public_seal: Box::new(public_seal),
-                full_seal,
-            }
-        }
-    };
+    let seal = load_v52_seal(
+        dataset_dir,
+        &seal_bytes,
+        &episodes_bytes,
+        &oracles_bytes,
+        spec_path,
+    )?;
 
     let episodes = parse_jsonl::<EpisodeV52>(&episodes_bytes)?;
     let oracles = parse_jsonl::<SealedEpisodeOracleV52>(&oracles_bytes)?;
@@ -612,15 +655,8 @@ pub fn verify_private_public_seal(
 }
 
 fn parse_jsonl<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<Vec<T>, V52GeneratorError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|e| V52GeneratorError::SealVerification(format!("non-UTF8 JSONL: {e}")))?;
-    let mut items = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        items.push(serde_json::from_str::<T>(trimmed)?);
-    }
-    Ok(items)
+    ib_v52_schemas::jsonl::parse_jsonl(bytes).map_err(|err| match err {
+        JsonlError::Utf8(e) => V52GeneratorError::SealVerification(format!("non-UTF8 JSONL: {e}")),
+        JsonlError::Line { source, .. } => V52GeneratorError::Json(source),
+    })
 }

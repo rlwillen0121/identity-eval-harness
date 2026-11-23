@@ -391,19 +391,14 @@ pub fn load_v52_dataset(dataset_dir: &Path) -> Result<LoadedV52Dataset> {
 }
 
 fn parse_jsonl<T: serde::de::DeserializeOwned>(bytes: &[u8], label: &str) -> Result<Vec<T>> {
-    let text =
-        std::str::from_utf8(bytes).with_context(|| format!("{label} must be valid UTF-8"))?;
-    let mut items = Vec::new();
-    for (idx, line) in text.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+    ib_v52_schemas::jsonl::parse_jsonl(bytes).map_err(|err| match err {
+        ib_v52_schemas::jsonl::JsonlError::Utf8(source) => {
+            anyhow::Error::new(source).context(format!("{label} must be valid UTF-8"))
         }
-        let item: T = serde_json::from_str(trimmed)
-            .with_context(|| format!("{label} line {} is invalid JSON", idx + 1))?;
-        items.push(item);
-    }
-    Ok(items)
+        ib_v52_schemas::jsonl::JsonlError::Line { line, source } => {
+            anyhow::Error::new(source).context(format!("{label} line {line} is invalid JSON"))
+        }
+    })
 }
 
 #[cfg(test)]
