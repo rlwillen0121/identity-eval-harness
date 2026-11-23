@@ -978,6 +978,8 @@ fn calibration_report(root: &Path, args: V52CalibrationReportArgs) -> Result<(Va
             "markdown_path": out_dir.join("calibration_report.md"),
             "suite_id": report["suite_id"],
             "overall_status": report["overall_status"],
+            "draft_turn_budget": report["draft_turn_budget"],
+            "freeze_turn_budget": report["freeze_turn_budget"],
             "checks": report["checks"],
         }),
         exit_code,
