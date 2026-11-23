@@ -593,7 +593,7 @@ fn replay_bundle_scores(
     let mut replayed = 0;
     let mut memo: BTreeMap<(String, String), Result<Value, ()>> = BTreeMap::new();
     for record in &run.records {
-        let stem = format!("{}_r{}", record.episode_id, record.repeat_index);
+        let stem = ib_v52_runtime::SlotIdV52::of_record(record).stem();
         let (Some(episode), Some(oracle)) = (
             suite.episodes.get(&record.episode_id),
             suite.oracles.get(&record.episode_id),

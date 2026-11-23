@@ -40,7 +40,7 @@ use crate::protocol::{
     MAX_OPENING_BYTES_V52, MAX_PROVIDER_RETRIES_V52, MAX_REQUEST_BYTES_V52, OUTPUT_LIMIT_BYTES_V52,
     PER_CALL_TIMEOUT_S_V52, PROTOCOL_ID_V52, RejectionReasonV52, WALL_CLOCK_GUARD_MS_V52,
     declared_tool_names_v52, delimiter_cut_offset_v52, parse_v52_action_turn,
-    render_v52_system_prompt,
+    render_v52_system_prompt, system_prompt_sha256_v52, system_prompt_v52,
 };
 use crate::transcript::{
     ActionResultV52, CanonicalRequestV52, DelimiterCutV52, TurnOutcomeV52, TurnRecordV52,
@@ -817,7 +817,7 @@ fn finalize_record(
         tool_trace: runtime.tool_trace.clone(),
         score,
         protocol_id: Some(PROTOCOL_ID_V52.to_owned()),
-        system_prompt_sha256: Some(sha256_hex(render_v52_system_prompt().as_bytes())),
+        system_prompt_sha256: Some(system_prompt_sha256_v52().to_owned()),
         system_prompt_channel: Some(channel.as_str().to_owned()),
         format_error_turns: count_rejections(RejectionReasonV52::FormatError),
         output_limit_turns: count_rejections(RejectionReasonV52::OutputLimit),
@@ -879,7 +879,7 @@ pub async fn run_v52_episode_from_checkpoint(
 /// System prompt plus Turn-1 message bytes for an episode (`max_opening_bytes`, §7.2).
 #[must_use]
 pub fn opening_request_bytes_v52(episode: &EpisodeV52) -> usize {
-    render_v52_system_prompt().len() + render_v52_episode_opening(None, episode).len()
+    system_prompt_v52().len() + render_v52_episode_opening(None, episode).len()
 }
 
 fn slot_header(slot: &SlotIdV52, opening: &str, channel: SystemChannel) -> Value {
@@ -889,7 +889,7 @@ fn slot_header(slot: &SlotIdV52, opening: &str, channel: SystemChannel) -> Value
         "repeat_index": slot.repeat_index,
         "protocol_id": PROTOCOL_ID_V52,
         "compaction_policy_id": COMPACTION_POLICY_ID_V52,
-        "system_prompt_sha256": sha256_hex(render_v52_system_prompt().as_bytes()),
+        "system_prompt_sha256": system_prompt_sha256_v52(),
         "system_prompt_channel": channel.as_str(),
         "opening_sha256": sha256_hex(opening.as_bytes()),
         "opening": opening,
@@ -1026,13 +1026,7 @@ fn load_record_lines(
         }
         let record: EpisodeExecutionRecordV52 = serde_json::from_str(line)
             .with_context(|| format!("invalid record at {} line {}", path.display(), idx + 1))?;
-        out.insert(
-            SlotIdV52 {
-                episode_id: record.episode_id.clone(),
-                repeat_index: record.repeat_index,
-            },
-            record,
-        );
+        out.insert(SlotIdV52::of_record(&record), record);
     }
     Ok(())
 }
@@ -1070,7 +1064,7 @@ pub async fn run_v52_suite(
         .iter()
         .map(|o| (o.episode_id.as_str(), o))
         .collect();
-    let system_prompt_len = render_v52_system_prompt().len();
+    let system_prompt_len = system_prompt_v52().len();
     let mut episode_by_id: BTreeMap<String, Arc<(EpisodeV52, SealedEpisodeOracleV52, String)>> =
         BTreeMap::new();
     for episode in &dataset.episodes {
@@ -1094,7 +1088,7 @@ pub async fn run_v52_suite(
     let out_dir = options.out_dir.clone();
     let _lock = RunDirLockV52::acquire(&out_dir)?;
 
-    let system_prompt_sha256 = sha256_hex(render_v52_system_prompt().as_bytes());
+    let system_prompt_sha256 = system_prompt_sha256_v52().to_owned();
     let channel = provider.system_channel();
     let repeats = options.repeats.max(1);
     let concurrency = options.concurrency.max(1);

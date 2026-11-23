@@ -131,6 +131,15 @@ pub struct SlotIdV52 {
 }
 
 impl SlotIdV52 {
+    /// The slot an execution record belongs to.
+    #[must_use]
+    pub fn of_record(record: &ib_v52_schemas::EpisodeExecutionRecordV52) -> Self {
+        Self {
+            episode_id: record.episode_id.clone(),
+            repeat_index: record.repeat_index,
+        }
+    }
+
     /// `<episode_id>_r<repeat>` used for transcript, config and checkpoint file names.
     #[must_use]
     pub fn stem(&self) -> String {

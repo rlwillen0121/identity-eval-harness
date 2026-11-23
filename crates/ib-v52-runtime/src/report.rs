@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::fsutil::{atomic_write, write_pretty_json};
 use crate::metrics::slot_metrics_v52;
+use crate::stats::type7_quantile;
 
 /// Optional run metadata extracted from `manifest.json` when present.
 #[derive(Debug, Clone, Default)]
@@ -256,11 +257,8 @@ pub fn summarize_v52_records(
     };
 
     wall_ms_observed.sort_unstable();
-    let median_active_wall_ms = match wall_ms_observed.len() {
-        0 => None,
-        n if n % 2 == 1 => Some(wall_ms_observed[n / 2] as f64),
-        n => Some((wall_ms_observed[n / 2 - 1] as f64 + wall_ms_observed[n / 2] as f64) / 2.0),
-    };
+    let wall_ms_sorted: Vec<f64> = wall_ms_observed.iter().map(|&ms| ms as f64).collect();
+    let median_active_wall_ms = type7_quantile(&wall_ms_sorted, 0.5);
     let turns_total = turns_observed_sum;
 
     let mut passed_families = Vec::new();
