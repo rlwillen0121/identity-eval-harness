@@ -42,8 +42,7 @@ h1 { font: 400 clamp(30px, 3.5vw, 44px)/1.1 var(--serif); letter-spacing: -.02em
 .text-link { margin-left: auto; color: var(--ink-2); font-size: 13px; text-decoration: none; white-space: nowrap; }
 .text-link::after { content: ' →'; }
 .text-link:hover { color: var(--ink); }
-.study-note { margin: 12px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; max-width: 96ch; text-wrap: pretty; }
-.board { margin-top: 20px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); scroll-margin-top: 16px; }
+.board { margin-top: 26px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); scroll-margin-top: 16px; }
 
 /* Sections */
 .section { margin-top: 112px; border-top: 1px solid var(--rule); padding-top: 40px; min-width: 0; }
@@ -79,7 +78,6 @@ p { margin: 0 0 16px; }
 .updates-date-block { display: flex; flex-wrap: wrap; align-items: baseline; align-content: flex-start; gap: 6px; padding-top: 9px; }
 .updates-date { color: var(--ink-2); font: 11px/1.5 var(--mono); }
 .updates-launch { border: 1px solid var(--rule); border-radius: 999px; padding: 0 6px; color: var(--muted); font: 10px/1.6 var(--mono); }
-.updates-note { max-width: 70ch; margin: 7px 0 8px; color: var(--ink-2); font-size: 13.5px; text-wrap: pretty; }
 .updates-models { margin: 0 -8px; padding: 0; list-style: none; }
 .updates-models li + li { background: linear-gradient(var(--rule), var(--rule)) 8px 0 / calc(100% - 16px) 1px no-repeat; }
 .update-model-button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: 6px; padding: 8px; text-align: left; }
@@ -104,7 +102,7 @@ p { margin: 0 0 16px; }
 /* Footer */
 .site-footer { margin-top: 128px; padding-block: 32px 48px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 12.5px; display: flex; justify-content: space-between; gap: 32px; }
 .site-footer p { margin: 0; }
-.footer-brand { display: flex; flex-direction: column; gap: 10px; max-width: 58ch; }
+.footer-brand { display: flex; flex-direction: column; gap: 10px; max-width: 44ch; }
 .footer-brand .wordmark { color: var(--ink); }
 .footer-meta { display: flex; flex-direction: column; gap: 4px; max-width: 46ch; text-align: right; }
 
@@ -132,8 +130,7 @@ p { margin: 0 0 16px; }
   .hero-description { font-size: 15px; }
   .hero-meta { gap: 4px 18px; }
   .text-link { margin-left: 0; }
-  .study-note { font-size: 12px; }
-  .board { margin-top: 16px; border-radius: 14px; }
+  .board { margin-top: 20px; border-radius: 14px; }
   .section { margin-top: 72px; padding-top: 32px; }
   h2 { margin-bottom: 24px; }
   .section-lede { font-size: 15px; margin-bottom: 26px; }
