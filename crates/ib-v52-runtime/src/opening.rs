@@ -45,7 +45,7 @@ pub fn render_v52_assignment_header(episode: &EpisodeV52) -> String {
     )
 }
 
-/// Render `<initial_listing>`: the compact JSON serialization of `list_workspace()` at episode start.
+/// Render `<initial_listing>`: compact `list_workspace()` JSON at episode start, including empty notes.
 #[must_use]
 pub fn render_v52_initial_listing(runtime: &VirtualWorkspaceRuntimeV52<'_>) -> String {
     listing_text(&runtime.snapshot_workspace_listing())

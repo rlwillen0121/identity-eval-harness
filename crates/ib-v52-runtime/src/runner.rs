@@ -78,7 +78,7 @@ pub struct RunV52EpisodeOptions {
     pub retry_backoff_base_ms: u64,
     pub wall_clock_guard_ms: u64,
     pub per_call_timeout_s: u64,
-    /// Canonical request ceiling. Always `MAX_REQUEST_BYTES_V52` (`64_000`) in
+    /// Canonical request ceiling. Always `MAX_REQUEST_BYTES_V52` (`96_000`) in
     /// `identitybench v52 run`; tests may lower it.
     pub max_request_bytes: usize,
 }

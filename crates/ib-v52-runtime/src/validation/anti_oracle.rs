@@ -5,7 +5,9 @@ use ib_v52_schemas::{
 };
 use serde_json::{Value, json};
 
-use crate::workspace::{MAX_READ_RESULT_BYTES, VirtualWorkspaceRuntimeV52, serialize_config_file};
+use crate::workspace::{
+    MAX_READ_RESULT_BYTES, VirtualWorkspaceRuntimeV52, WORKING_NOTES_PATH, serialize_config_file,
+};
 
 pub(super) fn exercise(
     episode: &EpisodeV52,
@@ -47,6 +49,22 @@ pub(super) fn exercise(
     for tool in crate::protocol::declared_tool_names_v52() {
         call(&tool, json!({"invalid_field": true}), Some("SCHEMA_ERROR"))?;
     }
+    call("list_workspace", json!({}), Some("OK"))?;
+    read_entire_public_file(WORKING_NOTES_PATH, "", &mut call)?;
+    let notes = "r9-notes-marker\nAgent-authored fixture text.";
+    let receipt = call("update_notes", json!({"content":notes}), Some("SAVED"))?;
+    ensure!(
+        receipt
+            == json!({"status":"SAVED", "bytes":notes.len(), "sha256":ib_core::hashing::sha256_hex(notes.as_bytes())}),
+        "working notes returned an unexpected receipt"
+    );
+    read_entire_public_file(WORKING_NOTES_PATH, notes, &mut call)?;
+    let hits = call(
+        "search_workspace",
+        json!({"pattern":"r9-notes-marker","path_glob":WORKING_NOTES_PATH}),
+        None,
+    )?;
+    ensure!(hits["total"] == 1, "search did not find the working notes");
     call("list_workspace", json!({}), Some("OK"))?;
     call(
         "read_workspace_file",

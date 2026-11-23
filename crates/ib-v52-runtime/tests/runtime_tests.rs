@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use ib_core::hashing::sha256_hex;
 use ib_providers::base::{ModelRequest, ModelResponse, Provider, ProviderCapabilities};
+use ib_v52_runtime::workspace::{MAX_WORKING_NOTES_BYTES, WORKING_NOTES_PATH, WorkspaceStateV52};
 use ib_v52_runtime::{
     PLATFORM_REFERENCE_V52, RunV52EpisodeOptions, VirtualWorkspaceRuntimeV52, load_pricing_v52,
     load_run_config_v52, render_v52_report_markdown, run_v52_episode, summarize_v52_records,
@@ -558,7 +559,67 @@ fn lean_opening_and_on_demand_reference_preserve_the_wire_contracts() {
 }
 
 #[test]
-fn virtual_workspace_all_seven_tools_and_guards() {
+fn working_notes_enforce_the_utf8_byte_limit_and_replace_atomically() {
+    let episode = sample_episode("notes", "F01");
+    let mut workspace = VirtualWorkspaceRuntimeV52::new(&episode, &ib_v52_engine::IgaEngineV52);
+    let initial = workspace.snapshot_workspace_listing();
+    assert_eq!(
+        initial["notes_file"],
+        json!({"path":WORKING_NOTES_PATH,"byte_len":0,"line_count":0})
+    );
+    let read = json!({"path":WORKING_NOTES_PATH});
+    assert_eq!(
+        workspace.execute_tool_call(1, "read_workspace_file", read.clone())["content"],
+        ""
+    );
+
+    let exact = "é".repeat(MAX_WORKING_NOTES_BYTES / 2);
+    assert_eq!(
+        workspace.execute_tool_call(1, "update_notes", json!({"content":exact})),
+        json!({"status":"SAVED","bytes":MAX_WORKING_NOTES_BYTES,"sha256":sha256_hex(exact.as_bytes())})
+    );
+    let listed = workspace.execute_tool_call(1, "list_workspace", json!({}));
+    assert_eq!(listed["notes_file"]["byte_len"], MAX_WORKING_NOTES_BYTES);
+    assert_eq!(listed["notes_file"]["line_count"], 1);
+    for args in [
+        json!({"content":format!("{exact}a")}),
+        json!({"content":42}),
+        json!({}),
+    ] {
+        let denied = workspace.execute_tool_call(2, "update_notes", args);
+        assert_eq!(denied["status"], "SCHEMA_ERROR");
+        assert_eq!(denied["pointer"], "/content");
+        assert_eq!(workspace.snapshot_state().working_notes, exact);
+    }
+
+    workspace.execute_tool_call(3, "update_notes", json!({"content":"new\nline"}));
+    assert_eq!(
+        workspace.execute_tool_call(3, "read_workspace_file", read.clone())["content"],
+        "new\nline"
+    );
+    let hits = workspace.execute_tool_call(
+        3,
+        "search_workspace",
+        json!({"pattern":"line","path_glob":"notes/**"}),
+    );
+    assert_eq!(
+        hits["matches"],
+        json!([{"path":WORKING_NOTES_PATH,"line":2,"text":"line"}])
+    );
+    workspace.execute_tool_call(4, "update_notes", json!({"content":""}));
+    assert_eq!(workspace.snapshot_workspace_listing(), initial);
+
+    let mut old_checkpoint = serde_json::to_value(workspace.snapshot_state()).unwrap();
+    old_checkpoint
+        .as_object_mut()
+        .unwrap()
+        .remove("working_notes");
+    let decoded: WorkspaceStateV52 = serde_json::from_value(old_checkpoint).unwrap();
+    assert!(decoded.working_notes.is_empty());
+}
+
+#[test]
+fn virtual_workspace_tools_and_guards() {
     let ep = sample_episode("ep_01", "F01");
     let engine = MockEngine::default();
     let mut rt = VirtualWorkspaceRuntimeV52::new(&ep, &engine);

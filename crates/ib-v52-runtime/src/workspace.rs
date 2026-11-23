@@ -36,6 +36,8 @@ pub const MAX_SEARCH_PATTERN_BYTES: usize = 1_024;
 pub const MAX_SEARCH_GLOB_BYTES: usize = 256;
 pub const MAX_CONFIG_PATCH_BYTES: usize = 64 * 1024;
 pub const MAX_CONFIG_WRITE_BYTES: usize = 1024 * 1024;
+pub const WORKING_NOTES_PATH: &str = "notes/working_notes.md";
+pub const MAX_WORKING_NOTES_BYTES: usize = 8_192;
 
 #[derive(Serialize)]
 struct ReadIdentityDocumentV52<'a> {
@@ -544,6 +546,8 @@ pub struct WorkspaceStateV52 {
     pub modified_configs: BTreeSet<String>,
     pub committed: bool,
     pub commit_notes: Option<String>,
+    #[serde(default)]
+    pub working_notes: String,
 }
 
 impl WorkspaceStateV52 {
@@ -556,6 +560,7 @@ impl WorkspaceStateV52 {
             modified_configs: BTreeSet::new(),
             committed: false,
             commit_notes: None,
+            working_notes: String::new(),
         }
     }
 
@@ -568,6 +573,7 @@ impl WorkspaceStateV52 {
             &self.modified_configs,
             self.dry_runs_used,
             self.committed,
+            &self.working_notes,
         )
     }
 }
@@ -606,6 +612,7 @@ pub struct VirtualWorkspaceRuntimeV52<'a> {
     pub commit_notes: Option<String>,
     pub tool_trace: Vec<ToolCallTraceV52>,
     pub modified_configs: BTreeSet<String>,
+    working_notes: String,
     control: Option<RunControlV52>,
     pending_read_identity: Option<String>,
     pending_search_hits: Option<Vec<WorkspaceSearchHitV52>>,
@@ -633,6 +640,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             commit_notes: None,
             tool_trace: Vec::new(),
             modified_configs: BTreeSet::new(),
+            working_notes: String::new(),
             control,
             pending_read_identity: None,
             pending_search_hits: None,
@@ -648,6 +656,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             modified_configs: self.modified_configs.clone(),
             committed: self.committed,
             commit_notes: self.commit_notes.clone(),
+            working_notes: self.working_notes.clone(),
         }
     }
 
@@ -658,6 +667,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
         self.modified_configs = state.modified_configs;
         self.committed = state.committed;
         self.commit_notes = state.commit_notes;
+        self.working_notes = state.working_notes;
     }
 
     #[must_use]
@@ -725,7 +735,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
                 .get("end_line")
                 .and_then(Value::as_u64)
                 .and_then(|n| usize::try_from(n).ok());
-            let file_text = path.as_deref().and_then(|p| self.file_text(p));
+            let file_text = path.as_deref().and_then(|p| self.file_text_cow(p));
             entry.file_sha256 = file_text.as_deref().map(|text| sha256_hex(text.as_bytes()));
             entry.normalized_path = path;
             if let (Some(path), Some(file_text), Some(file_sha256)) = (
@@ -778,16 +788,11 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             )
     }
 
-    /// Whole current text of a read-only artifact or `config/*.json` file.
-    fn file_text(&self, path: &str) -> Option<String> {
-        self.episode
-            .readonly_files
-            .get(path)
-            .cloned()
-            .or_else(|| self.serialize_config_file(path))
-    }
-
+    /// Whole current text of a workspace file.
     fn file_text_cow(&self, path: &str) -> Option<Cow<'_, str>> {
+        if path == WORKING_NOTES_PATH {
+            return Some(Cow::Borrowed(&self.working_notes));
+        }
         self.episode
             .readonly_files
             .get(path)
@@ -804,6 +809,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             &self.modified_configs,
             self.dry_runs_used,
             self.committed,
+            &self.working_notes,
         )
     }
 
@@ -823,6 +829,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             "write_workspace_file" => self.edit_config(name, "content", arg_map),
             "search_workspace" => self.handle_search_workspace(arg_map),
             "patch_config_file" => self.edit_config(name, "patch", arg_map),
+            "update_notes" => self.handle_update_notes(arg_map),
             "preview_identity_profile" => self.handle_preview_identity_profile(arg_map),
             "test_connector_sandbox" => self.handle_test_connector_sandbox(arg_map),
             "simulate_golive_dry_run" => {
@@ -877,11 +884,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             );
         }
 
-        let content = if let Some(ro) = self.episode.readonly_files.get(path) {
-            ro.clone()
-        } else if let Some(cfg) = self.serialize_config_file(path) {
-            cfg
-        } else {
+        let Some(content) = self.file_text_cow(path) else {
             return json!({
                 "status": "FILE_NOT_FOUND",
                 "path": raw_path,
@@ -902,6 +905,21 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             }
             Err(err) => json!({"status":"READ_LIMIT_EXCEEDED","error":err}),
         }
+    }
+
+    fn handle_update_notes(&mut self, args: &Map<String, Value>) -> Value {
+        let tool = "update_notes";
+        if let Err(err) = check_allowed_keys(args, &["content"]) {
+            return schema_argument_error(tool, err);
+        }
+        let Some(content) = args.get("content").and_then(Value::as_str) else {
+            return schema_error_at(tool, "/content", "missing required string field 'content'");
+        };
+        if content.len() > MAX_WORKING_NOTES_BYTES {
+            return schema_error_at(tool, "/content", "'content' exceeds 8,192 UTF-8 bytes");
+        }
+        self.working_notes = content.to_owned();
+        json!({"status":"SAVED", "bytes":content.len(), "sha256":sha256_hex(content.as_bytes())})
     }
 
     fn edit_config(&mut self, tool: &str, field: &str, args: &Map<String, Value>) -> Value {
@@ -1092,7 +1110,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             .episode
             .readonly_files
             .len()
-            .saturating_add(CONFIG_FILES_V52.len());
+            .saturating_add(CONFIG_FILES_V52.len() + 1);
         if inventory_size > MAX_SEARCH_INVENTORY_FILES {
             return search_limit_error(format!(
                 "workspace inventory exceeds {MAX_SEARCH_INVENTORY_FILES} paths"
@@ -1105,6 +1123,7 @@ impl<'a> VirtualWorkspaceRuntimeV52<'a> {
             .keys()
             .map(String::as_str)
             .chain(CONFIG_FILES_V52)
+            .chain([WORKING_NOTES_PATH])
         {
             if !is_searchable_path(path) || (self.control.is_some() && !control_readable_path(path))
             {
@@ -1375,6 +1394,7 @@ fn workspace_listing(
     modified_configs: &BTreeSet<String>,
     dry_runs_used: usize,
     committed: bool,
+    working_notes: &str,
 ) -> Value {
     let readonly_files: Vec<Value> = episode
         .readonly_files
@@ -1407,6 +1427,11 @@ fn workspace_listing(
         "status": "OK",
         "readonly_files": readonly_files,
         "config_files": config_files,
+        "notes_file": {
+            "path": WORKING_NOTES_PATH,
+            "byte_len": working_notes.len(),
+            "line_count": count_lines(working_notes),
+        },
         "dry_runs_used": dry_runs_used,
         "dry_runs_remaining": episode.max_golive_dry_runs.saturating_sub(dry_runs_used),
         "committed": committed,
@@ -1448,11 +1473,18 @@ pub(crate) fn is_searchable_path(path: &str) -> bool {
     let canonical = path
         .split('/')
         .all(|segment| !segment.is_empty() && segment != "." && segment != "..");
-    canonical && (CONFIG_FILES_V52.contains(&path) || is_readonly_prefix(path))
+    canonical
+        && (CONFIG_FILES_V52.contains(&path)
+            || path == WORKING_NOTES_PATH
+            || is_readonly_prefix(path))
 }
 
 fn control_readable_path(path: &str) -> bool {
-    CONFIG_FILES_V52.contains(&path) || path == "reference/platform_reference_full.md"
+    CONFIG_FILES_V52.contains(&path)
+        || matches!(
+            path,
+            WORKING_NOTES_PATH | "reference/platform_reference_full.md"
+        )
 }
 
 fn glob_allowed_in_control(raw_glob: &str) -> bool {
@@ -1461,7 +1493,9 @@ fn glob_allowed_in_control(raw_glob: &str) -> bool {
         .char_indices()
         .find_map(|(idx, ch)| matches!(ch, '*' | '?').then_some(&glob[..idx]))
         .unwrap_or(glob);
-    (static_prefix.starts_with("config/") || static_prefix.starts_with("reference/"))
+    (static_prefix.starts_with("config/")
+        || static_prefix.starts_with("reference/")
+        || static_prefix.starts_with("notes/"))
         && !glob.split('/').any(|segment| segment == "..")
 }
 
@@ -1541,7 +1575,7 @@ pub fn tool_definitions_v52() -> Vec<ToolSpec> {
     vec![
         tool_spec(
             "list_workspace",
-            "List all read-only scenario artifacts, all 12 config/*.json files with validation status, and remaining go-live dry-run credits.",
+            "List all read-only scenario artifacts, all 12 config/*.json files with validation status, the working notes file, and remaining go-live dry-run credits.",
             json!({
                 "type": "object",
                 "properties": {},
@@ -1551,7 +1585,7 @@ pub fn tool_definitions_v52() -> Vec<ToolSpec> {
         ),
         tool_spec(
             "read_workspace_file",
-            "Read a read-only scenario artifact or current config/*.json file. start_line defaults to 1; inclusive end_line is optional (80 lines by default, at most 120 per call). byte_offset optionally resumes at a UTF-8 boundary within start_line. The complete serialized result is capped at 8,192 bytes. If truncated, continue from continuation.start_line and continuation.byte_offset, keeping an explicit end_line if supplied.",
+            "Read a read-only scenario artifact, current config/*.json file, or notes/working_notes.md. start_line defaults to 1; inclusive end_line is optional (80 lines by default, at most 120 per call). byte_offset optionally resumes at a UTF-8 boundary within start_line. The complete serialized result is capped at 8,192 bytes. If truncated, continue from continuation.start_line and continuation.byte_offset, keeping an explicit end_line if supplied.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1630,7 +1664,7 @@ pub fn tool_definitions_v52() -> Vec<ToolSpec> {
         ),
         tool_spec(
             "search_workspace",
-            "Search workspace text for a literal, case-sensitive pattern to locate candidate lines; read a matching file range for surrounding context. Optional path_glob uses * within a path component, ** across path separators, and ? for one non-slash character. max_matches defaults to 50 (1..=200); page is 1-based and defaults to 1. Matching line text is capped at 400 UTF-8 bytes. Search only checks reference/, context/, legacy_iiq/, sources/, target_specs/, and config/*.json. Limits: 4,096 inventory paths, 1,024 candidate files, 1,024 bytes per path, 16 MiB aggregate in-scope file text. Limit failures return no partial matches.",
+            "Search workspace text for a literal, case-sensitive pattern to locate candidate lines; read a matching file range for surrounding context. Optional path_glob uses * within a path component, ** across path separators, and ? for one non-slash character. max_matches defaults to 50 (1..=200); page is 1-based and defaults to 1. Matching line text is capped at 400 UTF-8 bytes. Search only checks reference/, context/, legacy_iiq/, sources/, target_specs/, config/*.json, and notes/working_notes.md. Limits: 4,096 inventory paths, 1,024 candidate files, 1,024 bytes per path, 16 MiB aggregate in-scope file text. Limit failures return no partial matches.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1653,6 +1687,16 @@ pub fn tool_definitions_v52() -> Vec<ToolSpec> {
                     "patch": {}
                 },
                 "required": ["path", "patch"],
+                "additionalProperties": false
+            }),
+        ),
+        tool_spec(
+            "update_notes",
+            "Save optional working notes (≤ 8 KB) that persist in the workspace across turns, even when older tool outputs are compacted. Replaces the previous notes.",
+            json!({
+                "type": "object",
+                "properties": {"content": {"type": "string"}},
+                "required": ["content"],
                 "additionalProperties": false
             }),
         ),

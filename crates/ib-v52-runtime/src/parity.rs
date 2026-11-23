@@ -9,7 +9,7 @@
 //!   prefixes of each other.
 //! - **Compaction identity:** a deterministic multi-turn fixture over `max_request_bytes` exercises
 //!   steps 0–9, the rollback fallback, `OUTPUT_LIMIT` and `FORMAT_ERROR` generations, search outputs,
-//!   repeated read/search fingerprints, `patch_config_file`, and both string and object write
+//!   repeated read/search fingerprints, `patch_config_file`, `update_notes`, and string and object write
 //!   `content`; every request stays within `max_request_bytes`.
 //! - **Worst-case bound:** a 49-turn, eight-action transcript at the maximum opening and output
 //!   limits fits after rollback and final result compaction.
@@ -18,6 +18,7 @@
 //! - **Adapter configuration:** zero adapter retries and no retry prompt.
 
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
 
 use ib_core::hashing::sha256_hex;
 use ib_providers::base::SystemChannel;
@@ -26,16 +27,27 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::opening::render_v52_episode_opening;
-pub use crate::protocol::{MAX_OPENING_BYTES_V52, MAX_REQUEST_BYTES_V52};
 use crate::protocol::{
-    RejectionReasonV52, compact_json, delimiter_cut_offset_v52, render_v52_system_prompt,
-    render_wire_message,
+    MAX_ACTIONS_PER_TURN_V52, MAX_ASSISTANT_TURNS_V52, RejectionReasonV52, compact_json,
+    delimiter_cut_offset_v52, render_v52_system_prompt, render_wire_message,
 };
+pub use crate::protocol::{MAX_OPENING_BYTES_V52, MAX_REQUEST_BYTES_V52};
 use crate::transcript::{
     ActionResultV52, CanonicalRequestV52, DelimiterCutV52, TurnOutcomeV52, TurnRecordV52,
     TurnUsageV52, build_canonical_request, render_uncompacted_transcript, rolled_back_outputs,
 };
 use crate::validation::GateResultV52;
+use crate::workspace::{MAX_WORKING_NOTES_BYTES, WORKING_NOTES_PATH};
+
+// §7.2: 54 header bytes + 115 generation-marker bytes + 529 accepted or 437 rollback result bytes.
+const MAX_FINAL_ACCEPTED_TURN_BYTES: usize = 698;
+const MAX_FINAL_ROLLED_BACK_TURN_BYTES: usize = 606;
+const POST_FALLBACK_BOUND_BYTES: usize = MAX_OPENING_BYTES_V52
+    + (MAX_ASSISTANT_TURNS_V52 - 2) * MAX_FINAL_ACCEPTED_TURN_BYTES
+    + MAX_FINAL_ROLLED_BACK_TURN_BYTES;
+const FINAL_BOUND_WITHOUT_ROLLBACK_BYTES: usize =
+    MAX_OPENING_BYTES_V52 + (MAX_ASSISTANT_TURNS_V52 - 1) * MAX_FINAL_ACCEPTED_TURN_BYTES;
+const _: () = assert!(FINAL_BOUND_WITHOUT_ROLLBACK_BYTES <= MAX_REQUEST_BYTES_V52);
 
 /// One canonical request as a transport would receive it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,7 +230,7 @@ fn maximum_opening(system_prompt: &str) -> String {
 }
 
 fn capped_eight_action_turn(turn: usize, result_bytes: usize) -> TurnRecordV52 {
-    let mut actions: Vec<Value> = (0..8)
+    let mut actions: Vec<Value> = (0..MAX_ACTIONS_PER_TURN_V52)
         .map(|idx| {
             let arguments = if idx == 0 {
                 json!({"note": ""})
@@ -260,6 +272,13 @@ fn capped_eight_action_turn(turn: usize, result_bytes: usize) -> TurnRecordV52 {
 /// Exact turn-50 witness for the §7.2 post-fallback bound. The first build must require the
 /// workspace rollback; the second is the request sent after rollback and step 9.
 fn worst_case_postfallback_request() -> Result<CanonicalRequestV52, String> {
+    static REQUEST: OnceLock<Result<CanonicalRequestV52, String>> = OnceLock::new();
+    REQUEST
+        .get_or_init(build_worst_case_postfallback_request)
+        .clone()
+}
+
+fn build_worst_case_postfallback_request() -> Result<CanonicalRequestV52, String> {
     let maximum_tool = crate::workspace::tool_definitions_v52()
         .into_iter()
         .max_by_key(|tool| tool.name.len())
@@ -271,24 +290,9 @@ fn worst_case_postfallback_request() -> Result<CanonicalRequestV52, String> {
     }
     let system_prompt = render_v52_system_prompt();
     let opening = maximum_opening(&system_prompt);
-    let mut history = Vec::with_capacity(49);
-    for turn in 1..=48 {
-        let actions = (0..8)
-            .map(|_| {
-                (
-                    json!({"action":"preview_identity_profile","arguments":{}}),
-                    json!({
-                        "status":"SCHEMA_ERROR",
-                        "tool_name":"preview_identity_profile",
-                        "pointer":"/person_keys",
-                        "error":filler("result", 4_000)
-                    }),
-                )
-            })
-            .collect();
-        history.push(accepted(turn, actions));
-    }
-    history.push(capped_eight_action_turn(49, 4_000));
+    let mut history: Vec<_> = (1..MAX_ASSISTANT_TURNS_V52)
+        .map(|turn| capped_eight_action_turn(turn, 4_000))
+        .collect();
     if build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52).is_ok() {
         return Err("worst-case turn-50 witness did not require rollback".to_owned());
     }
@@ -319,11 +323,19 @@ fn worst_case_postfallback_request() -> Result<CanonicalRequestV52, String> {
     if request.stats.per_step[9] == 0 {
         return Err("worst-case turn-50 witness did not exercise final compaction".to_owned());
     }
+    // Turns 1–9 each use one fewer digit in both headers and the generation marker.
+    let expected = POST_FALLBACK_BOUND_BYTES - 9 * 3;
+    if request.request_bytes != expected {
+        return Err(format!(
+            "worst-case turn-50 witness is {} bytes; expected {expected}",
+            request.request_bytes
+        ));
+    }
     Ok(request)
 }
 
 /// Small request witnesses ensure the gate observes the step-0 and step-2 replacements even if
-/// the larger end-to-end fixture fits earlier under the tighter 64 KB ceiling.
+/// the larger end-to-end fixture fits earlier in the compaction sequence.
 fn early_compaction_witnesses_v52() -> Result<Vec<CanonicalRequestV52>, String> {
     let system_prompt = "S";
     let opening = "=== SCENARIO ===";
@@ -381,7 +393,34 @@ fn early_compaction_witnesses_v52() -> Result<Vec<CanonicalRequestV52>, String> 
     if step_two.stats.per_step[2] == 0 {
         return Err("step-2 parity witness did not compact a config read".to_owned());
     }
-    Ok(vec![step_zero, step_two])
+    // Six saves of 8,192 UTF-8 quotes fit the visible output limit but exceed the request ceiling
+    // after JSON escaping. Two quiet turns make the note saves eligible for step 1.
+    let notes = "\"".repeat(MAX_WORKING_NOTES_BYTES);
+    let turns = [
+        accepted(1, vec![save_notes(&notes); 6]),
+        step_two_turns[1].clone(),
+        step_two_turns[2].clone(),
+    ];
+    let system_prompt = render_v52_system_prompt();
+    let opening = maximum_opening(&system_prompt);
+    let notes_request =
+        build_canonical_request(&system_prompt, &opening, &turns, MAX_REQUEST_BYTES_V52)
+            .map_err(|_| "notes parity witness did not fit after compaction".to_owned())?;
+    let marker = crate::transcript::compacted_write_marker(&json!(notes));
+    if notes_request.stats.last_step != Some(1) || !notes_request.transcript.contains(&marker) {
+        return Err(
+            "notes parity witness did not replace an older save payload with its hash marker"
+                .to_owned(),
+        );
+    }
+    Ok(vec![step_zero, step_two, notes_request])
+}
+
+fn save_notes(content: &str) -> (Value, Value) {
+    (
+        json!({"action":"update_notes","arguments":{"content":content}}),
+        json!({"status":"SAVED","bytes":content.len(),"sha256":sha256_hex(content.as_bytes())}),
+    )
 }
 
 /// The deterministic multi-turn parity fixture: an opening and the generations of turns `1..`.
@@ -392,7 +431,8 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
     let listing = compact_json(&json!({
         "status": "OK",
         "readonly_files": [],
-        "config_files": []
+        "config_files": [],
+        "notes_file": {"path":WORKING_NOTES_PATH,"byte_len":0,"line_count":0}
     }));
     let footer = format!("\n\n# Scenario Assignment (parity fixture)\n\n{listing}");
     let opening = format!(
@@ -513,6 +553,7 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
             vec![
                 write_object(23_000),
                 write_patch(14_000),
+                save_notes(&filler("working notes", MAX_WORKING_NOTES_BYTES)),
                 (
                     json!({"action": "preview_identity_profile", "arguments": {}}),
                     json!({"preview_count": 5, "total_identities": 40, "cubes": [filler("cube", 8_000)]}),
@@ -959,6 +1000,9 @@ pub fn evaluate_parity_gate_v52(episodes: &[EpisodeV52]) -> GateResultV52 {
         ),
         format!("max_opening_bytes={max_opening_bytes}"),
         format!("worst_case_postfallback_request_bytes={postfallback_request_bytes}"),
+        format!(
+            "postfallback_bound_bytes={POST_FALLBACK_BOUND_BYTES}; final_bound_without_rollback_bytes={FINAL_BOUND_WITHOUT_ROLLBACK_BYTES}; max_request_bytes={MAX_REQUEST_BYTES_V52}"
+        ),
     ];
     details.extend(errors.iter().cloned());
     GateResultV52 {
@@ -1272,11 +1316,11 @@ mod tests {
             )
         };
         let mut history: Vec<_> = (1..=48).map(|turn| make_turn(turn, 20)).collect();
-        history.push(make_turn(49, 40_000));
+        history.push(make_turn(49, 80_000));
 
         // The latest result is too large to fit even after step 8, so the runner must roll it
-        // back. Once rolled back, the raw earlier generations fit under 64 KB but still exceed
-        // the 58,202-byte post-fallback bound before the unconditional step 9.
+        // back. Once rolled back, the raw earlier generations fit under 96 KB but still exceed
+        // the post-fallback bound before the unconditional step 9.
         assert!(
             build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52)
                 .is_err(),
@@ -1296,7 +1340,7 @@ mod tests {
             crate::transcript::render_uncompacted_transcript(&opening, &history);
         let postrollback_bytes = system_prompt.len() + postrollback_uncompacted.len();
         assert!(
-            postrollback_bytes > MAX_OPENING_BYTES_V52 + 49 * 698,
+            postrollback_bytes > POST_FALLBACK_BOUND_BYTES,
             "the pre-step-9 request must exceed the claimed bound: {postrollback_bytes}"
         );
         assert!(
@@ -1311,7 +1355,7 @@ mod tests {
         assert_eq!(request.stats.generations_replaced, 49);
         assert_eq!(request.stats.last_step, Some(9));
         assert!(
-            request.request_bytes <= MAX_OPENING_BYTES_V52 + 49 * 698,
+            request.request_bytes <= POST_FALLBACK_BOUND_BYTES,
             "{}",
             request.request_bytes
         );
@@ -1329,15 +1373,11 @@ mod tests {
         let system_prompt = render_v52_system_prompt();
         let opening = maximum_opening(&system_prompt);
         let mut history = Vec::with_capacity(49);
+        let path = format!("legacy_iiq/{}.xml", "p".repeat(130));
         for turn in 1..=48 {
-            let actions = (0..8)
-                .map(|_| {
-                    (
-                        json!({"action":"preview_identity_profile","arguments":{}}),
-                        json!({"status":"SCHEMA_ERROR","error":filler("result", 4_000)}),
-                    )
-                })
-                .collect();
+            // Resolved paths remain in earlier read compaction markers. At this length the
+            // markers alone keep the request above 96 KB until step 9 removes them.
+            let actions = (0..8).map(|_| read(&path, 4_000)).collect();
             history.push(accepted(turn, actions));
         }
         history.push(rejected(
@@ -1349,12 +1389,12 @@ mod tests {
         let request =
             build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52)
                 .expect("the rejected turn has no effects to roll back");
-        assert!(request.request_bytes <= MAX_REQUEST_BYTES_V52);
+        assert!(request.request_bytes <= FINAL_BOUND_WITHOUT_ROLLBACK_BYTES);
         assert!(request.stats.per_step[9] > 0, "{:?}", request.stats);
         assert!(
-            request.transcript.contains(
-                "\"action\":\"preview_identity_profile\",\"result\":{\"compacted\":true}"
-            )
+            request
+                .transcript
+                .contains("\"action\":\"read_workspace_file\",\"result\":{\"compacted\":true}")
         );
         assert!(
             request
