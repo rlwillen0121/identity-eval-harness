@@ -378,6 +378,7 @@ fn create_run(root: &Path, spec: &RunSpec<'_>) -> PathBuf {
         "fingerprint_inputs": fingerprint_inputs,
         "invocations": [RunInvocationV52 {
             started_at: "synthetic".to_owned(),
+            finished_at: None,
             resume: false,
             fingerprint,
         }],

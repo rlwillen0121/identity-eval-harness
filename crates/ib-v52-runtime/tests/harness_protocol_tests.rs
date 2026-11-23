@@ -1670,7 +1670,7 @@ async fn resumed_checkpoint_counters_saturate_without_changing_request_bytes() {
     baseline_checkpoint.compacted_requests = usize::MAX;
     baseline_checkpoint.provider_retries = usize::MAX;
     baseline_checkpoint.consecutive_rejections = 2;
-    let resumed_script = vec![
+    let mut resumed_script = vec![
         ModelResponse::with_error("HTTP 500"),
         text("Prose without an action object."),
         text(actions(&[(
@@ -1678,8 +1678,13 @@ async fn resumed_checkpoint_counters_saturate_without_changing_request_bytes() {
             json!({"summary_notes":"resumed"}),
         )])),
     ];
+    let baseline_script = resumed_script.clone();
+    // Give the resumed run non-zero provider latencies to verify latency_ms is recorded on turns
+    // without altering canonical request bytes sent to the model.
+    resumed_script[1].latency_s = 1.25;
+    resumed_script[2].latency_s = 2.5;
     let resumed_provider =
-        MockProvider::scripted("anthropic", SystemChannel::Native, resumed_script.clone());
+        MockProvider::scripted("anthropic", SystemChannel::Native, resumed_script);
     let (resumed, final_checkpoint) = run_v52_episode_from_checkpoint(
         &ep,
         Some(&oracle),
@@ -1700,9 +1705,12 @@ async fn resumed_checkpoint_counters_saturate_without_changing_request_bytes() {
     // Legacy consecutive_rejections stays untouched while max_consecutive_rejections is recomputed
     // from the transcript (Finding 20).
     assert_eq!(final_checkpoint.consecutive_rejections, usize::MAX);
+    assert_eq!(final_checkpoint.turns.len(), 2);
+    assert_eq!(final_checkpoint.turns[0].latency_ms, Some(1_250));
+    assert_eq!(final_checkpoint.turns[1].latency_ms, Some(2_500));
 
     let baseline_provider =
-        MockProvider::scripted("anthropic", SystemChannel::Native, resumed_script);
+        MockProvider::scripted("anthropic", SystemChannel::Native, baseline_script);
     let _ = run_v52_episode_from_checkpoint(
         &ep,
         Some(&oracle),

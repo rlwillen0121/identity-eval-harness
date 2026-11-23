@@ -658,6 +658,36 @@ fn check_bundles(
     Ok(loaded_bundles)
 }
 
+fn check_uncommitted_slot(
+    run_root: &File,
+    record: &ib_v52_schemas::EpisodeExecutionRecordV52,
+    stem: &str,
+    label: &str,
+    problems: &mut Vec<String>,
+) -> bool {
+    let mut ok = true;
+    if record.committed || record.committed_config.is_some() {
+        problems.push(format!(
+            "{stem}: {label} must have committed = false and no committed_config"
+        ));
+        ok = false;
+    }
+    match has_config_entry(run_root, stem) {
+        Ok(false) => {}
+        Ok(true) => {
+            problems.push(format!("{stem}: configs present for {label}"));
+            ok = false;
+        }
+        Err(error) => {
+            problems.push(format!(
+                "{stem}: configs directory is unsafe or unreadable: {error}"
+            ));
+            ok = false;
+        }
+    }
+    ok
+}
+
 /// Re-score every slot record of a bundle from its persisted committed configuration, checking
 /// attempt status, commit flag, config presence, and the canonical score together (§11.3).
 fn replay_bundle_scores(
@@ -690,28 +720,13 @@ fn replay_bundle_scores(
             // Both unscored statuses: no commit, no configs and a null score.
             AttemptStatusV52::IncompleteProviderFailure
             | AttemptStatusV52::IncompleteTransportIntegrity => {
-                let mut ok = true;
-                if record.committed || record.committed_config.is_some() {
-                    problems.push(format!(
-                        "{stem}: unscored incomplete slot must not be committed"
-                    ));
-                    ok = false;
-                }
-                match has_config_entry(&run_root, &stem) {
-                    Ok(false) => {}
-                    Ok(true) => {
-                        problems.push(format!(
-                            "{stem}: configs present for an unscored incomplete slot"
-                        ));
-                        ok = false;
-                    }
-                    Err(error) => {
-                        problems.push(format!(
-                            "{stem}: configs directory is unsafe or unreadable: {error}"
-                        ));
-                        ok = false;
-                    }
-                }
+                let mut ok = check_uncommitted_slot(
+                    &run_root,
+                    record,
+                    &stem,
+                    "unscored incomplete slot",
+                    &mut problems,
+                );
                 if record.score.is_some() {
                     problems.push(format!(
                         "{stem}: unscored incomplete slot must have score = null"
@@ -725,26 +740,13 @@ fn replay_bundle_scores(
             AttemptStatusV52::WithinProtocolStepLimit
             | AttemptStatusV52::WithinProtocolParseFailure
             | AttemptStatusV52::WithinProtocolRefusal => {
-                let mut ok = true;
-                if record.committed || record.committed_config.is_some() {
-                    problems.push(format!(
-                        "{stem}: uncommitted terminal slot must have committed = false and no committed_config"
-                    ));
-                    ok = false;
-                }
-                match has_config_entry(&run_root, &stem) {
-                    Ok(false) => {}
-                    Ok(true) => {
-                        problems.push(format!("{stem}: configs present for an uncommitted slot"));
-                        ok = false;
-                    }
-                    Err(error) => {
-                        problems.push(format!(
-                            "{stem}: configs directory is unsafe or unreadable: {error}"
-                        ));
-                        ok = false;
-                    }
-                }
+                let mut ok = check_uncommitted_slot(
+                    &run_root,
+                    record,
+                    &stem,
+                    "uncommitted terminal slot",
+                    &mut problems,
+                );
                 let expected = serde_json::to_value(uncommitted_zero_score_v52(episode)).ok();
                 let recorded = record
                     .score

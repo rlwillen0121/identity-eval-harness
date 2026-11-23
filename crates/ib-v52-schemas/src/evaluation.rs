@@ -518,6 +518,29 @@ pub struct SuiteReportSummaryV52 {
     /// Median accumulated active wall time over observed slots (milliseconds).
     #[serde(default)]
     pub median_active_wall_ms: Option<f64>,
+    /// Median per-generation latency (seconds) over accepted and rejected turns of observed slots.
+    #[serde(default)]
+    pub median_turn_latency_s: Option<f64>,
+    /// Type-7 p95 per-generation latency (seconds) over accepted and rejected turns of observed slots.
+    #[serde(default)]
+    pub p95_turn_latency_s: Option<f64>,
+    /// Sum of (output + reasoning tokens) divided by sum of generation latency (seconds), over
+    /// accepted and rejected turns of observed slots where both are known.
+    #[serde(default)]
+    pub generation_tokens_per_second: Option<f64>,
+    /// Median active wall time (seconds) over observed slots.
+    #[serde(default)]
+    pub median_slot_wall_time_s: Option<f64>,
+    /// Sum of active wall times (seconds) over observed slots.
+    #[serde(default)]
+    pub total_slot_wall_time_s: Option<f64>,
+    /// Wall time (seconds) of the run as a whole when the manifest records start and end for an
+    /// unresumed run; `None` when unknown or resumed.
+    #[serde(default)]
+    pub run_wall_time_s: Option<f64>,
+    /// Configured slot concurrency recorded in the run manifest, when known.
+    #[serde(default)]
+    pub concurrency: Option<usize>,
     /// Observed `G-SRR` by family (`F01..F12`), over observed slots.
     #[serde(default)]
     pub family_observed_g_srr: IndexMap<String, f64>,

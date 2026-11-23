@@ -397,9 +397,10 @@ pub(crate) async fn generate_with_retries(
     request: &ModelRequest,
     options: &RunV52EpisodeOptions,
     usage: &mut TurnUsageV52,
-) -> (GenerationOutcome, u32) {
+) -> (GenerationOutcome, u32, u64) {
     let mut last_error = String::new();
     let mut attempts = 0_u32;
+    let mut last_latency_ms = 0_u64;
     for attempt in 0..=MAX_PROVIDER_RETRIES_V52 {
         if attempt > 0 {
             let delay = options
@@ -408,6 +409,7 @@ pub(crate) async fn generate_with_retries(
             tokio::time::sleep(Duration::from_millis(delay)).await;
         }
         attempts += 1;
+        let call_start = Instant::now();
         let response = match tokio::time::timeout(
             Duration::from_secs(options.per_call_timeout_s),
             provider.complete(request),
@@ -419,6 +421,11 @@ pub(crate) async fn generate_with_retries(
                 "per-call timeout after {} s",
                 options.per_call_timeout_s
             )),
+        };
+        last_latency_ms = if response.latency_s.is_finite() && response.latency_s > 0.0 {
+            (response.latency_s * 1000.0).round() as u64
+        } else {
+            u64::try_from(call_start.elapsed().as_millis()).unwrap_or(u64::MAX)
         };
         usage.add(&TurnUsageV52 {
             input_tokens: response.usage.input_tokens,
@@ -437,6 +444,7 @@ pub(crate) async fn generate_with_retries(
                         "native tool activity observed during eligibility probe".into(),
                     ),
                     attempts,
+                    last_latency_ms,
                 );
             }
             return (
@@ -448,6 +456,7 @@ pub(crate) async fn generate_with_retries(
                     adapter_flag,
                 },
                 attempts,
+                last_latency_ms,
             );
         }
         if let Some(err) = &response.error {
@@ -469,6 +478,7 @@ pub(crate) async fn generate_with_retries(
                         native_tool_calls: response.tool_calls.len(),
                     },
                     attempts,
+                    last_latency_ms,
                 );
             }
             last_error.clone_from(err);
@@ -481,6 +491,7 @@ pub(crate) async fn generate_with_retries(
                     stop_reason: response.stop_reason.clone(),
                 },
                 attempts,
+                last_latency_ms,
             );
         }
         let text = response.text.clone().unwrap_or_default();
@@ -493,9 +504,14 @@ pub(crate) async fn generate_with_retries(
                 native_tool_calls: response.tool_calls.len(),
             },
             attempts,
+            last_latency_ms,
         );
     }
-    (GenerationOutcome::ProviderFailure(last_error), attempts)
+    (
+        GenerationOutcome::ProviderFailure(last_error),
+        attempts,
+        last_latency_ms,
+    )
 }
 
 /// Roll back the most recent turn's workspace effects (§7.2 fallback). Returns `false` when the
@@ -850,7 +866,7 @@ async fn drive_slot(
             &options.effort,
         );
         let mut turn_usage = TurnUsageV52::default();
-        let (outcome, attempts) =
+        let (outcome, attempts, latency_ms) =
             generate_with_retries(ctx.provider, &request, options, &mut turn_usage).await;
         checkpoint.usage.add(&turn_usage);
         checkpoint.provider_retries = checkpoint
@@ -878,6 +894,7 @@ async fn drive_slot(
                     stop_reason,
                     usage: turn_usage,
                     provider_attempts: attempts,
+                    latency_ms: Some(latency_ms),
                 });
                 break slot_end(
                     AttemptStatusV52::WithinProtocolRefusal,
@@ -913,6 +930,7 @@ async fn drive_slot(
                     stop_reason,
                     usage: turn_usage,
                     provider_attempts: attempts,
+                    latency_ms: Some(latency_ms),
                 });
                 checkpoint.transport_integrity_evidence = Some(evidence);
                 let detail = if observed_events.is_empty() {
@@ -955,6 +973,7 @@ async fn drive_slot(
             stop_reason,
             usage: turn_usage,
             provider_attempts: attempts,
+            latency_ms: Some(latency_ms),
         });
         // The workspace at the start of this turn becomes the rollback point (§7.2).
         let after = runtime.snapshot_state();
@@ -1992,7 +2011,7 @@ pub async fn run_v52_suite(
     options: &RunV52SuiteOptions,
 ) -> Result<Vec<EpisodeExecutionRecordV52>> {
     // Seal check before the first slot (§7.5); current v5.2 suites always require protocol_id.
-    let seal = verify_v52_seal(dataset, spec_bytes, true)?;
+    let seal = verify_v52_seal(dataset, spec_bytes)?;
     run_v52_suite_with_seal(dataset, seal, engine, provider, options).await
 }
 
@@ -2209,8 +2228,8 @@ fn validate_reliability_base_at(
     Ok(extension)
 }
 
-/// [`run_v52_suite`] for a caller that already ran [`verify_v52_seal`] on `dataset` (with
-/// `require_protocol_id = options.ranked`) and passes its result.
+/// [`run_v52_suite`] for a caller that already ran [`verify_v52_seal`] on `dataset` and passes
+/// its result.
 pub async fn run_v52_suite_with_seal(
     dataset: &LoadedV52Dataset,
     seal: SealDigestsV52,
@@ -2335,11 +2354,15 @@ pub async fn run_v52_suite_with_seal(
         atomic_write_at(run_lock.root(), Path::new("probe_receipt.json"), bytes)?;
     }
 
+    let invocation_started_at = utc_timestamp_now();
     invocations.push(RunInvocationV52 {
-        started_at: utc_timestamp_now(),
+        started_at: invocation_started_at.clone(),
+        finished_at: None,
         resume: options.resume,
         fingerprint: fingerprint.clone(),
     });
+    let unresumed_started_at =
+        (!options.resume && invocations.len() == 1).then_some(invocation_started_at);
     let mut manifest = RunManifestV52 {
         schema_version: MANIFEST_SCHEMA_V52.to_owned(),
         spec_version: ib_v52_schemas::SPEC_VERSION_V52.to_owned(),
@@ -2374,6 +2397,8 @@ pub async fn run_v52_suite_with_seal(
         observed_slots: 0,
         written_records: 0,
         completed: false,
+        started_at: unresumed_started_at,
+        finished_at: None,
         invocations,
         withheld_bundle_sha256: String::new(),
         control: options.control,
@@ -2397,6 +2422,13 @@ pub async fn run_v52_suite_with_seal(
             .get(slot)
             .is_some_and(|r| !r.attempt_status.is_incomplete())
     });
+    let invocation_finished_at = utc_timestamp_now();
+    if let Some(last) = manifest.invocations.last_mut() {
+        last.finished_at = Some(invocation_finished_at.clone());
+    }
+    if completed && manifest.started_at.is_some() && manifest.invocations.len() == 1 {
+        manifest.finished_at = Some(invocation_finished_at);
+    }
     write_manifest(run_lock.root(), &mut manifest, &records, completed)?;
     if let Some(err) = first_error {
         return Err(err);
@@ -2442,7 +2474,7 @@ fn differing_fingerprint_fields(old: &Value, current: &RunFingerprintInputsV52) 
 
 /// Seal digests of a verified dataset, re-exported for callers that only need the summary.
 pub fn seal_digests_v52(dataset: &LoadedV52Dataset, spec_bytes: &[u8]) -> Result<SealDigestsV52> {
-    verify_v52_seal(dataset, spec_bytes, true)
+    verify_v52_seal(dataset, spec_bytes)
 }
 
 /// Canonical zero score for an uncommitted terminal slot (`WITHIN_PROTOCOL_STEP_LIMIT`,
@@ -2531,18 +2563,10 @@ mod pinned_reliability_base_tests {
         let base_dir = dir.path().join("base");
         let moved_dir = dir.path().join("base-moved");
         let decoy_dir = dir.path().join("decoy");
-        std::fs::create_dir_all(base_dir.join("transcripts")).unwrap();
         std::fs::create_dir_all(&decoy_dir).unwrap();
         std::fs::write(decoy_dir.join("episodes.jsonl"), b"tampered\n").unwrap();
 
-        let seal = SealDigestsV52 {
-            suite_id: "v52_core".to_owned(),
-            episodes_sha256: "1".repeat(64),
-            oracles_sha256: "2".repeat(64),
-            spec_sha256: "3".repeat(64),
-            contract_id: ib_v52_schemas::CONTRACT_ID_V52.to_owned(),
-            protocol_id: Some(PROTOCOL_ID_V52.to_owned()),
-        };
+        let synth = crate::leaderboard::make_synthetic_core_run(&base_dir, "m");
         let template_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datasets/v52/v52_dev/episodes.jsonl");
         let template_line = std::fs::read_to_string(&template_path)
@@ -2553,133 +2577,15 @@ mod pinned_reliability_base_tests {
             .to_owned();
         let template_ep: EpisodeV52 = serde_json::from_str(&template_line).unwrap();
         let mut episodes = Vec::new();
-        let mut assembly = String::new();
-        let mut ep_ids = Vec::new();
         for f in ib_v52_schemas::FAMILIES_V52 {
             for r in ib_v52_schemas::REGIMES_V52 {
-                let id = format!("v52_core_{f}_{r}_s00");
-                ep_ids.push(id.clone());
-                let rec = EpisodeExecutionRecordV52 {
-                    episode_id: id.clone(),
-                    suite_id: "v52_core".to_owned(),
-                    family_id: f.to_owned(),
-                    repeat_index: 1,
-                    provider_kind: "replay".to_owned(),
-                    model_id: "m".to_owned(),
-                    model_label: "m".to_owned(),
-                    effort: "high".to_owned(),
-                    attempt_status: AttemptStatusV52::WithinProtocolRefusal,
-                    termination_reason: "REFUSAL".to_owned(),
-                    error_message: None,
-                    transport_integrity_evidence: None,
-                    turns_used: 1,
-                    dry_runs_used: 0,
-                    committed: false,
-                    committed_config: None,
-                    commit_notes: None,
-                    input_tokens: 0,
-                    cached_input_tokens: 0,
-                    cache_write_tokens: 0,
-                    output_tokens: 0,
-                    reasoning_tokens: 0,
-                    cost_usd_micros: 0,
-                    elapsed_wall_ms: 0,
-                    tool_trace: Vec::new(),
-                    score: None,
-                    protocol_id: Some(PROTOCOL_ID_V52.to_owned()),
-                    system_prompt_sha256: Some(system_prompt_sha256_v52().to_owned()),
-                    system_prompt_channel: Some("native".to_owned()),
-                    format_error_turns: 0,
-                    output_limit_turns: 0,
-                    max_consecutive_rejections: Some(0),
-                    provider_retries: 0,
-                    context_rollbacks: 0,
-                    compacted_requests: 0,
-                    max_request_bytes: 1_000,
-                };
-                assembly.push_str(&serde_json::to_string(&rec).unwrap());
-                assembly.push('\n');
-                std::fs::write(
-                    base_dir.join("transcripts").join(format!("{id}_r1.jsonl")),
-                    b"{}\n",
-                )
-                .unwrap();
                 let mut ep = template_ep.clone();
                 ep.suite_id = "v52_core".to_owned();
-                ep.episode_id = id;
+                ep.episode_id = format!("v52_core_{f}_{r}_s00");
                 ep.family_id = f.to_owned();
                 episodes.push(ep);
             }
         }
-        std::fs::write(base_dir.join("episodes.jsonl"), &assembly).unwrap();
-        let receipt_bytes = b"{\"receipt\":true}\n";
-        std::fs::write(base_dir.join("probe_receipt.json"), receipt_bytes).unwrap();
-        let receipt_sha = sha256_hex(receipt_bytes);
-        let bundle_sha = sha256_hex(
-            withheld_bundle_listing_at(&ib_core::artifact::directory(&base_dir, false).unwrap())
-                .unwrap()
-                .as_bytes(),
-        );
-        let base_inputs = RunFingerprintInputsV52 {
-            protocol_id: PROTOCOL_ID_V52.to_owned(),
-            system_prompt_sha256: system_prompt_sha256_v52().to_owned(),
-            compaction_policy_id: COMPACTION_POLICY_ID_V52.to_owned(),
-            model_config: json!({"model": "m", "provider": "replay", "reasoning_effort": "high"}),
-            pricing_sha256: "p".to_owned(),
-            repeats: 1,
-            shuffle_seed: 0,
-            receipt_sha256: Some(receipt_sha.clone()),
-            endpoint_identity: "ep".to_owned(),
-            binary_sha256: "bin".to_owned(),
-            seal: seal.clone(),
-            request_byte_ceiling: Some(MAX_REQUEST_BYTES_V52),
-            run_phase: None,
-            reliability_extension: None,
-            control: None,
-        };
-        let slot_order: Vec<String> = round_stratified_order(&ep_ids, 1, 1, 0)
-            .iter()
-            .map(SlotIdV52::stem)
-            .collect();
-        let manifest = json!({
-            "schema_version": MANIFEST_SCHEMA_V52,
-            "spec_version": ib_v52_schemas::SPEC_VERSION_V52,
-            "protocol_id": PROTOCOL_ID_V52,
-            "compaction_policy_id": COMPACTION_POLICY_ID_V52,
-            "suite_id": "v52_core",
-            "model_label": "m",
-            "model_id": "m",
-            "transport_id": "replay",
-            "reasoning_effort": "high",
-            "requested_output_tokens": null,
-            "sampling": "transport_default",
-            "system_prompt_sha256": system_prompt_sha256_v52(),
-            "system_prompt_channel": "native",
-            "pricing_sha256": "p",
-            "receipt_sha256": receipt_sha,
-            "endpoint_identity": "ep",
-            "binary_sha256": "bin",
-            "request_byte_ceiling": MAX_REQUEST_BYTES_V52,
-            "seal": seal,
-            "episode_count": 48,
-            "repeats": 1,
-            "concurrency": 1,
-            "boundary_window": 1,
-            "shuffle_seed": 0,
-            "slot_order": slot_order,
-            "planned_slots": 48,
-            "observed_slots": 48,
-            "written_records": 48,
-            "completed": true,
-            "fingerprint": base_inputs.fingerprint(),
-            "fingerprint_inputs": base_inputs,
-            "withheld_bundle_sha256": bundle_sha,
-        });
-        std::fs::write(
-            base_dir.join("manifest.json"),
-            serde_json::to_vec(&manifest).unwrap(),
-        )
-        .unwrap();
 
         // Pin base_root, then swap base_dir with a tampered decoy before running validation.
         let base_root = ib_core::artifact::directory(&base_dir, false).unwrap();
@@ -2704,17 +2610,22 @@ mod pinned_reliability_base_tests {
             shuffle_seed: 0,
             requested_output_tokens: None,
             temperature: None,
-            pricing_sha256: "p".to_owned(),
-            model_config: json!({"model": "m", "provider": "replay", "reasoning_effort": "high"}),
-            endpoint_identity: "ep".to_owned(),
-            binary_sha256: "bin".to_owned(),
-            receipt_sha256: Some(receipt_sha),
+            pricing_sha256: synth.inputs.pricing_sha256,
+            model_config: synth.inputs.model_config,
+            endpoint_identity: synth.inputs.endpoint_identity,
+            binary_sha256: synth.inputs.binary_sha256,
+            receipt_sha256: Some(synth.receipt_sha256),
             ranked: true,
             ..RunV52SuiteOptions::default()
         };
-        let ext =
-            validate_reliability_base_at(&base_root, &dataset, &seal, &StubProvider, &options)
-                .expect("pinned base_root validation must ignore path replacement");
-        assert_eq!(ext.base_withheld_bundle_sha256, bundle_sha);
+        let ext = validate_reliability_base_at(
+            &base_root,
+            &dataset,
+            &synth.seal,
+            &StubProvider,
+            &options,
+        )
+        .expect("pinned base_root validation must ignore path replacement");
+        assert_eq!(ext.base_withheld_bundle_sha256, synth.bundle_sha256);
     }
 }

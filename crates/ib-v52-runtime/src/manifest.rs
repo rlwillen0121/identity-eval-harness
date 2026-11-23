@@ -13,6 +13,8 @@ pub const MANIFEST_SCHEMA_V52: &str = "identitybench-v52-run-v2";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunInvocationV52 {
     pub started_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
     pub resume: bool,
     pub fingerprint: String,
 }
@@ -63,6 +65,12 @@ pub struct RunManifestV52 {
     pub observed_slots: usize,
     pub written_records: usize,
     pub completed: bool,
+    /// UTC start timestamp of an unresumed run (absent for resumed or legacy runs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    /// UTC completion timestamp of an unresumed run (absent when incomplete, resumed, or legacy).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
     pub invocations: Vec<RunInvocationV52>,
     pub withheld_bundle_sha256: String,
     /// §8.2 validity control; absent for ordinary runs to preserve their manifest bytes.

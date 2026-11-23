@@ -122,6 +122,9 @@ pub struct TurnRecordV52 {
     /// Physical provider calls made for this generation (`1 + retries`).
     #[serde(default)]
     pub provider_attempts: u32,
+    /// Per-generation provider latency in milliseconds (run artifacts only; never sent to the model).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latency_ms: Option<u64>,
 }
 
 impl TurnRecordV52 {
@@ -925,6 +928,7 @@ mod tests {
             stop_reason: None,
             usage: TurnUsageV52::default(),
             provider_attempts: 1,
+            latency_ms: None,
         }
     }
 
@@ -942,6 +946,7 @@ mod tests {
             stop_reason: None,
             usage: TurnUsageV52::default(),
             provider_attempts: 1,
+            latency_ms: None,
         }
     }
 
@@ -1606,6 +1611,7 @@ mod tests {
                 stop_reason: None,
                 usage: TurnUsageV52::default(),
                 provider_attempts: 1,
+                latency_ms: None,
             }
         };
 
