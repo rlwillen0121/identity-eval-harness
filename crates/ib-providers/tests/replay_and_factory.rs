@@ -6,14 +6,8 @@ use ib_providers::base::{
     GenerationParams, ModelRequest, ModelResponse, Provider, ToolCall, Usage,
 };
 use ib_providers::cli::CliConfig;
-use ib_providers::cli::agy::{AgyAdapter, AgyCliProvider};
-use ib_providers::cli::claude::{ClaudeAdapter, ClaudeCliProvider};
-use ib_providers::cli::codex::{CodexAdapter, CodexCliProvider};
-use ib_providers::cli::cursor::{CursorAdapter, CursorCliProvider};
-use ib_providers::cli::grok::{GrokAdapter, GrokCliProvider};
-use ib_providers::cli::muse::{MuseAdapter, MuseCliProvider};
 use ib_providers::factory::{ModelSpec, PROVIDER_KINDS, ProviderKind, make_provider_with_env};
-use ib_providers::openai_compat::{DEFAULT_BASE_URL, OpenAICompatConfig, OpenAICompatProvider};
+use ib_providers::openai_compat::{OpenAICompatConfig, OpenAICompatProvider};
 use ib_providers::replay::{
     CACHE_KEY_PARAM, CostSource, RecordedCost, ReplayProvider, load_responses_jsonl,
     recorded_cost_from, response_from_dict, response_to_dict,
@@ -241,87 +235,17 @@ fn factory_validation_yaml_and_make_provider() {
     )
     .unwrap();
     assert_eq!(ant.kind(), "anthropic_compatible");
-    assert_eq!(ant.local_retry_limit(), Some(1));
 
     let oai = make_provider_with_env(&spec, Some(env)).unwrap();
     assert_eq!(oai.kind(), "openai_compatible");
-    // SPEC-v5.2 §7.4: adapters default to no internal retries.
-    assert_eq!(oai.local_retry_limit(), Some(0));
 }
 
 #[test]
-fn python_type_identities_and_retry_limits_match_provider_accounting() {
-    let mut oai_config = OpenAICompatConfig::new("m");
-    oai_config.env_override = Some(BTreeMap::from([(
-        "OPENAI_BASE_URL".to_string(),
-        DEFAULT_BASE_URL.to_string(),
-    )]));
-    let oai = OpenAICompatProvider::new(oai_config).unwrap();
-    let mut ant_config = AnthropicConfig::new("m");
-    ant_config.env_override = Some(BTreeMap::from([(
-        "ANTHROPIC_BASE_URL".to_string(),
-        "https://api.anthropic.com".to_string(),
-    )]));
-    let ant = AnthropicProvider::new(ant_config).unwrap();
-    let claude = ClaudeCliProvider::new(ClaudeAdapter, CliConfig::new("m", "claude", 600.0));
-    let codex = CodexCliProvider::new(CodexAdapter, CliConfig::new("m", "codex", 900.0));
-    let grok = GrokCliProvider::new(GrokAdapter, CliConfig::new("m", "grok", 600.0));
-    let agy = AgyCliProvider::new(AgyAdapter, CliConfig::new("m", "agy", 900.0));
-    let cursor =
-        CursorCliProvider::new(CursorAdapter, CliConfig::new("auto", "cursor-agent", 600.0));
-    let muse = MuseCliProvider::new(MuseAdapter::default(), {
-        let mut c = CliConfig::new("m", "muse", 900.0);
-        c.max_retries = 0;
-        c
-    });
-    let replay = ReplayProvider::from_responses(BTreeMap::new(), "replay");
-
-    assert_eq!(
-        oai.python_type_identity(),
-        (
-            "identitybench.providers.openai_compat",
-            "OpenAICompatProvider"
-        )
-    );
-    assert_eq!(
-        ant.python_type_identity(),
-        ("identitybench.providers.anthropic_api", "AnthropicProvider")
-    );
-    assert_eq!(
-        claude.python_type_identity(),
-        ("identitybench.providers.claude_cli", "ClaudeCliProvider")
-    );
-    assert_eq!(
-        codex.python_type_identity(),
-        ("identitybench.providers.codex_cli", "CodexCliProvider")
-    );
-    assert_eq!(
-        grok.python_type_identity(),
-        ("identitybench.providers.grok_cli", "GrokCliProvider")
-    );
-    assert_eq!(
-        agy.python_type_identity(),
-        ("identitybench.providers.agy_cli", "AgyCliProvider")
-    );
-    assert_eq!(
-        cursor.python_type_identity(),
-        ("identitybench.providers.cursor_cli", "CursorCliProvider")
-    );
-    assert_eq!(
-        muse.python_type_identity(),
-        ("identitybench.providers.muse_cli", "MuseCliProvider")
-    );
-    assert_eq!(
-        replay.python_type_identity(),
-        ("identitybench.providers.replay", "ReplayProvider")
-    );
-
-    // SPEC-v5.2 §7.4: every adapter defaults to `max_retries = 0`.
-    assert_eq!(oai.local_retry_limit(), Some(0));
-    assert_eq!(ant.local_retry_limit(), Some(0));
-    assert_eq!(claude.local_retry_limit(), Some(0));
-    assert_eq!(muse.local_retry_limit(), Some(0));
-    assert_eq!(replay.local_retry_limit(), None);
+fn adapters_default_to_no_internal_retries() {
+    // SPEC-v5.2 §7.4: every adapter defaults to `max_retries = 0`; the runner owns the cap.
+    assert_eq!(OpenAICompatConfig::new("m").max_retries, 0);
+    assert_eq!(AnthropicConfig::new("m").max_retries, 0);
+    assert_eq!(CliConfig::new("m", "claude", 600.0).max_retries, 0);
 }
 
 #[test]

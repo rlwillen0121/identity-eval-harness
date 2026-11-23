@@ -112,10 +112,6 @@ impl CliAdapter for MuseAdapter {
         "muse_cli"
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.muse_cli", "MuseCliProvider")
-    }
-
     fn env_drop_prefixes(&self) -> &'static [&'static str] {
         &["META_", "MUSE_", "OPENAI_", "ANTHROPIC_", "XDG_"]
     }

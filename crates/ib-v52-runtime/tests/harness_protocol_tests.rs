@@ -202,9 +202,6 @@ impl Provider for MockProvider {
     fn model(&self) -> &str {
         "mock-model"
     }
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("mock", "MockProvider")
-    }
     fn endpoint_identity(&self) -> String {
         format!("mock://{}", self.kind)
     }

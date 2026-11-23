@@ -544,10 +544,6 @@ impl Provider for ReplayProvider {
         &self.model
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.replay", "ReplayProvider")
-    }
-
     fn endpoint_identity(&self) -> String {
         self.identity.clone()
     }

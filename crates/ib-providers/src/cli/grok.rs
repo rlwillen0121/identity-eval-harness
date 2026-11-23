@@ -41,10 +41,6 @@ impl CliAdapter for GrokAdapter {
         "grok_cli"
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.grok_cli", "GrokCliProvider")
-    }
-
     fn env_drop(&self) -> &'static [&'static str] {
         &["XAI_API_KEY"]
     }

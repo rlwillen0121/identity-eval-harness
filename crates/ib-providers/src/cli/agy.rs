@@ -127,10 +127,6 @@ impl CliAdapter for AgyAdapter {
         "agy_cli"
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.agy_cli", "AgyCliProvider")
-    }
-
     fn env_drop(&self) -> &'static [&'static str] {
         &[
             "GOOGLE_API_KEY",

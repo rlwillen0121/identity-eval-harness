@@ -516,7 +516,7 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     );
     assert!(r1.raw.as_ref().unwrap().contains_key(ASSISTANT_CONTENT_KEY));
 
-    // Follow-up request replays original thinking block and uses SSE (>16k tokens)
+    // Follow-up request uses SSE (>16k tokens)
     let mut req2 = ModelRequest::new(
         "POLICY",
         vec![
@@ -538,11 +538,6 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     assert_eq!(reqs[0].headers["x-api-key"], "not-set");
     assert_eq!(reqs[0].path, "/v1/messages");
     assert!(reqs[0].body.get("temperature").is_none());
-    // Follow-up replayed the thinking block unchanged!
-    assert_eq!(
-        reqs[1].body["messages"][1]["content"][0]["signature"],
-        json!("sig-abc")
-    );
     assert_eq!(reqs[1].body["stream"], json!(true));
 }
 

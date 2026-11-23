@@ -92,10 +92,6 @@ impl CliAdapter for CursorAdapter {
         "cursor_cli"
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.cursor_cli", "CursorCliProvider")
-    }
-
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::new(false, false, false)
     }

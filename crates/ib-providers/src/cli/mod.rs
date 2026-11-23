@@ -1050,7 +1050,6 @@ impl CliConfig {
 
 pub trait CliAdapter: Send + Sync {
     fn kind(&self) -> &'static str;
-    fn python_type_identity(&self) -> (&'static str, &'static str);
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::new(true, false, false)
     }
@@ -1661,14 +1660,6 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
 
     fn model(&self) -> &str {
         &self.config.model
-    }
-
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        self.adapter.python_type_identity()
-    }
-
-    fn local_retry_limit(&self) -> Option<u32> {
-        Some(self.config.max_retries)
     }
 
     fn endpoint_identity(&self) -> String {

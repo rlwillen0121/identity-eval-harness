@@ -28,10 +28,6 @@ impl CliAdapter for ClaudeAdapter {
         "claude_cli"
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.claude_cli", "ClaudeCliProvider")
-    }
-
     fn env_drop(&self) -> &'static [&'static str] {
         &[
             "ANTHROPIC_API_KEY",

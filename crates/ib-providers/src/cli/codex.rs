@@ -115,10 +115,6 @@ impl CliAdapter for CodexAdapter {
         "codex_cli"
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.codex_cli", "CodexCliProvider")
-    }
-
     fn env_drop(&self) -> &'static [&'static str] {
         &["OPENAI_BASE_URL", "OPENAI_API_KEY", "CODEX_HOME"]
     }

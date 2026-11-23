@@ -1337,17 +1337,6 @@ impl Provider for OpenAICompatProvider {
         &self.config.model
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        (
-            "identitybench.providers.openai_compat",
-            "OpenAICompatProvider",
-        )
-    }
-
-    fn local_retry_limit(&self) -> Option<u32> {
-        Some(self.config.max_retries)
-    }
-
     fn endpoint_identity(&self) -> String {
         let fallback_unset;
         let base = match &self.base_url {

@@ -326,28 +326,6 @@ pub trait Provider: Send + Sync {
     fn kind(&self) -> &str;
     fn model(&self) -> &str;
 
-    /// Exact Python `(module, class)` tuple for provider accounting parity.
-    fn python_type_identity(&self) -> (&'static str, &'static str);
-
-    /// Local retry limit configured on this adapter, if applicable to provider accounting.
-    fn local_retry_limit(&self) -> Option<u32> {
-        None
-    }
-
-    /// Whether this adapter can resume an interrupted native decode by consuming the exact
-    /// opaque checkpoint from the previous physical request. A generic passthrough field or a
-    /// provider's unverified `resumable` claim is not sufficient; implementations opting in must
-    /// preserve the checkpoint, logical response, effort, cap, and reservation as one chain.
-    fn supports_opaque_continuation(&self) -> bool {
-        false
-    }
-
-    /// Whether this adapter explicitly guarantees aggregate usage includes its upstream retries.
-    /// This is false unless an adapter or injected test double makes the declaration itself.
-    fn usage_includes_retries(&self) -> bool {
-        false
-    }
-
     /// Non-secret identity of where requests go (SPEC §11.4). Never includes keys or raw private URLs.
     fn endpoint_identity(&self) -> String;
 
@@ -359,25 +337,6 @@ pub trait Provider: Send + Sync {
     }
 
     async fn complete(&self, request: &ModelRequest) -> ModelResponse;
-
-    /// Recover a known physical response without starting a second decode. Adapters that
-    /// cannot retrieve a response leave the partial-decode safeguard in force.
-    async fn retrieve_response(&self, _request_id: &str) -> Option<ModelResponse> {
-        None
-    }
-
-    /// Optional documented context-count reconciliation. A missing result leaves a provider
-    /// context rejection unexplained; the runner must not infer a confirmed model limit.
-    fn reconcile_context_count(
-        &self,
-        _request: &ModelRequest,
-        _response: &ModelResponse,
-    ) -> Option<Map<String, Value>> {
-        None
-    }
-
-    /// Optional hook for stateful providers (e.g., Anthropic thinking block replay cache).
-    fn remember_response(&self, _response: &ModelResponse) {}
 }
 
 /// Short stable hash of endpoint parts (base URL, reported revision, cache namespace).

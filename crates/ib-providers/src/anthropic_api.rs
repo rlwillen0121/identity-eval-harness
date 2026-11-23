@@ -1,7 +1,7 @@
 //! Anthropic Messages API provider (`anthropic`) and Messages-compatible servers (`anthropic_compatible`).
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::{Mutex, OnceLock};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -25,7 +25,6 @@ pub const DEFAULT_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 pub const STREAMING_THRESHOLD_TOKENS: u64 = 16_000;
 const VENDOR_HOST: &str = "api.anthropic.com";
 const PLACEHOLDER_API_KEY: &str = "not-set";
-const TOOL_TURN_CACHE_SIZE: usize = 4096;
 pub const ASSISTANT_CONTENT_KEY: &str = "assistant_content";
 
 pub const NO_TEMPERATURE_MODELS: &[&str] = &[
@@ -77,35 +76,6 @@ fn parse_usage(usage_val: Option<&Value>) -> Usage {
     }
 }
 
-#[derive(Debug, Default)]
-struct ToolTurnCache {
-    order: VecDeque<String>,
-    map: HashMap<String, Vec<Value>>,
-}
-
-impl ToolTurnCache {
-    fn get(&self, id: &str) -> Option<&Vec<Value>> {
-        self.map.get(id)
-    }
-
-    fn insert_turn(&mut self, blocks: Vec<Value>, calls: &[ToolCall]) {
-        for call in calls {
-            if self.map.contains_key(&call.id) {
-                self.order.retain(|x| x != &call.id);
-            }
-            self.order.push_back(call.id.clone());
-            self.map.insert(call.id.clone(), blocks.clone());
-        }
-        while self.map.len() > TOOL_TURN_CACHE_SIZE {
-            if let Some(oldest) = self.order.pop_front() {
-                self.map.remove(&oldest);
-            } else {
-                break;
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct AnthropicConfig {
     pub model: String,
@@ -143,7 +113,6 @@ pub struct AnthropicProvider {
     kind: &'static str,
     resolved_api_key_env: Option<String>,
     base_url: Option<String>,
-    tool_turns: Mutex<ToolTurnCache>,
     client: OnceLock<Result<reqwest::Client, String>>,
 }
 
@@ -181,7 +150,6 @@ impl AnthropicProvider {
             kind,
             resolved_api_key_env,
             base_url,
-            tool_turns: Mutex::new(ToolTurnCache::default()),
             client: OnceLock::new(),
         })
     }
@@ -339,12 +307,6 @@ impl AnthropicProvider {
     }
 
     fn assistant_content(&self, message: &Message) -> Vec<Value> {
-        if !message.tool_calls.is_empty()
-            && let Ok(guard) = self.tool_turns.lock()
-            && let Some(original) = guard.get(&message.tool_calls[0].id)
-        {
-            return original.clone();
-        }
         let mut blocks = Vec::new();
         if !message.content.is_empty() {
             let mut b = Map::new();
@@ -683,13 +645,10 @@ impl AnthropicProvider {
                 });
             }
         }
-        if !calls.is_empty() {
-            if let Ok(mut guard) = self.tool_turns.lock() {
-                guard.insert_turn(content.clone(), &calls);
-            }
-            if let Some(ref mut r) = response.raw {
-                r.insert(ASSISTANT_CONTENT_KEY.to_string(), Value::Array(content));
-            }
+        if !calls.is_empty()
+            && let Some(ref mut r) = response.raw
+        {
+            r.insert(ASSISTANT_CONTENT_KEY.to_string(), Value::Array(content));
         }
         response.tool_calls = calls;
 
@@ -717,14 +676,6 @@ impl Provider for AnthropicProvider {
 
     fn model(&self) -> &str {
         &self.config.model
-    }
-
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.anthropic_api", "AnthropicProvider")
-    }
-
-    fn local_retry_limit(&self) -> Option<u32> {
-        Some(self.config.max_retries)
     }
 
     fn endpoint_identity(&self) -> String {
@@ -774,25 +725,6 @@ impl Provider for AnthropicProvider {
             response.raw = Some(redact_diagnostics_map(raw, env_ref, &names));
         }
         response
-    }
-
-    fn remember_response(&self, response: &ModelResponse) {
-        if response.tool_calls.is_empty() {
-            return;
-        }
-        let Some(Value::Array(blocks)) = response
-            .raw
-            .as_ref()
-            .and_then(|r| r.get(ASSISTANT_CONTENT_KEY))
-        else {
-            return;
-        };
-        let valid: Vec<Value> = blocks.iter().filter(|b| b.is_object()).cloned().collect();
-        if !valid.is_empty()
-            && let Ok(mut guard) = self.tool_turns.lock()
-        {
-            guard.insert_turn(valid, &response.tool_calls);
-        }
     }
 }
 

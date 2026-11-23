@@ -417,10 +417,6 @@ impl Provider for ScriptedProvider {
         self.model
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("mock", "MockProvider")
-    }
-
     fn endpoint_identity(&self) -> String {
         "mock://local".to_owned()
     }

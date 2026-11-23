@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 static LIVE_GROUP_RWLOCK: RwLock<()> = RwLock::const_new(());
 
 use async_trait::async_trait;
-use ib_providers::base::{Message, ModelRequest, ModelResponse, Provider, ToolCall, Usage};
+use ib_providers::base::{Message, ModelRequest, ModelResponse, ToolCall, Usage};
 use ib_providers::cli::claude::ClaudeAdapter;
 use ib_providers::cli::{
     ACTION_SCHEMA_NAME, CallDirGuard, CliConfig, CliProvider, MAX_ARG_BYTES, NEUTRAL_SYSTEM,
@@ -556,12 +556,8 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
     let p2 = CliProvider::new(ClaudeAdapter, CliConfig::new("m2", "claude", 600.0));
     assert_eq!(p1.setup_revision(), p2.setup_revision());
     assert_eq!(
-        p1.python_type_identity(),
-        ("identitybench.providers.claude_cli", "ClaudeCliProvider")
-    );
-    assert_eq!(
-        p1.local_retry_limit(),
-        Some(0),
+        p1.config().max_retries,
+        0,
         "SPEC-v5.2 §7.4: no adapter retries"
     );
     assert_eq!(ACTION_SCHEMA_NAME, "tool_action");
