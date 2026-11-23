@@ -120,7 +120,7 @@ pub struct V52RunArgs {
     /// YAML model and runner configuration.
     #[arg(short = 'c', long)]
     pub config: PathBuf,
-    /// JSON pricing artifact (USD-per-1M or micros-per-1M format).
+    /// JSON pricing artifact (legacy shared rates or an identitybench-v52-pricing-table-v1).
     #[arg(long)]
     pub pricing: PathBuf,
     /// Dataset suite.
@@ -957,6 +957,14 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
     let seal = ib_v52_runtime::verify_v52_seal(&dataset, &spec_bytes, ranked)?;
     let loaded_config = load_run_config_v52(&config_path)?;
     let loaded_pricing = load_pricing_v52(&pricing_path)?;
+    let run_pricing = loaded_pricing
+        .rates_for_model(&loaded_config.model_spec.model)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "pricing table has no model row for model_id '{}'",
+                loaded_config.model_spec.model
+            )
+        })?;
     let receipt = match &args.probe_receipt {
         Some(path) => Some(load_probe_receipt(&paths::resolve(root, path))?),
         None if ranked => {
@@ -1005,7 +1013,7 @@ async fn run(root: &Path, env_file: Option<&Path>, args: V52RunArgs) -> Result<V
         shuffle_seed: args.shuffle_seed,
         requested_output_tokens: loaded_config.requested_output_tokens,
         temperature: loaded_config.temperature,
-        pricing: loaded_pricing.rates,
+        pricing: run_pricing,
         pricing_sha256: loaded_pricing.sha256.clone(),
         model_config: loaded_config.model_config.clone(),
         endpoint_identity,

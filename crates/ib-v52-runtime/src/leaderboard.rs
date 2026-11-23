@@ -644,19 +644,23 @@ fn entry_json(
         .collect();
     let complete = s.is_complete;
     let estimated_cost_micros: u64 = match pricing {
-        Some(p) => run
-            .records
-            .iter()
-            .map(|r| {
-                p.rates.compute_cost_usd_micros(
-                    r.input_tokens,
-                    r.cached_input_tokens,
-                    r.cache_write_tokens,
-                    r.output_tokens,
-                    r.reasoning_tokens,
-                )
-            })
-            .sum(),
+        Some(p) => {
+            let rates = p
+                .rates_for_model(&run.model_id)
+                .expect("pricing rows are validated for every leaderboard run");
+            run.records
+                .iter()
+                .map(|r| {
+                    rates.compute_cost_usd_micros(
+                        r.input_tokens,
+                        r.cached_input_tokens,
+                        r.cache_write_tokens,
+                        r.output_tokens,
+                        r.reasoning_tokens,
+                    )
+                })
+                .sum()
+        }
         None => s.total_cost_usd_micros,
     };
     let cost_per_resolved = (s.resolved_slots > 0)
@@ -758,6 +762,16 @@ fn slot_rows_json(run: &LoadedRunV52) -> Value {
 /// requested for a private suite, or the shared statistics cannot be computed.
 pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
     let (runs, suite_id) = load_suite_runs(&options.runs)?;
+    if let Some(pricing) = &options.pricing {
+        for run in &runs {
+            if pricing.rates_for_model(&run.model_id).is_none() {
+                bail!(
+                    "pricing table has no model row for model_id '{}'",
+                    run.model_id
+                );
+            }
+        }
+    }
     let suite: Option<V52Suite> = suite_id.parse().ok();
     // Fail closed: an unrecognized suite is treated as private (no per-slot rows).
     let private = suite.is_none_or(|s| s.is_private());
@@ -1019,21 +1033,38 @@ fn entry_reasons(
                 ),
             );
         }
-        match (leaderboard_pricing, run.manifest_str("pricing_sha256")) {
-            (None, _) => reasons[i].push(reason(
+        let manifest_pricing = run.manifest_str("pricing_sha256");
+        let bound_pricing = run
+            .manifest
+            .pointer("/fingerprint_inputs/pricing_sha256")
+            .and_then(Value::as_str);
+        if leaderboard_pricing.is_none() {
+            reasons[i].push(reason(
                 7,
                 "pricing_ambiguous",
                 "entries use different pricing artifacts and no --pricing artifact was supplied",
-            )),
-            (Some(shared), Some(own)) if shared == own => {}
-            (Some(shared), own) => reasons[i].push(reason(
-                7,
-                "pricing_mismatch",
-                format!(
-                    "entry pricing_sha256 {} != leaderboard {shared}",
-                    own.unwrap_or("missing")
+            ));
+        }
+        let matches_board = leaderboard_pricing.is_some_and(|shared| {
+            manifest_pricing == Some(shared) && bound_pricing == Some(shared)
+        });
+        let internally_consistent = manifest_pricing == bound_pricing;
+        if (leaderboard_pricing.is_some() && !matches_board)
+            || (leaderboard_pricing.is_none() && !internally_consistent)
+        {
+            let detail = match leaderboard_pricing {
+                Some(shared) => format!(
+                    "manifest pricing_sha256 {} and fingerprint_inputs.pricing_sha256 {} must both match leaderboard {shared}",
+                    manifest_pricing.unwrap_or("missing"),
+                    bound_pricing.unwrap_or("missing")
                 ),
-            )),
+                None => format!(
+                    "manifest pricing_sha256 {} differs from fingerprint_inputs.pricing_sha256 {}",
+                    manifest_pricing.unwrap_or("missing"),
+                    bound_pricing.unwrap_or("missing")
+                ),
+            };
+            reasons[i].push(reason(7, "pricing_mismatch", detail));
         }
         if tuples.iter().filter(|t| **t == tuples[i]).count() > 1 {
             reasons[i].push(reason(

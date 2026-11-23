@@ -23,8 +23,8 @@ pub const PLATFORM_REFERENCE_V52: &str = include_str!("platform_reference_v52.md
 
 pub use baselines::{BaselineKindV52, ConstructedBaselineV52, construct_baseline_v52};
 pub use config::{
-    LoadedPricingV52, LoadedRunConfigV52, LoadedV52Dataset, PricingRatesV52, RunConfigV52,
-    load_pricing_v52, load_run_config_v52, load_v52_dataset,
+    LoadedPricingV52, LoadedRunConfigV52, LoadedV52Dataset, PricingArtifactV52, PricingRatesV52,
+    PricingTableEntryV52, RunConfigV52, load_pricing_v52, load_run_config_v52, load_v52_dataset,
 };
 pub use integrity::{
     RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, round_stratified_order, verify_v52_seal,

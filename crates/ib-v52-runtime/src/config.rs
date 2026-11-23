@@ -1,5 +1,6 @@
 //! YAML run configuration, pricing rate loader, and dataset loader for IdentityBench v5.2.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -137,19 +138,164 @@ impl PricingRatesV52 {
 /// Loaded pricing artifact with raw SHA-256 digest (`pricing_sha256`).
 #[derive(Debug, Clone)]
 pub struct LoadedPricingV52 {
-    pub rates: PricingRatesV52,
+    pub artifact: PricingArtifactV52,
     pub sha256: String,
     pub raw_bytes: Vec<u8>,
+}
+
+/// Parsed form of either the legacy shared-rate pricing JSON or a frozen per-model table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PricingArtifactV52 {
+    Single(PricingRatesV52),
+    Table {
+        as_of: String,
+        models: BTreeMap<String, PricingTableEntryV52>,
+    },
+}
+
+/// One model's rates and provenance in a v5.2 pricing table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PricingTableEntryV52 {
+    pub rates: PricingRatesV52,
+    pub source_url: String,
+}
+
+impl LoadedPricingV52 {
+    /// Return the legacy shared rate or the exact model row from a pricing table.
+    #[must_use]
+    pub fn rates_for_model(&self, model_id: &str) -> Option<PricingRatesV52> {
+        match &self.artifact {
+            PricingArtifactV52::Single(rates) => Some(*rates),
+            PricingArtifactV52::Table { models, .. } => {
+                models.get(model_id).map(|entry| entry.rates)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn as_of(&self) -> Option<&str> {
+        match &self.artifact {
+            PricingArtifactV52::Single(_) => None,
+            PricingArtifactV52::Table { as_of, .. } => Some(as_of),
+        }
+    }
+
+    #[must_use]
+    pub fn source_url_for_model(&self, model_id: &str) -> Option<&str> {
+        match &self.artifact {
+            PricingArtifactV52::Single(_) => None,
+            PricingArtifactV52::Table { models, .. } => {
+                models.get(model_id).map(|entry| entry.source_url.as_str())
+            }
+        }
+    }
+}
+
+const PRICING_TABLE_SCHEMA_V52: &str = "identitybench-v52-pricing-table-v1";
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PricingTableV52 {
+    #[serde(rename = "schema")]
+    _schema: String,
+    as_of: String,
+    models: BTreeMap<String, Value>,
+}
+
+fn parse_pricing_table_model_v52(value: &Value, model_id: &str) -> Result<PricingTableEntryV52> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("pricing table model '{model_id}' must be an object"))?;
+    let source_url = object
+        .get("source_url")
+        .and_then(Value::as_str)
+        .filter(|url| !url.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("pricing table model '{model_id}' source_url must be non-empty")
+        })?
+        .to_owned();
+    if !object.contains_key("uncached_input_micros_per_million") {
+        bail!("pricing table model '{model_id}' requires integer micros per million");
+    }
+    let rates = PricingRatesV52::from_json_value(value)
+        .with_context(|| format!("invalid pricing rates for model '{model_id}'"))?;
+    if rates.cache_write_micros_per_million.is_none() {
+        bail!(
+            "pricing table model '{model_id}' requires an integer cache_write_micros_per_million"
+        );
+    }
+    Ok(PricingTableEntryV52 { rates, source_url })
+}
+
+fn validate_pricing_date(value: &str) -> Result<()> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes
+            .iter()
+            .enumerate()
+            .all(|(i, byte)| matches!(i, 4 | 7) || byte.is_ascii_digit())
+    {
+        bail!("pricing table as_of must be a valid YYYY-MM-DD date");
+    }
+    let year: u32 = value[0..4].parse()?;
+    let month: u32 = value[5..7].parse()?;
+    let day: u32 = value[8..10].parse()?;
+    let leap_year =
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap_year => 29,
+        2 => 28,
+        _ => 0,
+    };
+    if !(1..=days_in_month).contains(&day) {
+        bail!("pricing table as_of must be a valid YYYY-MM-DD date");
+    }
+    Ok(())
 }
 
 pub fn load_pricing_v52(path: &Path) -> Result<LoadedPricingV52> {
     let raw_bytes = std::fs::read(path)
         .with_context(|| format!("failed to read pricing {}", path.display()))?;
     let value: Value = serde_json::from_slice(&raw_bytes).context("pricing JSON is invalid")?;
-    let rates = PricingRatesV52::from_json_value(&value)?;
+    let artifact = match value
+        .as_object()
+        .and_then(|obj| obj.get("schema"))
+        .and_then(Value::as_str)
+    {
+        Some(PRICING_TABLE_SCHEMA_V52) => {
+            let table: PricingTableV52 = serde_json::from_value(value)
+                .context("pricing table does not match identitybench-v52-pricing-table-v1")?;
+            validate_pricing_date(&table.as_of)?;
+            if table.models.is_empty() {
+                bail!("pricing table models must contain at least one model row");
+            }
+            let models = table
+                .models
+                .into_iter()
+                .map(|(model_id, row)| {
+                    if model_id.trim().is_empty() {
+                        bail!("pricing table model_id must be non-empty");
+                    }
+                    Ok((
+                        model_id.clone(),
+                        parse_pricing_table_model_v52(&row, &model_id)?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<_, _>>>()?;
+            PricingArtifactV52::Table {
+                as_of: table.as_of,
+                models,
+            }
+        }
+        _ => PricingArtifactV52::Single(PricingRatesV52::from_json_value(&value)?),
+    };
     let sha256 = sha256_hex(&raw_bytes);
     Ok(LoadedPricingV52 {
-        rates,
+        artifact,
         sha256,
         raw_bytes,
     })

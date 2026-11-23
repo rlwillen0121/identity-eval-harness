@@ -79,6 +79,27 @@ Live runs require explicit operator authorization. `run` loads the dataset, mode
 
 **Pricing.** The JSON gives either integer micros per million tokens (`uncached_input_micros_per_million`, `cached_input_micros_per_million`, `output_micros_per_million`, `reasoning_micros_per_million`, optional `cache_write_micros_per_million`) or USD per million (`input_per_1m_usd`, `output_per_1m_usd`, optional `cached_input_per_1m_usd`, `cache_write_per_1m_usd`, and `reasoning_per_1m_usd`). Cache-write tokens are priced at the cache-write rate and are never folded into cache reads. Without a cache-write rate they are priced as uncached input. The SHA-256 of the pricing file (`pricing_sha256`) enters the fingerprint.
 
+For a multi-model run series, give each run and the leaderboard the same table file. The run selects the exact `model.model` ID from its YAML. The leaderboard selects each entry's row using its recorded `model_id` and recomputes estimated cost from recorded usage. Both bind the SHA-256 of the entire file, including its date, sources, and whitespace. A missing model row is an input error.
+
+```json
+{
+  "schema": "identitybench-v52-pricing-table-v1",
+  "as_of": "2026-11-22",
+  "models": {
+    "claude-opus-5-5": {
+      "uncached_input_micros_per_million": 4000000,
+      "cached_input_micros_per_million": 200000,
+      "cache_write_micros_per_million": 5000000,
+      "output_micros_per_million": 20000000,
+      "reasoning_micros_per_million": 20000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    }
+  }
+}
+```
+
+The [frozen retail table](../pricing/v52-pricing-table.json) uses standard, short-context text pricing in integer **micro-USD per million tokens**. The listed rates are effective on the table's `as_of` date. Cache writes use the 5-minute Anthropic rate or the 30-minute OpenAI rate. Where the vendor lists only input and cache-hit rates, cache creation uses the harness's uncached-input convention. Reasoning tokens use the output rate. This token-only estimate excludes time-based cache storage charges. The DeepSeek row uses the DeepInfra standard endpoint on OpenRouter and its public rate on the snapshot date. Use the upstream pin shown above for that row.
+
 **Protocol.** Every turn sends one user message: the canonical transcript of §7.1, compacted by the deterministic §7.2 policy when it would exceed `176000` bytes. The ceiling is uniform for every transport and sits below the smallest client-side message limit of a supported CLI (`agy` truncates a user message at about `191985` bytes; the `agy_cli` adapter refuses to send a message over `191000` bytes as a provider failure instead of letting it be truncated). The system prompt is byte-identical for every model and episode. It goes through the transport's system channel, or inline as the `=== SYSTEM ===` block for `codex_cli` and `cursor_cli`; the channel is recorded per slot. No transport receives native tools, constrained decoding, reasoning replay, or provider-specific prompt text. Every generation consumes a turn:
 
 - A visible reply over `131072` bytes is rejected as `OUTPUT_LIMIT`; the limit always measures the full reply.

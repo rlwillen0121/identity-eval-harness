@@ -811,10 +811,11 @@ fn config_and_pricing_loaders_support_both_formats() {
     )
     .unwrap();
     let p1 = load_pricing_v52(&usd_pricing).unwrap();
-    assert_eq!(p1.rates.uncached_input_micros_per_million, 2_500_000);
-    assert_eq!(p1.rates.cached_input_micros_per_million, 250_000);
-    assert_eq!(p1.rates.output_micros_per_million, 10_000_000);
-    assert_eq!(p1.rates.reasoning_micros_per_million, 10_000_000);
+    let p1_rates = p1.rates_for_model("any-model").unwrap();
+    assert_eq!(p1_rates.uncached_input_micros_per_million, 2_500_000);
+    assert_eq!(p1_rates.cached_input_micros_per_million, 250_000);
+    assert_eq!(p1_rates.output_micros_per_million, 10_000_000);
+    assert_eq!(p1_rates.reasoning_micros_per_million, 10_000_000);
 
     let micros_pricing = temp.path().join("pricing_micros.json");
     std::fs::write(
@@ -823,7 +824,70 @@ fn config_and_pricing_loaders_support_both_formats() {
     )
     .unwrap();
     let p2 = load_pricing_v52(&micros_pricing).unwrap();
-    assert_eq!(p2.rates.uncached_input_micros_per_million, 8_000_000);
+    assert_eq!(
+        p2.rates_for_model("any-model")
+            .unwrap()
+            .uncached_input_micros_per_million,
+        8_000_000
+    );
+
+    let legacy_with_metadata = temp.path().join("pricing_with_metadata.json");
+    std::fs::write(
+        &legacy_with_metadata,
+        r#"{"schema":"legacy-pricing-metadata","input_per_1m_usd":1.0,"output_per_1m_usd":2.0,"note":"accepted by legacy loader"}"#,
+    )
+    .unwrap();
+    let legacy = load_pricing_v52(&legacy_with_metadata).unwrap();
+    assert_eq!(
+        legacy
+            .rates_for_model("every-model")
+            .unwrap()
+            .uncached_input_micros_per_million,
+        1_000_000
+    );
+}
+
+#[test]
+fn pricing_table_loads_distinct_model_rates_and_freezes_raw_digest() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("pricing-table.json");
+    let raw = br#"{
+      "schema":"identitybench-v52-pricing-table-v1",
+      "as_of":"2026-11-22",
+      "models":{
+        "model-a":{
+          "uncached_input_micros_per_million":1000000,
+          "cached_input_micros_per_million":100000,
+          "cache_write_micros_per_million":1250000,
+          "output_micros_per_million":4000000,
+          "reasoning_micros_per_million":5000000,
+          "source_url":"https://example.test/a"
+        },
+        "model-b":{
+          "uncached_input_micros_per_million":8000000,
+          "cached_input_micros_per_million":400000,
+          "cache_write_micros_per_million":10000000,
+          "output_micros_per_million":40000000,
+          "reasoning_micros_per_million":50000000,
+          "source_url":"https://example.test/b"
+        }
+      }
+    }"#;
+    std::fs::write(&path, raw).unwrap();
+
+    let loaded = load_pricing_v52(&path).unwrap();
+    assert_eq!(loaded.sha256, sha256_hex(raw));
+    assert_eq!(loaded.as_of(), Some("2026-11-22"));
+    assert_eq!(
+        loaded.source_url_for_model("model-b"),
+        Some("https://example.test/b")
+    );
+    let model_a = loaded.rates_for_model("model-a").unwrap();
+    let model_b = loaded.rates_for_model("model-b").unwrap();
+    assert_eq!(model_a.uncached_input_micros_per_million, 1_000_000);
+    assert_eq!(model_b.uncached_input_micros_per_million, 8_000_000);
+    assert_eq!(model_b.reasoning_micros_per_million, 50_000_000);
+    assert!(loaded.rates_for_model("missing-model").is_none());
 }
 
 #[test]
