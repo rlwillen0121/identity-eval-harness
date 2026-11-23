@@ -32,6 +32,16 @@ fn make_record(
 ) -> EpisodeExecutionRecordV52 {
     let resolved = slot_index < spec.resolved_slots;
     let turn_limited = slot_index >= 12 * spec.repeats - spec.budget_slots;
+    let [
+        input_tokens,
+        cached_input_tokens,
+        cache_write_tokens,
+        output_tokens,
+    ] = spec
+        .slot_tokens
+        .get(slot_index)
+        .copied()
+        .unwrap_or([100_000, 40_000, 10_000, 1_000]);
     let macro_acc = spec.macro_acc;
     let categories = CategoryIdV52::ALL
         .iter()
@@ -95,10 +105,10 @@ fn make_record(
         committed: !turn_limited,
         committed_config: None,
         commit_notes: None,
-        input_tokens: 0,
-        cached_input_tokens: 0,
-        cache_write_tokens: 0,
-        output_tokens: 0,
+        input_tokens,
+        cached_input_tokens,
+        cache_write_tokens,
+        output_tokens,
         reasoning_tokens: 0,
         cost_usd_micros: 0,
         elapsed_wall_ms: 1,
@@ -155,6 +165,7 @@ struct RunSpec<'a> {
     budget_slots: usize,
     normal_turns: usize,
     seal_marker: &'a str,
+    slot_tokens: &'a [[u64; 4]],
 }
 
 impl<'a> RunSpec<'a> {
@@ -172,6 +183,7 @@ impl<'a> RunSpec<'a> {
             budget_slots: 0,
             normal_turns: 20,
             seal_marker: "same",
+            slot_tokens: &[],
         }
     }
 }
@@ -383,6 +395,7 @@ fn complete_synthetic_calibration_passes_all_checks_and_includes_exact_spread_bo
     for gate in [
         "G-BUDGET-V52",
         "G-BUDGET-V52 freeze turn budget",
+        "G-EFFICIENCY-V52",
         "G-CALIBRATION-V52 item 1",
         "G-CALIBRATION-V52 item 2",
         "G-CALIBRATION-V52 item 3",
@@ -412,6 +425,66 @@ fn complete_synthetic_calibration_passes_all_checks_and_includes_exact_spread_bo
         .unwrap();
     assert!((cross["absolute_difference"].as_f64().unwrap() - 0.10).abs() < 1e-12);
     assert_eq!(cross["status"], "pass");
+}
+
+#[test]
+fn efficiency_counts_all_slots_and_requires_every_frontier_entry_to_pass() {
+    let temp = TempDir::new().unwrap();
+    let mut at_limit = [[200_000, 90_000, 10_000, 0]; 36];
+    for (i, tokens) in at_limit.iter_mut().enumerate() {
+        tokens[0] = match i {
+            0..=16 => 200_000,
+            17 => 240_000,
+            18..=33 => 260_000,
+            34 => 400_000,
+            _ => 500_000,
+        };
+        tokens[3] = i as u64 * 100;
+    }
+    let mut over_limit = at_limit;
+    for tokens in &mut over_limit {
+        tokens[2] += 1;
+    }
+    let mut frontier = passing_frontier(temp.path());
+    frontier[1] = create_run(
+        temp.path(),
+        &RunSpec {
+            resolved_slots: 22,
+            budget_slots: 2,
+            slot_tokens: &at_limit,
+            ..RunSpec::reference("at-limit", "frontier-a", "transport-b")
+        },
+    );
+    let mut options = full_options(temp.path(), frontier, 14, true, true, true);
+    let report = build_calibration_report_v52(&options).unwrap();
+    assert_eq!(report["overall_status"], "pass");
+    let efficiency = check(&report, "G-EFFICIENCY-V52");
+    assert_eq!(efficiency["status"], "pass");
+    let row = &efficiency["measurements"][1];
+    assert_eq!(row["status"], "pass");
+    assert_eq!(row["observed_slots"], 36);
+    assert_eq!(row["median_total_input_tokens_per_slot"], 350_000.0);
+    assert_eq!(row["p95_total_input_tokens_per_slot"], 395_000.0);
+    assert_eq!(row["median_output_tokens_per_slot"], 1_750.0);
+    assert_eq!(row["p95_output_tokens_per_slot"], 3_325.0);
+
+    options.frontier_runs[1] = create_run(
+        temp.path(),
+        &RunSpec {
+            resolved_slots: 22,
+            budget_slots: 2,
+            slot_tokens: &over_limit,
+            ..RunSpec::reference("over-limit", "frontier-a", "transport-b")
+        },
+    );
+    let report = build_calibration_report_v52(&options).unwrap();
+    let efficiency = check(&report, "G-EFFICIENCY-V52");
+    assert_eq!(report["overall_status"], "fail");
+    assert_eq!(efficiency["status"], "fail");
+    assert_eq!(efficiency["measurements"][0]["status"], "pass");
+    let row = &efficiency["measurements"][1];
+    assert_eq!(row["status"], "fail");
+    assert_eq!(row["median_total_input_tokens_per_slot"], 350_001.0);
 }
 
 #[test]
