@@ -72,6 +72,80 @@ fn vendor_host_suffix_spoofs_are_rejected() {
 }
 
 #[test]
+fn vendor_host_is_trusted_only_for_canonical_https_origin() {
+    for (kind, variable, url) in [
+        (
+            ProviderKind::OpenaiCompatible,
+            "OPENAI_BASE_URL",
+            "http://api.openai.com/v1",
+        ),
+        (
+            ProviderKind::OpenaiCompatible,
+            "OPENAI_BASE_URL",
+            "https://api.openai.com:8443/v1",
+        ),
+        (
+            ProviderKind::OpenaiCompatible,
+            "OPENAI_BASE_URL",
+            "https://user:pass@api.openai.com/v1",
+        ),
+        (
+            ProviderKind::Anthropic,
+            "ANTHROPIC_BASE_URL",
+            "http://api.anthropic.com",
+        ),
+        (
+            ProviderKind::Anthropic,
+            "ANTHROPIC_BASE_URL",
+            "https://api.anthropic.com:8443",
+        ),
+        (
+            ProviderKind::Anthropic,
+            "ANTHROPIC_BASE_URL",
+            "https://user:pass@api.anthropic.com",
+        ),
+    ] {
+        assert_requires_opt_in(make_provider_with_env(
+            &builtin_spec(kind),
+            Some(env(&[(variable, url)])),
+        ));
+    }
+}
+
+#[test]
+fn config_debug_and_invalid_header_errors_do_not_echo_credentials() {
+    let marker = "synthetic-header-credential-marker";
+    let mut openai = OpenAICompatConfig::new("test-model");
+    openai.env_override = Some(env(&[("OPENAI_API_KEY", marker)]));
+    openai.headers = Some(BTreeMap::from([(
+        "x-opencode-session".to_string(),
+        marker.to_string(),
+    )]));
+    assert!(!format!("{openai:?}").contains(marker));
+
+    let mut anthropic = AnthropicConfig::new("test-model");
+    anthropic.env_override = Some(env(&[("ANTHROPIC_API_KEY", marker)]));
+    assert!(!format!("{anthropic:?}").contains(marker));
+
+    let mut spec = builtin_spec(ProviderKind::OpenaiCompatible);
+    spec.extra
+        .insert("headers".to_string(), json!({"x-client-secret": marker}));
+    let error = spec.validate().unwrap_err().to_string();
+    assert!(error.contains("credential-bearing header"));
+    assert!(!error.contains(marker));
+    assert!(!format!("{spec:?}").contains(marker));
+
+    let mut value_scheme = builtin_spec(ProviderKind::OpenaiCompatible);
+    value_scheme.extra.insert(
+        "headers".to_string(),
+        json!({"x-opencode-session": format!("Bearer {marker}")}),
+    );
+    let error = value_scheme.validate().unwrap_err().to_string();
+    assert!(error.contains("credential-bearing header"));
+    assert!(!error.contains(marker));
+}
+
+#[test]
 fn explicit_opt_in_allows_custom_vendor_routes_and_marks_endpoint_identity() {
     for (kind, variable) in [
         (ProviderKind::OpenaiCompatible, "OPENAI_BASE_URL"),

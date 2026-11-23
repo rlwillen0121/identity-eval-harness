@@ -169,6 +169,32 @@ fn endpoint_helpers_and_temperature_tables() {
 
     assert!(headers_problem(&json!({"Authorization": "Bearer k"})).is_some());
     assert!(headers_problem(&json!({"x-opencode-session": "id"})).is_none());
+    for name in [
+        "x-refresh-token",
+        "x-client-secret",
+        "x-clientPassword",
+        "x-authToken",
+        "x-identity-auth",
+        "x-api-key",
+    ] {
+        assert!(
+            headers_problem(&json!({name: "opaque-test-marker"})).is_some(),
+            "{name}"
+        );
+    }
+    for value in [
+        "Bearer opaque-test-marker",
+        "Basic opaque-test-marker",
+        "OAuth opaque-test-marker",
+    ] {
+        let problem = headers_problem(&json!({"x-opencode-session": value}));
+        assert!(problem.is_some(), "{value}");
+        assert!(!problem.unwrap().contains("opaque-test-marker"));
+    }
+    assert!(headers_problem(&json!({"openai-organization": "research"})).is_none());
+    assert!(headers_problem(&json!({"x-api-version": "2024-01"})).is_none());
+    assert!(headers_problem(&json!({"x-key-id": "public-key-2"})).is_none());
+    assert!(headers_problem(&json!({"x-api-key-id": "public-key-2"})).is_none());
     assert!(provider_routing_problem(&json!({"allow_fallbacks": "false"})).is_some());
     assert!(
         provider_routing_problem(&json!({"order": ["Baidu"], "allow_fallbacks": false})).is_none()
