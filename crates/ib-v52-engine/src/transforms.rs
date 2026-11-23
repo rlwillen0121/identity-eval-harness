@@ -703,6 +703,44 @@ fn parse_date_or_epoch(s: &str) -> Option<i64> {
     Some((days_from_civil(i128::from(year), i128::from(month), i128::from(day)) * 86_400) as i64)
 }
 
+/// Parse an exact ASCII ISO `YYYY-MM-DD` date to a Gregorian day number since 1970-01-01.
+/// Unlike `parse_date_or_epoch`, this rejects timestamps, variable-width components, and
+/// impossible month/day combinations.
+pub(crate) fn strict_iso_date_days(value: &str) -> Option<i64> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes[..4].iter().all(u8::is_ascii_digit)
+        || !bytes[5..7].iter().all(u8::is_ascii_digit)
+        || !bytes[8..].iter().all(u8::is_ascii_digit)
+    {
+        return None;
+    }
+    let year = value.get(..4)?.parse::<u32>().ok()?;
+    let month = value.get(5..7)?.parse::<u32>().ok()?;
+    let day = value.get(8..10)?.parse::<u32>().ok()?;
+    if year == 0 || !(1..=12).contains(&month) {
+        return None;
+    }
+    let leap_year = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        2 if leap_year => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if day == 0 || day > days_in_month {
+        return None;
+    }
+    i64::try_from(days_from_civil(
+        i128::from(year),
+        i128::from(month),
+        i128::from(day),
+    ))
+    .ok()
+}
+
 /// Howard Hinnant's civil-from-days inverse: days since 1970-01-01.
 fn days_from_civil(year: i128, month: i128, day: i128) -> i128 {
     let y = if month <= 2 { year - 1 } else { year };
@@ -893,7 +931,7 @@ pub const fn group_disposition_to_str(disp: GroupDispositionV52) -> &'static str
 
 #[cfg(test)]
 mod date_overflow_tests {
-    use super::parse_date_or_epoch;
+    use super::{parse_date_or_epoch, strict_iso_date_days};
 
     #[test]
     fn date_conversion_preserves_wrapping_results_without_panicking() {
@@ -904,6 +942,19 @@ mod date_overflow_tests {
             Some(-62_198_793_216)
         );
         assert_eq!(parse_date_or_epoch("-9223372036854775808-01-01"), None);
+    }
+
+    #[test]
+    fn strict_iso_day_parser_validates_calendar_dates_and_ascii_width() {
+        assert_eq!(
+            strict_iso_date_days("2028-03-01").unwrap()
+                - strict_iso_date_days("2028-02-29").unwrap(),
+            1
+        );
+        assert_eq!(strict_iso_date_days("2026-2-20"), None);
+        assert_eq!(strict_iso_date_days("２０２６-11-20"), None);
+        assert_eq!(strict_iso_date_days("2026-02-29"), None);
+        assert_eq!(strict_iso_date_days("2026-11-20T00:00:00Z"), None);
     }
 }
 

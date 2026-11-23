@@ -3,13 +3,13 @@
 use std::collections::BTreeSet;
 
 use ib_v52_schemas::{
-    AffiliationTypeV52, DateCompareOpV52, EnterpriseBrownfieldWorldV52, IgaDeploymentConfigV52,
-    LifecycleStateIdV52, LifecycleStateRuleV52, SpokeStateDispositionV52,
+    AffiliationTypeV52, EnterpriseBrownfieldWorldV52, IgaDeploymentConfigV52, LifecycleStateIdV52,
+    LifecycleStateRuleV52, SpokeStateDispositionV52,
 };
 use indexmap::IndexMap;
 
 use crate::coalescence::CoalescedIdentity;
-use crate::transforms::{affiliation_to_str, eval_compare_op, eval_date_compare};
+use crate::transforms::{affiliation_to_str, eval_compare_op, strict_iso_date_days};
 
 /// Resolved lifecycle state and operational flags for a single identity.
 #[derive(Debug, Clone)]
@@ -23,6 +23,13 @@ pub struct EvaluatedLifecycle {
     pub block_purge: bool,
     pub keep_hr_payroll_untouched: bool,
     pub spoke_dispositions: IndexMap<String, SpokeStateDispositionV52>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContingentExpiryWindow {
+    NotExpired,
+    WithinGrace,
+    PastGrace,
 }
 
 /// Evaluate lifecycle state and spoke dispositions for every coalesced identity.
@@ -63,10 +70,27 @@ pub fn evaluate_single_lifecycle(
         .map(affiliation_to_str)
         .collect::<Vec<_>>()
         .join(",");
-    let is_contingent_expired_str = if is_contingent_expired(cube, cutover_date) {
+    let grace_period_days = config
+        .lifecycle_states
+        .states
+        .get(&LifecycleStateIdV52::ContingentExpiredGrace)
+        .and_then(|rule| rule.grace_period_days)
+        .unwrap_or_default();
+    let expiry_window = contingent_expiry_window(cube, cutover_date, grace_period_days);
+    let is_contingent_expired_str = if expiry_window == ContingentExpiryWindow::WithinGrace {
         "true"
     } else {
         "false"
+    };
+    // A past-grace contract is an effective termination for lifecycle ordering. Keep this as a
+    // derived value: source payroll data and the configured precedence remain untouched.
+    let hr_payroll_status = if expiry_window == ContingentExpiryWindow::PastGrace {
+        "TERMINATED"
+    } else {
+        cube.attributes
+            .get("hr_payroll_status")
+            .map(String::as_str)
+            .unwrap_or("")
     };
 
     let order = &config.lifecycle_states.evaluation_order;
@@ -86,6 +110,7 @@ pub fn evaluate_single_lifecycle(
                     "active_affiliations" => active_affs_str.as_str(),
                     "is_contingent_expired" => is_contingent_expired_str,
                     "person_key" => cube.person_key.as_str(),
+                    "hr_payroll_status" => hr_payroll_status,
                     other => cube.attributes.get(other).map(String::as_str).unwrap_or(""),
                 };
                 eval_compare_op(actual, clause.cmp, clause.value.as_deref())
@@ -151,15 +176,37 @@ pub fn evaluate_single_lifecycle(
     }
 }
 
-fn is_contingent_expired(cube: &CoalescedIdentity<'_>, cutover_date: &str) -> bool {
-    let is_contingent = cube
+fn contingent_expiry_window(
+    cube: &CoalescedIdentity<'_>,
+    cutover_date: &str,
+    grace_period_days: u32,
+) -> ContingentExpiryWindow {
+    let is_external_affiliation = |affiliation: &AffiliationTypeV52| {
+        matches!(
+            affiliation,
+            &AffiliationTypeV52::ContingentWorker
+                | &AffiliationTypeV52::Vendor
+                | &AffiliationTypeV52::B2bGuest
+        )
+    };
+    let has_external_affiliation = cube.active_affiliations.iter().any(is_external_affiliation);
+    let has_other_active_affiliation = cube
         .active_affiliations
-        .contains(&AffiliationTypeV52::ContingentWorker)
+        .iter()
+        .any(|affiliation| !is_external_affiliation(affiliation));
+    if !has_external_affiliation || has_other_active_affiliation {
+        return ContingentExpiryWindow::NotExpired;
+    }
+    if cube
+        .attributes
+        .get("hr_payroll_status")
+        .is_some_and(|status| status.trim().eq_ignore_ascii_case("TERMINATED"))
         || cube
-            .active_affiliations
-            .contains(&AffiliationTypeV52::B2bGuest);
-    if !is_contingent {
-        return false;
+            .attributes
+            .get("academic_status")
+            .is_some_and(|status| status.trim().eq_ignore_ascii_case("ENROLLED"))
+    {
+        return ContingentExpiryWindow::NotExpired;
     }
     let contract_end = cube
         .attributes
@@ -167,22 +214,19 @@ fn is_contingent_expired(cube: &CoalescedIdentity<'_>, cutover_date: &str) -> bo
         .map(String::as_str)
         .unwrap_or("")
         .trim();
-    if contract_end.is_empty() {
-        return false;
+    let (Some(contract_end_day), Some(cutover_day)) = (
+        strict_iso_date_days(contract_end),
+        strict_iso_date_days(cutover_date.trim()),
+    ) else {
+        return ContingentExpiryWindow::NotExpired;
+    };
+    let elapsed_days = cutover_day - contract_end_day;
+    if elapsed_days <= 0 {
+        return ContingentExpiryWindow::NotExpired;
     }
-    let hr_status = cube
-        .attributes
-        .get("hr_payroll_status")
-        .map(String::as_str)
-        .unwrap_or("")
-        .trim();
-    if hr_status == "TERMINATED" {
-        return false;
+    if elapsed_days <= i64::from(grace_period_days) {
+        ContingentExpiryWindow::WithinGrace
+    } else {
+        ContingentExpiryWindow::PastGrace
     }
-    eval_date_compare(
-        contract_end,
-        DateCompareOpV52::Lt,
-        cutover_date,
-        cutover_date,
-    )
 }

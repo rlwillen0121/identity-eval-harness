@@ -1728,7 +1728,7 @@ fn build_gold_nhi_and_agents(
                             .and_then(|c| c.attributes.get("manager_person_key"))
                             .map(String::as_str);
                         if hardened {
-                            // Exact 3-hop manager traversal matching security_charter.md (hop 1 = immediate manager; hop 4 exceeds limit!).
+                            // Exact 3-hop manager traversal matching context/security_policy.md (hop 1 = immediate manager; hop 4 exceeds limit!).
                             let mut visited = HashSet::new();
                             visited.insert(req.initiating_human_person_key.clone());
                             let mut cursor = mgr.map(str::trim).filter(|s| !s.is_empty());

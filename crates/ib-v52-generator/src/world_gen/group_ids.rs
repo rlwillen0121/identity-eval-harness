@@ -28,6 +28,7 @@ pub(super) struct RoleGroupIds {
     pub(super) all_emp_entra_group: String,
     pub(super) fin_group: String,
     pub(super) fin_spoke_group: String,
+    pub(super) retired_app_bridge_group: String,
     pub(super) eng_group: String,
     pub(super) eng_spoke_group: String,
     pub(super) it_group: String,
@@ -82,6 +83,7 @@ pub(super) fn resolve_role_group_ids(groups: &[GroupBlueprintV52]) -> RoleGroupI
     let all_emp_entra_group = find_group_by_tag(GroupRoleTagV52::AllEmployeeBaseEntra);
     let fin_group = find_group_by_tag(GroupRoleTagV52::FinanceBirthright);
     let fin_spoke_group = find_group_by_tag(GroupRoleTagV52::FinanceBirthrightSpoke);
+    let retired_app_bridge_group = find_group_by_tag(GroupRoleTagV52::RetiredAppBridge);
     let eng_group = find_group_by_tag(GroupRoleTagV52::EngineeringBirthright);
     let eng_spoke_group = find_group_by_tag(GroupRoleTagV52::EngineeringBirthrightSpoke);
     let it_group = find_group_by_tag(GroupRoleTagV52::ItBirthright);
@@ -141,6 +143,7 @@ pub(super) fn resolve_role_group_ids(groups: &[GroupBlueprintV52]) -> RoleGroupI
         all_emp_entra_group,
         fin_group,
         fin_spoke_group,
+        retired_app_bridge_group,
         eng_group,
         eng_spoke_group,
         it_group,

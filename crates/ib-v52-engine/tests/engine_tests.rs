@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
 use ib_v52_engine::IgaEngineV52;
+use ib_v52_engine::coalescence::coalesce_identities;
+use ib_v52_engine::lifecycle::evaluate_single_lifecycle;
 use ib_v52_engine::transforms::{
     TransformEvalContext, eval_transform_expr, iso_country_2, strip_diacritics,
 };
@@ -1887,6 +1889,89 @@ fn test_gold_replay_and_core_subsystems() {
         oracle.expected_outcome.exempt_service_accounts,
         vec!["ad:svc_erp_batch".to_owned()]
     );
+}
+
+#[test]
+fn test_contingent_expiry_uses_inclusive_grace_days_and_preserves_precedence() {
+    let (episode, oracle) = build_fixture();
+    let (cubes, _) =
+        coalesce_identities(&episode.world, &oracle.gold_config, &episode.cutover_date)
+            .expect("coalesce fixture");
+    let base = cubes["pers_09"].clone();
+    let spokes = ["ad", "entra", "sap"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let evaluate = |cube: &ib_v52_engine::coalescence::CoalescedIdentity<'_>| {
+        evaluate_single_lifecycle(cube, &oracle.gold_config, &episode.cutover_date, &spokes)
+            .lifecycle_state
+    };
+    let with_end_date = |end_date: &str| {
+        let mut cube = base.clone();
+        cube.attributes
+            .insert("contract_end_date".to_owned(), end_date.to_owned());
+        cube
+    };
+
+    // End date is inclusive for active status; expiration begins the following calendar day.
+    assert_eq!(
+        evaluate(&with_end_date("2026-11-20")),
+        LifecycleStateIdV52::Active
+    );
+    assert_eq!(
+        evaluate(&with_end_date("2026-11-19")),
+        LifecycleStateIdV52::ContingentExpiredGrace
+    );
+    // A 14-day grace period includes the date exactly 14 elapsed days before cutover.
+    assert_eq!(
+        evaluate(&with_end_date("2026-11-06")),
+        LifecycleStateIdV52::ContingentExpiredGrace
+    );
+    // On day 15, the derived termination matches at the configured Terminated position.
+    assert_eq!(
+        evaluate(&with_end_date("2026-11-05")),
+        LifecycleStateIdV52::Terminated
+    );
+
+    let mut vendor = with_end_date("2026-11-19");
+    vendor.active_affiliations = vec![AffiliationTypeV52::Vendor];
+    assert_eq!(
+        evaluate(&vendor),
+        LifecycleStateIdV52::ContingentExpiredGrace
+    );
+    let mut guest = with_end_date("2026-11-19");
+    guest.active_affiliations = vec![AffiliationTypeV52::B2bGuest];
+    assert_eq!(
+        evaluate(&guest),
+        LifecycleStateIdV52::ContingentExpiredGrace
+    );
+
+    // Existing termination, higher-precedence legal hold, and concurrent employment remain intact.
+    let mut already_terminated = with_end_date("2026-11-19");
+    already_terminated
+        .attributes
+        .insert("hr_payroll_status".to_owned(), "TERMINATED".to_owned());
+    assert_eq!(
+        evaluate(&already_terminated),
+        LifecycleStateIdV52::Terminated
+    );
+
+    let mut held = with_end_date("2026-11-05");
+    held.attributes
+        .insert("legal_hold".to_owned(), "true".to_owned());
+    assert_eq!(evaluate(&held), LifecycleStateIdV52::LegalHold);
+
+    let mut multi_affiliation = with_end_date("2026-11-05");
+    multi_affiliation
+        .active_affiliations
+        .push(AffiliationTypeV52::Fte);
+    assert_eq!(evaluate(&multi_affiliation), LifecycleStateIdV52::Active);
+
+    let mut enrolled = with_end_date("2026-11-05");
+    enrolled
+        .attributes
+        .insert("academic_status".to_owned(), "ENROLLED".to_owned());
+    assert_eq!(evaluate(&enrolled), LifecycleStateIdV52::Active);
 }
 
 #[test]

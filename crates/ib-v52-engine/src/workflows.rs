@@ -368,6 +368,17 @@ pub fn evaluate_day2_events(
                 let expanded_requested =
                     expand_entitlements_transitively(requested_ents.iter(), world);
 
+                let requests_retired_entitlement = expanded_requested.iter().any(|ent| {
+                    config
+                        .role_model
+                        .group_classifications
+                        .get(ent)
+                        .is_some_and(|classification| {
+                            classification.disposition
+                                == GroupDispositionV52::OrphanedDeprecatedDoNotAssign
+                        })
+                });
+
                 let is_privileged = expanded_requested.iter().any(|ent| {
                     world
                         .group_catalog
@@ -430,6 +441,7 @@ pub fn evaluate_day2_events(
                     !wf.block_delegate_self_approval_and_cycles || !is_delegate_self_or_cycle;
 
                 let approved = state_ok
+                    && !requests_retired_entitlement
                     && contractor_ok
                     && manager_ok
                     && app_owner_ok

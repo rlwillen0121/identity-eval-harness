@@ -514,8 +514,8 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
     assert_eq!(prepend_system("", "body"), "body");
     // Canonical SPEC-v5.2 §7.1 system block: `=== SYSTEM ===\n<system_prompt>\n` then the body.
     assert_eq!(
-        prepend_system("rules\n\n", "=== ENGAGEMENT ===\nbody"),
-        format!("{SYSTEM_BEGIN}\nrules\n=== ENGAGEMENT ===\nbody")
+        prepend_system("rules\n\n", "=== SCENARIO ===\nbody"),
+        format!("{SYSTEM_BEGIN}\nrules\n=== SCENARIO ===\nbody")
     );
     assert_eq!(SYSTEM_BEGIN, "=== SYSTEM ===");
     // No pointer swap: an over-long system prompt is passed through unchanged.
