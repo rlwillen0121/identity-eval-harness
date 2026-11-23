@@ -1,4 +1,5 @@
 //! Native Rust executable for the IdentityBench v5.2 benchmark.
+mod interrupt;
 mod paths;
 mod reveal;
 mod v52;
@@ -56,6 +57,9 @@ async fn execute(cli: Cli) -> Result<(Value, u8)> {
     let root = paths::find_root(cli.root.as_deref())?;
     match cli.command {
         Command::V52 { command } => {
+            if matches!(command, v52::V52Command::Run(_) | v52::V52Command::Probe(_)) {
+                interrupt::install_cleanup_handler()?;
+            }
             v52::execute(&root, cli.env_file, cli.no_env_file, command).await
         }
     }
