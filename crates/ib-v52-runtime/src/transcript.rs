@@ -4,6 +4,8 @@
 //! Every function here is a pure function of its inputs. Nothing depends on the provider kind,
 //! so compacted requests are byte-identical across transports by construction.
 
+use std::borrow::Cow;
+
 use ib_core::hashing::sha256_hex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -292,6 +294,13 @@ fn render_accepted_action_object(turn: &TurnRecordV52, state: &TurnCompaction) -
     }
 }
 
+/// One rendered `{"action","result"}` element, serialized without cloning the result.
+#[derive(Serialize)]
+struct ResultItem<'a> {
+    action: &'a str,
+    result: Cow<'a, Value>,
+}
+
 fn render_results(turn: &TurnRecordV52, state: &TurnCompaction) -> String {
     match &turn.outcome {
         TurnOutcomeV52::Accepted {
@@ -302,22 +311,19 @@ fn render_results(turn: &TurnRecordV52, state: &TurnCompaction) -> String {
             if let Some(outputs) = rolled_back {
                 return compact_json(&context_ceiling_results(outputs));
             }
-            let items: Vec<Value> = results
+            let items: Vec<ResultItem<'_>> = results
                 .iter()
                 .enumerate()
-                .map(|(idx, r)| {
-                    let result = if state.output_compacted.get(idx).copied().unwrap_or(false) {
-                        compacted_output_marker(&r.action, turn.turn, &r.result)
+                .map(|(idx, r)| ResultItem {
+                    action: &r.action,
+                    result: if state.output_compacted.get(idx).copied().unwrap_or(false) {
+                        Cow::Owned(compacted_output_marker(&r.action, turn.turn, &r.result))
                     } else {
-                        r.result.clone()
-                    };
-                    let mut item = Map::new();
-                    item.insert("action".to_owned(), Value::String(r.action.clone()));
-                    item.insert("result".to_owned(), result);
-                    Value::Object(item)
+                        Cow::Borrowed(&r.result)
+                    },
                 })
                 .collect();
-            compact_json(&Value::Array(items))
+            serde_json::to_string(&items).unwrap_or_else(|_| "null".to_owned())
         }
         TurnOutcomeV52::Rejected { reason, .. } => {
             compact_json(&json!([{"error": reason.as_str()}]))
@@ -448,7 +454,8 @@ fn is_write_with_content(turn: &TurnRecordV52, idx: usize) -> bool {
 struct Compactor<'a> {
     turns: &'a [TurnRecordV52],
     states: Vec<TurnCompaction>,
-    lens: Vec<usize>,
+    /// Each turn rendered under its current compaction state.
+    rendered: Vec<String>,
     total: usize,
     max_bytes: usize,
     stats: CompactionStatsV52,
@@ -460,9 +467,9 @@ impl Compactor<'_> {
     }
 
     fn refresh(&mut self, idx: usize) {
-        let new_len = render_turn(&self.turns[idx], &self.states[idx]).len();
-        self.total = self.total - self.lens[idx] + new_len;
-        self.lens[idx] = new_len;
+        let rendered = render_turn(&self.turns[idx], &self.states[idx]);
+        self.total = self.total - self.rendered[idx].len() + rendered.len();
+        self.rendered[idx] = rendered;
     }
 
     /// Step 1 over one turn: replace write contents, oldest action first.
@@ -597,16 +604,17 @@ pub fn build_canonical_request(
 ) -> Result<CanonicalRequestV52, CeilingExceededV52> {
     let opening = strip_trailing_lf(opening);
     let states: Vec<TurnCompaction> = turns.iter().map(TurnCompaction::for_turn).collect();
-    let lens: Vec<usize> = turns
+    let rendered: Vec<String> = turns
         .iter()
         .zip(&states)
-        .map(|(t, s)| render_turn(t, s).len())
+        .map(|(t, s)| render_turn(t, s))
         .collect();
-    let total = system_prompt.len() + opening.len() + lens.iter().sum::<usize>();
+    let total =
+        system_prompt.len() + opening.len() + rendered.iter().map(String::len).sum::<usize>();
     let mut compactor = Compactor {
         turns,
         states,
-        lens,
+        rendered,
         total,
         max_bytes: max_request_bytes,
         stats: CompactionStatsV52::default(),
@@ -618,8 +626,8 @@ pub fn build_canonical_request(
     }
     let mut transcript = String::with_capacity(compactor.total);
     transcript.push_str(opening);
-    for (turn, state) in turns.iter().zip(&compactor.states) {
-        transcript.push_str(&render_turn(turn, state));
+    for rendered in &compactor.rendered {
+        transcript.push_str(rendered);
     }
     let request_bytes = system_prompt.len() + transcript.len();
     debug_assert_eq!(request_bytes, compactor.total);
