@@ -27,7 +27,6 @@ model:
     # provider_routing:
     #   order: [deepinfra]
     #   allow_fallbacks: false
-model_tier: frontier
 run_config:
   # Declared context window, recorded in the G-PROBE-V52 receipt (>= 128000 to be eligible).
   context_window_tokens: 400000

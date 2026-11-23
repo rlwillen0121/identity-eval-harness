@@ -733,10 +733,26 @@ pub fn report_v52_run_with_slot_rows(
     out_dir: &Path,
     include_slot_rows: bool,
 ) -> Result<SuiteReportSummaryV52> {
-    // `episodes.jsonl`, plus slot records an interrupted invocation has not yet assembled.
     let root = artifact::directory(run_dir, false)?;
-    let records = crate::runner::load_run_records_at(&root, run_dir)?;
-    let hint = read_manifest_hint(&root);
+    // Read suite identity and completion status before loading slot records so completed runs use
+    // the strict assembly loader (same as leaderboard) and private-suite errors redact slot paths
+    // and identifiers (§10.3).
+    let manifest = read_manifest_if_present(&root)?;
+    let is_known_public = manifest
+        .as_ref()
+        .and_then(|m| m.get("suite_id"))
+        .and_then(Value::as_str)
+        .is_some_and(|s| s.parse::<V52Suite>().is_ok_and(|suite| !suite.is_private()));
+    let records = crate::runner::load_run_records_for_manifest_at(
+        &root,
+        run_dir,
+        manifest.as_ref(),
+        !is_known_public,
+    )?;
+    let hint = manifest
+        .as_ref()
+        .map(RunMetadataHintV52::from_manifest)
+        .unwrap_or_default();
     let summary = summarize_v52_records(&records, &hint);
     if include_slot_rows && !is_public_reporting_suite(&summary.suite_id, &records) {
         anyhow::bail!(
@@ -758,13 +774,17 @@ pub fn report_v52_run_with_slot_rows(
     Ok(summary)
 }
 
-/// The summary hint of a run directory's `manifest.json` (default when absent or invalid).
-fn read_manifest_hint(root: &std::fs::File) -> RunMetadataHintV52 {
-    artifact::read_limited_at(root, Path::new("manifest.json"), 64 * 1024 * 1024)
-        .ok()
-        .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
-        .map(|manifest| RunMetadataHintV52::from_manifest(&manifest))
-        .unwrap_or_default()
+/// Read `manifest.json` from a pinned run directory if present (`None` only on `NotFound`).
+fn read_manifest_if_present(root: &std::fs::File) -> Result<Option<Value>> {
+    match artifact::read_limited_at(root, Path::new("manifest.json"), 64 * 1024 * 1024) {
+        Ok(raw) => {
+            let manifest: Value =
+                serde_json::from_slice(&raw).context("manifest.json is invalid JSON")?;
+            Ok(Some(manifest))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).context("failed to read manifest.json"),
+    }
 }
 
 impl RunMetadataHintV52 {
