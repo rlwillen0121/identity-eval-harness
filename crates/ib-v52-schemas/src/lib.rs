@@ -2,6 +2,7 @@
 
 pub mod configs;
 pub mod evaluation;
+pub mod jsonl;
 pub mod transforms;
 pub mod world;
 

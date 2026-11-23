@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ib_core::hashing::sha256_hex;
+use ib_v52_schemas::jsonl::JsonlError;
 use ib_v52_schemas::{
     CONTRACT_ID_V52, EpisodeV52, GENERATOR_VERSION_V52, PROTOCOL_ID_V52, SPEC_VERSION_V52,
     SealedEpisodeOracleV52, V52Suite,
@@ -633,15 +634,8 @@ pub fn verify_private_public_seal(
 }
 
 fn parse_jsonl<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<Vec<T>, V52GeneratorError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|e| V52GeneratorError::SealVerification(format!("non-UTF8 JSONL: {e}")))?;
-    let mut items = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        items.push(serde_json::from_str::<T>(trimmed)?);
-    }
-    Ok(items)
+    ib_v52_schemas::jsonl::parse_jsonl(bytes).map_err(|err| match err {
+        JsonlError::Utf8(e) => V52GeneratorError::SealVerification(format!("non-UTF8 JSONL: {e}")),
+        JsonlError::Line { source, .. } => V52GeneratorError::Json(source),
+    })
 }
