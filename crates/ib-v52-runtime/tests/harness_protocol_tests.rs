@@ -1285,13 +1285,19 @@ async fn resumed_checkpoint_counters_saturate_without_changing_request_bytes() {
 #[tokio::test]
 async fn wall_clock_guard_pauses_per_invocation_and_resume_restarts_it() {
     let (ep, oracle) = episode(7);
-    let ok = || text(actions(&[("list_workspace", json!({}))]));
     let options = RunV52EpisodeOptions {
         wall_clock_guard_ms: 0,
         ..fast_options()
     };
-    let provider =
-        MockProvider::scripted("anthropic", SystemChannel::Native, vec![ok(), ok(), ok()]);
+    let provider = MockProvider::responding(
+        "anthropic",
+        Box::new(|_| {
+            // The guard measures whole milliseconds. Make each invocation cross that threshold
+            // on its first turn regardless of the speed of the test runner.
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            text(actions(&[("list_workspace", json!({}))]))
+        }),
+    );
     let (rec, cp) =
         run_v52_episode_from_checkpoint(&ep, Some(&oracle), &MockEngine, &provider, &options, None)
             .await
