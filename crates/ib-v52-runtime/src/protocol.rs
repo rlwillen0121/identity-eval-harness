@@ -20,9 +20,9 @@ pub const MAX_ACTIONS_PER_TURN_V52: usize = ib_v52_schemas::DEFAULT_MAX_CALLS_PE
 /// Harness-enforced visible output limit in UTF-8 bytes (§3.1).
 pub const OUTPUT_LIMIT_BYTES_V52: usize = 131_072;
 /// Canonical request ceiling (§7.2).
-pub const MAX_REQUEST_BYTES_V52: usize = 450_000;
+pub const MAX_REQUEST_BYTES_V52: usize = 176_000;
 /// System prompt plus Turn-1 message bound (§7.2).
-pub const MAX_OPENING_BYTES_V52: usize = 150_000;
+pub const MAX_OPENING_BYTES_V52: usize = 64_000;
 /// Consecutive `FORMAT_ERROR`/`OUTPUT_LIMIT` generations that end a slot (§7.4).
 pub const MAX_CONSECUTIVE_REJECTIONS_V52: usize = 3;
 /// Total retries of one failed generation across runner and adapter (§7.4).
@@ -32,7 +32,7 @@ pub const PER_CALL_TIMEOUT_S_V52: u64 = 1_800;
 /// Per-invocation active wall-clock guard (§7.4).
 pub const WALL_CLOCK_GUARD_MS_V52: u64 = 6 * 60 * 60 * 1_000;
 /// Minimum declared context window of a ranked-eligible model (§7.2).
-pub const MIN_CONTEXT_WINDOW_TOKENS_V52: u64 = 200_000;
+pub const MIN_CONTEXT_WINDOW_TOKENS_V52: u64 = 128_000;
 
 /// Canonical transcript section headers (§7.1).
 pub const SYSTEM_BLOCK_HEADER: &str = "=== SYSTEM ===";

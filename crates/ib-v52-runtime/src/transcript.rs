@@ -400,7 +400,8 @@ fn classify_output(turn: &TurnRecordV52, idx: usize) -> OutputClass {
         | "write_workspace_file"
         | "preview_identity_profile"
         | "test_connector_sandbox"
-        | "simulate_golive_dry_run" => OutputClass::Operational,
+        | "simulate_golive_dry_run"
+        | "commit_deployment" => OutputClass::Operational,
         _ => OutputClass::Never,
     }
 }
@@ -532,9 +533,13 @@ impl Compactor<'_> {
         if n >= 1 && self.compact_writes(n - 1, 7) {
             return true;
         }
-        // Step 8: whole accepted generations of turns <= t − 2, oldest first.
-        for idx in 0..n.saturating_sub(1) {
-            if !matches!(self.turns[idx].outcome, TurnOutcomeV52::Accepted { .. })
+        // Step 8: whole accepted generations of turns <= t − 2, oldest first, then turn t − 1 once
+        // the §7.2 fallback has rolled it back (its results are already the fixed-size
+        // CONTEXT_CEILING_EXCEEDED array, so this bounds the request after the fallback).
+        for idx in 0..n {
+            let rolled_back_most_recent = idx + 1 == n && self.turns[idx].is_rolled_back();
+            if (idx + 1 == n && !rolled_back_most_recent)
+                || !matches!(self.turns[idx].outcome, TurnOutcomeV52::Accepted { .. })
                 || self.states[idx].generation_compacted
             {
                 continue;
@@ -665,7 +670,13 @@ mod tests {
             sha256_hex(b"prose\n")
         );
         assert_eq!(suffix, expected);
-        let req = build_canonical_request("SYS", opening, &turns, 450_000).unwrap();
+        let req = build_canonical_request(
+            "SYS",
+            opening,
+            &turns,
+            crate::protocol::MAX_REQUEST_BYTES_V52,
+        )
+        .unwrap();
         assert_eq!(req.transcript, r2);
         assert_eq!(req.request_bytes, 3 + r2.len());
         assert!(!req.stats.compacted);
