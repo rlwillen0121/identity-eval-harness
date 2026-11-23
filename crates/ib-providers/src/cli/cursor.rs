@@ -226,14 +226,3 @@ impl CliAdapter for CursorAdapter {
 }
 
 pub type CursorCliProvider = CliProvider<CursorAdapter>;
-
-#[must_use]
-pub fn new_cursor_provider(model: Option<&str>, binary: Option<&str>) -> CursorCliProvider {
-    let bin = binary
-        .map(str::to_string)
-        .unwrap_or_else(resolve_cursor_binary);
-    CliProvider::new(
-        CursorAdapter,
-        CliConfig::new(model.unwrap_or("auto"), bin, 600.0),
-    )
-}

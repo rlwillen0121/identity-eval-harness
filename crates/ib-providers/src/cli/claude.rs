@@ -199,8 +199,3 @@ impl CliAdapter for ClaudeAdapter {
 }
 
 pub type ClaudeCliProvider = CliProvider<ClaudeAdapter>;
-
-#[must_use]
-pub fn new_claude_provider(model: impl Into<String>) -> ClaudeCliProvider {
-    CliProvider::new(ClaudeAdapter, CliConfig::new(model, "claude", 600.0))
-}

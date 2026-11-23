@@ -26,7 +26,6 @@ use crate::subprocess::{redact, redact_diagnostics_map};
 pub const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 pub const DEFAULT_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
 pub const DEFAULT_API_KEY_ENV: &str = "OPENAI_API_KEY";
-pub const OPENROUTER_BASE_URL_ENV: &str = "OPENROUTER_BASE_URL";
 pub const UNPARSED_ARGUMENTS_KEY: &str = "_unparsed_arguments";
 
 const PLACEHOLDER_API_KEY: &str = "not-set";

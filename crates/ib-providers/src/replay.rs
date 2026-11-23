@@ -17,7 +17,6 @@ use crate::json::{bounded_token_count, inspect_and_clamp_usage, sanitize_respons
 use crate::subprocess::{redact, redact_diagnostics_map};
 
 pub const CACHE_KEY_PARAM: &str = "cache_key";
-pub const COST_FIELDS: &[&str] = &["cost_usd", "cost_source"];
 
 const RESPONSE_FIELDS: &[&str] = &[
     "text",

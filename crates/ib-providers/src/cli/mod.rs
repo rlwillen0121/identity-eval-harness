@@ -49,7 +49,6 @@ const MAX_MARKS: usize = 400;
 const WINDOW_CHARS: usize = 24;
 
 pub const OWNER_FILE: &str = ".owner";
-pub const STALE_CALL_DIR_AGE_S: f64 = 2.0 * 60.0 * 60.0;
 
 static EFFORT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$").expect("valid effort regex"));
@@ -207,11 +206,6 @@ pub fn prepend_system(system: &str, body: &str) -> String {
     } else {
         format!("{SYSTEM_BEGIN}\n{}\n{body}", system.trim_end_matches('\n'))
     }
-}
-
-#[must_use]
-pub fn exceeds_arg_limit(text: &str) -> bool {
-    text.len() > MAX_ARG_BYTES
 }
 
 #[must_use]

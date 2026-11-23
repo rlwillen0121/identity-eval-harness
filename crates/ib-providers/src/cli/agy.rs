@@ -452,8 +452,3 @@ impl CliAdapter for AgyAdapter {
 }
 
 pub type AgyCliProvider = CliProvider<AgyAdapter>;
-
-#[must_use]
-pub fn new_agy_provider(model: impl Into<String>) -> AgyCliProvider {
-    CliProvider::new(AgyAdapter, CliConfig::new(model, "agy", 900.0))
-}

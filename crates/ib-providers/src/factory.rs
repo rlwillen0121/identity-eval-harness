@@ -362,10 +362,6 @@ fn extra_problem(name: &str, value: &Value) -> Option<String> {
     }
 }
 
-pub fn make_provider(spec: &ModelSpec) -> Result<Arc<dyn Provider>, FactoryError> {
-    make_provider_with_env(spec, None)
-}
-
 pub fn make_provider_with_env(
     spec: &ModelSpec,
     env_override: Option<BTreeMap<String, String>>,

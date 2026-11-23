@@ -620,7 +620,6 @@ name = "ib-core"
 version = "5.2.0"
 dependencies = [
  "hex",
- "serde",
  "serde_json",
  "sha2",
  "thiserror",

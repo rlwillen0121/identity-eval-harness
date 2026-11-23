@@ -221,8 +221,3 @@ impl CliAdapter for GrokAdapter {
 }
 
 pub type GrokCliProvider = CliProvider<GrokAdapter>;
-
-#[must_use]
-pub fn new_grok_provider(model: impl Into<String>) -> GrokCliProvider {
-    CliProvider::new(GrokAdapter, CliConfig::new(model, "grok", 600.0))
-}

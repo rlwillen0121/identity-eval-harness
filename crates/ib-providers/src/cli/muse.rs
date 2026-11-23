@@ -400,11 +400,3 @@ impl CliAdapter for MuseAdapter {
 }
 
 pub type MuseCliProvider = CliProvider<MuseAdapter>;
-
-#[must_use]
-pub fn new_muse_provider(model: impl Into<String>) -> MuseCliProvider {
-    let mut cfg = CliConfig::new(model, "muse", 900.0);
-    cfg.effort = Some(DEFAULT_EFFORT.to_string());
-    cfg.max_retries = 0;
-    CliProvider::new(MuseAdapter::default(), cfg)
-}

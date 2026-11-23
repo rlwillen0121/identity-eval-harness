@@ -8,7 +8,7 @@
 //! Captured stdout/stderr are capped at [`MAX_CAPTURE_BYTES`] per stream with [`TRUNCATION_MARKER`].
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -22,7 +22,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command as TokioCommand};
 use url::Url;
 
-pub const DEFAULT_MAX_RETRIES: u32 = 3;
 pub const DEFAULT_RETRY_BASE_DELAY_S: f64 = 2.0;
 pub const MAX_CAPTURE_BYTES: usize = 16 * 1024 * 1024;
 pub const TRUNCATION_MARKER: &str = "\n[identitybench: output truncated at 16 MiB]";
@@ -655,11 +654,6 @@ pub fn redact(
 }
 
 #[must_use]
-pub fn redact_simple(text: &str) -> String {
-    redact(text, None, &[])
-}
-
-#[must_use]
 pub fn redact_diagnostics(
     value: &Value,
     env: Option<&BTreeMap<String, String>>,
@@ -722,13 +716,5 @@ pub fn tail(text: &str, limit: usize) -> String {
         let skip = count - limit;
         let tail_str: String = trimmed.chars().skip(skip).collect();
         format!("…{tail_str}")
-    }
-}
-
-pub fn cwd_or_dot(path: &Path) -> PathBuf {
-    if path.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        path.to_path_buf()
     }
 }

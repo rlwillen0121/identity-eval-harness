@@ -342,10 +342,3 @@ impl CliAdapter for CodexAdapter {
 }
 
 pub type CodexCliProvider = CliProvider<CodexAdapter>;
-
-#[must_use]
-pub fn new_codex_provider(model: impl Into<String>) -> CodexCliProvider {
-    let mut cfg = CliConfig::new(model, "codex", 900.0);
-    cfg.effort = Some(DEFAULT_EFFORT.to_string());
-    CliProvider::new(CodexAdapter, cfg)
-}
