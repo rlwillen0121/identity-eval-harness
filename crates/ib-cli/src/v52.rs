@@ -1073,7 +1073,7 @@ fn construct_provider(
 ) -> Result<Arc<dyn Provider>> {
     let mut environment: BTreeMap<String, String> = std::env::vars().collect();
     if let Some(path) = env_file {
-        let (_loaded, problems) = load_env_file_into(path, &mut environment, |_| true);
+        let (_loaded, problems) = load_env_file_into(path, &mut environment);
         for problem in problems {
             eprintln!("warning: {}: {problem}", path.display());
         }

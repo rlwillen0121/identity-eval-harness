@@ -12,17 +12,6 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-pub const LIVE_COMMANDS: &[&[&str]] = &[
-    &["run"],
-    &["judge"],
-    &["audit"],
-    &["v3", "run"],
-    &["v4", "run"],
-    &["v41", "run"],
-];
-pub const LEAF_GROUPS: &[&str] = &["v3", "v4", "v41"];
-pub const HARNESS_PREFIX: &str = "IDENTITYBENCH_";
-
 static KEY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*$").expect("valid key regex"));
 static EXPORT_RE: LazyLock<Regex> =
@@ -34,19 +23,6 @@ static INLINE_COMMENT_RE: LazyLock<Regex> =
 pub struct EnvFile {
     pub values: BTreeMap<String, String>,
     pub problems: Vec<String>,
-}
-
-/// Whether `command` (or a command it is under) is in `LIVE_COMMANDS`.
-#[must_use]
-pub fn is_live_command(command: &[&str]) -> bool {
-    (1..=command.len()).any(|n| LIVE_COMMANDS.contains(&&command[..n]))
-}
-
-/// Which `.env` names `command` may export: every name for a live command,
-/// only `HARNESS_PREFIX` names otherwise.
-#[must_use]
-pub fn env_name_allowed(command: &[&str], name: &str) -> bool {
-    is_live_command(command) || name.starts_with(HARNESS_PREFIX)
 }
 
 fn double_quoted(body: &str) -> Option<(String, &str)> {
@@ -193,16 +169,16 @@ pub fn parse_env(text: &str) -> EnvFile {
     EnvFile { values, problems }
 }
 
-/// Load `.env` from `path` into `environ` for keys not already present and allowed by `wanted`.
+/// Load `.env` from `path` into `environ` for keys not already present.
 /// Returns `(sorted_loaded_keys, problems)`.
-pub fn load_env_file_into<F>(
+///
+/// The caller passes an explicit map (the process environment plus the file) rather than mutating
+/// `std::env`: `std::env::set_var` is `unsafe` in edition 2024 and the workspace forbids
+/// `unsafe_code`.
+pub fn load_env_file_into(
     path: impl AsRef<Path>,
     environ: &mut BTreeMap<String, String>,
-    wanted: F,
-) -> (Vec<String>, Vec<String>)
-where
-    F: Fn(&str) -> bool,
-{
+) -> (Vec<String>, Vec<String>) {
     let file = path.as_ref();
     if !file.is_file() {
         return (Vec::new(), Vec::new());
@@ -234,24 +210,11 @@ where
     let parsed = parse_env(text);
     let mut loaded = Vec::new();
     for (key, value) in parsed.values {
-        if !environ.contains_key(&key) && wanted(&key) {
+        if !environ.contains_key(&key) {
             environ.insert(key.clone(), value);
             loaded.push(key);
         }
     }
     loaded.sort();
     (loaded, parsed.problems)
-}
-
-/// Load `.env` from `path` into the process environment (`std::env`) for missing keys.
-///
-/// Note: in Rust edition 2024 `std::env::set_var` is `unsafe`, and workspace lints forbid
-/// `unsafe_code`. Callers that construct isolated subprocess/client environments should prefer
-/// [`load_env_file_into`] with an explicit map.
-#[must_use]
-pub fn load_env_file_map(
-    path: impl AsRef<Path>,
-    environ: &mut BTreeMap<String, String>,
-) -> (Vec<String>, Vec<String>) {
-    load_env_file_into(path, environ, |_| true)
 }

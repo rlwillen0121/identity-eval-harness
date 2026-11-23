@@ -3,9 +3,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use ib_providers::env::paired_api_key_env;
-use ib_providers::envfile::{
-    env_name_allowed, is_live_command, load_env_file_into, load_env_file_map, parse_env,
-};
+use ib_providers::envfile::{load_env_file_into, parse_env};
 use tempfile::TempDir;
 
 #[test]
@@ -106,7 +104,7 @@ fn load_sets_only_missing_variables_and_returns_sorted_names() {
     )
     .unwrap();
     let mut environ = BTreeMap::from([("EXISTING".to_string(), "from-environment".to_string())]);
-    let (loaded, problems) = load_env_file_map(&env_path, &mut environ);
+    let (loaded, problems) = load_env_file_into(&env_path, &mut environ);
     assert_eq!(loaded, vec!["A_KEY", "B_KEY"]);
     assert_eq!(problems, vec!["line 4: expected KEY=VALUE; line skipped"]);
     assert_eq!(environ["EXISTING"], "from-environment");
@@ -119,13 +117,13 @@ fn missing_file_and_utf8_bom_and_invalid_utf8_and_permissions() {
     let tmp = TempDir::new().unwrap();
     let mut environ = BTreeMap::new();
     assert_eq!(
-        load_env_file_map(tmp.path().join(".env"), &mut environ),
+        load_env_file_into(tmp.path().join(".env"), &mut environ),
         (vec![], vec![])
     );
 
     let bom_file = tmp.path().join(".env.bom");
     fs::write(&bom_file, b"\xef\xbb\xbfFIRST=1\n").unwrap();
-    let (loaded, problems) = load_env_file_map(&bom_file, &mut environ);
+    let (loaded, problems) = load_env_file_into(&bom_file, &mut environ);
     assert_eq!(loaded, vec!["FIRST"]);
     assert!(problems.is_empty());
     assert_eq!(environ["FIRST"], "1");
@@ -133,7 +131,7 @@ fn missing_file_and_utf8_bom_and_invalid_utf8_and_permissions() {
     let bad_utf8 = tmp.path().join(".env.bad");
     fs::write(&bad_utf8, b"GOOD=1\nSECRET=caf\xe9-placeholder\n").unwrap();
     let mut environ2 = BTreeMap::new();
-    let (loaded2, probs2) = load_env_file_map(&bad_utf8, &mut environ2);
+    let (loaded2, probs2) = load_env_file_into(&bad_utf8, &mut environ2);
     assert!(loaded2.is_empty());
     assert!(environ2.is_empty());
     assert_eq!(probs2, vec!["not valid UTF-8 text; file skipped"]);
@@ -144,7 +142,7 @@ fn missing_file_and_utf8_bom_and_invalid_utf8_and_permissions() {
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
     if fs::read(&locked).is_err() {
         let mut environ3 = BTreeMap::new();
-        let (loaded3, probs3) = load_env_file_map(&locked, &mut environ3);
+        let (loaded3, probs3) = load_env_file_into(&locked, &mut environ3);
         assert!(loaded3.is_empty());
         assert_eq!(probs3, vec!["unreadable (PermissionError); file skipped"]);
     }
@@ -152,27 +150,7 @@ fn missing_file_and_utf8_bom_and_invalid_utf8_and_permissions() {
 }
 
 #[test]
-fn env_scope_and_paired_api_key_env() {
-    assert!(is_live_command(&["run"]));
-    assert!(is_live_command(&["audit", "panel"]));
-    assert!(is_live_command(&["v41", "run"]));
-    assert!(!is_live_command(&["v41", "score"]));
-    assert!(!is_live_command(&["v41"]));
-
-    let mut env = BTreeMap::new();
-    let tmp = TempDir::new().unwrap();
-    let env_path = tmp.path().join(".env");
-    fs::write(
-        &env_path,
-        "IDENTITYBENCH_PRICING=p.yaml\nOPENAI_API_KEY=sk-1234567890\n",
-    )
-    .unwrap();
-    let (loaded, _) = load_env_file_into(&env_path, &mut env, |k| {
-        env_name_allowed(&["v41", "score"], k)
-    });
-    assert_eq!(loaded, vec!["IDENTITYBENCH_PRICING"]);
-    assert!(!env.contains_key("OPENAI_API_KEY"));
-
+fn paired_api_key_env_names() {
     assert_eq!(
         paired_api_key_env("LOCAL_LLM_BASE_URL").as_deref(),
         Some("LOCAL_LLM_API_KEY")
