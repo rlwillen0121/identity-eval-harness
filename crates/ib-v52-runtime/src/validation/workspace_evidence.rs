@@ -5,8 +5,8 @@ use ib_v52_schemas::{CONFIG_FILES_V52, EpisodeV52, IgaDeploymentConfigV52};
 use serde_json::Value;
 
 use crate::workspace::{
-    DEFAULT_READ_LINE_WINDOW, DEFAULT_SEARCH_MAX_MATCHES, MAX_READ_LINES_PER_CALL,
-    is_searchable_path, marked_search_line, serialize_config_file,
+    DEFAULT_SEARCH_MAX_MATCHES, is_searchable_path, marked_search_line, normalize_workspace_path,
+    read_workspace_response_for_evidence, serialize_config_file,
 };
 
 #[derive(Debug, Default, Clone)]
@@ -26,21 +26,10 @@ impl WorkspaceEvidence {
         Self { files }
     }
 
-    fn read_range<'a>(&'a self, args: &Value) -> Option<(&'a str, usize, usize, usize)> {
-        let file = self.files.get(args["path"].as_str()?)?;
-        let lines = file.lines().count();
-        let start = if lines == 0 {
-            0
-        } else {
-            args["start_line"].as_u64().unwrap_or(1).max(1) as usize
-        };
-        let end = args["end_line"]
-            .as_u64()
-            .map(|n| n as usize)
-            .unwrap_or_else(|| start.saturating_add(DEFAULT_READ_LINE_WINDOW - 1))
-            .min(start.saturating_add(MAX_READ_LINES_PER_CALL - 1))
-            .min(lines);
-        Some((file, lines, start, end))
+    fn read_result(&self, args: &Value) -> Option<Value> {
+        let path = normalize_workspace_path(args["path"].as_str()?);
+        let file = self.files.get(path)?;
+        read_workspace_response_for_evidence(path, file, args)
     }
 
     // A displayed hit can only justify the path, line and marked text actually present together
@@ -107,16 +96,11 @@ impl WorkspaceEvidence {
     ) -> bool {
         match tool {
             "read_workspace_file" if path == "/content" => {
-                let Some((file, _, start, end)) = self.read_range(args) else {
+                let Some(expected) = self.read_result(args) else {
                     return false;
                 };
-                let skip = start.saturating_sub(1);
-                file.lines()
-                    .skip(skip)
-                    .take(end.saturating_sub(skip))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-                    == text
+                expected["content"].as_str() == Some(text)
+                    && output["content"].as_str() == Some(text)
             }
             "search_workspace" => {
                 let Some(("matches", index, "text" | "path")) = array_field(path) else {
@@ -137,11 +121,16 @@ impl WorkspaceEvidence {
     ) -> Option<usize> {
         match tool {
             "read_workspace_file" => {
-                let (_, lines, start, end) = self.read_range(args)?;
+                let expected = self.read_result(args)?;
                 match path {
-                    "/total_lines" => Some(lines),
-                    "/start_line" => Some(start),
-                    "/end_line" => Some(end),
+                    "/total_lines" | "/start_line" | "/end_line" => expected
+                        .pointer(path)
+                        .and_then(Value::as_u64)
+                        .and_then(|n| usize::try_from(n).ok()),
+                    "/continuation/start_line" | "/continuation/byte_offset" => expected
+                        .pointer(path)
+                        .and_then(Value::as_u64)
+                        .and_then(|n| usize::try_from(n).ok()),
                     _ => None,
                 }
             }
@@ -227,5 +216,53 @@ mod tests {
         injected["line"] = json!(1);
         assert!(!evidence.public_hit(&args, &injected));
         assert!(!evidence.public_hit(&json!({"pattern":"match","path_glob":"config/*"}), &hit));
+    }
+
+    #[test]
+    fn read_evidence_binds_continuation_marker_and_cursor_to_public_text() {
+        let file = format!("🙂{}tail", "x".repeat(9_000));
+        let evidence = WorkspaceEvidence {
+            files: BTreeMap::from([("context/long.txt".into(), file.clone())]),
+        };
+        let args = json!({"path":"context/long.txt","start_line":1,"end_line":1});
+        let output = read_workspace_response_for_evidence("context/long.txt", &file, &args)
+            .expect("readable public text has a derived response");
+        let content = output["content"].as_str().unwrap();
+        assert!(evidence.public_text("read_workspace_file", "/content", content, &args, &output));
+        let expected_offset = output["continuation"]["byte_offset"].as_u64().unwrap() as usize;
+        assert_eq!(
+            evidence.public_number(
+                "read_workspace_file",
+                "/continuation/byte_offset",
+                &args,
+                &output,
+            ),
+            Some(expected_offset)
+        );
+
+        let mut forged_text = output.clone();
+        forged_text["content"] = json!(format!("{content} private suffix"));
+        assert!(!evidence.public_text(
+            "read_workspace_file",
+            "/content",
+            forged_text["content"].as_str().unwrap(),
+            &args,
+            &forged_text,
+        ));
+        let mut forged_cursor = output.clone();
+        forged_cursor["continuation"]["byte_offset"] = json!(expected_offset + 1);
+        assert_ne!(
+            forged_cursor["continuation"]["byte_offset"],
+            json!(
+                evidence
+                    .public_number(
+                        "read_workspace_file",
+                        "/continuation/byte_offset",
+                        &args,
+                        &forged_cursor,
+                    )
+                    .unwrap()
+            )
+        );
     }
 }

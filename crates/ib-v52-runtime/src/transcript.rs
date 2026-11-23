@@ -1,5 +1,5 @@
 //! Canonical transcript records, the §7.1 transcript grammar, and the deterministic,
-//! transport-independent §7.2 compaction policy (`identitybench.v5.2.compaction.v1`).
+//! transport-independent §7.2 compaction policy (`identitybench.v5.2.compaction.v2`).
 //!
 //! Every function here is a pure function of its inputs. Nothing depends on the provider kind,
 //! so compacted requests are byte-identical across transports by construction.
@@ -153,16 +153,27 @@ struct TurnCompaction {
     write_compacted: Vec<bool>,
     output_compacted: Vec<bool>,
     superseded_outputs: Vec<Option<usize>>,
+    final_output_compacted: Vec<bool>,
+    final_rollback_outputs_compacted: Vec<bool>,
     generation_compacted: bool,
 }
 
 impl TurnCompaction {
     fn for_turn(turn: &TurnRecordV52) -> Self {
         let n = turn.action_count();
+        let rollback_output_count = match &turn.outcome {
+            TurnOutcomeV52::Accepted {
+                rolled_back: Some(outputs),
+                ..
+            } => outputs.len(),
+            _ => 0,
+        };
         Self {
             write_compacted: vec![false; n],
             output_compacted: vec![false; n],
             superseded_outputs: vec![None; n],
+            final_output_compacted: vec![false; n],
+            final_rollback_outputs_compacted: vec![false; rollback_output_count],
             generation_compacted: false,
         }
     }
@@ -240,9 +251,23 @@ pub fn superseded_output_marker(turn: usize) -> Value {
 /// `[{"error":"CONTEXT_CEILING_EXCEEDED","rolled_back":true,"outputs":[...]}]` (§7.2 fallback).
 #[must_use]
 pub fn context_ceiling_results(outputs: &[RolledBackOutputV52]) -> Value {
+    context_ceiling_results_with_compacted_outputs(outputs, &[])
+}
+
+fn context_ceiling_results_with_compacted_outputs(
+    outputs: &[RolledBackOutputV52],
+    compacted: &[bool],
+) -> Value {
     let items: Vec<Value> = outputs
         .iter()
-        .map(|o| json!({"index": o.index, "tool": o.tool, "bytes": o.bytes}))
+        .enumerate()
+        .map(|(idx, o)| {
+            if compacted.get(idx).copied().unwrap_or(false) {
+                json!({"index": o.index, "tool": o.tool})
+            } else {
+                json!({"index": o.index, "tool": o.tool, "bytes": o.bytes})
+            }
+        })
         .collect();
     json!([{"error": "CONTEXT_CEILING_EXCEEDED", "rolled_back": true, "outputs": items}])
 }
@@ -341,14 +366,24 @@ fn render_results(turn: &TurnRecordV52, state: &TurnCompaction) -> String {
             ..
         } => {
             if let Some(outputs) = rolled_back {
-                return compact_json(&context_ceiling_results(outputs));
+                return compact_json(&context_ceiling_results_with_compacted_outputs(
+                    outputs,
+                    &state.final_rollback_outputs_compacted,
+                ));
             }
             let items: Vec<ResultItem<'_>> = results
                 .iter()
                 .enumerate()
                 .map(|(idx, r)| ResultItem {
                     action: &r.action,
-                    result: if let Some(superseding_turn) =
+                    result: if state
+                        .final_output_compacted
+                        .get(idx)
+                        .copied()
+                        .unwrap_or(false)
+                    {
+                        Cow::Owned(json!({"compacted": true}))
+                    } else if let Some(superseding_turn) =
                         state.superseded_outputs.get(idx).copied().flatten()
                     {
                         Cow::Owned(superseded_output_marker(superseding_turn))
@@ -401,8 +436,8 @@ pub struct CompactionStatsV52 {
     pub generations_replaced: usize,
     /// Highest §7.2 step applied; `None` when no compaction was needed.
     pub last_step: Option<u8>,
-    /// Replacements made by each §7.2 step (index is the step number, 0 through 8).
-    pub per_step: [usize; 9],
+    /// Replacements made by each §7.2 step (index is the step number, 0 through 9).
+    pub per_step: [usize; 10],
 }
 
 /// A canonical request ready to send.
@@ -427,11 +462,11 @@ impl CanonicalRequestV52 {
     }
 }
 
-/// Steps 0–8 could not bring the request under the ceiling; the §7.2 fallback must roll back
-/// turn `t − 1`.
+/// The compaction policy, including step 9 when eligible, could not bring the request under the
+/// ceiling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CeilingExceededV52 {
-    pub request_bytes_after_step_8: usize,
+    pub request_bytes_after_compaction: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -649,6 +684,71 @@ impl Compactor<'_> {
         false
     }
 
+    /// Step 9 is the final bound after the §7.2 rollback decision. It removes output detail that
+    /// is already retained in the persisted transcript, while preserving action order and the
+    /// explicit rollback result. It also applies the step-8 generation marker to accepted turns
+    /// that remained uncompacted when steps 0–8 stopped early after fitting.
+    fn final_compact_results(&mut self) -> bool {
+        for idx in 0..self.turns.len() {
+            let output_shape = match &self.turns[idx].outcome {
+                TurnOutcomeV52::Accepted {
+                    rolled_back: Some(outputs),
+                    ..
+                } => Some((true, outputs.len())),
+                TurnOutcomeV52::Accepted {
+                    results,
+                    rolled_back: None,
+                    ..
+                } => Some((false, results.len())),
+                TurnOutcomeV52::Rejected { .. } | TurnOutcomeV52::Refused => None,
+            };
+            if let Some((is_rollback, result_count)) = output_shape {
+                if !self.states[idx].generation_compacted {
+                    let previous_len = self.rendered[idx].len();
+                    self.states[idx].generation_compacted = true;
+                    self.refresh(idx);
+                    if self.rendered[idx].len() >= previous_len {
+                        // A short accepted generation is already smaller than its marker.
+                        self.states[idx].generation_compacted = false;
+                        self.refresh(idx);
+                    } else {
+                        self.stats.generations_replaced += 1;
+                        self.record_replacement(9);
+                    }
+                }
+                if is_rollback {
+                    for action in 0..self.states[idx].final_rollback_outputs_compacted.len() {
+                        if self.states[idx].final_rollback_outputs_compacted[action] {
+                            continue;
+                        }
+                        self.states[idx].final_rollback_outputs_compacted[action] = true;
+                        self.stats.outputs_replaced += 1;
+                        self.record_replacement(9);
+                        self.refresh(idx);
+                    }
+                } else {
+                    for action in 0..result_count {
+                        if self.states[idx].final_output_compacted[action] {
+                            continue;
+                        }
+                        let previous_len = self.rendered[idx].len();
+                        self.states[idx].final_output_compacted[action] = true;
+                        self.refresh(idx);
+                        if self.rendered[idx].len() >= previous_len {
+                            // A tiny result is already shorter than the final marker.
+                            self.states[idx].final_output_compacted[action] = false;
+                            self.refresh(idx);
+                            continue;
+                        }
+                        self.stats.outputs_replaced += 1;
+                        self.record_replacement(9);
+                    }
+                }
+            }
+        }
+        self.fits()
+    }
+
     fn run(&mut self) -> bool {
         if self.fits() {
             return true;
@@ -710,8 +810,8 @@ impl Compactor<'_> {
 }
 
 /// Build the canonical request for the next turn `t = turns.len() + 1` as a pure function of the
-/// uncompacted transcript (§7.2). Returns [`CeilingExceededV52`] when the §7.2 fallback is
-/// required.
+/// uncompacted transcript (§7.2). Returns [`CeilingExceededV52`] when the §7.2 compaction policy
+/// cannot fit the request; the runner may then roll back the latest accepted turn and rebuild.
 pub fn build_canonical_request(
     system_prompt: &str,
     opening: &str,
@@ -735,9 +835,27 @@ pub fn build_canonical_request(
         max_bytes: max_request_bytes,
         stats: CompactionStatsV52::default(),
     };
-    if !compactor.run() {
+    let compacted_fits = compactor.run();
+    let latest_turn_needs_rollback = turns.last().is_some_and(|turn| {
+        matches!(
+            &turn.outcome,
+            TurnOutcomeV52::Accepted {
+                rolled_back: None,
+                ..
+            }
+        )
+    });
+    let rollback_completed = turns.last().is_some_and(TurnRecordV52::is_rolled_back);
+    if rollback_completed || (!compacted_fits && !latest_turn_needs_rollback) {
+        // Final result compaction is the last phase after an applied rollback. It is also safe
+        // when no rollback can apply because the newest turn was rejected/refused or no turn
+        // exists: those cases have no workspace effects to undo.
+        compactor.stats.compacted = true;
+        compactor.final_compact_results();
+    }
+    if !compactor.fits() {
         return Err(CeilingExceededV52 {
-            request_bytes_after_step_8: compactor.total,
+            request_bytes_after_compaction: compactor.total,
         });
     }
     let mut transcript = String::with_capacity(compactor.total);
@@ -874,10 +992,7 @@ mod tests {
         let r0 = render_uncompacted_transcript(opening, &[]);
         let r1 = render_uncompacted_transcript(opening, &turns[..1]);
         let r2 = render_uncompacted_transcript(opening, &turns);
-        assert_eq!(
-            r0,
-            "=== SCENARIO ===\nREF\n\nHEADER\n\n{\"status\":\"OK\"}"
-        );
+        assert_eq!(r0, "=== SCENARIO ===\nREF\n\nHEADER\n\n{\"status\":\"OK\"}");
         assert!(r1.starts_with(&r0) && r1.len() > r0.len());
         assert!(r2.starts_with(&r1) && r2.len() > r1.len());
         let suffix = &r2[r0.len()..];
@@ -1060,7 +1175,7 @@ mod tests {
     }
 
     #[test]
-    fn carbon_style_309_reads_keep_all_30_distinct_files_under_the_ranked_ceiling() {
+    fn carbon_style_309_reads_keep_all_30_distinct_files_under_the_ceiling() {
         use crate::protocol::{MAX_ACTIONS_PER_TURN_V52, MAX_REQUEST_BYTES_V52};
         let files: Vec<_> = (0..30)
             .map(|index| {
@@ -1096,10 +1211,16 @@ mod tests {
             build_canonical_request("S", "=== SCENARIO ===", &turns, MAX_REQUEST_BYTES_V52)
                 .unwrap();
         assert!(request.request_bytes <= MAX_REQUEST_BYTES_V52);
-        assert_eq!(request.stats.last_step, Some(0));
+        // Repeated identical reads are still superseded at step 0, but the 64 KB request
+        // ceiling requires the later generation bound as well for this 309-read history.
+        assert_eq!(request.stats.last_step, Some(8));
+        assert!(request.stats.per_step[0] > 0);
+        assert!(request.stats.per_step[8] > 0);
         assert!((200..=279).contains(&request.stats.superseded_outputs));
-        for (_, text, _) in files {
-            assert!(request.transcript.contains(&text));
+        // The 64 KB ceiling permits compacted read markers to stand in for older bodies, but
+        // every distinct file remains identified in the model-visible transcript.
+        for (path, _, _) in files {
+            assert!(request.transcript.contains(&path));
         }
     }
 
@@ -1377,7 +1498,16 @@ mod tests {
         }
         let req = build_canonical_request("S", opening, &rolled, 500).unwrap();
         assert!(req.transcript.contains(
-            "[{\"error\":\"CONTEXT_CEILING_EXCEEDED\",\"rolled_back\":true,\"outputs\":[{\"index\":0,\"tool\":\"read_workspace_file\","
+            "[{\"error\":\"CONTEXT_CEILING_EXCEEDED\",\"rolled_back\":true,\"outputs\":[{\"index\":0,\"tool\":\"read_workspace_file\"}]}]"
         ));
+        // The persisted rollback record still retains the byte count for audit.
+        let TurnOutcomeV52::Accepted {
+            rolled_back: Some(outputs),
+            ..
+        } = &rolled[0].outcome
+        else {
+            panic!("expected accepted turn to retain its rollback audit record");
+        };
+        assert!(outputs[0].bytes > 0);
     }
 }

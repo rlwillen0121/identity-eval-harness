@@ -73,7 +73,7 @@ pub struct RunV52EpisodeOptions {
     pub retry_backoff_base_ms: u64,
     pub wall_clock_guard_ms: u64,
     pub per_call_timeout_s: u64,
-    /// Canonical request ceiling. Always `MAX_REQUEST_BYTES_V52` (`176_000`) in
+    /// Canonical request ceiling. Always `MAX_REQUEST_BYTES_V52` (`64_000`) in
     /// `identitybench v52 run`; tests may lower it.
     pub max_request_bytes: usize,
 }
@@ -518,8 +518,9 @@ impl SlotClock {
     }
 }
 
-/// The canonical request for the next turn, applying the §7.2 rollback fallback when compaction
-/// alone cannot fit it. `Err` carries the end of a slot whose request cannot be bounded.
+/// The canonical request for the next turn, applying the §7.2 rollback and final-compaction
+/// fallback when the ordinary compaction steps cannot fit it. `Err` carries the end of a slot
+/// whose request remains over the ceiling after every applicable fallback.
 fn next_canonical_request(
     ctx: &SlotContext<'_>,
     system_prompt: &str,
@@ -534,13 +535,27 @@ fn next_canonical_request(
         return Ok(Ok(request));
     }
     if !rollback_last_turn(checkpoint, runtime) {
-        return Ok(Err(context_overflow("after compaction and rollback")));
+        let detail = match checkpoint.turns.last().map(|turn| &turn.outcome) {
+            Some(TurnOutcomeV52::Accepted {
+                rolled_back: None, ..
+            }) => "after steps 0–8; the latest accepted turn could not be rolled back",
+            _ => {
+                "after final compaction; no latest-turn workspace effects were available to roll back"
+            }
+        };
+        return Ok(Err(context_overflow(detail)));
     }
     checkpoint.elapsed_active_wall_ms = clock.total_ms();
     ctx.persist(checkpoint)?;
     Ok(
-        build_canonical_request(system_prompt, ctx.opening, &checkpoint.turns, max_bytes)
-            .map_err(|_| context_overflow("after rollback")),
+        build_canonical_request(system_prompt, ctx.opening, &checkpoint.turns, max_bytes).map_err(
+            |error| {
+                context_overflow(&format!(
+                    "after rollback and final compaction ({} bytes remain)",
+                    error.request_bytes_after_compaction
+                ))
+            },
+        ),
     )
 }
 

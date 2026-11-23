@@ -250,8 +250,9 @@ pub struct ToolCallTraceV52 {
     /// `read_workspace_file` with `status == "OK"`: SHA-256 of the whole file as read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_sha256: Option<String>,
-    /// Stable identity of a successful workspace read or search. This digest is persisted for
-    /// transcript compaction and offline audit; it is never returned to the model.
+    /// Stable identity of a successful workspace read chunk or search. Read identities bind the
+    /// effective start/end cursors and whole-file hash; the digest supports compaction and offline
+    /// audit and is never returned to the model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub read_identity: Option<String>,
     /// Exact returned page for a successful `search_workspace` call; `Some([])` means no hits.

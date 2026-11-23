@@ -22,7 +22,7 @@ pub const LOG_FILE: &str = "agy.log";
 /// Largest user message, in UTF-8 bytes, that `agy` delivers unmodified. The CLI truncates a
 /// longer user message client-side to about `191_985` bytes and appends
 /// `\n<truncated N bytes>`, so the adapter refuses to send one instead (`SPEC-v5.2` §7.2: silent
-/// truncation is forbidden). The uniform `176_000`-byte request ceiling keeps every canonical
+/// truncation is forbidden). The uniform `64_000`-byte request ceiling keeps every canonical
 /// request below this bound; the guard is a defensive invariant.
 pub const AGY_MAX_USER_MESSAGE_BYTES: usize = 191_000;
 /// `ModelResponse::raw` `error_code` of a request refused by the capacity guard.

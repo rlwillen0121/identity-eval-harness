@@ -222,6 +222,14 @@ fn create_run(root: &Path, spec: &RunSpec<'_>) -> PathBuf {
             "binary_sha256": "synthetic-binary",
             "system_prompt_sha256": system_prompt_sha256_v52(),
             "context_window_tokens": 131072,
+            "probes": {
+                "sentinel_extraction": {
+                    "passed": true,
+                    "request_bytes": MAX_REQUEST_BYTES_V52,
+                },
+                "native_tool_canary": {"passed": true},
+                "system_prompt_canary": {"passed": true},
+            },
         });
         let bytes = serde_json::to_vec(&receipt).unwrap();
         fs::write(run_dir.join("probe_receipt.json"), &bytes).unwrap();
