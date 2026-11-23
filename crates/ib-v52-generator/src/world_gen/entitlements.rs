@@ -684,17 +684,20 @@ pub(super) fn assign_entitlements(
 
     // `F06-CR` (Appendix C): memberships of the CMDB-retired Expense Classic group were never cleaned
     // up, so every active Finance FTE/PT account still holds it (100% >= 80% mining threshold).
-    if hardening.cmdb_retirement_register
-        && let Some(retired_gid) = groups
-            .iter()
-            .find(|g| g.role_tag == GroupRoleTagV52::RetiredAppPopulated)
-            .map(|g| g.record.group_id.clone())
-    {
-        for pkey in &coh_fin {
-            push_uniq(
-                ad_ents_map.entry(pkey.clone()).or_default(),
-                retired_gid.clone(),
-            );
+    if hardening.cmdb_retirement_register {
+        let populated_groups = groups.iter().filter(|g| {
+            matches!(
+                g.role_tag,
+                GroupRoleTagV52::RetiredAppPopulated | GroupRoleTagV52::RetiredAppBridge
+            )
+        });
+        for g in populated_groups {
+            for pkey in &coh_fin {
+                push_uniq(
+                    ad_ents_map.entry(pkey.clone()).or_default(),
+                    g.record.group_id.clone(),
+                );
+            }
         }
     }
 

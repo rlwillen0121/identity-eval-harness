@@ -323,7 +323,7 @@ pub(super) fn build_person_plans(
         let mut office_fallback_site_unmapped = false;
         let mut manager_tbd_placeholder_sources: u8 = 0;
         let mut sec_bridge_personal_email_only = false;
-        let vms_bridge_personal_email_only = false;
+        let mut vms_bridge_personal_email_only = false;
         let mut paired_withdrawn_override: Option<PairedWithdrawnKind> = None;
         let mut f11_legal_cohort_spike_target = false;
         let mut wd_academic_status_replica: Option<String> = None;
@@ -744,6 +744,9 @@ pub(super) fn build_person_plans(
                     in_workday = true;
                     in_secondary = true;
                     in_vms = true;
+                    if spec.family_id == "F09" {
+                        vms_bridge_personal_email_only = true;
+                    }
                     workday_status_code = "ACT".to_owned();
                     vms_status_code = "ACT".to_owned();
                     workday_aff_code = "FTE".to_owned();

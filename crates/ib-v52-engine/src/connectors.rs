@@ -208,17 +208,14 @@ pub fn test_connector_spec(
         );
     }
 
-    let missing_disconnected_prefix = endpoint
-        .disconnected_entitlement_prefixes
-        .iter()
-        .any(|req_prefix| !spec.disconnected_entitlement_prefixes.contains(req_prefix));
+    let disconnected_prefix_mismatch = !disconnected_prefixes_match(endpoint, spec);
     let disconnected_queue_mismatch = (!endpoint.disconnected_entitlement_prefixes.is_empty()
         || endpoint.expected_disconnected_itsm_queue.is_some())
         && spec.disconnected_itsm_queue != endpoint.expected_disconnected_itsm_queue;
-    if missing_disconnected_prefix || disconnected_queue_mismatch {
+    if disconnected_prefix_mismatch || disconnected_queue_mismatch {
         schema_extraction_ok = false;
         let mut pointers = Vec::new();
-        if missing_disconnected_prefix {
+        if disconnected_prefix_mismatch {
             pointers.push(connector_config_pointer(
                 connector_id,
                 "disconnected_entitlement_prefixes",
@@ -233,7 +230,7 @@ pub fn test_connector_spec(
         push_error(
             &mut errors,
             &mut error_diagnostics,
-            "PROVISIONING_WRITE_REJECTED: direct API write attempted on disconnected entitlement namespace or manual ITSM queue unconfigured",
+            "PROVISIONING_WRITE_REJECTED: direct and manual entitlement namespaces or manual ITSM queue do not match the target contract",
             pointers,
         );
     }
@@ -336,6 +333,16 @@ pub fn test_connector_spec(
         errors,
         error_diagnostics,
     })
+}
+
+/// Compare exact namespace scopes; a wider sibling prefix wrongly routes connected writes.
+pub(crate) fn disconnected_prefixes_match(
+    endpoint: &ib_v52_schemas::MockSpokeEndpointV52,
+    connector: &ib_v52_schemas::ConnectorSpecV52,
+) -> bool {
+    let expected: BTreeSet<_> = endpoint.disconnected_entitlement_prefixes.iter().collect();
+    let actual: BTreeSet<_> = connector.disconnected_entitlement_prefixes.iter().collect();
+    actual == expected
 }
 
 /// Returns `true` iff a connector sandbox result passed every check cleanly.

@@ -24,8 +24,8 @@ use ib_v52_schemas::{
     AuthoritativeSourceRuleV52, CloudCiemConfigV52, CloudEscalationVectorV52,
     CloudPrincipalRemediationV52, CloudRemediationActionV52, CollisionSourceV52, CompareOpV52,
     ConnectorKindV52, ConnectorSpecV52, ConnectorsConfigV52, ContingentExpiryWorkflowV52,
-    CutoverPhaseV52, DelegationDecisionV52, EmergencyLeaverWorkflowV52, EnterpriseAiAgentRecordV52,
-    GardenLeaveWorkflowV52, GoLivePlanConfigV52, GoLiveSafetyGatesV52,
+    CutoverPhaseV52, DateCompareOpV52, DelegationDecisionV52, EmergencyLeaverWorkflowV52,
+    EnterpriseAiAgentRecordV52, GardenLeaveWorkflowV52, GoLivePlanConfigV52, GoLiveSafetyGatesV52,
     GroupCatalogClassificationV52, GroupDispositionV52, HeadlessAccessRequestWorkflowV52,
     IdentityProfileConfigV52, IgaDeploymentConfigV52, LifecycleStateIdV52, LifecycleStateRuleV52,
     LifecycleStatesConfigV52, MinedRoleV52, NhiAndAgentConfigV52, NhiDecisionV52,
@@ -49,6 +49,31 @@ fn src(source_id: &str, field: &str) -> TransformExprV52 {
     TransformExprV52::SourceAttr {
         source_id: source_id.to_owned(),
         field: field.to_owned(),
+    }
+}
+
+fn effective_source_value(source: &str, field: &str) -> TransformExprV52 {
+    TransformExprV52::DateCompare {
+        left: Box::new(src(source, "effective_on")),
+        cmp: DateCompareOpV52::Gt,
+        right: Box::new(lit("CUTOVER_DATE")),
+        if_true: Box::new(src(source, "prior_effective_value")),
+        if_false: Box::new(src(source, field)),
+    }
+}
+
+fn if_source_status(
+    source: &str,
+    status: &str,
+    if_true: TransformExprV52,
+    if_false: TransformExprV52,
+) -> TransformExprV52 {
+    TransformExprV52::Conditional {
+        left: Box::new(src(source, "record_status")),
+        cmp: CompareOpV52::Eq,
+        right: Some(Box::new(lit(status))),
+        if_true: Box::new(if_true),
+        if_false: Box::new(if_false),
     }
 }
 
@@ -276,17 +301,25 @@ fn build_gold_transforms(bp: &ScenarioBlueprintV52, sec_id: &str) -> TransformsC
             hr_status_table.insert(code.to_owned(), status.to_owned());
         }
     }
+    let payroll_code = match bp.spec.family_id {
+        "F02" => if_source_status(
+            "workday",
+            "NATIVE_PAYROLL",
+            TransformExprV52::Conditional {
+                left: Box::new(trim(src("workday", "payroll_code"))),
+                cmp: CompareOpV52::Eq,
+                right: Some(Box::new(lit("1"))),
+                if_true: Box::new(lit("ACT")),
+                if_false: Box::new(src("workday", "payroll_code")),
+            },
+            src("workday", "payroll_code"),
+        ),
+        "F11" => effective_source_value("workday", "payroll_code"),
+        _ => src("workday", "payroll_code"),
+    };
     t.insert(
         "normalize_hr_status".to_owned(),
-        lookup(
-            upper(trim(first_valid(vec![
-                src("workday", "payroll_code"),
-                src("fieldglass_vms", "contract_status"),
-                src(sec_id, "payroll_code"),
-            ]))),
-            &hr_status_table,
-            "",
-        ),
+        hr_status_transform(sec_id, payroll_code, &hr_status_table),
     );
 
     t.insert(
@@ -302,11 +335,16 @@ fn build_gold_transforms(bp: &ScenarioBlueprintV52, sec_id: &str) -> TransformsC
         ),
     );
 
+    let hold_flag = if bp.spec.family_id == "F05" {
+        effective_source_value("workday", "legal_hold_flag")
+    } else {
+        src("workday", "legal_hold_flag")
+    };
     t.insert(
         "normalize_legal_hold".to_owned(),
         TransformExprV52::Conditional {
             left: Box::new(upper(trim(first_valid(vec![
-                src("workday", "legal_hold_flag"),
+                hold_flag,
                 src(sec_id, "legal_hold_flag"),
             ])))),
             cmp: CompareOpV52::InList,
@@ -417,6 +455,22 @@ fn build_gold_transforms(bp: &ScenarioBlueprintV52, sec_id: &str) -> TransformsC
     }
 }
 
+fn hr_status_transform(
+    secondary: &str,
+    workday_code: TransformExprV52,
+    status_table: &IndexMap<String, String>,
+) -> TransformExprV52 {
+    lookup(
+        upper(trim(first_valid(vec![
+            workday_code,
+            src("fieldglass_vms", "contract_status"),
+            src(secondary, "payroll_code"),
+        ]))),
+        status_table,
+        "",
+    )
+}
+
 fn build_gold_identity_profile(
     bp: &ScenarioBlueprintV52,
     sec_id: &str,
@@ -471,14 +525,22 @@ fn build_gold_identity_profile(
     ];
 
     let mut attrs = IndexMap::new();
-    attrs.insert(
-        "employee_id".to_owned(),
-        trim(first_valid(vec![
-            src("workday", "badge_or_univ_id"),
-            src(sec_id, "badge_or_univ_id"),
-            src("fieldglass_vms", "badge_or_univ_id"),
-        ])),
-    );
+    let employee_id = first_valid(vec![
+        src("workday", "badge_or_univ_id"),
+        src(sec_id, "badge_or_univ_id"),
+        src("fieldglass_vms", "badge_or_univ_id"),
+    ]);
+    let employee_id = if bp.spec.family_id == "F09" {
+        if_source_status(
+            sec_id,
+            "SIGNED_BADGE_REKEY",
+            upper(trim(src(sec_id, "badge_or_univ_id"))),
+            employee_id,
+        )
+    } else {
+        employee_id
+    };
+    attrs.insert("employee_id".to_owned(), trim(employee_id));
     attrs.insert(
         "legal_first_name".to_owned(),
         trim(first_valid(vec![
@@ -546,7 +608,11 @@ fn build_gold_identity_profile(
     attrs.insert(
         "contract_end_date".to_owned(),
         trim(first_valid(vec![
-            src("fieldglass_vms", "contract_end_date"),
+            if bp.spec.family_id == "F07" {
+                effective_source_value("fieldglass_vms", "contract_end_date")
+            } else {
+                src("fieldglass_vms", "contract_end_date")
+            },
             src("workday", "contract_end_date"),
             src(sec_id, "contract_end_date"),
         ])),
@@ -554,14 +620,22 @@ fn build_gold_identity_profile(
     attrs.insert(
         "clinical_license_status".to_owned(),
         upper(trim(first_valid(vec![
-            src(sec_id, "license_status"),
+            if bp.spec.family_id == "F04" {
+                effective_source_value(sec_id, "license_status")
+            } else {
+                src(sec_id, "license_status")
+            },
             src("workday", "license_status"),
         ]))),
     );
     attrs.insert(
         "academic_status".to_owned(),
         upper(trim(first_valid(vec![
-            src(sec_id, "academic_status"),
+            if bp.spec.family_id == "F01" {
+                effective_source_value(sec_id, "academic_status")
+            } else {
+                src(sec_id, "academic_status")
+            },
             src("workday", "academic_status"),
         ]))),
     );
@@ -717,6 +791,15 @@ fn build_gold_identity_profile(
             description_keywords: vec![],
         },
     ];
+    if bp.spec.family_id == "F03" {
+        service_account_classifiers.push(ServiceAccountClassifierV52 {
+            spoke_id: "ad".to_owned(),
+            account_prefixes: vec![],
+            ou_substrings: vec!["OU=Users,".to_owned()],
+            require_spn_present: false,
+            description_keywords: vec!["[MACHINE-ATTESTED]".to_owned()],
+        });
+    }
     if bp.spec.has_sap {
         service_account_classifiers.push(ServiceAccountClassifierV52 {
             spoke_id: "sap".to_owned(),
@@ -2631,6 +2714,16 @@ fn build_f11_staging_rescue_starter(
             ])),
         );
     }
+
+    // Staging predates the signed payroll amendment and still applies future codes immediately.
+    s.transforms.transforms.insert(
+        "normalize_hr_status".to_owned(),
+        hr_status_transform(
+            sec_id,
+            src("workday", "payroll_code"),
+            &bp.client.hr_status_lookup,
+        ),
+    );
 
     // 3. Username policy: diacritics + 20-char collision suffix overflow
     if d.break_username_diacritics_and_len_reserve {

@@ -3,6 +3,7 @@
 use ib_core::PyRandom;
 use ib_v52_schemas::{CloudPrincipalKindV52, CloudPrincipalRecordV52, CloudProviderV52};
 use indexmap::IndexMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::WorldCtx;
 use super::dates::prev_day_iso;
@@ -24,6 +25,48 @@ pub(super) struct CiemRevisionTables {
     pub(super) cloud_deployment_revisions: Vec<CloudWorkloadDeploymentRevisionV52>,
     pub(super) cloud_capability_dictionary: IndexMap<String, String>,
     pub(super) cloud_activity_telemetry: Vec<CloudActivityTelemetryV52>,
+}
+
+impl CiemRevisionTables {
+    /// Select the effective revision within each parallel deployment stream before unioning
+    /// permissions. Unversioned rows are independent deployments.
+    pub(super) fn reconcile_required_operations(
+        &self,
+        principals: &mut [CloudPrincipalRecordV52],
+        cutover: &str,
+    ) {
+        if self.cloud_deployment_revisions.is_empty() {
+            return;
+        }
+        for principal in principals {
+            let mut streams = BTreeMap::new();
+            let mut operations = BTreeSet::new();
+            for row in self.cloud_deployment_revisions.iter().filter(|row| {
+                row.principal_id == principal.principal_id
+                    && row.status == "APPROVED_ACTIVE"
+                    && row.effective_date.as_str() <= cutover
+            }) {
+                if let Some((stream, revision)) = row.revision_id.split_once('@') {
+                    let candidate = (&row.effective_date, revision, &row.capability_codes);
+                    let winner = streams.entry(stream).or_insert(candidate);
+                    if (candidate.0, candidate.1) > (winner.0, winner.1) {
+                        *winner = candidate;
+                    }
+                } else {
+                    operations.extend(row.capability_codes.iter());
+                }
+            }
+            for (_, _, codes) in streams.values() {
+                operations.extend(codes.iter());
+            }
+            principal.required_operations = operations
+                .into_iter()
+                .map(|code| self.cloud_capability_dictionary[code].clone())
+                .collect();
+            principal.required_operations.sort();
+            principal.required_operations.dedup();
+        }
+    }
 }
 
 /// Build the AWS, Azure/Entra, and GCP principals with seed-shuffled neutral IDs.
@@ -54,6 +97,7 @@ pub(super) fn build_cloud_principals(
             "s3:GetObject".to_owned(),
             "dynamodb:Query".to_owned(),
             "kms:Decrypt".to_owned(),
+            "sqs:ReceiveMessage".to_owned(),
             "iam:PassRole".to_owned(),
             "lambda:CreateFunction".to_owned(),
         ]
@@ -65,15 +109,7 @@ pub(super) fn build_cloud_principals(
             "lambda:CreateFunction".to_owned(),
         ]
     };
-    let aws0_required_ops = if spec.family_id == "F12" {
-        vec![
-            "dynamodb:Query".to_owned(),
-            "kms:Decrypt".to_owned(),
-            "s3:GetObject".to_owned(),
-        ]
-    } else {
-        vec!["dynamodb:Query".to_owned(), "s3:GetObject".to_owned()]
-    };
+    let aws0_required_ops = vec!["dynamodb:Query".to_owned(), "s3:GetObject".to_owned()];
     let mut cloud_principals = vec![
         CloudPrincipalRecordV52 {
             principal_id: aws_ids[0].clone(),
@@ -336,26 +372,26 @@ pub(super) fn build_ciem_revision_tables(
 
         let d_active = prev_day_iso(&client.cutover_date, 5);
         if spec.family_id == "F12" {
-            // Two APPROVED_ACTIVE revisions bound to aws_ids[0]: 1 shared (AWS_S3_GET) + 1 distinct each (AWS_DDB_DR, AWS_KMS_DEC) = 3 unioned ops,
-            // plus a SUPERSEDED revision carrying AWS_SQS_RECV that MUST be excluded!
+            // Batch and DR run in parallel. The latest effective DR revision displaces its older
+            // approval, which was never marked superseded, without touching the Batch stream.
             cloud_deployment_revisions.push(CloudWorkloadDeploymentRevisionV52 {
-                revision_id: "r_aws1a".to_owned(),
+                revision_id: "batch@01".to_owned(),
                 principal_id: aws_ids[0].clone(),
                 status: "APPROVED_ACTIVE".to_owned(),
                 effective_date: d_active.clone(),
                 capability_codes: vec!["AWS_S3_GET".to_owned(), "AWS_DDB_DR".to_owned()],
             });
             cloud_deployment_revisions.push(CloudWorkloadDeploymentRevisionV52 {
-                revision_id: "r_aws1b".to_owned(),
+                revision_id: "dr@02".to_owned(),
                 principal_id: aws_ids[0].clone(),
                 status: "APPROVED_ACTIVE".to_owned(),
                 effective_date: prev_day_iso(&client.cutover_date, 2),
                 capability_codes: vec!["AWS_S3_GET".to_owned(), "AWS_KMS_DEC".to_owned()],
             });
             cloud_deployment_revisions.push(CloudWorkloadDeploymentRevisionV52 {
-                revision_id: "r_aws1_old".to_owned(),
+                revision_id: "dr@01".to_owned(),
                 principal_id: aws_ids[0].clone(),
-                status: "SUPERSEDED".to_owned(),
+                status: "APPROVED_ACTIVE".to_owned(),
                 effective_date: "2026-08-15".to_owned(),
                 capability_codes: vec!["AWS_S3_GET".to_owned(), "AWS_SQS_RECV".to_owned()],
             });

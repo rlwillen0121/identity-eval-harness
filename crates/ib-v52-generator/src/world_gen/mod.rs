@@ -198,14 +198,9 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
         aws_ids,
         az_ids,
         gcp_ids,
-        cloud_principals,
+        mut cloud_principals,
     } = ciem::build_cloud_principals(&ctx, &mut rng, &corp_slug);
-    let ciem::CiemRevisionTables {
-        cloud_principal_display_names,
-        cloud_deployment_revisions,
-        cloud_capability_dictionary,
-        cloud_activity_telemetry,
-    } = ciem::build_ciem_revision_tables(
+    let ciem_tables = ciem::build_ciem_revision_tables(
         &ctx,
         &corp_slug,
         has_ciem_mech_d,
@@ -213,6 +208,13 @@ pub fn generate_scenario_blueprint(cell: &V52Cell) -> ScenarioBlueprintV52 {
         &az_ids,
         &gcp_ids,
     );
+    ciem_tables.reconcile_required_operations(&mut cloud_principals, &client.cutover_date);
+    let ciem::CiemRevisionTables {
+        cloud_principal_display_names,
+        cloud_deployment_revisions,
+        cloud_capability_dictionary,
+        cloud_activity_telemetry,
+    } = ciem_tables;
 
     let uar::UarCampaignBuild {
         has_uar_mech_e,

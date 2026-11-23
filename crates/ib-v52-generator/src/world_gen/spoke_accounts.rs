@@ -195,10 +195,18 @@ pub(super) fn build_person_accounts(
             let mut attrs = IndexMap::new();
             attrs.insert("sAMAccountName".to_owned(), sam.clone());
             attrs.insert("userPrincipalName".to_owned(), upn.clone());
-            attrs.insert("employeeId".to_owned(), spoke_badge.clone());
+            let signed_rekey = spec.family_id == "F09" && pkey == &ctx.personas.fallback_user_1;
+            attrs.insert(
+                "employeeId".to_owned(),
+                if signed_rekey {
+                    p.badge_id.clone()
+                } else {
+                    spoke_badge.clone()
+                },
+            );
             attrs.insert(
                 "mail".to_owned(),
-                if p.ad_use_acquired_domain {
+                if signed_rekey || p.ad_use_acquired_domain {
                     format!("{sam}@{}", client.acquired_domain)
                 } else {
                     p.work_email.clone()

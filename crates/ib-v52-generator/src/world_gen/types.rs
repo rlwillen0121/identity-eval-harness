@@ -119,6 +119,8 @@ pub enum GroupRoleTagV52 {
     /// `F06-CR`: PROD group of a CMDB-`RETIRED` application whose memberships were never cleaned up
     /// (held by every active Finance FTE, so naive `>= 80%` mining bundles it).
     RetiredAppPopulated,
+    /// A live Finance group whose nesting still reaches the retired app.
+    RetiredAppBridge,
 }
 
 /// `F06-CR`: application ID of the CMDB-`RETIRED` application behind [`GroupRoleTagV52::RetiredAppPopulated`].

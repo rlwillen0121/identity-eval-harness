@@ -119,6 +119,11 @@ pub(super) fn build_mock_endpoints(
         );
     }
 
+    let mut disconnected_prefixes = client.custom_rest_disconnected_prefixes.clone();
+    if spec.family_id == "F08" {
+        disconnected_prefixes[0].push_str("LEGACY_");
+    }
+
     map.insert(
         "custom_rest".to_owned(),
         MockSpokeEndpointV52 {
@@ -134,7 +139,7 @@ pub(super) fn build_mock_endpoints(
             expected_status_field: client.custom_rest_status_field.clone(),
             expected_entitlements_field: client.custom_rest_entitlements_field.clone(),
             raw_entitlement_verb_prefix: Some(client.custom_rest_verb_prefix.clone()),
-            disconnected_entitlement_prefixes: client.custom_rest_disconnected_prefixes.clone(),
+            disconnected_entitlement_prefixes: disconnected_prefixes,
             expected_disconnected_itsm_queue: Some(client.custom_rest_itsm_queue.clone()),
         },
     );

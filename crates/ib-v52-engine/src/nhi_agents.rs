@@ -184,11 +184,10 @@ pub fn is_obo_scope_or_hop_excess(
     if req.actor_chain.len() > req.max_allowed_hops as usize {
         return true;
     }
-    if !req.granted_upstream_scopes.is_empty()
-        && !req
-            .granted_upstream_scopes
-            .iter()
-            .any(|s| s.trim() == req.requested_tool_scope.trim())
+    if !req
+        .granted_upstream_scopes
+        .iter()
+        .any(|s| s.trim() == req.requested_tool_scope.trim())
     {
         return true;
     }

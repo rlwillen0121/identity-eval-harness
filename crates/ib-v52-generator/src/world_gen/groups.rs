@@ -744,18 +744,33 @@ pub(super) fn build_group_blueprints(
         );
 
         // Deprecated v1 PROD orphaned twins
-        push_group(
-            format!("GG_{pfx}_{reg}_PRD_FIN_LEDGER_V1"),
-            "ad",
-            "Finance ERP Ledger Read-Only v1",
-            "Deprecated 2023 legacy share (retired)",
-            vec![],
-            "PROD",
-            SpokeEnvKindV52::Prod,
-            GroupDispositionV52::OrphanedDeprecatedDoNotAssign,
-            None,
-            GroupRoleTagV52::Orphaned,
-        );
+        if spec.family_id == "F06" {
+            push_group(
+                format!("GG_{pfx}_{reg}_PRD_FIN_REPORTS"),
+                "ad",
+                "Finance ERP Report Reader",
+                "Production Finance ERP reporting",
+                vec![format!("GG_{pfx}_{reg}_PRD_FIN_EXPENSE_CLASSIC")],
+                "PROD",
+                SpokeEnvKindV52::Prod,
+                GroupDispositionV52::ApplicationEntitlement,
+                Some("app_erp_fin"),
+                GroupRoleTagV52::RetiredAppBridge,
+            );
+        } else {
+            push_group(
+                format!("GG_{pfx}_{reg}_PRD_FIN_LEDGER_V1"),
+                "ad",
+                "Finance ERP Ledger Read-Only v1",
+                "Deprecated 2023 legacy share (retired)",
+                vec![],
+                "PROD",
+                SpokeEnvKindV52::Prod,
+                GroupDispositionV52::OrphanedDeprecatedDoNotAssign,
+                None,
+                GroupRoleTagV52::Orphaned,
+            );
+        }
         push_group(
             format!("GG_{pfx}_{reg}_PRD_ENG_GIT_V1"),
             "ad",

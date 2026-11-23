@@ -359,6 +359,12 @@ pub(super) fn build_ai_agents(
             peer_agent_ids_same_sponsor: vec![],
         },
     ];
+    if ctx.spec.family_id == "F10" {
+        // The first hop is allowed to carry the read scope it actually granted.
+        ai_agents[0]
+            .requested_autonomous_scopes
+            .push("mcp:itsm:read_ticket".to_owned());
+    }
     ai_agents.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
 
     (agt_ids, ai_agents)
