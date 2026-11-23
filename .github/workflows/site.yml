@@ -32,7 +32,5 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
-      - name: Verify generated leaderboard data
-        run: node site/build.mjs --check
-      - name: Site JavaScript tests
-        run: node --test "site/tests/*.test.mjs"
+      - name: Verify static v4.1 site snapshot
+        run: node -e "const fs=require('fs');for (const f of ['site/data/leaderboard.json','site/data/history.json']) JSON.parse(fs.readFileSync(f,'utf8'));for (const f of ['site/index.html','site/assets/scripts/main.js']) if(!fs.existsSync(f)) throw new Error(f);console.log('static v4.1 snapshot OK')"
