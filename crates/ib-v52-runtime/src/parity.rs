@@ -7,10 +7,10 @@
 //!   transcript, differing only by the optional `=== SYSTEM ===` block.
 //! - **Transcript grammar / prefix property:** the uncompacted fixture's requests are strict byte
 //!   prefixes of each other.
-//! - **Compaction identity:** a deterministic multi-turn fixture over `max_request_bytes` exercises every
-//!   §7.2 step, the rollback fallback, `OUTPUT_LIMIT` and `FORMAT_ERROR` generations,
-//!   `list_workspace` outputs and both string and object write `content`; every request stays within
-//!   `max_request_bytes`.
+//! - **Compaction identity:** a deterministic multi-turn fixture over `max_request_bytes` exercises
+//!   steps 0–8, the rollback fallback, `OUTPUT_LIMIT` and `FORMAT_ERROR` generations, search outputs,
+//!   repeated read/search fingerprints, `patch_config_file`, and both string and object write
+//!   `content`; every request stays within `max_request_bytes`.
 //! - **Opening bound:** system prompt plus Turn-1 message `<= max_opening_bytes` per episode.
 //! - **Adapter configuration:** zero adapter retries and no retry prompt.
 
@@ -91,8 +91,67 @@ fn read(path: &str, bytes: usize) -> (Value, Value) {
     )
 }
 
+fn read_with_identity(path: &str, bytes: usize, file_text: &str) -> (Value, Value, Option<String>) {
+    let (action, result) = read(path, bytes);
+    let file_sha256 = sha256_hex(file_text.as_bytes());
+    let identity = crate::workspace::read_identity_sha256(path, 1, 300, &file_sha256);
+    (action, result, Some(identity))
+}
+
+fn search_with_identity(
+    pattern: &str,
+    path_glob: &str,
+    body_bytes: usize,
+    files: &[(String, String)],
+) -> (Value, Value, Option<String>) {
+    let max_matches = 50;
+    let page = 1;
+    let action = json!({
+        "action": "search_workspace",
+        "arguments": {
+            "pattern": pattern,
+            "path_glob": path_glob,
+            "max_matches": max_matches,
+            "page": page
+        }
+    });
+    let match_count = body_bytes.div_ceil(400).clamp(1, max_matches);
+    let text_bytes = body_bytes.div_ceil(match_count).min(400);
+    let matches: Vec<Value> = (0..match_count)
+        .map(|line| {
+            json!({
+                "path": "sources/hr_extract.csv",
+                "line": line + 1,
+                "text": filler("search hit", text_bytes)
+            })
+        })
+        .collect();
+    let result = json!({
+        "matches": matches,
+        "total": match_count,
+        "page": page,
+        "pages": 1
+    });
+    let identity =
+        crate::workspace::search_identity_sha256(pattern, path_glob, max_matches, page, files);
+    (action, result, Some(identity))
+}
+
 fn accepted(turn: usize, actions: Vec<(Value, Value)>) -> TurnRecordV52 {
-    let items: Vec<Value> = actions.iter().map(|(a, _)| a.clone()).collect();
+    accepted_with_identities(
+        turn,
+        actions
+            .into_iter()
+            .map(|(action, result)| (action, result, None))
+            .collect(),
+    )
+}
+
+fn accepted_with_identities(
+    turn: usize,
+    actions: Vec<(Value, Value, Option<String>)>,
+) -> TurnRecordV52 {
+    let items: Vec<Value> = actions.iter().map(|(a, _, _)| a.clone()).collect();
     let object = json!({ "actions": items });
     let raw = compact_json(&object);
     TurnRecordV52 {
@@ -105,9 +164,10 @@ fn accepted(turn: usize, actions: Vec<(Value, Value)>) -> TurnRecordV52 {
             action_object: object,
             results: actions
                 .into_iter()
-                .map(|(a, r)| ActionResultV52 {
+                .map(|(a, r, read_identity)| ActionResultV52 {
                     action: a["action"].as_str().unwrap_or_default().to_owned(),
                     result: r,
+                    read_identity,
                 })
                 .collect(),
             rolled_back: None,
@@ -155,13 +215,38 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
     let write_string = |bytes: usize| {
         (
             json!({"action": "write_workspace_file", "arguments": {"path": "config/transforms.json", "content": filler("{\"schema_version\":\"v5.2\"}", bytes)}}),
-            json!({"status": "SCHEMA_ERROR", "path": "config/transforms.json", "error": "expected value at line 1 column 1"}),
+            json!({"status": "SCHEMA_ERROR", "path": "config/transforms.json", "pointer": "", "error": "expected value at line 1 column 1"}),
         )
     };
     let write_object = |bytes: usize| {
         (
-            json!({"action": "write_workspace_file", "arguments": {"path": "config/role_model.json", "content": {"schema_version": "v5.2", "notes": filler("role model", bytes), "Zoë": "ü"}}}),
-            json!({"status": "VALIDATED", "path": "config/role_model.json", "sha256": sha256_hex(b"x")}),
+            json!({"action": "write_workspace_file", "arguments": {"path": "config/role_model.json", "content": {
+                "schema_version": "v5.2",
+                "exclude_service_accounts_from_peer_mining": false,
+                "forbid_prod_and_nonprod_mixing_in_role": false,
+                "group_classifications": {"GRP_Zoë": {
+                    "group_id": "GRP_Zoë",
+                    "disposition": "application_entitlement",
+                    "environment": "non_prod",
+                    "owning_app_id": filler("role model", bytes)
+                }},
+                "roles": [],
+                "sod_policies": []
+            }}}),
+            json!({"status": "VALIDATED", "sha256": sha256_hex(b"x"), "changed_paths": ["/group_classifications/GRP_Zoë"]}),
+        )
+    };
+    let write_patch = |bytes: usize| {
+        (
+            json!({"action": "patch_config_file", "arguments": {"path": "config/role_model.json", "patch": {
+                "group_classifications": {"GRP_PATCH": {
+                    "group_id": "GRP_PATCH",
+                    "disposition": "application_entitlement",
+                    "environment": "non_prod",
+                    "owning_app_id": filler("patch", bytes)
+                }}
+            }}}),
+            json!({"status": "VALIDATED", "sha256": sha256_hex(b"patched"), "changed_paths": ["/group_classifications/GRP_PATCH"]}),
         )
     };
     let big_preview = |tag: &str| {
@@ -173,21 +258,56 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
             json!({"preview_count": 0, "total_identities": 40, "cubes": []}),
         )
     };
+    let stable_scope = vec![
+        (
+            "sources/hr_extract.csv".to_owned(),
+            sha256_hex(b"stable HR artifact"),
+        ),
+        (
+            "sources/vms.csv".to_owned(),
+            sha256_hex(b"stable VMS artifact without a hit"),
+        ),
+    ];
+    let repeated_search =
+        |bytes| search_with_identity("employee_id", "sources/**", bytes, &stable_scope);
+    let repeated_read = || {
+        read_with_identity(
+            "sources/hr_extract.csv",
+            23_000,
+            "stable whole HR artifact snapshot",
+        )
+    };
     let turns = vec![
-        accepted(
+        accepted_with_identities(
             1,
             vec![
                 (
                     json!({"action": "list_workspace", "arguments": {}}),
                     listing.clone(),
+                    None,
                 ),
-                read("engagement/brief.md", 15_000),
+                {
+                    let (action, result) = read("engagement/brief.md", 15_000);
+                    (action, result, None)
+                },
+                repeated_search(15_000),
             ],
         ),
-        accepted(2, vec![read("sources/hr_extract.csv", 23_000)]),
-        accepted(
+        accepted_with_identities(2, vec![repeated_read(), repeated_search(23_000)]),
+        accepted_with_identities(
             3,
-            vec![write_string(23_000), read("config/transforms.json", 12_000)],
+            vec![
+                {
+                    let (action, result) = write_string(23_000);
+                    (action, result, None)
+                },
+                {
+                    let (action, result) = read("config/transforms.json", 12_000);
+                    (action, result, None)
+                },
+                repeated_read(),
+                repeated_search(12_000),
+            ],
         ),
         rejected(
             4,
@@ -201,6 +321,7 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
             5,
             vec![
                 write_object(23_000),
+                write_patch(14_000),
                 (
                     json!({"action": "preview_identity_profile", "arguments": {}}),
                     json!({"preview_count": 5, "total_identities": 40, "cubes": [filler("cube", 8_000)]}),
@@ -234,7 +355,24 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
             10,
             vec![write_string(47_000), read("sources/vms.csv", 15_000)],
         ),
-        accepted(11, vec![read("engagement/workshop_notes.md", 39_000)]),
+        accepted_with_identities(
+            11,
+            vec![
+                {
+                    let (action, result) = read("engagement/workshop_notes.md", 39_000);
+                    (action, result, None)
+                },
+                search_with_identity(
+                    "cutover",
+                    "engagement/**",
+                    12_000,
+                    &[(
+                        "engagement/brief.md".to_owned(),
+                        sha256_hex(b"unique search scope"),
+                    )],
+                ),
+            ],
+        ),
         // Results too large for any compaction of earlier turns: forces the rollback fallback.
         accepted(
             12,
@@ -318,8 +456,8 @@ pub fn replay_parity_fixture_v52(
 /// Per-step replacement counts over a replayed fixture, or the first failing request.
 fn fixture_coverage(
     requests: &[Result<CanonicalRequestV52, String>],
-) -> Result<[usize; 8], String> {
-    let mut per_step = [0_usize; 8];
+) -> Result<[usize; 9], String> {
+    let mut per_step = [0_usize; 9];
     for (i, request) in requests.iter().enumerate() {
         let request = request
             .as_ref()
@@ -414,7 +552,7 @@ impl CanonicalParityRendererV52 {
         let per_step = fixture_coverage(&requests)?;
         if per_step.contains(&0) {
             return Err(format!(
-                "fixture does not exercise every §7.2 step: {per_step:?}"
+                "fixture does not exercise every §7.2 step (0–8): {per_step:?}"
             ));
         }
         if !requests.iter().flatten().any(|r| {
@@ -595,10 +733,15 @@ pub fn evaluate_parity_gate_v52(episodes: &[EpisodeV52]) -> GateResultV52 {
         }
     }
 
+    let mut details = vec![format!(
+        "system_prompt_sha256={}",
+        sha256_hex(render_v52_system_prompt().as_bytes())
+    )];
+    details.extend(errors.iter().cloned());
     GateResultV52 {
         gate_id: "G-PARITY-V52".to_owned(),
         passed: errors.is_empty(),
-        details: errors,
+        details,
     }
 }
 
@@ -611,6 +754,10 @@ mod tests {
         assert!(!CanonicalParityRendererV52.transport_ids().is_empty());
         let gate = evaluate_parity_gate_v52(&[]);
         assert!(gate.passed, "{:?}", gate.details);
+        assert!(gate.details.contains(&format!(
+            "system_prompt_sha256={}",
+            sha256_hex(render_v52_system_prompt().as_bytes())
+        )));
     }
 
     #[test]
@@ -640,6 +787,14 @@ mod tests {
             ok.iter()
                 .any(|r| r.transcript.contains("[COMPACTED_WRITE sha256="))
         );
+        assert!(
+            ok.iter()
+                .any(|r| r.transcript.contains("\"superseded_by_turn\":"))
+        );
+        assert!(ok.iter().any(|r| {
+            r.transcript
+                .contains("\"action\":\"search_workspace\",\"result\":{\"compacted\":true")
+        }));
         assert_eq!(requests, replay_parity_fixture_v52(MAX_REQUEST_BYTES_V52));
     }
 
@@ -666,6 +821,39 @@ mod tests {
                 json!({"status": "OK", "path": path, "total_lines": 999_999, "start_line": 999_000, "end_line": 999_999, "truncated": true, "content": filler("r", 4_000)}),
             )
         };
+        let searched_files = vec![
+            (
+                "sources/hr.csv".to_owned(),
+                sha256_hex(b"fallback fixture HR"),
+            ),
+            (
+                "sources/vms.csv".to_owned(),
+                sha256_hex(b"fallback fixture VMS without a hit"),
+            ),
+        ];
+        let search_identity = crate::workspace::search_identity_sha256(
+            "fallback-needle",
+            "sources/**",
+            50,
+            1,
+            &searched_files,
+        );
+        let long_search = || {
+            (
+                json!({"action":"search_workspace","arguments":{"pattern":"fallback-needle","path_glob":"sources/**","max_matches":50,"page":1}}),
+                json!({
+                    "matches": (0..4).map(|line| json!({
+                        "path":"sources/hr.csv",
+                        "line":line + 1,
+                        "text":filler("hit", 390)
+                    })).collect::<Vec<_>>(),
+                    "total": 4,
+                    "page": 1,
+                    "pages": 1
+                }),
+                Some(search_identity.clone()),
+            )
+        };
         let mut history: Vec<TurnRecordV52> = Vec::new();
         for turn in 1..=48 {
             let record = match turn % 8 {
@@ -679,13 +867,41 @@ mod tests {
                     vec![(
                         // A failed commit echoing a large argument key (step 3).
                         json!({"action": "commit_deployment", "arguments": {filler("k", 20_000): 1}}),
-                        json!({"status": "SCHEMA_ERROR", "tool_name": "commit_deployment", "error": format!("unexpected tool argument '{}'", filler("k", 20_000))}),
+                        json!({"status": "SCHEMA_ERROR", "tool_name": "commit_deployment", "pointer": format!("/{}", filler("k", 20_000)), "error": format!("unexpected tool argument '{}'", filler("k", 20_000))}),
                     )],
+                ),
+                2 | 3 => accepted_with_identities(
+                    turn,
+                    (0..7)
+                        .map(|i| {
+                            let (action, result) = long_read(turn, i);
+                            (action, result, None)
+                        })
+                        .chain(std::iter::once(long_search()))
+                        .collect(),
                 ),
                 _ => accepted(turn, (0..8).map(|i| long_read(turn, i)).collect()),
             };
             history.push(record);
         }
+        let TurnOutcomeV52::Accepted {
+            results: turn_2_results,
+            ..
+        } = &history[1].outcome
+        else {
+            unreachable!();
+        };
+        let TurnOutcomeV52::Accepted {
+            results: turn_3_results,
+            ..
+        } = &history[2].outcome
+        else {
+            unreachable!();
+        };
+        assert_eq!(
+            turn_2_results[7].read_identity,
+            turn_3_results[7].read_identity
+        );
         // Turn 49: an accepted generation at the visible output limit with large outputs.
         let big_args = filler("arg", 128_000);
         let mut last = accepted(
@@ -696,7 +912,7 @@ mod tests {
                     if i == 0 {
                         action.0["arguments"]["person_keys"] = json!(big_args);
                         action.0["action"] = json!("preview_identity_profile");
-                        action.1 = json!({"status": "SCHEMA_ERROR", "error": filler("e", 20_000)});
+                        action.1 = json!({"status": "SCHEMA_ERROR", "tool_name": "preview_identity_profile", "pointer": "/person_keys", "error": filler("e", 20_000)});
                     }
                     action
                 })
@@ -739,6 +955,11 @@ mod tests {
             request
                 .transcript
                 .contains("\"error\":\"CONTEXT_CEILING_EXCEEDED\"")
+        );
+        assert!(request.stats.per_step[0] > 0, "{:?}", request.stats);
+        assert!(
+            request.transcript.contains("\"superseded_by_turn\":43"),
+            "the older repeated searches should still point to the latest eligible search"
         );
     }
 

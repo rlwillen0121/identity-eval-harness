@@ -45,6 +45,11 @@ impl TurnUsageV52 {
 pub struct ActionResultV52 {
     pub action: String,
     pub result: Value,
+    /// Opaque identity fingerprint for a successful normalized read or search. It includes the
+    /// normalized arguments and whole-file hashes captured when the tool ran. It is persisted with
+    /// the uncompacted transcript but never rendered to the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_identity: Option<String>,
 }
 
 /// Output size of one action of a rolled-back turn (§7.2 fallback).
@@ -147,6 +152,7 @@ impl TurnRecordV52 {
 struct TurnCompaction {
     write_compacted: Vec<bool>,
     output_compacted: Vec<bool>,
+    superseded_outputs: Vec<Option<usize>>,
     generation_compacted: bool,
 }
 
@@ -156,6 +162,7 @@ impl TurnCompaction {
         Self {
             write_compacted: vec![false; n],
             output_compacted: vec![false; n],
+            superseded_outputs: vec![None; n],
             generation_compacted: false,
         }
     }
@@ -175,6 +182,17 @@ pub fn write_content_bytes(content: &Value) -> Vec<u8> {
 #[must_use]
 pub fn compacted_write_marker(content: &Value) -> String {
     let bytes = write_content_bytes(content);
+    format!(
+        "[COMPACTED_WRITE sha256={} bytes={}]",
+        sha256_hex(&bytes),
+        bytes.len()
+    )
+}
+
+/// `[COMPACTED_WRITE ...]` for an RFC 7396 patch value (always compact JSON, including strings).
+#[must_use]
+pub fn compacted_patch_marker(patch: &Value) -> String {
+    let bytes = compact_json(patch).into_bytes();
     format!(
         "[COMPACTED_WRITE sha256={} bytes={}]",
         sha256_hex(&bytes),
@@ -211,6 +229,12 @@ pub fn compacted_output_marker(tool: &str, turn: usize, result: &Value) -> Value
         }
     }
     Value::Object(marker)
+}
+
+/// The step-0 marker for a successful read or search with a later identical call (§7.2).
+#[must_use]
+pub fn superseded_output_marker(turn: usize) -> Value {
+    json!({"compacted": true, "superseded_by_turn": turn})
 }
 
 /// `[{"error":"CONTEXT_CEILING_EXCEEDED","rolled_back":true,"outputs":[...]}]` (§7.2 fallback).
@@ -281,10 +305,18 @@ fn render_accepted_action_object(turn: &TurnRecordV52, state: &TurnCompaction) -
                     if !state.write_compacted.get(idx).copied().unwrap_or(false) {
                         continue;
                     }
+                    let Some(key) = write_payload_key(turn, idx) else {
+                        continue;
+                    };
                     if let Some(Value::Object(args)) = item.get_mut("arguments")
-                        && let Some(content) = args.get_mut("content")
+                        && let Some(payload) = args.get_mut(key)
                     {
-                        *content = Value::String(compacted_write_marker(content));
+                        let marker = if key == "patch" {
+                            compacted_patch_marker(payload)
+                        } else {
+                            compacted_write_marker(payload)
+                        };
+                        *payload = Value::String(marker);
                     }
                 }
             }
@@ -316,7 +348,11 @@ fn render_results(turn: &TurnRecordV52, state: &TurnCompaction) -> String {
                 .enumerate()
                 .map(|(idx, r)| ResultItem {
                     action: &r.action,
-                    result: if state.output_compacted.get(idx).copied().unwrap_or(false) {
+                    result: if let Some(superseding_turn) =
+                        state.superseded_outputs.get(idx).copied().flatten()
+                    {
+                        Cow::Owned(superseded_output_marker(superseding_turn))
+                    } else if state.output_compacted.get(idx).copied().unwrap_or(false) {
                         Cow::Owned(compacted_output_marker(&r.action, turn.turn, &r.result))
                     } else {
                         Cow::Borrowed(&r.result)
@@ -361,11 +397,12 @@ pub struct CompactionStatsV52 {
     pub compacted: bool,
     pub writes_replaced: usize,
     pub outputs_replaced: usize,
+    pub superseded_outputs: usize,
     pub generations_replaced: usize,
-    /// Highest §7.2 step (1..=8) applied; `0` when no compaction was needed.
-    pub last_step: u8,
-    /// Replacements made by each §7.2 step (index `0` is step 1).
-    pub per_step: [usize; 8],
+    /// Highest §7.2 step applied; `None` when no compaction was needed.
+    pub last_step: Option<u8>,
+    /// Replacements made by each §7.2 step (index is the step number, 0 through 8).
+    pub per_step: [usize; 9],
 }
 
 /// A canonical request ready to send.
@@ -390,7 +427,7 @@ impl CanonicalRequestV52 {
     }
 }
 
-/// Steps 1–8 could not bring the request under the ceiling; the §7.2 fallback must roll back
+/// Steps 0–8 could not bring the request under the ceiling; the §7.2 fallback must roll back
 /// turn `t − 1`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CeilingExceededV52 {
@@ -432,7 +469,9 @@ fn classify_output(turn: &TurnRecordV52, idx: usize) -> OutputClass {
             }
         }
         "list_workspace"
+        | "search_workspace"
         | "write_workspace_file"
+        | "patch_config_file"
         | "preview_identity_profile"
         | "test_connector_sandbox"
         | "simulate_golive_dry_run"
@@ -441,14 +480,32 @@ fn classify_output(turn: &TurnRecordV52, idx: usize) -> OutputClass {
     }
 }
 
-fn is_write_with_content(turn: &TurnRecordV52, idx: usize) -> bool {
-    turn.action_items().get(idx).is_some_and(|item| {
-        item.get("action").and_then(Value::as_str) == Some("write_workspace_file")
-            && item
-                .get("arguments")
-                .and_then(Value::as_object)
-                .is_some_and(|args| args.contains_key("content"))
-    })
+fn write_payload_key(turn: &TurnRecordV52, idx: usize) -> Option<&'static str> {
+    let item = turn.action_items().get(idx)?;
+    let action = item.get("action").and_then(Value::as_str)?;
+    let args = item.get("arguments").and_then(Value::as_object)?;
+    match action {
+        "write_workspace_file" if args.contains_key("content") => Some("content"),
+        "patch_config_file" if args.contains_key("patch") => Some("patch"),
+        _ => None,
+    }
+}
+
+fn read_identity(turn: &TurnRecordV52, idx: usize) -> Option<&str> {
+    if turn.is_rolled_back() {
+        return None;
+    }
+    let TurnOutcomeV52::Accepted { results, .. } = &turn.outcome else {
+        return None;
+    };
+    let result = results.get(idx)?;
+    match result.action.as_str() {
+        "read_workspace_file" if result.result["status"] == "OK" => result.read_identity.as_deref(),
+        "search_workspace" if result.result["matches"].is_array() => {
+            result.read_identity.as_deref()
+        }
+        _ => None,
+    }
 }
 
 struct Compactor<'a> {
@@ -472,18 +529,22 @@ impl Compactor<'_> {
         self.rendered[idx] = rendered;
     }
 
-    /// Step 1 over one turn: replace write contents, oldest action first.
+    fn record_replacement(&mut self, step: u8) {
+        self.stats.last_step = Some(step);
+        self.stats.per_step[usize::from(step)] += 1;
+    }
+
+    /// Step 1 over one turn: replace write contents or config patches, oldest action first.
     fn compact_writes(&mut self, idx: usize, step: u8) -> bool {
         for action in 0..self.states[idx].write_compacted.len() {
             if self.states[idx].write_compacted[action]
-                || !is_write_with_content(&self.turns[idx], action)
+                || write_payload_key(&self.turns[idx], action).is_none()
             {
                 continue;
             }
             self.states[idx].write_compacted[action] = true;
             self.stats.writes_replaced += 1;
-            self.stats.last_step = step;
-            self.stats.per_step[usize::from(step) - 1] += 1;
+            self.record_replacement(step);
             self.refresh(idx);
             if self.fits() {
                 return true;
@@ -499,17 +560,69 @@ impl Compactor<'_> {
         }
         for action in 0..self.states[idx].output_compacted.len() {
             if self.states[idx].output_compacted[action]
+                || self.states[idx].superseded_outputs[action].is_some()
                 || classify_output(&self.turns[idx], action) != class
             {
                 continue;
             }
             self.states[idx].output_compacted[action] = true;
             self.stats.outputs_replaced += 1;
-            self.stats.last_step = step;
-            self.stats.per_step[usize::from(step) - 1] += 1;
+            self.record_replacement(step);
             self.refresh(idx);
             if self.fits() {
                 return true;
+            }
+        }
+        false
+    }
+
+    /// Step 0: point successful read/search outputs at their latest later identical call.
+    /// The opaque identity is captured when the tool runs and includes its normalized arguments
+    /// and whole-file hashes. The identity remains in persisted records but is never rendered.
+    fn compact_superseded_outputs(&mut self, all_turns: &[usize]) -> bool {
+        let mut latest: std::collections::HashMap<String, (usize, usize)> =
+            std::collections::HashMap::new();
+        for (turn_idx, turn) in self.turns.iter().enumerate() {
+            if turn.is_rolled_back() {
+                continue;
+            }
+            let TurnOutcomeV52::Accepted { results, .. } = &turn.outcome else {
+                continue;
+            };
+            for action_idx in 0..results.len() {
+                if let Some(identity) = read_identity(turn, action_idx) {
+                    latest.insert(identity.to_owned(), (turn_idx, action_idx));
+                }
+            }
+        }
+
+        for &turn_idx in all_turns {
+            if self.turns[turn_idx].is_rolled_back() {
+                continue;
+            }
+            for action_idx in 0..self.states[turn_idx].superseded_outputs.len() {
+                if self.states[turn_idx].superseded_outputs[action_idx].is_some()
+                    || self.states[turn_idx].output_compacted[action_idx]
+                {
+                    continue;
+                }
+                let Some(identity) = read_identity(&self.turns[turn_idx], action_idx) else {
+                    continue;
+                };
+                let Some(&(target_turn_idx, target_action_idx)) = latest.get(identity) else {
+                    continue;
+                };
+                if (target_turn_idx, target_action_idx) <= (turn_idx, action_idx) {
+                    continue;
+                }
+                let target_turn = self.turns[target_turn_idx].turn;
+                self.states[turn_idx].superseded_outputs[action_idx] = Some(target_turn);
+                self.stats.superseded_outputs += 1;
+                self.record_replacement(0);
+                self.refresh(turn_idx);
+                if self.fits() {
+                    return true;
+                }
             }
         }
         false
@@ -544,6 +657,10 @@ impl Compactor<'_> {
         let n = self.turns.len();
         // Turn naming relative to the upcoming turn t = n + 1: t − 1 is index n − 1,
         // t − 2 is index n − 2, older turns are indices 0..n − 2.
+        let all_turns: Vec<usize> = (0..n).collect();
+        if self.compact_superseded_outputs(&all_turns) {
+            return true;
+        }
         let older: Vec<usize> = (0..n.saturating_sub(2)).collect();
         if self.steps_1_to_5(&older, 0) {
             return true;
@@ -582,8 +699,7 @@ impl Compactor<'_> {
             }
             self.states[idx].generation_compacted = true;
             self.stats.generations_replaced += 1;
-            self.stats.last_step = 8;
-            self.stats.per_step[7] += 1;
+            self.record_replacement(8);
             self.refresh(idx);
             if self.fits() {
                 return true;
@@ -656,6 +772,7 @@ mod tests {
                     .map(|(a, r)| ActionResultV52 {
                         action: a.to_owned(),
                         result: r,
+                        read_identity: None,
                     })
                     .collect(),
                 rolled_back: None,
@@ -736,7 +853,7 @@ mod tests {
             invented.len()
         );
         let req = build_canonical_request("S", opening, &three, full - 10).unwrap();
-        assert_eq!(req.stats.last_step, 8);
+        assert_eq!(req.stats.last_step, Some(8));
         assert!(req.transcript.contains(&format!(
             "[COMPACTED_GENERATION turn=1 sha256={} bytes={}]",
             sha256_hex(uncompacted.as_bytes()),
@@ -802,6 +919,24 @@ mod tests {
                 raw.len()
             )
         );
+        let string_patch = json!("invalid patch text");
+        let serialized_patch = compact_json(&string_patch);
+        assert_eq!(
+            compacted_patch_marker(&string_patch),
+            format!(
+                "[COMPACTED_WRITE sha256={} bytes={}]",
+                sha256_hex(serialized_patch.as_bytes()),
+                serialized_patch.len()
+            )
+        );
+        assert_ne!(
+            compacted_patch_marker(&string_patch),
+            format!(
+                "[COMPACTED_WRITE sha256={} bytes={}]",
+                sha256_hex(b"invalid patch text"),
+                "invalid patch text".len()
+            )
+        );
     }
 
     #[test]
@@ -831,6 +966,368 @@ mod tests {
         )
     }
 
+    fn read_turn_with_identity(
+        turn: usize,
+        path: &str,
+        body: usize,
+        identity: &str,
+    ) -> TurnRecordV52 {
+        let mut record = read_turn(turn, path, body);
+        if let TurnOutcomeV52::Accepted { results, .. } = &mut record.outcome {
+            results[0].read_identity = Some(identity.to_owned());
+        }
+        record
+    }
+
+    fn read_turn_with_two_identities(
+        turn: usize,
+        path: &str,
+        body: usize,
+        first_identity: &str,
+        second_identity: &str,
+    ) -> TurnRecordV52 {
+        let action = json!({"action":"read_workspace_file","arguments":{"path":path}});
+        let result = json!({"status":"OK","path":path,"start_line":1,"end_line":2,"content":"r".repeat(body)});
+        let object = json!({"actions":[action.clone(), action]});
+        let mut record = accepted(
+            turn,
+            object,
+            vec![
+                ("read_workspace_file", result.clone()),
+                ("read_workspace_file", result),
+            ],
+        );
+        if let TurnOutcomeV52::Accepted { results, .. } = &mut record.outcome {
+            results[0].read_identity = Some(first_identity.to_owned());
+            results[1].read_identity = Some(second_identity.to_owned());
+        }
+        record
+    }
+
+    fn search_turn_with_identity(turn: usize, body: usize, identity: &str) -> TurnRecordV52 {
+        let action = json!({"action":"search_workspace","arguments":{"pattern":"IAM","path_glob":"sources/**","max_matches":50,"page":1}});
+        let text = "IAM".repeat(body.div_ceil(3));
+        let matches: Vec<_> = text.as_bytes().chunks(399).enumerate().map(|(i, line)| {
+            json!({"path":"sources/hr.csv","line":i+1,"text":std::str::from_utf8(line).unwrap()})
+        }).collect();
+        let result = json!({
+            "matches": matches,
+            "total": matches.len(),
+            "page": 1,
+            "pages": 1
+        });
+        let mut record = accepted(
+            turn,
+            json!({"actions":[action]}),
+            vec![("search_workspace", result)],
+        );
+        if let TurnOutcomeV52::Accepted { results, .. } = &mut record.outcome {
+            results[0].read_identity = Some(identity.to_owned());
+        }
+        record
+    }
+
+    #[test]
+    fn step_zero_points_older_identical_reads_to_the_latest_matching_turn() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let same = crate::workspace::read_identity_sha256(
+            "sources/hr.csv",
+            1,
+            2,
+            &sha256_hex(b"same whole file contents"),
+        );
+        let turns = vec![
+            read_turn_with_identity(1, "sources/hr.csv", 1500, &same),
+            read_turn(2, "engagement/brief.md", 1500),
+            read_turn_with_identity(3, "sources/hr.csv", 1500, &same),
+            read_turn_with_identity(4, "sources/hr.csv", 1500, &same),
+        ];
+        let uncompacted = render_uncompacted_transcript(opening, &turns);
+        assert!(!uncompacted.contains(same.as_str()));
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 2500).unwrap();
+        assert!(
+            req.transcript
+                .contains("\"compacted\":true,\"superseded_by_turn\":4")
+        );
+        assert_eq!(req.stats.per_step[0], 2);
+        assert_eq!(req.stats.superseded_outputs, 2);
+        assert_eq!(req.stats.last_step, Some(0));
+        // The identity fingerprint is retained in the record, never in the model-visible text.
+        assert!(!req.transcript.contains(same.as_str()));
+    }
+
+    #[test]
+    fn carbon_style_309_reads_keep_all_30_distinct_files_under_the_ranked_ceiling() {
+        use crate::protocol::{MAX_ACTIONS_PER_TURN_V52, MAX_REQUEST_BYTES_V52};
+        let files: Vec<_> = (0..30)
+            .map(|index| {
+                let path = format!("sources/file-{index:02}.csv");
+                let text = format!("unique-file-{index:02}:{}", "x".repeat(3_200));
+                let identity = crate::workspace::read_identity_sha256(
+                    &path,
+                    1,
+                    1,
+                    &sha256_hex(text.as_bytes()),
+                );
+                (path, text, identity)
+            })
+            .collect();
+        let reads: Vec<_> = (0..309).map(|index| &files[index % files.len()]).collect();
+        let mut turns = Vec::new();
+        for (turn_index, batch) in reads.chunks(MAX_ACTIONS_PER_TURN_V52).enumerate() {
+            let actions: Vec<_> = batch.iter().map(|(path, _, _)| {
+                json!({"action":"read_workspace_file","arguments":{"path":path}})
+            }).collect();
+            let outputs = batch.iter().map(|(path, text, _)| ("read_workspace_file",
+                json!({"status":"OK","path":path,"total_lines":1,"start_line":1,"end_line":1,"truncated":false,"content":text})))
+                .collect();
+            let mut turn = accepted(turn_index + 1, json!({"actions":actions}), outputs);
+            if let TurnOutcomeV52::Accepted { results, .. } = &mut turn.outcome {
+                for (result, (_, _, identity)) in results.iter_mut().zip(batch) {
+                    result.read_identity = Some(identity.clone());
+                }
+            }
+            turns.push(turn);
+        }
+        let request =
+            build_canonical_request("S", "=== ENGAGEMENT ===", &turns, MAX_REQUEST_BYTES_V52)
+                .unwrap();
+        assert!(request.request_bytes <= MAX_REQUEST_BYTES_V52);
+        assert_eq!(request.stats.last_step, Some(0));
+        assert!((200..=279).contains(&request.stats.superseded_outputs));
+        for (_, text, _) in files {
+            assert!(request.transcript.contains(&text));
+        }
+    }
+
+    #[test]
+    fn step_zero_does_not_supersede_reads_when_the_whole_file_changed() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let before = crate::workspace::read_identity_sha256(
+            "sources/hr.csv",
+            1,
+            2,
+            &sha256_hex(b"before change"),
+        );
+        let after = crate::workspace::read_identity_sha256(
+            "sources/hr.csv",
+            1,
+            2,
+            &sha256_hex(b"after change"),
+        );
+        let turns = vec![
+            read_turn_with_identity(1, "sources/hr.csv", 1500, &before),
+            read_turn_with_identity(2, "sources/hr.csv", 1500, &after),
+            read_turn(3, "engagement/brief.md", 20),
+        ];
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 10).unwrap();
+        assert_eq!(req.stats.per_step[0], 0);
+        assert!(!req.transcript.contains("superseded_by_turn"));
+        assert_eq!(req.stats.last_step, Some(4));
+    }
+
+    #[test]
+    fn step_zero_search_identity_includes_every_in_scope_file_hash() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let unchanged_scope = vec![
+            ("sources/hr.csv".to_owned(), sha256_hex(b"matching file")),
+            ("sources/vms.csv".to_owned(), sha256_hex(b"no-hit file")),
+        ];
+        let reordered_scope = vec![unchanged_scope[1].clone(), unchanged_scope[0].clone()];
+        let changed_scope = vec![
+            unchanged_scope[0].clone(),
+            (
+                "sources/vms.csv".to_owned(),
+                sha256_hex(b"changed no-hit file"),
+            ),
+        ];
+        let same =
+            crate::workspace::search_identity_sha256("IAM", "sources/**", 50, 1, &unchanged_scope);
+        let reordered =
+            crate::workspace::search_identity_sha256("IAM", "sources/**", 50, 1, &reordered_scope);
+        let changed =
+            crate::workspace::search_identity_sha256("IAM", "sources/**", 50, 1, &changed_scope);
+        assert_eq!(same, reordered);
+        assert_ne!(same, changed);
+
+        let turns = vec![
+            search_turn_with_identity(1, 1500, &same),
+            search_turn_with_identity(2, 1500, &changed),
+            read_turn(3, "engagement/brief.md", 20),
+        ];
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 10).unwrap();
+        assert_eq!(req.stats.per_step[0], 0);
+        assert!(!req.transcript.contains("superseded_by_turn"));
+        // Search outputs remain eligible for normal step 3 compaction.
+        assert_eq!(req.stats.last_step, Some(3));
+    }
+
+    #[test]
+    fn step_zero_can_point_to_a_later_action_in_the_same_turn() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let same = crate::workspace::read_identity_sha256(
+            "sources/hr.csv",
+            1,
+            2,
+            &sha256_hex(b"unchanged whole file"),
+        );
+        let turns = vec![
+            read_turn_with_two_identities(1, "sources/hr.csv", 1500, &same, &same),
+            read_turn(2, "engagement/brief.md", 50),
+            read_turn(3, "engagement/notes.md", 50),
+        ];
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 10).unwrap();
+        assert!(
+            req.transcript
+                .contains("\"compacted\":true,\"superseded_by_turn\":1")
+        );
+        assert_eq!(req.stats.per_step[0], 1);
+    }
+
+    #[test]
+    fn step_zero_can_compact_a_duplicate_in_the_most_recent_turn() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let identity = crate::workspace::read_identity_sha256(
+            "sources/hr.csv",
+            1,
+            2,
+            &sha256_hex(b"unchanged whole file"),
+        );
+        let turns = vec![
+            read_turn(1, "engagement/brief.md", 50),
+            read_turn_with_two_identities(2, "sources/hr.csv", 1500, &identity, &identity),
+        ];
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 10).unwrap();
+        assert!(req.transcript.contains("\"superseded_by_turn\":2"));
+        assert_eq!(req.stats.per_step[0], 1);
+    }
+
+    #[test]
+    fn step_zero_never_points_to_a_rolled_back_call() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let identity = crate::workspace::read_identity_sha256(
+            "sources/hr.csv",
+            1,
+            2,
+            &sha256_hex(b"unchanged whole file"),
+        );
+        let mut turns = vec![
+            read_turn_with_identity(1, "sources/hr.csv", 1500, &identity),
+            read_turn_with_identity(2, "sources/hr.csv", 1500, &identity),
+            read_turn(3, "engagement/brief.md", 50),
+        ];
+        if let TurnOutcomeV52::Accepted {
+            results,
+            rolled_back,
+            ..
+        } = &mut turns[1].outcome
+        {
+            *rolled_back = Some(rolled_back_outputs(results));
+        }
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 10).unwrap();
+        assert_eq!(req.stats.per_step[0], 0);
+        assert!(!req.transcript.contains("superseded_by_turn"));
+    }
+
+    #[test]
+    fn step_zero_markers_are_not_replaced_by_later_output_compaction() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let same = crate::workspace::read_identity_sha256(
+            "sources/hr.csv",
+            1,
+            2,
+            &sha256_hex(b"unchanged source"),
+        );
+        let mut turns = vec![
+            accepted(
+                1,
+                json!({"actions":[
+                    {"action":"read_workspace_file","arguments":{"path":"sources/hr.csv"}},
+                    {"action":"read_workspace_file","arguments":{"path":"engagement/brief.md"}}
+                ]}),
+                vec![
+                    (
+                        "read_workspace_file",
+                        json!({"status":"OK","path":"sources/hr.csv","start_line":1,"end_line":2,"content":"r".repeat(3000)}),
+                    ),
+                    (
+                        "read_workspace_file",
+                        json!({"status":"OK","path":"engagement/brief.md","start_line":1,"end_line":2,"content":"b".repeat(3000)}),
+                    ),
+                ],
+            ),
+            read_turn_with_identity(2, "sources/hr.csv", 100, &same),
+            read_turn(3, "engagement/workshop_notes.md", 100),
+        ];
+        if let TurnOutcomeV52::Accepted { results, .. } = &mut turns[0].outcome {
+            results[0].read_identity = Some(same.to_owned());
+        }
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 4000).unwrap();
+        assert!(req.transcript.contains("\"superseded_by_turn\":2"));
+        assert!(
+            req.transcript
+                .contains("\"tool\":\"read_workspace_file\",\"turn\":1")
+        );
+        assert_eq!(req.stats.per_step[0], 1);
+        assert!(req.stats.per_step[5] > 0);
+    }
+
+    #[test]
+    fn step_one_hashes_patch_payloads_as_write_content() {
+        let opening = "=== ENGAGEMENT ===\nO";
+        let patch = json!({"notes":"patch".repeat(1500)});
+        let turns = vec![
+            accepted(
+                1,
+                json!({"actions":[{"action":"patch_config_file","arguments":{"path":"config/role_model.json","patch":patch}}]}),
+                vec![("patch_config_file", json!({"status":"PATCHED"}))],
+            ),
+            accepted(
+                2,
+                json!({"actions":[{"action":"list_workspace","arguments":{}}]}),
+                vec![("list_workspace", json!({"status":"OK"}))],
+            ),
+            accepted(
+                3,
+                json!({"actions":[{"action":"list_workspace","arguments":{}}]}),
+                vec![("list_workspace", json!({"status":"OK"}))],
+            ),
+        ];
+        let full = build_canonical_request("S", opening, &turns, usize::MAX)
+            .unwrap()
+            .request_bytes;
+        let req = build_canonical_request("S", opening, &turns, full - 10).unwrap();
+        let raw_patch = compact_json(&json!({"notes":"patch".repeat(1500)}));
+        assert!(req.transcript.contains(&format!(
+            "[COMPACTED_WRITE sha256={} bytes={}]",
+            sha256_hex(raw_patch.as_bytes()),
+            raw_patch.len()
+        )));
+        assert_eq!(req.stats.per_step[1], 1);
+        assert_eq!(req.stats.last_step, Some(1));
+    }
+
     #[test]
     fn step_order_compacts_config_reads_before_sources_before_engagement_and_spares_recent_turns() {
         let opening = "=== ENGAGEMENT ===\nO";
@@ -851,17 +1348,17 @@ mod tests {
                 .contains("\"tool\":\"read_workspace_file\",\"turn\":3")
         );
         assert!(!req.transcript.contains("\"turn\":2,"));
-        assert_eq!(req.stats.last_step, 2);
+        assert_eq!(req.stats.last_step, Some(2));
         // Two replacements: config, then sources.
         let req = build_canonical_request("S", opening, &turns, full - 1010).unwrap();
         assert!(req.transcript.contains("\"turn\":2,"));
         assert!(!req.transcript.contains("\"turn\":1,"));
-        assert_eq!(req.stats.last_step, 4);
+        assert_eq!(req.stats.last_step, Some(4));
         // Steps 1–5 never touch turns 4 and 5 (t − 2 and t − 1); step 6 reaches turn 4 next.
         let req = build_canonical_request("S", opening, &turns, full - 3000).unwrap();
         assert!(req.transcript.contains("\"turn\":4,"));
         assert!(!req.transcript.contains("\"turn\":5,"));
-        assert_eq!(req.stats.last_step, 6);
+        assert_eq!(req.stats.last_step, Some(6));
     }
 
     #[test]

@@ -1332,7 +1332,7 @@ async fn context_ceiling_fallback_rolls_back_the_last_turn_writes_and_dry_run_cr
         .readonly_files
         .iter()
         .filter(|(_, c)| c.len() > 4_000)
-        .take(6)
+        .take(5)
         .map(|(p, _)| {
             (
                 "read_workspace_file",
@@ -1348,6 +1348,17 @@ async fn context_ceiling_fallback_rolls_back_the_last_turn_writes_and_dry_run_cr
         "write_workspace_file",
         json!({"path": "config/identity_profile.json", "content": identity_profile}),
     ));
+    let starter = ep.starter_configs.username_policy.lowercase;
+    let patch_case = |lowercase| {
+        (
+            "patch_config_file",
+            json!({
+                "path": "config/username_policy.json",
+                "patch": {"lowercase": lowercase}
+            }),
+        )
+    };
+    turn.push(patch_case(!starter));
     let options = RunV52EpisodeOptions {
         max_request_bytes: opening_bytes + 4_000,
         ..fast_options()
@@ -1357,7 +1368,7 @@ async fn context_ceiling_fallback_rolls_back_the_last_turn_writes_and_dry_run_cr
         SystemChannel::Inline,
         vec![
             text(actions(&turn)),
-            text(actions(&[("list_workspace", json!({}))])),
+            text(actions(&[patch_case(starter)])),
             text(actions(&[(
                 "commit_deployment",
                 json!({"summary_notes": "x"}),
@@ -1382,12 +1393,66 @@ async fn context_ceiling_fallback_rolls_back_the_last_turn_writes_and_dry_run_cr
     assert!(second.contains(
         "\n\n=== TURN 1 RESULTS ===\n[{\"error\":\"CONTEXT_CEILING_EXCEEDED\",\"rolled_back\":true,\"outputs\":[{\"index\":0,\"tool\":\"read_workspace_file\",\"bytes\":"
     ));
+    // Reapplying the starter value is a no-op only if the patch was rolled back too.
+    assert!(user_message(&requests[2]).contains(r#""changed_paths":[]"#));
+    assert!(record.tool_trace.iter().any(|entry| entry.turn_index == 1
+        && entry.tool_name == "patch_config_file"
+        && entry.status == "VALIDATED"
+        && entry.rolled_back));
     for r in &requests {
         assert!(
             user_message(r).len() + render_v52_system_prompt().len() <= options.max_request_bytes
         );
     }
     assert_eq!(record.attempt_status, AttemptStatusV52::Completed);
+}
+
+#[tokio::test]
+async fn repeated_search_reuses_the_latest_result_through_the_runner() {
+    let (mut ep, oracle) = episode(9);
+    let path = "sources/search-fixture.txt";
+    ep.readonly_files.insert(
+        path.into(),
+        (0..50)
+            .map(|n| format!("needle {n} {}", "x".repeat(290)))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    let opening_bytes = render_v52_system_prompt().len()
+        + render_v52_opening_user_message(&VirtualWorkspaceRuntimeV52::new(&ep, &MockEngine)).len();
+    let search = |explicit| {
+        let mut args = json!({"pattern": "needle", "path_glob": path});
+        if explicit {
+            args["page"] = json!(1);
+            args["max_matches"] = json!(50);
+        }
+        text(actions(&[("search_workspace", args)]))
+    };
+    let provider = MockProvider::scripted(
+        "anthropic",
+        SystemChannel::Native,
+        vec![
+            search(false),
+            search(true),
+            text(actions(&[(
+                "commit_deployment",
+                json!({"summary_notes":"done"}),
+            )])),
+        ],
+    );
+    let options = RunV52EpisodeOptions {
+        max_request_bytes: opening_bytes + 24_000,
+        ..fast_options()
+    };
+    let record = run_v52_episode(&ep, Some(&oracle), &MockEngine, &provider, &options)
+        .await
+        .unwrap();
+    let requests = provider.requests();
+    let last = user_message(&requests[2]);
+    assert!(last.contains(r#"{"compacted":true,"superseded_by_turn":2}"#));
+    assert_eq!(last.matches("needle 49 ").count(), 1);
+    assert!(!last.contains("read_identity"));
+    assert_eq!(record.context_rollbacks, 0);
 }
 
 #[tokio::test]

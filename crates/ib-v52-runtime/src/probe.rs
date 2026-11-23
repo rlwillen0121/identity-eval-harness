@@ -623,4 +623,24 @@ Reply with exactly one JSON object and nothing else: {{\"nonces\":[\"<nonce_1>\"
             )
         );
     }
+
+    #[test]
+    fn sentinel_probe_stays_exactly_at_the_ceiling_after_prompt_growth() {
+        let system_prompt = render_v52_system_prompt();
+        let nonces = ["a".repeat(32), "b".repeat(32), "c".repeat(32)];
+        let (transcript, offsets) = build_sentinel_transcript(&system_prompt, &nonces);
+        let request_bytes = system_prompt.len() + transcript.len();
+        let request = format!("{system_prompt}{transcript}");
+
+        assert_eq!(request_bytes, MAX_REQUEST_BYTES_V52);
+        for (offset, nonce) in offsets.iter().zip(&nonces) {
+            assert_eq!(
+                request.get(*offset..*offset + nonce.len()),
+                Some(nonce.as_str())
+            );
+        }
+        assert!(offsets.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(transcript.starts_with(SENTINEL_PREAMBLE));
+        assert!(!transcript.contains("engagement/brief.md"));
+    }
 }
