@@ -8,6 +8,13 @@ pub fn sha256_hex(data: impl AsRef<[u8]>) -> String {
     hex::encode(Sha256::digest(data.as_ref()))
 }
 
+/// Hash a byte stream without buffering an entire run artifact.
+pub fn sha256_reader(mut reader: impl std::io::Read) -> std::io::Result<String> {
+    let mut hash = Sha256::new();
+    std::io::copy(&mut reader, &mut hash)?;
+    Ok(hex::encode(hash.finalize()))
+}
+
 /// `hashlib.sha256(data).digest()`.
 #[must_use]
 pub fn sha256(data: impl AsRef<[u8]>) -> [u8; 32] {
