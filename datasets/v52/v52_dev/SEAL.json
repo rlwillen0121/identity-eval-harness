@@ -114,10 +114,10 @@
     11937594165326537031,
     3486719817737571975
   ],
-  "episodes_sha256": "5d6dbe73733f8952d09c0c86cbba590be1b06fe360cead1571db3dd575435ca9",
+  "episodes_sha256": "53ee51e9034bf3efacd155959e84eb9ed2a943aa488ef375b68d0ea683090d2e",
   "oracles_sha256": "895f0fdca5bca50811d8560233bee1f3ec0d88cf3846bfe5ba593ddb03e5cf41",
   "spec_version": "SPEC-v5.2",
-  "spec_sha256": "17fa6fcd41414045564863c29fd9f36b8e513a6c37e0d0ad9d93c4fcf3141ead",
+  "spec_sha256": "deceffd49e5b6d243209c462ce1bacf18cdad21432c167d5b69ac887f886031c",
   "contract_id": "identitybench.v5.2.practitioner-contract.v1",
   "protocol_id": "identitybench.v5.2.protocol.v1",
   "generator_version": "5.2.0",

@@ -51,7 +51,7 @@ pub use probe::{
 };
 pub use protocol::{
     COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_OPENING_BYTES_V52,
-    MAX_REQUEST_BYTES_V52, OUTPUT_LIMIT_BYTES_V52, PROTOCOL_ID_V52,
+    MAX_REQUEST_BYTES_V52, MAX_TURN_OUTPUT_BYTES_V52, OUTPUT_LIMIT_BYTES_V52, PROTOCOL_ID_V52,
     render_v52_opening_user_message, render_v52_system_prompt, system_prompt_sha256_v52,
 };
 pub use report::{

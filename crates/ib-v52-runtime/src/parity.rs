@@ -12,7 +12,7 @@
 //!   repeated read/search fingerprints, `patch_config_file`, `update_notes`, and string and object write
 //!   `content`; every request stays within `max_request_bytes`.
 //! - **Worst-case bound:** a 49-turn, eight-action transcript at the maximum opening and output
-//!   limits fits after rollback and final result compaction.
+//!   limits and per-turn result ceiling fits after rollback and final result compaction.
 //! - **Opening bound:** system prompt plus Turn-1 message `<= max_opening_bytes` per episode; the
 //!   gate reports the largest opening it measured.
 //! - **Adapter configuration:** zero adapter retries and no retry prompt.
@@ -28,13 +28,15 @@ use serde_json::{Value, json};
 
 use crate::opening::render_v52_episode_opening;
 use crate::protocol::{
-    MAX_ACTIONS_PER_TURN_V52, MAX_ASSISTANT_TURNS_V52, RejectionReasonV52, compact_json,
-    delimiter_cut_offset_v52, render_v52_system_prompt, render_wire_message,
+    MAX_ACTIONS_PER_TURN_V52, MAX_ASSISTANT_TURNS_V52, MAX_TURN_OUTPUT_BYTES_V52,
+    OUTPUT_LIMIT_BYTES_V52, RejectionReasonV52, compact_json, delimiter_cut_offset_v52,
+    render_v52_system_prompt, render_wire_message,
 };
 pub use crate::protocol::{MAX_OPENING_BYTES_V52, MAX_REQUEST_BYTES_V52};
 use crate::transcript::{
     ActionResultV52, CanonicalRequestV52, DelimiterCutV52, TurnOutcomeV52, TurnRecordV52,
-    TurnUsageV52, build_canonical_request, render_uncompacted_transcript, rolled_back_outputs,
+    TurnUsageV52, build_canonical_request, render_uncompacted_transcript, result_item_overhead,
+    rolled_back_outputs,
 };
 use crate::validation::GateResultV52;
 use crate::workspace::{MAX_WORKING_NOTES_BYTES, WORKING_NOTES_PATH};
@@ -48,6 +50,9 @@ const POST_FALLBACK_BOUND_BYTES: usize = MAX_OPENING_BYTES_V52
 const FINAL_BOUND_WITHOUT_ROLLBACK_BYTES: usize =
     MAX_OPENING_BYTES_V52 + (MAX_ASSISTANT_TURNS_V52 - 1) * MAX_FINAL_ACCEPTED_TURN_BYTES;
 const _: () = assert!(FINAL_BOUND_WITHOUT_ROLLBACK_BYTES <= MAX_REQUEST_BYTES_V52);
+const TWO_TURN_RESULTS_WITH_OPENING_BYTES: usize =
+    MAX_OPENING_BYTES_V52 + 2 * MAX_TURN_OUTPUT_BYTES_V52;
+const _: () = assert!(TWO_TURN_RESULTS_WITH_OPENING_BYTES < MAX_REQUEST_BYTES_V52);
 
 /// One canonical request as a transport would receive it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,15 +106,15 @@ fn filler(tag: &str, bytes: usize) -> String {
 
 fn read(path: &str, bytes: usize) -> (Value, Value) {
     (
-        json!({"action": "read_workspace_file", "arguments": {"path": path}}),
-        json!({"status": "OK", "path": path, "total_lines": 400, "start_line": 1, "end_line": 300, "truncated": true, "content": filler(path, bytes)}),
+        json!({"action": "read_workspace_file", "arguments": {"path": path, "end_line": 400}}),
+        json!({"status": "OK", "path": path, "total_lines": 400, "start_line": 1, "end_line": 200, "truncated": true, "continuation":{"start_line":201,"byte_offset":0}, "content": filler(path, bytes)}),
     )
 }
 
 fn read_with_identity(path: &str, bytes: usize, file_text: &str) -> (Value, Value, Option<String>) {
     let (action, result) = read(path, bytes);
     let file_sha256 = sha256_hex(file_text.as_bytes());
-    let identity = crate::workspace::read_identity_sha256(path, 1, 300, &file_sha256);
+    let identity = crate::workspace::read_identity_sha256(path, 1, 200, &file_sha256);
     (action, result, Some(identity))
 }
 
@@ -229,7 +234,7 @@ fn maximum_opening(system_prompt: &str) -> String {
     )
 }
 
-fn capped_eight_action_turn(turn: usize, result_bytes: usize) -> TurnRecordV52 {
+fn capped_eight_action_turn(turn: usize, generation_bytes: usize) -> TurnRecordV52 {
     let mut actions: Vec<Value> = (0..MAX_ACTIONS_PER_TURN_V52)
         .map(|idx| {
             let arguments = if idx == 0 {
@@ -241,12 +246,12 @@ fn capped_eight_action_turn(turn: usize, result_bytes: usize) -> TurnRecordV52 {
         })
         .collect();
     let empty_generation_bytes = compact_json(&json!({"actions": actions.clone()})).len();
-    let note_bytes = crate::protocol::OUTPUT_LIMIT_BYTES_V52
+    let note_bytes = generation_bytes
         .checked_sub(empty_generation_bytes)
         .expect("the fixed capped-generation scaffold must fit the output limit");
     actions[0]["arguments"]["note"] = json!(filler("capped", note_bytes));
 
-    let action_results = actions
+    let mut action_results: Vec<_> = actions
         .into_iter()
         .map(|action| {
             (
@@ -255,17 +260,27 @@ fn capped_eight_action_turn(turn: usize, result_bytes: usize) -> TurnRecordV52 {
                     "status":"SCHEMA_ERROR",
                     "tool_name":"preview_identity_profile",
                     "pointer":"/person_keys",
-                    "error":filler("result", result_bytes)
+                    "error":""
                 }),
             )
         })
         .collect();
+    let array_bytes = 2 + action_results.len() - 1
+        + action_results
+            .iter()
+            .map(|(action, result)| {
+                result_item_overhead(action["action"].as_str().unwrap())
+                    + compact_json(result).len()
+            })
+            .sum::<usize>();
+    let filler_bytes = MAX_TURN_OUTPUT_BYTES_V52 - array_bytes;
+    let per_result = filler_bytes / action_results.len();
+    let extra = filler_bytes % action_results.len();
+    for (index, (_, result)) in action_results.iter_mut().enumerate() {
+        result["error"] = json!(filler("result", per_result + usize::from(index < extra)));
+    }
     let record = accepted(turn, action_results);
-    assert_eq!(
-        record.raw_bytes,
-        crate::protocol::OUTPUT_LIMIT_BYTES_V52,
-        "the capped accepted generation must sit exactly at OUTPUT_LIMIT"
-    );
+    assert_eq!(record.raw_bytes, generation_bytes,);
     record
 }
 
@@ -291,8 +306,25 @@ fn build_worst_case_postfallback_request() -> Result<CanonicalRequestV52, String
     let system_prompt = render_v52_system_prompt();
     let opening = maximum_opening(&system_prompt);
     let mut history: Vec<_> = (1..MAX_ASSISTANT_TURNS_V52)
-        .map(|turn| capped_eight_action_turn(turn, 4_000))
+        .map(|turn| capped_eight_action_turn(turn, OUTPUT_LIMIT_BYTES_V52))
         .collect();
+    let latest_turn = render_uncompacted_transcript("", &history[history.len() - 1..]);
+    let (_, latest_results) = latest_turn
+        .rsplit_once("\n\n=== TURN 49 RESULTS ===\n")
+        .expect("canonical result delimiter");
+    if latest_results.len() != MAX_TURN_OUTPUT_BYTES_V52 {
+        return Err(format!(
+            "worst-case witness results are {} bytes; expected {MAX_TURN_OUTPUT_BYTES_V52}",
+            latest_results.len(),
+        ));
+    }
+    let latest_request_bytes = system_prompt.len() + opening.len() + latest_turn.len();
+    let expected = MAX_OPENING_BYTES_V52 + OUTPUT_LIMIT_BYTES_V52 + MAX_TURN_OUTPUT_BYTES_V52 + 54;
+    if latest_request_bytes != expected || latest_request_bytes <= MAX_REQUEST_BYTES_V52 {
+        return Err(format!(
+            "worst-case opening and latest turn are {latest_request_bytes} bytes; expected {expected} bytes above the request ceiling"
+        ));
+    }
     if build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52).is_ok() {
         return Err("worst-case turn-50 witness did not require rollback".to_owned());
     }
@@ -393,8 +425,8 @@ fn early_compaction_witnesses_v52() -> Result<Vec<CanonicalRequestV52>, String> 
     if step_two.stats.per_step[2] == 0 {
         return Err("step-2 parity witness did not compact a config read".to_owned());
     }
-    // Six saves of 8,192 UTF-8 quotes fit the visible output limit but exceed the request ceiling
-    // after JSON escaping. Two quiet turns make the note saves eligible for step 1.
+    // Escaped notes stress generation compaction. Two quiet turns make the saves
+    // eligible for step 1, tested one byte below the uncompacted request size.
     let notes = "\"".repeat(MAX_WORKING_NOTES_BYTES);
     let turns = [
         accepted(1, vec![save_notes(&notes); 6]),
@@ -403,9 +435,9 @@ fn early_compaction_witnesses_v52() -> Result<Vec<CanonicalRequestV52>, String> 
     ];
     let system_prompt = render_v52_system_prompt();
     let opening = maximum_opening(&system_prompt);
-    let notes_request =
-        build_canonical_request(&system_prompt, &opening, &turns, MAX_REQUEST_BYTES_V52)
-            .map_err(|_| "notes parity witness did not fit after compaction".to_owned())?;
+    let notes_bytes = system_prompt.len() + render_uncompacted_transcript(&opening, &turns).len();
+    let notes_request = build_canonical_request(&system_prompt, &opening, &turns, notes_bytes - 1)
+        .map_err(|_| "notes parity witness did not fit after compaction".to_owned())?;
     let marker = crate::transcript::compacted_write_marker(&json!(notes));
     if notes_request.stats.last_step != Some(1) || !notes_request.transcript.contains(&marker) {
         return Err(
@@ -482,7 +514,7 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
     };
     let big_preview = |tag: &str| {
         let keys: Vec<String> = (0..60)
-            .map(|i| format!("{tag}-{i}-{}", filler(tag, 780)))
+            .map(|i| format!("{tag}-{i}-{}", filler(tag, 1_900)))
             .collect();
         (
             json!({"action": "preview_identity_profile", "arguments": {"person_keys": keys}}),
@@ -504,7 +536,7 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
     let repeated_read = || {
         read_with_identity(
             "sources/hr_extract.csv",
-            23_000,
+            15_000,
             "stable whole HR artifact snapshot",
         )
     };
@@ -572,8 +604,8 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
         accepted(
             7,
             vec![
-                read("target_specs/sap.md", 19_000),
-                read("legacy_iiq/rules.xml", 19_000),
+                read("target_specs/sap.md", 15_000),
+                read("legacy_iiq/rules.xml", 15_000),
                 (
                     json!({"action": "test_connector_sandbox", "arguments": {"connector_id": "sap"}}),
                     json!({"connector_id": "sap", "errors": [filler("sandbox", 2_500)]}),
@@ -591,7 +623,7 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
             11,
             vec![
                 {
-                    let (action, result) = read("context/stakeholder_requests.md", 39_000);
+                    let (action, result) = read("context/stakeholder_requests.md", 15_000);
                     (action, result, None)
                 },
                 search_with_identity(
@@ -605,18 +637,13 @@ pub fn parity_fixture_v52() -> (String, Vec<TurnRecordV52>) {
                 ),
             ],
         ),
-        // Results too large for any compaction of earlier turns: forces the rollback fallback.
-        accepted(
-            12,
-            (0..8)
-                .map(|i| read(&format!("context/notes_{i}.md"), 23_000))
-                .collect(),
-        ),
+        // The newest generation and results together force the rollback fallback.
+        capped_eight_action_turn(12, OUTPUT_LIMIT_BYTES_V52),
         accepted(13, vec![big_preview("gamma")]),
         // A large most-recent write: step 7.
         accepted(14, vec![write_string(49_000)]),
         // A large most-recent read after it: steps 6, then 8.
-        accepted(15, vec![read("context/security_policy.md", 47_000)]),
+        accepted(15, vec![read("context/security_policy.md", 15_000)]),
         accepted(
             16,
             vec![(
@@ -1001,7 +1028,7 @@ pub fn evaluate_parity_gate_v52(episodes: &[EpisodeV52]) -> GateResultV52 {
         format!("max_opening_bytes={max_opening_bytes}"),
         format!("worst_case_postfallback_request_bytes={postfallback_request_bytes}"),
         format!(
-            "postfallback_bound_bytes={POST_FALLBACK_BOUND_BYTES}; final_bound_without_rollback_bytes={FINAL_BOUND_WITHOUT_ROLLBACK_BYTES}; max_request_bytes={MAX_REQUEST_BYTES_V52}"
+            "postfallback_bound_bytes={POST_FALLBACK_BOUND_BYTES}; final_bound_without_rollback_bytes={FINAL_BOUND_WITHOUT_ROLLBACK_BYTES}; max_request_bytes={MAX_REQUEST_BYTES_V52}; max_turn_output_bytes={MAX_TURN_OUTPUT_BYTES_V52}; opening_plus_two_capped_results_bytes={TWO_TURN_RESULTS_WITH_OPENING_BYTES}"
         ),
     ];
     details.extend(errors.iter().cloned());
@@ -1189,7 +1216,7 @@ mod tests {
             turn_3_results[7].read_identity
         );
         // Turn 49: eight actions and a generation exactly at the visible output limit.
-        history.push(capped_eight_action_turn(49, 4_000));
+        history.push(capped_eight_action_turn(49, OUTPUT_LIMIT_BYTES_V52));
         assert!(
             build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52)
                 .is_err(),
@@ -1238,7 +1265,7 @@ mod tests {
         let opening = maximum_opening(&system_prompt);
         let mut history = Vec::with_capacity(49);
         for turn in 1..=49 {
-            let mut record = capped_eight_action_turn(turn, 128);
+            let mut record = capped_eight_action_turn(turn, 550);
             if let TurnOutcomeV52::Accepted {
                 results,
                 rolled_back,
@@ -1261,7 +1288,7 @@ mod tests {
         let request =
             build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52)
                 .expect("step 9 bounds the all-rollback history");
-        assert_eq!(request.stats.per_step[9], 49 * 8);
+        assert_eq!(request.stats.per_step[9], 49 * 9);
         assert!(
             request.request_bytes <= MAX_OPENING_BYTES_V52 + 49 * 606,
             "{}",
@@ -1316,11 +1343,11 @@ mod tests {
             )
         };
         let mut history: Vec<_> = (1..=48).map(|turn| make_turn(turn, 20)).collect();
-        history.push(make_turn(49, 80_000));
+        history.push(capped_eight_action_turn(49, 107_000));
 
-        // The latest result is too large to fit even after step 8, so the runner must roll it
-        // back. Once rolled back, the raw earlier generations fit under 96 KB but still exceed
-        // the post-fallback bound before the unconditional step 9.
+        // The newest generation and capped results together exceed the ceiling. Once
+        // rolled back, the raw history fits but exceeds the post-fallback bound before
+        // the unconditional step 9.
         assert!(
             build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52)
                 .is_err(),
@@ -1373,10 +1400,10 @@ mod tests {
         let system_prompt = render_v52_system_prompt();
         let opening = maximum_opening(&system_prompt);
         let mut history = Vec::with_capacity(49);
-        let path = format!("legacy_iiq/{}.xml", "p".repeat(130));
+        let path = format!("legacy_iiq/{}.xml", "p".repeat(350));
         for turn in 1..=48 {
             // Resolved paths remain in earlier read compaction markers. At this length the
-            // markers alone keep the request above 96 KB until step 9 removes them.
+            // markers alone keep the request above 176 KB until step 9 removes them.
             let actions = (0..8).map(|_| read(&path, 4_000)).collect();
             history.push(accepted(turn, actions));
         }

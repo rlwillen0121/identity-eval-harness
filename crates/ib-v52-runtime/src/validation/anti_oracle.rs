@@ -329,7 +329,10 @@ mod tests {
     fn anti_oracle_read_walks_utf8_continuations_without_skipping_text() {
         use std::cell::{Cell, RefCell};
 
-        let file = format!("🙂{}é\nsecond line\nthird line", "x".repeat(9_000));
+        let file = format!(
+            "🙂{}é\nsecond line\nthird line",
+            "x".repeat(MAX_READ_RESULT_BYTES)
+        );
         let reconstructed = RefCell::new(String::new());
         let calls = Cell::new(0usize);
         let mut call = |name: &str, args: Value, _expected: Option<&str>| -> Result<Value> {

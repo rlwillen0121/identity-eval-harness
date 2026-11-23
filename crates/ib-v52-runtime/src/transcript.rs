@@ -1,5 +1,5 @@
 //! Canonical transcript records, the §7.1 transcript grammar, and the deterministic,
-//! transport-independent §7.2 compaction policy (`identitybench.v5.2.compaction.v3`).
+//! transport-independent §7.2 compaction policy (`identitybench.v5.2.compaction.v4`).
 //!
 //! Every function here is a pure function of its inputs. Nothing depends on the provider kind,
 //! so compacted requests are byte-identical across transports by construction.
@@ -356,6 +356,18 @@ fn render_accepted_action_object(turn: &TurnRecordV52, state: &TurnCompaction) -
 struct ResultItem<'a> {
     action: &'a str,
     result: Cow<'a, Value>,
+}
+
+/// Serialized bytes around the result payload of one canonical results array item.
+pub(crate) fn result_item_overhead(action: &str) -> usize {
+    let item = ResultItem {
+        action,
+        result: Cow::Owned(Value::Null),
+    };
+    serde_json::to_vec(&item)
+        .expect("result item is JSON")
+        .len()
+        - "null".len()
 }
 
 fn render_results(turn: &TurnRecordV52, state: &TurnCompaction) -> String {
@@ -1212,7 +1224,7 @@ mod tests {
             build_canonical_request("S", "=== SCENARIO ===", &turns, MAX_REQUEST_BYTES_V52)
                 .unwrap();
         assert!(request.request_bytes <= MAX_REQUEST_BYTES_V52);
-        // Supersede identical reads first and keep every distinct file identifiable under 96 KB.
+        // Supersede identical reads first and keep every distinct file identifiable under the request ceiling.
         assert!(request.stats.per_step[0] > 0);
         assert_eq!(request.stats.generations_replaced, 0);
         assert!((200..=279).contains(&request.stats.superseded_outputs));
@@ -1479,13 +1491,13 @@ mod tests {
 
         let mut opening = "x".repeat(MAX_REQUEST_BYTES_V52 - 1);
         let exact = build_canonical_request("S", &opening, &[], MAX_REQUEST_BYTES_V52).unwrap();
-        assert_eq!(exact.request_bytes, 96_000);
+        assert_eq!(exact.request_bytes, 176_000);
         assert_eq!(exact.transcript, opening);
         assert!(!exact.stats.compacted);
         opening.push('y');
         let overflow =
             build_canonical_request("S", &opening, &[], MAX_REQUEST_BYTES_V52).unwrap_err();
-        assert_eq!(overflow.request_bytes_after_compaction, 96_001);
+        assert_eq!(overflow.request_bytes_after_compaction, 176_001);
     }
 
     #[test]

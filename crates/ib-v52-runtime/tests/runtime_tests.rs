@@ -639,7 +639,7 @@ fn virtual_workspace_tools_and_guards() {
         assert_eq!(parsed["schema_version"], "v5.2", "schema_version on {path}");
     }
 
-    // 2. read_workspace_file (default window 1..=80, max 120 lines, and compact config JSON)
+    // 2. read_workspace_file (default window 1..=120, max 200 lines, and compact config JSON)
     let read_default = rt.execute_tool_call(
         1,
         "read_workspace_file",
@@ -648,9 +648,9 @@ fn virtual_workspace_tools_and_guards() {
     assert_eq!(read_default["status"], "OK");
     assert_eq!(read_default["total_lines"], 350);
     assert_eq!(read_default["start_line"], 1);
-    assert_eq!(read_default["end_line"], 80);
+    assert_eq!(read_default["end_line"], 120);
     assert_eq!(read_default["truncated"], true);
-    assert_eq!(read_default["continuation"]["start_line"], 81);
+    assert_eq!(read_default["continuation"]["start_line"], 121);
     assert_eq!(read_default["continuation"]["byte_offset"], 0);
     assert!(
         serde_json::to_vec(&read_default).unwrap().len() <= ib_v52_runtime::MAX_READ_RESULT_BYTES
@@ -661,8 +661,8 @@ fn virtual_workspace_tools_and_guards() {
         "read_workspace_file",
         json!({"path": "context/change_request.md", "start_line": 1, "end_line": 350}),
     );
-    assert_eq!(read_capped["end_line"], 120);
-    assert_eq!(read_capped["continuation"]["start_line"], 121);
+    assert_eq!(read_capped["end_line"], 200);
+    assert_eq!(read_capped["continuation"]["start_line"], 201);
     assert!(
         serde_json::to_vec(&read_capped).unwrap().len() <= ib_v52_runtime::MAX_READ_RESULT_BYTES
     );
@@ -884,7 +884,10 @@ fn virtual_workspace_tools_and_guards() {
 #[test]
 fn workspace_reads_resume_inside_long_utf8_lines_within_serialized_limit() {
     let mut ep = sample_episode("long_read_01", "F01");
-    let first_line = format!("🙂\t\"\\\u{0001}{}é終", "x".repeat(9_000));
+    let first_line = format!(
+        "🙂\t\"\\\u{0001}{}é終",
+        "x".repeat(ib_v52_runtime::MAX_READ_RESULT_BYTES)
+    );
     let file = format!("{first_line}\nsecond line\nthird line");
     ep.readonly_files
         .insert("context/long_utf8.txt".to_owned(), file.clone());
@@ -993,22 +996,15 @@ fn workspace_reads_resume_inside_long_utf8_lines_within_serialized_limit() {
         "read_workspace_file",
         json!({"path":"context/change_request.md","start_line":1,"end_line":350}),
     );
-    assert_eq!(first_window["end_line"], 120);
-    assert_eq!(first_window["continuation"]["start_line"], 121);
+    assert_eq!(first_window["end_line"], 200);
+    assert_eq!(first_window["continuation"]["start_line"], 201);
     let second_window = rt.execute_tool_call(
         1,
         "read_workspace_file",
-        json!({"path":"context/change_request.md","start_line":121,"end_line":350}),
+        json!({"path":"context/change_request.md","start_line":201,"end_line":350}),
     );
-    assert_eq!(second_window["end_line"], 240);
-    assert_eq!(second_window["continuation"]["start_line"], 241);
-    let final_window = rt.execute_tool_call(
-        1,
-        "read_workspace_file",
-        json!({"path":"context/change_request.md","start_line":241,"end_line":350}),
-    );
-    assert_eq!(final_window["end_line"], 350);
-    assert_eq!(final_window["truncated"], false);
+    assert_eq!(second_window["end_line"], 350);
+    assert_eq!(second_window["truncated"], false);
 }
 
 #[test]

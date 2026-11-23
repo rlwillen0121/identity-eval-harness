@@ -254,7 +254,10 @@ mod tests {
 
     #[test]
     fn read_evidence_binds_continuation_marker_and_cursor_to_public_text() {
-        let file = format!("🙂{}tail", "x".repeat(9_000));
+        let file = format!(
+            "🙂{}tail",
+            "x".repeat(crate::workspace::MAX_READ_RESULT_BYTES)
+        );
         let evidence = WorkspaceEvidence {
             files: BTreeMap::from([("context/long.txt".into(), file.clone())]),
         };
