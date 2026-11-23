@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use ib_accounting::{FrozenPricingRate, HasUsageTokenCounts, estimate_frozen_cost_micros};
+use ib_accounting::{TokenCounts, TokenRates, estimate_cost_micros};
 use ib_core::hashing::sha256_hex;
 use ib_providers::factory::{ModelSpec, ProviderKind};
 use ib_v52_schemas::{EpisodeV52, SealedEpisodeOracleV52};
@@ -97,17 +97,16 @@ impl PricingRatesV52 {
         )
     }
 
-    /// Convert to `ib-accounting`'s `FrozenPricingRate` representation.
+    /// The rates as `ib-accounting` [`TokenRates`] (every component rate except cache-write is
+    /// always present).
     #[must_use]
-    pub fn to_frozen_rate(&self, pricing_manifest_sha256: &str) -> FrozenPricingRate {
-        FrozenPricingRate {
-            pricing_manifest_sha256: pricing_manifest_sha256.to_owned(),
-            currency_code: "USD".to_owned(),
-            input_cost_per_million_micros: self.uncached_input_micros_per_million,
-            cached_input_cost_per_million_micros: Some(self.cached_input_micros_per_million),
-            cache_write_cost_per_million_micros: self.cache_write_micros_per_million,
-            output_cost_per_million_micros: self.output_micros_per_million,
-            reasoning_cost_per_million_micros: Some(self.reasoning_micros_per_million),
+    pub fn token_rates(&self) -> TokenRates {
+        TokenRates {
+            input: self.uncached_input_micros_per_million,
+            cached_input: Some(self.cached_input_micros_per_million),
+            cache_write: self.cache_write_micros_per_million,
+            output: self.output_micros_per_million,
+            reasoning: Some(self.reasoning_micros_per_million),
         }
     }
 
@@ -122,47 +121,16 @@ impl PricingRatesV52 {
         output_tokens: u64,
         reasoning_tokens: u64,
     ) -> u64 {
-        struct TokenSnapshot {
-            total_in: i64,
-            cached_in: i64,
-            cache_write_in: i64,
-            total_out: i64,
-            reasoning: i64,
-        }
-        impl HasUsageTokenCounts for TokenSnapshot {
-            fn input_tokens_total(&self) -> Option<i64> {
-                Some(self.total_in)
-            }
-            fn cached_input_tokens(&self) -> Option<i64> {
-                Some(self.cached_in)
-            }
-            fn output_tokens_total(&self) -> Option<i64> {
-                Some(self.total_out)
-            }
-            fn reasoning_tokens_subset(&self) -> Option<i64> {
-                Some(self.reasoning)
-            }
-            fn cache_write_input_tokens(&self) -> Option<i64> {
-                Some(self.cache_write_in)
-            }
-        }
-        let to_i64 = |n: u64| i64::try_from(n).unwrap_or(i64::MAX);
-        let snapshot = TokenSnapshot {
-            total_in: to_i64(
-                input_tokens
-                    .saturating_add(cache_read_tokens)
-                    .saturating_add(cache_write_tokens),
-            ),
-            cached_in: to_i64(cache_read_tokens),
-            cache_write_in: to_i64(cache_write_tokens),
-            total_out: to_i64(output_tokens),
-            reasoning: to_i64(reasoning_tokens.min(output_tokens)),
-        };
-        let frozen = self.to_frozen_rate(&"0".repeat(64));
-        match estimate_frozen_cost_micros(&snapshot, &frozen) {
-            Some(micros) if micros >= 0 => micros as u64,
-            _ => 0,
-        }
+        estimate_cost_micros(
+            &self.token_rates(),
+            &TokenCounts {
+                uncached_input: input_tokens,
+                cache_read: cache_read_tokens,
+                cache_write: cache_write_tokens,
+                output: output_tokens,
+                reasoning: reasoning_tokens,
+            },
+        )
     }
 }
 
