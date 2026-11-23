@@ -51,11 +51,11 @@ pub use report::{
 pub use runner::{
     RunV52EpisodeOptions, RunV52SuiteOptions, SLOT_RECORDS_DIR_V52, SlotCheckpointV52,
     load_run_records_v52, opening_request_bytes_v52, run_v52_episode,
-    run_v52_episode_from_checkpoint, run_v52_suite,
+    run_v52_episode_from_checkpoint, run_v52_suite, run_v52_suite_with_seal,
 };
 pub use validation::{
     BaselineReportV52, BaselineRowV52, GateResultV52, ShortcutCeilingV52, ValidationReportV52,
-    find_budget_statements_v52, validate_v52_dataset,
+    find_budget_statements_v52, validate_loaded_v52_dataset, validate_v52_dataset,
 };
 pub use workspace::{
     DEFAULT_READ_LINE_WINDOW, MAX_PREVIEW_CUBES, MAX_READ_LINES_PER_CALL,

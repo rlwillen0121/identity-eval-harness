@@ -378,6 +378,8 @@ pub fn write_probe_receipt(path: &Path, receipt: &Value) -> Result<String> {
 pub struct LoadedProbeReceiptV52 {
     pub receipt: Value,
     pub receipt_sha256: String,
+    /// The exact bytes `receipt_sha256` covers, copied verbatim into the run directory.
+    pub bytes: Vec<u8>,
 }
 
 pub fn load_probe_receipt(path: &Path) -> Result<LoadedProbeReceiptV52> {
@@ -388,6 +390,7 @@ pub fn load_probe_receipt(path: &Path) -> Result<LoadedProbeReceiptV52> {
     Ok(LoadedProbeReceiptV52 {
         receipt,
         receipt_sha256: sha256_hex(&bytes),
+        bytes,
     })
 }
 

@@ -503,13 +503,18 @@ pub fn withheld_bundle_sha256(run_dir: &Path) -> Result<String> {
 // Misc
 // --------------------------------------------------------------------------------------------
 
+/// Current UNIX time in whole seconds (`0` if the clock is before the epoch).
+#[must_use]
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 /// RFC 3339 UTC timestamp with second precision (no external date dependency).
 #[must_use]
 pub fn utc_timestamp_now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    utc_timestamp(secs)
+    utc_timestamp(unix_now())
 }
 
 /// Format UNIX seconds as `YYYY-MM-DDTHH:MM:SSZ`.

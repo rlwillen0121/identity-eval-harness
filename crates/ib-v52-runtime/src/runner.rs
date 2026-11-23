@@ -1101,15 +1101,13 @@ enum SlotPlan {
 /// An engagement with its oracle and its Turn-1 message, shared by every repeat.
 type PreparedEpisodeV52 = Arc<(EpisodeV52, SealedEpisodeOracleV52, String)>;
 
-/// Preflight (§7.5): verify the seal and the ranked-run receipt, check every opening against
+/// Preflight (§7.5): check the verified seal's suite and the ranked-run receipt, every opening against
 /// `max_opening_bytes`, and pair each episode with its oracle and rendered opening.
 fn preflight(
     dataset: &LoadedV52Dataset,
-    spec_bytes: &[u8],
+    seal: &SealDigestsV52,
     options: &RunV52SuiteOptions,
-) -> Result<(SealDigestsV52, BTreeMap<String, PreparedEpisodeV52>)> {
-    // Seal check before the first slot (§7.5).
-    let seal = verify_v52_seal(dataset, spec_bytes, options.ranked)?;
+) -> Result<BTreeMap<String, PreparedEpisodeV52>> {
     if seal.suite_id != options.suite_id {
         bail!(
             "dataset seal suite {:?} does not match the requested suite {:?}",
@@ -1144,7 +1142,7 @@ fn preflight(
             Arc::new((episode.clone(), (*oracle).clone(), opening)),
         );
     }
-    Ok((seal, episode_by_id))
+    Ok(episode_by_id)
 }
 
 /// The earlier invocations of a run directory: empty for a fresh run (which must not find an
@@ -1366,7 +1364,21 @@ pub async fn run_v52_suite(
     provider: Arc<dyn Provider>,
     options: &RunV52SuiteOptions,
 ) -> Result<Vec<EpisodeExecutionRecordV52>> {
-    let (seal, episode_by_id) = preflight(dataset, spec_bytes, options)?;
+    // Seal check before the first slot (§7.5).
+    let seal = verify_v52_seal(dataset, spec_bytes, options.ranked)?;
+    run_v52_suite_with_seal(dataset, seal, engine, provider, options).await
+}
+
+/// [`run_v52_suite`] for a caller that already ran [`verify_v52_seal`] on `dataset` (with
+/// `require_protocol_id = options.ranked`) and passes its result.
+pub async fn run_v52_suite_with_seal(
+    dataset: &LoadedV52Dataset,
+    seal: SealDigestsV52,
+    engine: Arc<dyn IgaEngineBackendV52>,
+    provider: Arc<dyn Provider>,
+    options: &RunV52SuiteOptions,
+) -> Result<Vec<EpisodeExecutionRecordV52>> {
+    let episode_by_id = preflight(dataset, &seal, options)?;
 
     let out_dir = options.out_dir.clone();
     let _lock = RunDirLockV52::acquire(&out_dir)?;

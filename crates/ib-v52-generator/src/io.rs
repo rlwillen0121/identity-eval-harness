@@ -385,6 +385,53 @@ pub fn parse_seal_v52(
     }
 }
 
+/// Parse and verify a dataset's `SEAL.json` bytes against already-read dataset bytes, loading and
+/// cross-checking `PRIVATE_SEAL.json` from `dataset_dir` for a private suite when present.
+///
+/// # Errors
+/// Returns [`V52GeneratorError::SealVerification`], [`V52GeneratorError::Io`], or [`V52GeneratorError::Json`].
+pub fn load_v52_seal(
+    dataset_dir: &Path,
+    seal_bytes: &[u8],
+    episodes_bytes: &[u8],
+    oracles_bytes: &[u8],
+    spec_path: Option<&Path>,
+) -> Result<LoadedSealV52, V52GeneratorError> {
+    Ok(match parse_seal_v52(seal_bytes)? {
+        Ok(full) => {
+            verify_v52_seal(&full, episodes_bytes, oracles_bytes, spec_path)?;
+            LoadedSealV52::Public(Box::new(full))
+        }
+        Err(public_seal) => {
+            verify_private_public_seal(&public_seal, episodes_bytes, oracles_bytes, spec_path)?;
+            let private_path = dataset_dir.join(PRIVATE_SEAL_FILENAME_V52);
+            let full_seal =
+                if private_path
+                    .try_exists()
+                    .map_err(|source| V52GeneratorError::Io {
+                        path: private_path.display().to_string(),
+                        source,
+                    })?
+                {
+                    let full: DatasetSealV52 = serde_json::from_slice(&read_file(&private_path)?)?;
+                    verify_v52_seal(&full, episodes_bytes, oracles_bytes, spec_path)?;
+                    if derive_private_public_seal(&full)? != public_seal {
+                        return Err(V52GeneratorError::SealVerification(
+                            "PRIVATE_SEAL.json disagrees with the public SEAL.json".to_owned(),
+                        ));
+                    }
+                    Some(Box::new(full))
+                } else {
+                    None
+                };
+            LoadedSealV52::Private {
+                public_seal: Box::new(public_seal),
+                full_seal,
+            }
+        }
+    })
+}
+
 /// Load and cryptographically verify a sealed v5.2 dataset directory.
 ///
 /// If `spec_path` is provided, also verifies `spec_sha256` against the file at `spec_path`.
@@ -400,39 +447,13 @@ pub fn load_v52_dataset(
     let episodes_bytes = read_file(&dataset_dir.join(EPISODES_FILENAME_V52))?;
     let oracles_bytes = read_file(&dataset_dir.join(ORACLES_FILENAME_V52))?;
 
-    let seal = match parse_seal_v52(&seal_bytes)? {
-        Ok(full) => {
-            verify_v52_seal(&full, &episodes_bytes, &oracles_bytes, spec_path)?;
-            LoadedSealV52::Public(Box::new(full))
-        }
-        Err(public_seal) => {
-            verify_private_public_seal(&public_seal, &episodes_bytes, &oracles_bytes, spec_path)?;
-            let private_path = dataset_dir.join(PRIVATE_SEAL_FILENAME_V52);
-            let full_seal =
-                if private_path
-                    .try_exists()
-                    .map_err(|source| V52GeneratorError::Io {
-                        path: private_path.display().to_string(),
-                        source,
-                    })?
-                {
-                    let full: DatasetSealV52 = serde_json::from_slice(&read_file(&private_path)?)?;
-                    verify_v52_seal(&full, &episodes_bytes, &oracles_bytes, spec_path)?;
-                    if derive_private_public_seal(&full)? != public_seal {
-                        return Err(V52GeneratorError::SealVerification(
-                            "PRIVATE_SEAL.json disagrees with the public SEAL.json".to_owned(),
-                        ));
-                    }
-                    Some(Box::new(full))
-                } else {
-                    None
-                };
-            LoadedSealV52::Private {
-                public_seal: Box::new(public_seal),
-                full_seal,
-            }
-        }
-    };
+    let seal = load_v52_seal(
+        dataset_dir,
+        &seal_bytes,
+        &episodes_bytes,
+        &oracles_bytes,
+        spec_path,
+    )?;
 
     let episodes = parse_jsonl::<EpisodeV52>(&episodes_bytes)?;
     let oracles = parse_jsonl::<SealedEpisodeOracleV52>(&oracles_bytes)?;
