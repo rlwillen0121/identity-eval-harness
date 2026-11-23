@@ -323,12 +323,12 @@ impl SealDigestsV52 {
 }
 
 /// Verify a loaded dataset against its seal before the first slot (§7.5): the episode and oracle
-/// digests, the spec digest, the contract ID, and the protocol ID. A seal without a
-/// `protocol_id` is accepted only when `require_protocol_id` is false (unranked runs).
+/// digests, the spec digest, the contract ID, and the protocol ID. Current v5.2 suites must always
+/// carry `protocol_id == PROTOCOL_ID_V52`.
 pub fn verify_v52_seal(
     dataset: &LoadedV52Dataset,
     spec_bytes: &[u8],
-    require_protocol_id: bool,
+    _require_protocol_id: bool,
 ) -> Result<SealDigestsV52> {
     let seal = &dataset.seal;
     let recorded = SealDigestsV52::from_seal_json(seal)?;
@@ -357,13 +357,13 @@ pub fn verify_v52_seal(
         );
     }
     match &recorded.protocol_id {
-        None if require_protocol_id => {
-            bail!("seal check failed: SEAL.json has no protocol_id (required for ranked runs)")
+        None => {
+            bail!("seal check failed: SEAL.json has no protocol_id (required for v5.2 suites)")
         }
         Some(p) if p != PROTOCOL_ID_V52 => {
             bail!("seal check failed: protocol_id {p:?} != {PROTOCOL_ID_V52:?}")
         }
-        _ => {}
+        Some(_) => {}
     }
     if let Some(count) = seal.get("episode_count").and_then(Value::as_u64)
         && count as usize != dataset.episodes.len()
@@ -374,6 +374,61 @@ pub fn verify_v52_seal(
         );
     }
     Ok(recorded)
+}
+
+/// Verify a loaded dataset against both its local `SEAL.json` and an independently supplied
+/// published `SEAL.json` (§7.5). Required for private-suite run admission.
+pub fn verify_v52_seal_against_published(
+    dataset: &LoadedV52Dataset,
+    spec_bytes: &[u8],
+    published_seal: &Value,
+) -> Result<SealDigestsV52> {
+    let local = verify_v52_seal(dataset, spec_bytes, true)?;
+    let published =
+        SealDigestsV52::from_seal_json(published_seal).context("published SEAL.json is invalid")?;
+    if published.contract_id != ib_v52_schemas::CONTRACT_ID_V52 {
+        bail!(
+            "published seal check failed: contract_id {:?} != {:?}",
+            published.contract_id,
+            ib_v52_schemas::CONTRACT_ID_V52
+        );
+    }
+    match &published.protocol_id {
+        None => bail!("published seal check failed: SEAL.json has no protocol_id"),
+        Some(p) if p != PROTOCOL_ID_V52 => {
+            bail!("published seal check failed: protocol_id {p:?} != {PROTOCOL_ID_V52:?}")
+        }
+        Some(_) => {}
+    }
+    let differing = local.differing_fields(&published);
+    if !differing.is_empty() {
+        bail!(
+            "local dataset does not match published SEAL.json (differing: {})",
+            differing.join(", ")
+        );
+    }
+    if let Some(count) = published_seal.get("episode_count").and_then(Value::as_u64)
+        && count as usize != dataset.episodes.len()
+    {
+        bail!(
+            "published seal check failed: episode_count {count} != {} episodes",
+            dataset.episodes.len()
+        );
+    }
+    for key in [
+        "c_k",
+        "drand_chain_hash",
+        "round",
+        "round_unix_time",
+        "beacon_randomness_hex",
+    ] {
+        if let Some(expected) = published_seal.get(key)
+            && dataset.seal.get(key) != Some(expected)
+        {
+            bail!("local dataset SEAL.json differs from published SEAL.json on '{key}'");
+        }
+    }
+    Ok(local)
 }
 
 // --------------------------------------------------------------------------------------------

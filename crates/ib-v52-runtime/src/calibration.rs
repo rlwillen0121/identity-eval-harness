@@ -12,8 +12,14 @@ use serde_json::{Value, json};
 use crate::control::RunControlV52;
 use crate::fsutil::{atomic_write_at, read_json};
 use crate::integrity::{RunFingerprintInputsV52, SealDigestsV52};
-use crate::leaderboard::{LoadedRunV52, RUN_PROBE_RECEIPT_FILENAME_V52, load_run_v52};
-use crate::probe::{load_probe_receipt, load_probe_receipt_at, verify_probe_receipt_for_prompt};
+use crate::leaderboard::{
+    LoadedRunV52, RUN_PROBE_RECEIPT_FILENAME_V52, effective_requested_output_tokens,
+    effective_sampling, load_run_v52,
+};
+use crate::probe::{
+    ProbeBindingExpectationV52, ProbeReceiptV52, load_probe_receipt, load_probe_receipt_at,
+    provider_routing_equal, sampling_values_equal, verify_probe_receipt_binding,
+};
 use crate::protocol::MAX_ASSISTANT_TURNS_V52;
 use crate::stats::type7_quantile;
 
@@ -132,7 +138,9 @@ fn load_run(path: &Path, control: Option<RunControlV52>) -> Result<LoadedRunV52>
         "run fingerprint does not match its inputs"
     );
     ensure!(
-        m["system_prompt_sha256"] == inputs.system_prompt_sha256
+        m["protocol_id"] == inputs.protocol_id
+            && m["compaction_policy_id"] == inputs.compaction_policy_id
+            && m["system_prompt_sha256"] == inputs.system_prompt_sha256
             && m["endpoint_identity"] == inputs.endpoint_identity
             && m["binary_sha256"] == inputs.binary_sha256
             && inputs.model_config["model"] == run.model_id
@@ -140,6 +148,9 @@ fn load_run(path: &Path, control: Option<RunControlV52>) -> Result<LoadedRunV52>
             && inputs.model_config["reasoning_effort"] == run.reasoning_effort,
         "run entry does not match its fingerprint inputs"
     );
+    effective_requested_output_tokens(m, &inputs)
+        .map_err(|msg| anyhow::anyhow!("invalid requested_output_tokens: {msg}"))?;
+    effective_sampling(m, &inputs).map_err(|msg| anyhow::anyhow!("invalid sampling: {msg}"))?;
     ensure!(
         m["suite_id"] == DEV && seal.suite_id == DEV,
         "requires a v52_dev run"
@@ -169,6 +180,7 @@ fn load_run(path: &Path, control: Option<RunControlV52>) -> Result<LoadedRunV52>
             && run.records.len() == slots,
         "incomplete run: expected {slots} observed slots"
     );
+    let manifest_channel = m.get("system_prompt_channel").and_then(Value::as_str);
     // load_run_v52 indexes records by (episode_id, repeat_index), so length plus
     // these bounds proves that every scenario has the full set of repeats.
     ensure!(
@@ -178,11 +190,15 @@ fn load_run(path: &Path, control: Option<RunControlV52>) -> Result<LoadedRunV52>
                 && r.model_id == run.model_id
                 && r.provider_kind == run.transport_id
                 && r.effort == run.reasoning_effort
+                && r.protocol_id.as_deref() == Some(inputs.protocol_id.as_str())
+                && r.system_prompt_sha256.as_deref() == Some(inputs.system_prompt_sha256.as_str())
+                && manifest_channel
+                    .is_none_or(|ch| r.system_prompt_channel.as_deref() == Some(ch))
                 && r.turns_used <= turn_budget
                 && (!r.committed || r.turns_used > 0)
                 && (r.attempt_status != AttemptStatusV52::WithinProtocolStepLimit
                     || r.turns_used == turn_budget)),
-        "unexpected scenario, repeat, turn count, or entry identity in slot records"
+        "unexpected scenario, repeat, turn count, prompt/protocol metadata, or entry identity in slot records"
     );
     Ok(run)
 }
@@ -190,7 +206,12 @@ fn load_run(path: &Path, control: Option<RunControlV52>) -> Result<LoadedRunV52>
 #[derive(Default, Deserialize)]
 struct ValidationEvidence {
     suite_id: String,
-    episode_count: Option<usize>,
+    episode_count: usize,
+    protocol_id: String,
+    compaction_policy_id: String,
+    system_prompt_sha256: String,
+    binary_sha256: String,
+    seal: Option<SealDigestsV52>,
     #[serde(default)]
     gates: Vec<ValidationGate>,
     baselines: Option<Baselines>,
@@ -411,33 +432,39 @@ struct TransportEvidence {
 
 fn transport(run: &LoadedRunV52, supplement: Option<&Path>) -> Result<TransportEvidence> {
     let m = &run.manifest;
-    let inputs = &m["fingerprint_inputs"];
-    let verify = |receipt: &Value| {
-        verify_probe_receipt_for_prompt(
-            receipt,
-            &run.model_id,
-            &run.reasoning_effort,
-            &run.transport_id,
-            inputs["endpoint_identity"]
-                .as_str()
-                .context("missing endpoint identity")?,
-            inputs["binary_sha256"]
-                .as_str()
-                .context("missing binary digest")?,
-            inputs["system_prompt_sha256"]
-                .as_str()
-                .context("missing system prompt digest")?,
-        )
+    let inputs_val = &m["fingerprint_inputs"];
+    let inputs: RunFingerprintInputsV52 =
+        serde_json::from_value(inputs_val.clone()).context("invalid fingerprint inputs")?;
+    let requested_output_tokens = effective_requested_output_tokens(m, &inputs)
+        .map_err(|msg| anyhow::anyhow!("invalid requested_output_tokens: {msg}"))?;
+    let sampling =
+        effective_sampling(m, &inputs).map_err(|msg| anyhow::anyhow!("invalid sampling: {msg}"))?;
+    let channel = m.get("system_prompt_channel").and_then(Value::as_str);
+    let routing = inputs.model_config.pointer("/extra/provider_routing");
+    let verify = |receipt: &ProbeReceiptV52| {
+        let expectation = ProbeBindingExpectationV52 {
+            model_id: &run.model_id,
+            reasoning_effort: &run.reasoning_effort,
+            transport_id: &run.transport_id,
+            endpoint_identity: &inputs.endpoint_identity,
+            binary_sha256: &inputs.binary_sha256,
+            system_prompt_sha256: &inputs.system_prompt_sha256,
+            system_prompt_channel: channel,
+            requested_output_tokens,
+            sampling: &sampling,
+            provider_routing: routing,
+        };
+        verify_probe_receipt_binding(receipt, &expectation)
     };
     let (status, source) = if let Some(path) = supplement {
         ensure!(
-            m["receipt_sha256"].is_null() && inputs["receipt_sha256"].is_null(),
+            m["receipt_sha256"].is_null() && inputs_val["receipt_sha256"].is_null(),
             "a post hoc receipt requires a run with no bound receipt"
         );
         let loaded = load_probe_receipt(path)?;
         verify(&loaded.receipt).context("invalid post hoc receipt")?;
         (Status::Pass, Some(ReceiptSource::SuppliedPostHoc))
-    } else if m["receipt_sha256"] != inputs["receipt_sha256"] {
+    } else if m["receipt_sha256"] != inputs_val["receipt_sha256"] {
         (Status::Fail, None)
     } else if let Some(digest) = m["receipt_sha256"].as_str() {
         let loaded = ib_core::artifact::directory(&run.run_dir, false)
@@ -486,12 +513,11 @@ fn control_result(
     };
     let limit = ceiling.map(|v| v + 0.10);
     if kind == RunControlV52::BlindNoProbing {
+        let baseline_status = validation.gate("G-BASELINE-V52");
+        status = status.max(baseline_status);
         status = status.max(limit.map_or(Status::NotSupplied, |limit| {
             Status::check(macro_acc <= limit)
         }));
-        if validation.gate("G-BASELINE-V52") == Status::Fail {
-            status = Status::Fail;
-        }
         match limit {
             Some(limit) => write!(summary, " Ceiling plus 0.10 is {limit:.6}.").unwrap(),
             None => summary.push_str(" Shortcut ceiling was not supplied."),
@@ -696,12 +722,42 @@ pub fn build_calibration_report_v52(options: &CalibrationReportOptionsV52) -> Re
         "post hoc receipt refers to a run outside this calibration report"
     );
 
+    let frontier_seal = SealDigestsV52::from_seal_json(seal)?;
     let validation = if let Some(path) = &options.validation_report {
-        let v: ValidationEvidence = read_json(path)?;
+        let v: ValidationEvidence = read_json(path).context(
+            "validation report is missing required seal, harness identity, or gate fields",
+        )?;
         ensure!(
-            v.suite_id == DEV && v.episode_count.is_none_or(|n| n == ENGAGEMENTS),
-            "validation report must cover v52_dev"
+            v.suite_id == DEV && v.episode_count == ENGAGEMENTS,
+            "validation report must cover v52_dev with exactly {ENGAGEMENTS} episodes"
         );
+        let report_seal = v
+            .seal
+            .as_ref()
+            .context("validation report is missing suite seal digests")?;
+        ensure!(
+            report_seal == &frontier_seal,
+            "validation report seal differs from the calibration runs' seal"
+        );
+        ensure!(
+            v.gate("G-SEAL-V52") == Status::Pass,
+            "validation report must pass G-SEAL-V52"
+        );
+        ensure!(
+            !v.binary_sha256.is_empty(),
+            "validation report is missing harness binary_sha256"
+        );
+        for run in &frontier {
+            let fi = &run.manifest["fingerprint_inputs"];
+            ensure!(
+                fi["protocol_id"].as_str() == Some(v.protocol_id.as_str())
+                    && fi["compaction_policy_id"].as_str() == Some(v.compaction_policy_id.as_str())
+                    && fi["system_prompt_sha256"].as_str() == Some(v.system_prompt_sha256.as_str())
+                    && fi["binary_sha256"].as_str() == Some(v.binary_sha256.as_str()),
+                "validation report harness identity differs from frontier run {}",
+                run.run_dir.display()
+            );
+        }
         ensure!(
             v.ceiling().is_none_or(|n| (0.0..=1.0).contains(&n)),
             "invalid shortcut ceiling"
@@ -740,6 +796,63 @@ pub fn build_calibration_report_v52(options: &CalibrationReportOptionsV52) -> Re
             winner.manifest["endpoint_identity"] == run.manifest["endpoint_identity"],
             "control endpoint differs from the matching frontier entry"
         );
+        let winner_inputs: RunFingerprintInputsV52 =
+            serde_json::from_value(winner.manifest["fingerprint_inputs"].clone())?;
+        let control_inputs: RunFingerprintInputsV52 =
+            serde_json::from_value(run.manifest["fingerprint_inputs"].clone())?;
+        ensure!(
+            winner_inputs.system_prompt_sha256 == control_inputs.system_prompt_sha256,
+            "control system_prompt_sha256 differs from the matching frontier entry"
+        );
+        ensure!(
+            winner_inputs.protocol_id == control_inputs.protocol_id,
+            "control protocol_id differs from the matching frontier entry"
+        );
+        ensure!(
+            winner_inputs.compaction_policy_id == control_inputs.compaction_policy_id,
+            "control compaction_policy_id differs from the matching frontier entry"
+        );
+        let winner_out = effective_requested_output_tokens(&winner.manifest, &winner_inputs)
+            .map_err(anyhow::Error::msg)?;
+        let control_out = effective_requested_output_tokens(&run.manifest, &control_inputs)
+            .map_err(anyhow::Error::msg)?;
+        ensure!(
+            winner_out == control_out,
+            "control requested_output_tokens differs from the matching frontier entry"
+        );
+        let winner_sampling =
+            effective_sampling(&winner.manifest, &winner_inputs).map_err(anyhow::Error::msg)?;
+        let control_sampling =
+            effective_sampling(&run.manifest, &control_inputs).map_err(anyhow::Error::msg)?;
+        ensure!(
+            sampling_values_equal(&winner_sampling, &control_sampling),
+            "control sampling differs from the matching frontier entry"
+        );
+        ensure!(
+            provider_routing_equal(
+                winner_inputs
+                    .model_config
+                    .pointer("/extra/provider_routing"),
+                control_inputs
+                    .model_config
+                    .pointer("/extra/provider_routing"),
+            ),
+            "control provider_routing differs from the matching frontier entry"
+        );
+        let winner_channel = winner
+            .manifest
+            .get("system_prompt_channel")
+            .and_then(Value::as_str);
+        let control_channel = run
+            .manifest
+            .get("system_prompt_channel")
+            .and_then(Value::as_str);
+        if winner_channel.is_some() || control_channel.is_some() {
+            ensure!(
+                winner_channel == control_channel,
+                "control system_prompt_channel differs from the matching frontier entry"
+            );
+        }
         matched = Some(winner);
     }
     let best = winners[0].summary.g_srr.expect("complete frontier run");

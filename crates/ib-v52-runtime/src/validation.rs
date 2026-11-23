@@ -32,9 +32,11 @@ use crate::baselines::{
     construct_baseline_v52,
 };
 use crate::config::{LoadedV52Dataset, load_v52_dataset};
+use crate::integrity::{SealDigestsV52, current_binary_sha256};
 use crate::mutations::gold_replay_mutations_v52;
 use crate::opening::render_v52_episode_opening;
 use crate::parity::evaluate_parity_gate_v52;
+use crate::protocol::{COMPACTION_POLICY_ID_V52, system_prompt_sha256_v52};
 
 /// Members of a private suite's public seal (§2.2), exactly.
 const PRIVATE_PUBLIC_SEAL_KEYS: [&str; 14] = [
@@ -126,6 +128,11 @@ pub struct ValidationReportV52 {
     pub dataset_dir: String,
     pub suite_id: String,
     pub episode_count: usize,
+    pub protocol_id: String,
+    pub compaction_policy_id: String,
+    pub system_prompt_sha256: String,
+    pub binary_sha256: String,
+    pub seal: Option<SealDigestsV52>,
     pub passed: bool,
     pub gates: Vec<GateResultV52>,
     pub baselines: Option<BaselineReportV52>,
@@ -344,6 +351,8 @@ pub fn validate_loaded_v52_dataset(
     ];
 
     let passed = gates.iter().all(|g| g.passed);
+    let binary_sha256 = current_binary_sha256()?;
+    let seal = SealDigestsV52::from_seal_json(&dataset.seal).ok();
     Ok(ValidationReportV52 {
         dataset_dir: dataset_dir.display().to_string(),
         suite_id: dataset
@@ -353,6 +362,11 @@ pub fn validate_loaded_v52_dataset(
             .unwrap_or_default()
             .to_owned(),
         episode_count: dataset.episodes.len(),
+        protocol_id: PROTOCOL_ID_V52.to_owned(),
+        compaction_policy_id: COMPACTION_POLICY_ID_V52.to_owned(),
+        system_prompt_sha256: system_prompt_sha256_v52().to_owned(),
+        binary_sha256,
+        seal,
         passed,
         gates,
         baselines: Some(baseline_report),
