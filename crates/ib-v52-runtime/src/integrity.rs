@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::LoadedV52Dataset;
+use crate::control::RunControlV52;
 use crate::protocol::PROTOCOL_ID_V52;
 
 // --------------------------------------------------------------------------------------------
@@ -351,6 +352,9 @@ pub struct RunFingerprintInputsV52 {
     pub endpoint_identity: String,
     pub binary_sha256: String,
     pub seal: SealDigestsV52,
+    /// Validity control identity; absent for ordinary runs to preserve their fingerprint bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub control: Option<RunControlV52>,
 }
 
 impl RunFingerprintInputsV52 {

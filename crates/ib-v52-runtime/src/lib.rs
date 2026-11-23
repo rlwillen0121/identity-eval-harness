@@ -2,6 +2,7 @@
 
 pub mod baselines;
 pub mod config;
+pub mod control;
 pub mod fsutil;
 pub mod integrity;
 pub mod leaderboard;
@@ -26,6 +27,7 @@ pub use config::{
     LoadedPricingV52, LoadedRunConfigV52, LoadedV52Dataset, PricingArtifactV52, PricingRatesV52,
     PricingTableEntryV52, RunConfigV52, load_pricing_v52, load_run_config_v52, load_v52_dataset,
 };
+pub use control::RunControlV52;
 pub use integrity::{
     RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, round_stratified_order, verify_v52_seal,
     withheld_bundle_sha256,

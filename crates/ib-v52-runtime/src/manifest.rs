@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::control::RunControlV52;
 use crate::integrity::{RunFingerprintInputsV52, SealDigestsV52};
 
 /// `manifest.json` schema identifier.
@@ -55,6 +56,9 @@ pub struct RunManifestV52 {
     pub completed: bool,
     pub invocations: Vec<RunInvocationV52>,
     pub withheld_bundle_sha256: String,
+    /// §8.2 validity control; absent for ordinary runs to preserve their manifest bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub control: Option<RunControlV52>,
 }
 
 /// The `sampling` member for a requested temperature.

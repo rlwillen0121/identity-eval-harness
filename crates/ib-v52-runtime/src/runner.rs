@@ -28,6 +28,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
 use crate::config::{LoadedV52Dataset, PricingRatesV52};
+use crate::control::RunControlV52;
 use crate::fsutil::{atomic_write, write_pretty_json};
 use crate::integrity::{
     RunDirLockV52, RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, round_stratified_order,
@@ -117,6 +118,8 @@ pub struct RunV52SuiteOptions {
     pub wall_clock_guard_ms: u64,
     pub per_call_timeout_s: u64,
     pub max_request_bytes: usize,
+    /// Selected §8.2 validity control; only `v52_dev` with one repeat is permitted.
+    pub control: Option<RunControlV52>,
 }
 
 impl Default for RunV52SuiteOptions {
@@ -143,6 +146,7 @@ impl Default for RunV52SuiteOptions {
             wall_clock_guard_ms: WALL_CLOCK_GUARD_MS_V52,
             per_call_timeout_s: PER_CALL_TIMEOUT_S_V52,
             max_request_bytes: MAX_REQUEST_BYTES_V52,
+            control: None,
         }
     }
 }
@@ -434,6 +438,7 @@ struct SlotContext<'a> {
     engine: &'a dyn IgaEngineBackendV52,
     provider: &'a dyn Provider,
     options: &'a RunV52EpisodeOptions,
+    control: Option<RunControlV52>,
     /// The episode's Turn-1 message ([`render_v52_episode_opening`]), rendered once per episode.
     opening: &'a str,
     sink: Option<&'a RunDirSink>,
@@ -631,7 +636,8 @@ async fn drive_slot(
     }
 
     // The checkpoint owns the tool trace; the runtime only replays the workspace state.
-    let mut runtime = VirtualWorkspaceRuntimeV52::new(episode, ctx.engine);
+    let mut runtime =
+        VirtualWorkspaceRuntimeV52::new_with_control(episode, ctx.engine, ctx.control);
     runtime.restore_state(checkpoint.workspace.clone());
     checkpoint.state = SlotStateV52::InProgress;
     checkpoint.end = None;
@@ -878,6 +884,7 @@ pub async fn run_v52_episode(
         engine,
         provider,
         options,
+        control: None,
         opening: &opening,
         sink: None,
     };
@@ -902,6 +909,7 @@ pub async fn run_v52_episode_from_checkpoint(
         engine,
         provider,
         options,
+        control: None,
         opening: &opening,
         sink: None,
     };
@@ -1083,6 +1091,17 @@ fn preflight(
     seal: &SealDigestsV52,
     options: &RunV52SuiteOptions,
 ) -> Result<BTreeMap<String, PreparedEpisodeV52>> {
+    if options.control.is_some() {
+        if options.suite_id != "v52_dev" || seal.suite_id != "v52_dev" {
+            bail!("§8.2 validity controls are available only for suite v52_dev");
+        }
+        if options.repeats != 1 {
+            bail!("§8.2 validity controls require k = 1 (--repeats 1)");
+        }
+        if dataset.episodes.len() != 12 {
+            bail!("§8.2 validity controls require all 12 v52_dev engagements");
+        }
+    }
     if seal.suite_id != options.suite_id {
         bail!(
             "dataset seal suite {:?} does not match the requested suite {:?}",
@@ -1236,6 +1255,7 @@ struct SlotWorkerShared {
     records: Arc<Mutex<BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>>>,
     out_dir: PathBuf,
     fingerprint: String,
+    control: Option<RunControlV52>,
 }
 
 /// Run one planned slot to its end or pause and persist its configs and record.
@@ -1264,6 +1284,7 @@ async fn run_planned_slot(
         engine: shared.engine.as_ref(),
         provider: shared.provider.as_ref(),
         options: &episode_options,
+        control: shared.control,
         opening,
         sink: Some(&sink),
     };
@@ -1373,6 +1394,7 @@ pub async fn run_v52_suite_with_seal(
         endpoint_identity: options.endpoint_identity.clone(),
         binary_sha256: options.binary_sha256.clone(),
         seal: seal.clone(),
+        control: options.control,
     };
     let fingerprint = fingerprint_inputs.fingerprint();
     let mut invocations =
@@ -1426,6 +1448,7 @@ pub async fn run_v52_suite_with_seal(
         completed: false,
         invocations,
         withheld_bundle_sha256: String::new(),
+        control: options.control,
     };
     assemble_records(&out_dir, &records)?;
     write_manifest(&out_dir, &mut manifest, &records, false)?;
@@ -1436,6 +1459,7 @@ pub async fn run_v52_suite_with_seal(
         records: Arc::new(Mutex::new(records)),
         out_dir: out_dir.clone(),
         fingerprint,
+        control: options.control,
     };
     let (records, first_error) =
         dispatch_slots(plans, &episode_by_id, shared, options, concurrency).await?;
