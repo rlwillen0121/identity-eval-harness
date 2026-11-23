@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use ib_providers::base::{Message, ModelRequest, Provider, ToolSpec};
+use ib_providers::base::{Message, ModelRequest, Provider};
 use ib_providers::cli::agy::{
     AGENT_FILE, AGY_CAPACITY_ERROR_CODE, AGY_MAX_USER_MESSAGE_BYTES, AgyAdapter, AgyCliProvider,
     agent_definition, served_model,
@@ -706,15 +706,6 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"{
     assert_eq!(cr.usage.reasoning_tokens, 4);
     assert_eq!(cr.reported_cost_usd, Some(0.0012));
     assert_eq!(cr.served_model.as_deref(), Some("claude-haiku-5-5"));
-
-    // Native tools rejected cleanly
-    let mut bad_req = make_request("x", "y", None);
-    bad_req.tools.push(ToolSpec {
-        name: "t".to_string(),
-        description: "d".to_string(),
-        input_schema: Map::new(),
-    });
-    assert!(claude_p.complete(&bad_req).await.error.is_some());
 
     // 2. Grok
     let g_runner = FakeRunner::single(|cmd| {

@@ -452,8 +452,6 @@ fn build_request(
         // Constrained decoding is disabled for every transport (§7.1).
         output_schema: None,
         schema_name: "v52_canonical_turn".to_owned(),
-        // Provider-native tools and function calling are never used (§7.1).
-        tools: Vec::new(),
         params: GenerationParams {
             max_output_tokens: options.requested_output_tokens.unwrap_or(0),
             temperature: options.temperature,

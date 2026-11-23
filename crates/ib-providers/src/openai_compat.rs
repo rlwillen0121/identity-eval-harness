@@ -450,47 +450,6 @@ impl OpenAICompatProvider {
             Value::from(request.params.max_output_tokens),
         );
 
-        if let Some(ref schema) = request.output_schema {
-            let mut js = Map::new();
-            js.insert(
-                "name".to_string(),
-                Value::String(request.schema_name.clone()),
-            );
-            js.insert("schema".to_string(), Value::Object(schema.clone()));
-            js.insert("strict".to_string(), Value::Bool(true));
-
-            let mut rf = Map::new();
-            rf.insert("type".to_string(), Value::String("json_schema".to_string()));
-            rf.insert("json_schema".to_string(), Value::Object(js));
-            params.insert("response_format".to_string(), Value::Object(rf));
-        }
-
-        if !request.tools.is_empty() {
-            let tools = request
-                .tools
-                .iter()
-                .map(|tool| {
-                    let mut fn_obj = Map::new();
-                    fn_obj.insert("name".to_string(), Value::String(tool.name.clone()));
-                    fn_obj.insert(
-                        "description".to_string(),
-                        Value::String(tool.description.clone()),
-                    );
-                    fn_obj.insert(
-                        "parameters".to_string(),
-                        Value::Object(tool.input_schema.clone()),
-                    );
-                    fn_obj.insert("strict".to_string(), Value::Bool(true));
-
-                    let mut wrapper = Map::new();
-                    wrapper.insert("type".to_string(), Value::String("function".to_string()));
-                    wrapper.insert("function".to_string(), Value::Object(fn_obj));
-                    Value::Object(wrapper)
-                })
-                .collect();
-            params.insert("tools".to_string(), Value::Array(tools));
-        }
-
         if let Some(temp) = request.params.temperature
             && !self.drops_temperature
         {
@@ -534,44 +493,6 @@ impl OpenAICompatProvider {
             Value::from(request.params.max_output_tokens),
         );
         params.insert("store".to_string(), Value::Bool(false));
-
-        if let Some(ref schema) = request.output_schema {
-            let mut format = Map::new();
-            format.insert("type".to_string(), Value::String("json_schema".to_string()));
-            format.insert(
-                "name".to_string(),
-                Value::String(request.schema_name.clone()),
-            );
-            format.insert("schema".to_string(), Value::Object(schema.clone()));
-            format.insert("strict".to_string(), Value::Bool(true));
-
-            let mut text = Map::new();
-            text.insert("format".to_string(), Value::Object(format));
-            params.insert("text".to_string(), Value::Object(text));
-        }
-
-        if !request.tools.is_empty() {
-            let tools = request
-                .tools
-                .iter()
-                .map(|tool| {
-                    let mut item = Map::new();
-                    item.insert("type".to_string(), Value::String("function".to_string()));
-                    item.insert("name".to_string(), Value::String(tool.name.clone()));
-                    item.insert(
-                        "description".to_string(),
-                        Value::String(tool.description.clone()),
-                    );
-                    item.insert(
-                        "parameters".to_string(),
-                        Value::Object(tool.input_schema.clone()),
-                    );
-                    item.insert("strict".to_string(), Value::Bool(true));
-                    Value::Object(item)
-                })
-                .collect();
-            params.insert("tools".to_string(), Value::Array(tools));
-        }
 
         if let Some(temp) = request.params.temperature
             && !self.drops_temperature
@@ -909,8 +830,8 @@ impl OpenAICompatProvider {
                             return self.fail("malformed response (expected JSON object)", None);
                         };
                         let outcome = match self.config.api {
-                            OpenAiApi::Responses => self.parse_responses_reply(reply_map, request),
-                            OpenAiApi::ChatCompletions => self.to_response(reply_map, request),
+                            OpenAiApi::Responses => self.parse_responses_reply(reply_map),
+                            OpenAiApi::ChatCompletions => self.to_response(reply_map),
                         };
                         return match outcome {
                             Ok(resp) => resp,
@@ -985,11 +906,7 @@ impl OpenAICompatProvider {
         }
     }
 
-    fn to_response(
-        &self,
-        completion: &Map<String, Value>,
-        request: &ModelRequest,
-    ) -> Result<ModelResponse, String> {
+    fn to_response(&self, completion: &Map<String, Value>) -> Result<ModelResponse, String> {
         let usage_val = completion.get("usage");
         let (cost, _) = reported_cost(usage_val);
         let mut raw = Map::new();
@@ -1113,20 +1030,10 @@ impl OpenAICompatProvider {
                 });
             }
         }
-
-        if request.output_schema.is_some()
-            && let Some(ref text) = response.text
-        {
-            response.parsed = load_object(text);
-        }
         Ok(response)
     }
 
-    fn parse_responses_reply(
-        &self,
-        reply: &Map<String, Value>,
-        request: &ModelRequest,
-    ) -> Result<ModelResponse, String> {
+    fn parse_responses_reply(&self, reply: &Map<String, Value>) -> Result<ModelResponse, String> {
         let usage_val = reply.get("usage");
         let (cost, _) = reported_cost(usage_val);
         let mut raw = Map::new();
@@ -1279,11 +1186,6 @@ impl OpenAICompatProvider {
         }
 
         response.tool_calls = calls;
-        if request.output_schema.is_some()
-            && let Some(ref text) = response.text
-        {
-            response.parsed = load_object(text);
-        }
         Ok(response)
     }
 }

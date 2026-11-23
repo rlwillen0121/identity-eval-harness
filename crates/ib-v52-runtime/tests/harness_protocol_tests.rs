@@ -366,7 +366,6 @@ async fn compacted_requests_are_byte_identical_regardless_of_provider_kind() {
                     r.system, system_prompt,
                     "{kind}: byte-identical system prompt"
                 );
-                assert!(r.tools.is_empty(), "{kind}: no provider-native tools");
                 assert!(
                     r.output_schema.is_none(),
                     "{kind}: constrained decoding disabled"
@@ -1638,7 +1637,7 @@ async fn probe_passes_on_a_faithful_mock_transport_and_binds_the_receipt() {
         assert_eq!(&stream[off..off + 32], nonce.as_str().unwrap());
     }
     for r in &requests {
-        assert!(r.tools.is_empty() && r.output_schema.is_none());
+        assert!(r.output_schema.is_none());
         assert!(
             !r.messages[0].content.contains("v52_dev_"),
             "no episode content"

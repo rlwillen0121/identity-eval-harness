@@ -114,7 +114,6 @@ pub struct ModelRequest {
     pub messages: Vec<Message>,
     pub output_schema: Option<Map<String, Value>>,
     pub schema_name: String,
-    pub tools: Vec<ToolSpec>,
     pub params: GenerationParams,
 }
 
@@ -125,7 +124,6 @@ impl Default for ModelRequest {
             messages: Vec::new(),
             output_schema: None,
             schema_name: "decision".to_string(),
-            tools: Vec::new(),
             params: GenerationParams::default(),
         }
     }

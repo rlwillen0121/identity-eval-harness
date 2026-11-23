@@ -142,7 +142,6 @@ fn single_user_request(
         messages: vec![Message::user(transcript)],
         output_schema: None,
         schema_name: "v52_probe".to_owned(),
-        tools: Vec::new(),
         params: GenerationParams {
             max_output_tokens: options.requested_output_tokens.unwrap_or(0),
             temperature: options.temperature,

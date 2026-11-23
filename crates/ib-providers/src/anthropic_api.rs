@@ -190,39 +190,11 @@ impl AnthropicProvider {
         }
 
         let mut output_config = Map::new();
-        if let Some(ref schema) = request.output_schema {
-            let mut fmt = Map::new();
-            fmt.insert("type".to_string(), Value::String("json_schema".to_string()));
-            fmt.insert("schema".to_string(), Value::Object(schema.clone()));
-            output_config.insert("format".to_string(), Value::Object(fmt));
-        }
         if let Some(ref effort) = request.params.effort {
             output_config.insert("effort".to_string(), Value::String(effort.clone()));
         }
         if !output_config.is_empty() {
             params.insert("output_config".to_string(), Value::Object(output_config));
-        }
-
-        if !request.tools.is_empty() {
-            let tools = request
-                .tools
-                .iter()
-                .map(|tool| {
-                    let mut m = Map::new();
-                    m.insert("name".to_string(), Value::String(tool.name.clone()));
-                    m.insert(
-                        "description".to_string(),
-                        Value::String(tool.description.clone()),
-                    );
-                    m.insert(
-                        "input_schema".to_string(),
-                        Value::Object(tool.input_schema.clone()),
-                    );
-                    m.insert("strict".to_string(), Value::Bool(true));
-                    Value::Object(m)
-                })
-                .collect();
-            params.insert("tools".to_string(), Value::Array(tools));
         }
 
         if let Some(temp) = request.params.temperature
@@ -480,7 +452,7 @@ impl AnthropicProvider {
                             }
                         };
 
-                        return match self.to_response(&msg_map, request, req_id.as_deref()) {
+                        return match self.to_response(&msg_map, req_id.as_deref()) {
                             Ok(r) => r,
                             Err(problem) => {
                                 self.fail(&format!("malformed response ({problem})"), None)
@@ -518,7 +490,6 @@ impl AnthropicProvider {
     fn to_response(
         &self,
         message: &Map<String, Value>,
-        request: &ModelRequest,
         header_request_id: Option<&str>,
     ) -> Result<ModelResponse, String> {
         let content = message
@@ -619,18 +590,12 @@ impl AnthropicProvider {
         }
         response.tool_calls = calls;
 
-        if request.output_schema.is_some() && !texts.is_empty() {
-            response.text = Some(texts[0].clone());
-            response.parsed = load_object(&texts[0]);
+        let joined = texts.concat();
+        response.text = if joined.is_empty() {
+            None
         } else {
-            let joined = texts.concat();
-            response.text = if joined.is_empty() {
-                None
-            } else {
-                Some(joined)
-            };
-        }
-
+            Some(joined)
+        };
         Ok(response)
     }
 }

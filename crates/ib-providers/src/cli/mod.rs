@@ -1420,13 +1420,6 @@ impl<A: CliAdapter> CliProvider<A> {
     }
 
     async fn complete_inner(&self, request: &ModelRequest) -> ModelResponse {
-        if !request.tools.is_empty() {
-            return self.fail(
-                "native tools are not supported by CLI providers; use context mode",
-                None,
-                Some(request),
-            );
-        }
         if request.messages.is_empty() {
             return self.fail("request has no messages", None, Some(request));
         }
