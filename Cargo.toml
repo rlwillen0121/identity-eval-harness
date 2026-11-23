@@ -34,7 +34,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order", "float_roundtrip"] }
 serde_norway = "0.9.42"
 indexmap = { version = "2", features = ["serde"] }
-base64 = "0.23"
 
 # Hashing
 sha2 = "0.10"
@@ -48,7 +47,6 @@ clap = { version = "4", features = ["derive", "env"] }
 
 # Text
 regex = "1"
-tiktoken-rs = "0.12"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

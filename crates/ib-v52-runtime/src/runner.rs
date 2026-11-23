@@ -1449,12 +1449,6 @@ fn invalid_commit_zero_score(episode: &EpisodeV52, eval_err: String) -> Deployme
     score
 }
 
-/// Count approximate tokens using `o200k_base` for prompt budget diagnostics.
-#[must_use]
-pub fn count_tokens_v52(text: &str) -> usize {
-    tiktoken_rs::o200k_base_singleton().count_ordinary(text)
-}
-
 static ATOMIC_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
