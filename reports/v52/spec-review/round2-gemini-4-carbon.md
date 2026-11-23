@@ -2,7 +2,7 @@
 
 - Reviewer: Gemini 4 Carbon (high) via read-only CLI session
 - Target: `SPEC-v5.2.md` at c1393d0 (Draft r2)
-- Disposition: all findings accepted into Draft r3 (see `SPEC-v5.2.md` Appendix B)
+- Disposition: all findings accepted into Draft r3 (see [docs/v52-review-dispositions.md](../../../docs/v52-review-dispositions.md), formerly `SPEC-v5.2.md` Appendix B)
 
 ---
 

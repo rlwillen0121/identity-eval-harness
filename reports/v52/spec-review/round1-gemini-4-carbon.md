@@ -2,7 +2,7 @@
 
 - Reviewer: Gemini 4 Carbon (high) via read-only CLI session, one round
 - Target: `SPEC-v5.2.md` at ad548d1 (Draft r1)
-- Disposition: see `SPEC-v5.2.md` Appendix B
+- Disposition: see [docs/v52-review-dispositions.md](../../../docs/v52-review-dispositions.md) (formerly `SPEC-v5.2.md` Appendix B)
 
 ---
 
