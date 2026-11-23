@@ -260,7 +260,7 @@ struct PrivateFixture {
 impl PrivateFixture {
     fn new(c_k: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("k_test.hex"), format!("{K_TEST_HEX}\n")).unwrap();
+        write_private_key_file(&dir.path().join("k_test.hex"));
         std::fs::write(
             dir.path().join("PRECOMMIT.json"),
             serde_json::to_vec_pretty(&serde_json::json!({
@@ -300,6 +300,15 @@ impl PrivateFixture {
         .collect();
         args.extend(extra.iter().map(|s| (*s).to_owned()));
         args
+    }
+}
+
+fn write_private_key_file(path: &Path) {
+    std::fs::write(path, format!("{K_TEST_HEX}\n")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
 }
 
@@ -362,6 +371,62 @@ fn private_suite_build_refuses_without_key_inputs_test_key_consent_or_scratch_pa
         2
     );
     assert!(!out.exists());
+}
+
+#[test]
+fn private_key_file_requires_private_permissions_and_rejects_symlinks() {
+    let fx = PrivateFixture::new(C_K_TEST_HEX);
+    let out = fx.path("permission-check");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            fx.path("k_test.hex"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let exposed = identitybench_owned(
+            &fx.build_args("v52_core", &["--allow-test-key", "--out", path_arg(&out)]),
+        );
+        assert_eq!(code(&exposed), 2);
+        assert!(!out.exists());
+        assert!(!String::from_utf8_lossy(&exposed.stderr).contains(K_TEST_HEX));
+
+        let oversized_key = fx.path("oversized-key.hex");
+        std::fs::write(&oversized_key, vec![b'0'; 1025]).unwrap();
+        std::fs::set_permissions(&oversized_key, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let size_out = fx.path("size-check");
+        let mut size_args = fx.build_args(
+            "v52_core",
+            &["--allow-test-key", "--out", path_arg(&size_out)],
+        );
+        let key_arg = size_args
+            .iter()
+            .position(|arg| arg == "--private-key-file")
+            .unwrap();
+        size_args[key_arg + 1] = path_arg(&oversized_key).to_owned();
+        let oversized = identitybench_owned(&size_args);
+        assert_eq!(code(&oversized), 2);
+        assert!(!size_out.exists());
+
+        write_private_key_file(&fx.path("k_test.hex"));
+        let alias = fx.path("k_test-link.hex");
+        std::os::unix::fs::symlink(fx.path("k_test.hex"), &alias).unwrap();
+        let symlink_out = fx.path("symlink-check");
+        let mut args = fx.build_args(
+            "v52_core",
+            &["--allow-test-key", "--out", path_arg(&symlink_out)],
+        );
+        let key_arg = args
+            .iter()
+            .position(|arg| arg == "--private-key-file")
+            .unwrap();
+        args[key_arg + 1] = path_arg(&alias).to_owned();
+        let symlinked = identitybench_owned(&args);
+        assert_ne!(code(&symlinked), 0);
+        assert!(!symlink_out.exists());
+        assert!(!String::from_utf8_lossy(&symlinked.stderr).contains(K_TEST_HEX));
+    }
 }
 
 /// Full private-path round trip under `K_test`: build `v52_core` into a scratch directory, check the
@@ -1067,7 +1132,7 @@ const SCRATCH_ROUND: u64 = 1_000;
 fn commit_reveal_round_trip_with_the_test_key() {
     let dir = tempfile::tempdir().unwrap();
     let key_file = dir.path().join("k_test.hex");
-    std::fs::write(&key_file, format!("{K_TEST_HEX}\n")).unwrap();
+    write_private_key_file(&key_file);
     let round_time = SCRATCH_GENESIS + (SCRATCH_ROUND - 1) * SCRATCH_PERIOD;
     let chain_hash = "ab".repeat(32);
     let precommit_path = dir.path().join("PRECOMMIT.json");
@@ -1288,6 +1353,10 @@ fn commit_reveal_round_trip_with_the_test_key() {
         ]);
         let text = String::from_utf8(output.stdout.clone()).unwrap();
         assert!(!text.contains(K_TEST_HEX), "K must never be printed");
+        assert!(
+            !text.contains(C_K_TEST_HEX),
+            "K commitment must not be printed"
+        );
         (code(&output), stdout_json(&output))
     };
     let status = |report: &Value, id: &str| -> Vec<String> {
@@ -1329,6 +1398,20 @@ fn commit_reveal_round_trip_with_the_test_key() {
             "{id}: {report:#}"
         );
     }
+
+    let original_precommit = std::fs::read(&precommit_path).unwrap();
+    let mut mistyped_precommit: Value = serde_json::from_slice(&original_precommit).unwrap();
+    mistyped_precommit["c_k"] = Value::String(K_TEST_HEX.to_owned());
+    std::fs::write(
+        &precommit_path,
+        serde_json::to_vec_pretty(&mistyped_precommit).unwrap(),
+    )
+    .unwrap();
+    let (exit, report) = reveal(round_time - 3_600);
+    assert_eq!(exit, 1);
+    assert_eq!(status(&report, "key_matches_c_k"), vec!["fail".to_owned()]);
+    assert!(!report.to_string().contains(K_TEST_HEX));
+    std::fs::write(&precommit_path, original_precommit).unwrap();
 
     // A precommit committed at (not before) round_unix_time fails the timing check, and tampering
     // with a withheld config breaks the bundle digest and the score replay.

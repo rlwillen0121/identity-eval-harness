@@ -11,9 +11,10 @@ use ib_v52_schemas::{
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::fsutil::{atomic_write, write_pretty_json};
+use crate::fsutil::pretty_json_bytes;
 use crate::metrics::{SlotMetricsV52, slot_metrics_v52};
 use crate::stats::type7_quantile;
+use ib_core::artifact;
 
 /// Optional run metadata extracted from `manifest.json` when present.
 #[derive(Debug, Clone, Default)]
@@ -136,8 +137,8 @@ pub(crate) fn summarize_with_slots(
         total_cached_input_tokens =
             total_cached_input_tokens.saturating_add(rec.cached_input_tokens);
         total_cache_write_tokens = total_cache_write_tokens.saturating_add(rec.cache_write_tokens);
-        format_error_turns += rec.format_error_turns;
-        output_limit_turns += rec.output_limit_turns;
+        format_error_turns = format_error_turns.saturating_add(rec.format_error_turns);
+        output_limit_turns = output_limit_turns.saturating_add(rec.output_limit_turns);
         total_output_tokens = total_output_tokens.saturating_add(rec.output_tokens);
         total_reasoning_tokens = total_reasoning_tokens.saturating_add(rec.reasoning_tokens);
         total_cost_usd_micros = total_cost_usd_micros.saturating_add(rec.cost_usd_micros);
@@ -160,8 +161,10 @@ pub(crate) fn summarize_with_slots(
         let (ok_reads, duplicate_reads) = count_ok_and_duplicate_reads(rec);
         total_ok_reads += ok_reads;
         total_duplicate_ok_reads += duplicate_reads;
-        observed_format_error_turns += rec.format_error_turns;
-        observed_output_limit_turns += rec.output_limit_turns;
+        observed_format_error_turns =
+            observed_format_error_turns.saturating_add(rec.format_error_turns);
+        observed_output_limit_turns =
+            observed_output_limit_turns.saturating_add(rec.output_limit_turns);
         turns_observed_sum = turns_observed_sum.saturating_add(rec.turns_used);
         wall_ms_observed.push(rec.elapsed_wall_ms);
 
@@ -632,25 +635,29 @@ fn render_markdown_with_slots(
 /// Score/aggregate raw run artifacts in `run_dir` and write `<out_dir>/summary.json` and `<out_dir>/report.md`.
 pub fn report_v52_run(run_dir: &Path, out_dir: &Path) -> Result<SuiteReportSummaryV52> {
     // `episodes.jsonl`, plus slot records an interrupted invocation has not yet assembled.
-    let records = crate::runner::load_run_records_v52(run_dir)?;
-
-    let hint = read_manifest_hint(&run_dir.join("manifest.json"));
+    let root = artifact::directory(run_dir, false)?;
+    let records = crate::runner::load_run_records_at(&root, run_dir)?;
+    let hint = read_manifest_hint(&root);
     let slots: Vec<SlotMetricsV52> = records.iter().map(slot_metrics_v52).collect();
     let summary = summarize_with_slots(&records, &slots, &hint);
     let markdown = render_markdown_with_slots(&summary, &records, &slots);
 
-    std::fs::create_dir_all(out_dir)
-        .with_context(|| format!("failed to create report directory {}", out_dir.display()))?;
-
-    write_pretty_json(&out_dir.join("summary.json"), &summary)?;
-    atomic_write(&out_dir.join("report.md"), markdown.as_bytes())?;
+    let output = artifact::directory(out_dir, true)
+        .with_context(|| format!("failed to open report directory {}", out_dir.display()))?;
+    artifact::write_at(
+        &output,
+        Path::new("summary.json"),
+        &pretty_json_bytes(&summary)?,
+        true,
+    )?;
+    artifact::write_at(&output, Path::new("report.md"), markdown.as_bytes(), true)?;
 
     Ok(summary)
 }
 
 /// The summary hint of a run directory's `manifest.json` (default when absent or invalid).
-pub(crate) fn read_manifest_hint(manifest_path: &Path) -> RunMetadataHintV52 {
-    std::fs::read(manifest_path)
+fn read_manifest_hint(root: &std::fs::File) -> RunMetadataHintV52 {
+    artifact::read_limited_at(root, Path::new("manifest.json"), 64 * 1024 * 1024)
         .ok()
         .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
         .map(|manifest| RunMetadataHintV52::from_manifest(&manifest))
@@ -760,5 +767,60 @@ fn join_or_none(items: &[String]) -> String {
         "none".to_owned()
     } else {
         items.join(", ")
+    }
+}
+
+#[cfg(test)]
+mod accounting_tests {
+    use super::{RunMetadataHintV52, summarize_v52_records};
+    use ib_v52_schemas::EpisodeExecutionRecordV52;
+    use serde_json::json;
+
+    fn record(episode_id: &str, usage: u64) -> EpisodeExecutionRecordV52 {
+        serde_json::from_value(json!({
+            "episode_id": episode_id,
+            "suite_id": "v52_dev",
+            "family_id": "F01",
+            "repeat_index": 0,
+            "provider_kind": "replay",
+            "model_id": "m",
+            "model_label": "m",
+            "effort": "high",
+            "attempt_status": "COMPLETED",
+            "termination_reason": "EPISODE_COMPLETED",
+            "turns_used": 1,
+            "dry_runs_used": 0,
+            "committed": false,
+            "input_tokens": usage,
+            "cached_input_tokens": usage,
+            "cache_write_tokens": usage,
+            "output_tokens": usage,
+            "reasoning_tokens": usage,
+            "cost_usd_micros": usage,
+            "elapsed_wall_ms": 0,
+            "tool_trace": [],
+            "format_error_turns": usize::MAX,
+            "output_limit_turns": usize::MAX,
+            "score": null
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn usage_totals_saturate_instead_of_wrapping() {
+        let records = [
+            record("v52_dev_F01_R1_s00", u64::MAX),
+            record("v52_dev_F01_R1_s01", 1),
+        ];
+        let summary = summarize_v52_records(&records, &RunMetadataHintV52::default());
+
+        assert_eq!(summary.total_input_tokens, u64::MAX);
+        assert_eq!(summary.total_cached_input_tokens, u64::MAX);
+        assert_eq!(summary.total_cache_write_tokens, u64::MAX);
+        assert_eq!(summary.total_output_tokens, u64::MAX);
+        assert_eq!(summary.total_reasoning_tokens, u64::MAX);
+        assert_eq!(summary.total_cost_usd_micros, u64::MAX);
+        assert_eq!(summary.format_error_turns, usize::MAX);
+        assert_eq!(summary.output_limit_turns, usize::MAX);
     }
 }

@@ -23,13 +23,13 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::config::LoadedPricingV52;
-use crate::fsutil::{atomic_write, write_pretty_json};
+use crate::fsutil::pretty_json_bytes;
 use crate::integrity::{
     RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, withheld_bundle_sha256,
 };
 use crate::metrics::{SlotMetricsV52, slot_metrics_v52};
 use crate::probe::{
-    CONTEXT_WINDOW_BELOW_MINIMUM_V52, load_probe_receipt, verify_probe_receipt_binding,
+    CONTEXT_WINDOW_BELOW_MINIMUM_V52, load_probe_receipt_at, verify_probe_receipt_binding,
 };
 use crate::protocol::{
     COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_REQUEST_BYTES_V52, PROTOCOL_ID_V52,
@@ -37,12 +37,13 @@ use crate::protocol::{
 };
 use crate::report::{RunMetadataHintV52, summarize_with_slots};
 use crate::runner::SlotCheckpointV52;
-use crate::runner::load_run_records_v52;
+use crate::runner::load_run_records_at;
 use crate::stats::{
     BOOTSTRAP_REPLICATES_V52, BootstrapDrawsV52, EntryOutcomesV52, GsrrIntervalV52,
     LeaderboardOrderKeyV52, RankIntervalV52, RatioV52, bootstrap_key_v52, joint_statistics_v52,
     leaderboard_order_v52,
 };
+use ib_core::artifact;
 
 /// `leaderboard.json` schema identifier.
 pub const LEADERBOARD_SCHEMA_V52: &str = "identitybench.v5.2.leaderboard.v1";
@@ -140,13 +141,14 @@ impl LoadedRunV52 {
 /// Load a run directory (`manifest.json`, `episodes.jsonl` and any unassembled slot records) and
 /// recompute its summary.
 pub fn load_run_v52(run_dir: &Path) -> Result<LoadedRunV52> {
+    let root = artifact::directory(run_dir, false)?;
     let manifest_path = run_dir.join("manifest.json");
     let manifest: Value = serde_json::from_slice(
-        &std::fs::read(&manifest_path)
+        &artifact::read_limited_at(&root, Path::new("manifest.json"), 64 * 1024 * 1024)
             .with_context(|| format!("failed to read {}", manifest_path.display()))?,
     )
     .with_context(|| format!("{} is invalid JSON", manifest_path.display()))?;
-    let records = load_run_records_v52(run_dir)?;
+    let records = load_run_records_at(&root, run_dir)?;
     let slots: Vec<SlotMetricsV52> = records.iter().map(slot_metrics_v52).collect();
     let summary = summarize_with_slots(
         &records,
@@ -317,11 +319,18 @@ fn eligibility_item3_stable_fingerprint(run: &LoadedRunV52) -> Vec<Ineligibility
         ));
     }
     let mut restart_problems = Vec::new();
+    let root = artifact::directory(&run.run_dir, false);
     for record in &run.records {
+        if crate::integrity::validate_episode_id(&record.episode_id).is_err() {
+            restart_problems.push("invalid checkpoint episode identifier".to_owned());
+            continue;
+        }
         let stem = SlotIdV52::of_record(record).stem();
-        let path = run.run_dir.join("checkpoints").join(format!("{stem}.json"));
-        let checkpoint = std::fs::read(&path)
+        let path = Path::new("checkpoints").join(format!("{stem}.json"));
+        let checkpoint = root
+            .as_ref()
             .ok()
+            .and_then(|dir| artifact::read_limited_at(dir, &path, 512 * 1024 * 1024).ok())
             .and_then(|b| serde_json::from_slice::<SlotCheckpointV52>(&b).ok());
         match checkpoint {
             None => restart_problems.push(format!("{stem}: checkpoint missing")),
@@ -409,16 +418,33 @@ fn eligibility_item4_probe_receipt(run: &LoadedRunV52) -> Vec<IneligibilityReaso
             "the run fingerprint binds no G-PROBE-V52 receipt_sha256",
         )];
     };
-    let receipt_path = run.run_dir.join(RUN_PROBE_RECEIPT_FILENAME_V52);
-    if !receipt_path.is_file() {
+    let Ok(root) = artifact::directory(&run.run_dir, false) else {
         return vec![reason(
             4,
-            "probe_receipt_missing",
-            format!("{RUN_PROBE_RECEIPT_FILENAME_V52} is not in the run directory"),
+            "probe_receipt_invalid",
+            "could not open run directory",
         )];
-    }
-    let Ok(loaded) = load_probe_receipt(&receipt_path) else {
-        return vec![reason(4, "probe_receipt_invalid", "not JSON")];
+    };
+    let loaded = match load_probe_receipt_at(&root, Path::new(RUN_PROBE_RECEIPT_FILENAME_V52)) {
+        Ok(loaded) => loaded,
+        Err(err)
+            if err
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            return vec![reason(
+                4,
+                "probe_receipt_missing",
+                "probe_receipt.json is missing",
+            )];
+        }
+        Err(_) => {
+            return vec![reason(
+                4,
+                "probe_receipt_invalid",
+                "unreadable or malformed receipt",
+            )];
+        }
     };
     let mut reasons = Vec::new();
     if loaded.receipt_sha256 != expected {
@@ -538,6 +564,10 @@ pub fn round6(x: f64) -> f64 {
     (x * 1e6).round() / 1e6
 }
 
+fn sum_cost_usd_micros(costs: impl IntoIterator<Item = u64>) -> u64 {
+    costs.into_iter().fold(0_u64, u64::saturating_add)
+}
+
 fn opt6(x: Option<f64>) -> Value {
     x.map_or(Value::Null, |v| json!(round6(v)))
 }
@@ -643,20 +673,16 @@ fn entry_json(
         })
         .collect();
     let complete = s.is_complete;
-    let estimated_cost_micros: u64 = match pricing {
-        Some(p) => run
-            .records
-            .iter()
-            .map(|r| {
-                p.rates.compute_cost_usd_micros(
-                    r.input_tokens,
-                    r.cached_input_tokens,
-                    r.cache_write_tokens,
-                    r.output_tokens,
-                    r.reasoning_tokens,
-                )
-            })
-            .sum(),
+    let estimated_cost_micros = match pricing {
+        Some(p) => sum_cost_usd_micros(run.records.iter().map(|r| {
+            p.rates.compute_cost_usd_micros(
+                r.input_tokens,
+                r.cached_input_tokens,
+                r.cache_write_tokens,
+                r.output_tokens,
+                r.reasoning_tokens,
+            )
+        })),
         None => s.total_cost_usd_micros,
     };
     let cost_per_resolved = (s.resolved_slots > 0)
@@ -1217,12 +1243,44 @@ pub fn render_leaderboard_markdown_v52(board: &Value) -> String {
 
 /// Write `leaderboard.json` and `leaderboard.md` into `out_dir`.
 pub fn write_leaderboard_v52(out_dir: &Path, board: &Value) -> Result<()> {
-    std::fs::create_dir_all(out_dir)
-        .with_context(|| format!("failed to create {}", out_dir.display()))?;
-    write_pretty_json(&out_dir.join("leaderboard.json"), board)?;
-    atomic_write(
-        &out_dir.join("leaderboard.md"),
+    let output = artifact::directory(out_dir, true)
+        .with_context(|| format!("failed to open {}", out_dir.display()))?;
+    artifact::write_at(
+        &output,
+        Path::new("leaderboard.json"),
+        &pretty_json_bytes(board)?,
+        true,
+    )?;
+    artifact::write_at(
+        &output,
+        Path::new("leaderboard.md"),
         render_leaderboard_markdown_v52(board).as_bytes(),
+        true,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod accounting_tests {
+    use super::sum_cost_usd_micros;
+
+    #[test]
+    fn leaderboard_cost_total_saturates_instead_of_wrapping() {
+        assert_eq!(sum_cost_usd_micros([u64::MAX - 1, 2]), u64::MAX);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod output_path_tests {
+    use super::write_leaderboard_v52;
+    use serde_json::json;
+
+    #[test]
+    fn leaderboard_rejects_a_linked_output_root() {
+        let local = tempfile::tempdir().unwrap();
+        let linked = local.path().join("alias");
+        std::os::unix::fs::symlink(local.path(), &linked).unwrap();
+        assert!(write_leaderboard_v52(&linked, &json!({})).is_err());
+        assert!(!local.path().join("leaderboard.json").exists());
+    }
 }

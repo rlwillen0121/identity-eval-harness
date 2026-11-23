@@ -7,6 +7,8 @@
 //! resume from that checkpoint, never from turn 1.
 
 use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,7 +17,6 @@ use anyhow::{Context, Result, bail};
 use ib_core::hashing::sha256_hex;
 use ib_providers::base::{ModelRequest, ModelResponse, Provider, SystemChannel};
 use ib_providers::json::{OVERSIZED_TEXT_BYTES, OVERSIZED_TEXT_SHA256};
-use ib_v52_schemas::jsonl::JsonlError;
 use ib_v52_schemas::{
     AssertionFailureV52, AttemptStatusV52, CONFIG_FILES_V52, CategoryIdV52, DeploymentScoreV52,
     EpisodeExecutionRecordV52, EpisodeV52, IgaEngineBackendV52, SealedEpisodeOracleV52,
@@ -28,10 +29,10 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
 use crate::config::{LoadedV52Dataset, PricingRatesV52};
-use crate::fsutil::{atomic_write, write_pretty_json};
+use crate::fsutil::{atomic_write_at, write_pretty_json_at};
 use crate::integrity::{
     RunDirLockV52, RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, round_stratified_order,
-    utc_timestamp_now, verify_v52_seal, withheld_bundle_sha256,
+    utc_timestamp_now, validate_episode_id, verify_v52_seal, withheld_bundle_listing_at,
 };
 use crate::manifest::{MANIFEST_SCHEMA_V52, RunInvocationV52, RunManifestV52, sampling_json};
 use crate::opening::render_v52_episode_opening;
@@ -53,6 +54,9 @@ pub const REPLAY_CACHE_KEY_PARAM: &str = "cache_key";
 /// Base delay of the runner's exponential retry backoff.
 pub const DEFAULT_RETRY_BACKOFF_BASE_MS: u64 = 750;
 const CHECKPOINT_SCHEMA: &str = "identitybench-v52-checkpoint-v1";
+const MAX_RUN_MANIFEST_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CHECKPOINT_BYTES: usize = 512 * 1024 * 1024;
+const MAX_RUN_RECORD_LINE_BYTES: usize = 64 * 1024 * 1024;
 
 /// Execution options for one slot.
 #[derive(Debug, Clone)]
@@ -109,6 +113,8 @@ pub struct RunV52SuiteOptions {
     pub binary_sha256: String,
     /// `receipt_sha256` of the `G-PROBE-V52` receipt, when held.
     pub receipt_sha256: Option<String>,
+    /// Exact verified receipt bytes to persist after run lock and resume validation succeed.
+    pub receipt_bytes: Option<Vec<u8>>,
     /// Ranked runs require a seal `protocol_id` and a probe receipt.
     pub ranked: bool,
     pub out_dir: PathBuf,
@@ -136,6 +142,7 @@ impl Default for RunV52SuiteOptions {
             endpoint_identity: String::new(),
             binary_sha256: String::new(),
             receipt_sha256: None,
+            receipt_bytes: None,
             ranked: false,
             out_dir: PathBuf::new(),
             resume: false,
@@ -233,7 +240,7 @@ impl SlotCheckpointV52 {
 
 /// Writes `checkpoints/<slot>.json` and `transcripts/<slot>.jsonl` atomically.
 struct RunDirSink {
-    out_dir: PathBuf,
+    run_lock: Arc<RunDirLockV52>,
     slot: SlotIdV52,
     header: Value,
 }
@@ -243,14 +250,19 @@ impl RunDirSink {
         let stem = self.slot.stem();
         let mut bytes = serde_json::to_vec(checkpoint)?;
         bytes.push(b'\n');
-        atomic_write(
-            &self
-                .out_dir
-                .join("checkpoints")
-                .join(format!("{stem}.json")),
+        atomic_write_at(
+            self.run_lock.root(),
+            Path::new("checkpoints")
+                .join(format!("{stem}.json"))
+                .as_path(),
             &bytes,
         )?;
-        write_transcript_jsonl(&self.out_dir, &self.slot, &self.header, &checkpoint.turns)
+        write_transcript_jsonl(
+            self.run_lock.root(),
+            &self.slot,
+            &self.header,
+            &checkpoint.turns,
+        )
     }
 }
 
@@ -263,7 +275,7 @@ struct TranscriptTurnLine<'a> {
 }
 
 fn write_transcript_jsonl(
-    out_dir: &Path,
+    root: &File,
     slot: &SlotIdV52,
     header: &Value,
     turns: &[TurnRecordV52],
@@ -274,10 +286,11 @@ fn write_transcript_jsonl(
         serde_json::to_writer(&mut bytes, &TranscriptTurnLine { turn, kind: "turn" })?;
         bytes.push(b'\n');
     }
-    atomic_write(
-        &out_dir
-            .join("transcripts")
-            .join(format!("{}.jsonl", slot.stem())),
+    atomic_write_at(
+        root,
+        Path::new("transcripts")
+            .join(format!("{}.jsonl", slot.stem()))
+            .as_path(),
         &bytes,
     )
 }
@@ -342,6 +355,23 @@ pub(crate) async fn generate_with_retries(
             output_tokens: response.usage.output_tokens,
             reasoning_tokens: response.usage.reasoning_tokens,
         });
+        if request.is_native_tool_probe()
+            && (!response.tool_calls.is_empty()
+                || response
+                    .raw
+                    .as_ref()
+                    .and_then(|r| r.get(ib_providers::base::NATIVE_TOOL_ACTIVITY))
+                    .and_then(Value::as_bool)
+                    == Some(true))
+        {
+            // Retrying must not erase evidence from this attempt.
+            return (
+                GenerationOutcome::ProviderFailure(
+                    "native tool activity observed during eligibility probe".into(),
+                ),
+                attempts,
+            );
+        }
         if let Some(err) = &response.error {
             let oversized = response.raw.as_ref().and_then(|raw| {
                 Some((
@@ -424,7 +454,7 @@ fn rollback_last_turn(
         entry.rolled_back = true;
     }
     checkpoint.workspace = before;
-    checkpoint.context_rollbacks += 1;
+    checkpoint.context_rollbacks = checkpoint.context_rollbacks.saturating_add(1);
     true
 }
 
@@ -635,7 +665,7 @@ async fn drive_slot(
     runtime.restore_state(checkpoint.workspace.clone());
     checkpoint.state = SlotStateV52::InProgress;
     checkpoint.end = None;
-    checkpoint.invocations += 1;
+    checkpoint.invocations = checkpoint.invocations.saturating_add(1);
     let clock = SlotClock {
         base_ms: checkpoint.elapsed_active_wall_ms,
         start: Instant::now(),
@@ -673,7 +703,7 @@ async fn drive_slot(
             Err(end) => break end,
         };
         if canonical.stats.compacted {
-            checkpoint.compacted_requests += 1;
+            checkpoint.compacted_requests = checkpoint.compacted_requests.saturating_add(1);
         }
         checkpoint.max_request_bytes = checkpoint.max_request_bytes.max(canonical.request_bytes);
 
@@ -689,7 +719,9 @@ async fn drive_slot(
         let (outcome, attempts) =
             generate_with_retries(ctx.provider, &request, options, &mut turn_usage).await;
         checkpoint.usage.add(&turn_usage);
-        checkpoint.provider_retries += attempts.saturating_sub(1) as usize;
+        checkpoint.provider_retries = checkpoint
+            .provider_retries
+            .saturating_add(attempts.saturating_sub(1) as usize);
 
         let (text, sha256, bytes, stop_reason) = match outcome {
             GenerationOutcome::ProviderFailure(err) => {
@@ -736,7 +768,7 @@ async fn drive_slot(
             bytes,
         );
         if matches!(outcome, TurnOutcomeV52::Rejected { .. }) {
-            checkpoint.consecutive_rejections += 1;
+            checkpoint.consecutive_rejections = checkpoint.consecutive_rejections.saturating_add(1);
         } else {
             checkpoint.consecutive_rejections = 0;
         }
@@ -930,32 +962,43 @@ fn slot_header(slot: &SlotIdV52, opening: &str, channel: SystemChannel) -> Value
     })
 }
 
-fn read_checkpoint(path: &Path) -> Result<Option<SlotCheckpointV52>> {
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let bytes =
-        std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+fn read_checkpoint(root: &File, relative: &Path) -> Result<Option<SlotCheckpointV52>> {
+    let bytes = match ib_core::artifact::read_limited_at(root, relative, MAX_CHECKPOINT_BYTES) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err).with_context(|| format!("failed to read {}", relative.display()));
+        }
+    };
     let checkpoint: SlotCheckpointV52 = serde_json::from_slice(&bytes)
-        .with_context(|| format!("invalid checkpoint {}", path.display()))?;
+        .with_context(|| format!("invalid checkpoint {}", relative.display()))?;
+    validate_episode_id(&checkpoint.episode_id)?;
+    if checkpoint.repeat_index == 0 {
+        bail!(
+            "checkpoint {} has an invalid zero repeat index",
+            relative.display()
+        );
+    }
     Ok(Some(checkpoint))
 }
 
 fn write_committed_configs(
-    out_dir: &Path,
+    root: &File,
     slot: &SlotIdV52,
     record: &EpisodeExecutionRecordV52,
 ) -> Result<()> {
     let Some(config) = &record.committed_config else {
         return Ok(());
     };
-    let dir = out_dir.join("configs").join(slot.stem());
     for stem in CONFIG_FILES_V52
         .iter()
         .filter_map(|path| config_file_stem(path))
     {
         let section = config.section_json(stem).unwrap_or(Value::Null);
-        write_pretty_json(&dir.join(format!("{stem}.json")), &section)?;
+        let relative = Path::new("configs")
+            .join(slot.stem())
+            .join(format!("{stem}.json"));
+        write_pretty_json_at(root, &relative, &section)?;
     }
     Ok(())
 }
@@ -976,15 +1019,15 @@ fn record_line(record: &EpisodeExecutionRecordV52) -> Result<Vec<u8>> {
 /// Assemble `episodes.jsonl` (one line per slot, in slot order) and drop the per-slot record
 /// files it now contains.
 fn assemble_records(
-    out_dir: &Path,
+    root: &File,
     records: &BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>,
 ) -> Result<()> {
     let mut bytes = Vec::new();
     for record in records.values() {
         bytes.extend(record_line(record)?);
     }
-    atomic_write(&out_dir.join("episodes.jsonl"), &bytes)?;
-    match std::fs::remove_dir_all(out_dir.join(SLOT_RECORDS_DIR_V52)) {
+    atomic_write_at(root, Path::new("episodes.jsonl"), &bytes)?;
+    match ib_core::artifact::remove_dir_all_at(root, Path::new(SLOT_RECORDS_DIR_V52)) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err).context("failed to remove assembled slot records"),
@@ -993,14 +1036,13 @@ fn assemble_records(
 
 /// Persist one finished slot's record atomically in its own file.
 fn write_slot_record(
-    out_dir: &Path,
+    root: &File,
     slot: &SlotIdV52,
     record: &EpisodeExecutionRecordV52,
 ) -> Result<()> {
-    atomic_write(
-        &out_dir
-            .join(SLOT_RECORDS_DIR_V52)
-            .join(format!("{}.json", slot.stem())),
+    atomic_write_at(
+        root,
+        &Path::new(SLOT_RECORDS_DIR_V52).join(format!("{}.json", slot.stem())),
         &record_line(record)?,
     )
 }
@@ -1011,60 +1053,146 @@ fn write_slot_record(
 /// # Errors
 /// Returns an error when neither `episodes.jsonl` nor a slot record exists, or a record is invalid.
 pub fn load_run_records_v52(out_dir: &Path) -> Result<Vec<EpisodeExecutionRecordV52>> {
-    if !out_dir.join("episodes.jsonl").is_file() && !out_dir.join(SLOT_RECORDS_DIR_V52).is_dir() {
+    let root = ib_core::artifact::directory(out_dir, false)
+        .with_context(|| format!("failed to open run directory {}", out_dir.display()))?;
+    load_run_records_at(&root, out_dir)
+}
+
+pub(crate) fn load_run_records_at(
+    root: &File,
+    out_dir: &Path,
+) -> Result<Vec<EpisodeExecutionRecordV52>> {
+    if !artifact_exists_file(root, Path::new("episodes.jsonl"))?
+        && !artifact_exists_dir(root, Path::new(SLOT_RECORDS_DIR_V52))?
+    {
         bail!(
             "failed to read {}: no episodes.jsonl or slot records",
             out_dir.join("episodes.jsonl").display()
         );
     }
-    Ok(load_records(out_dir)?.into_values().collect())
+    Ok(load_records(root)?.into_values().collect())
 }
 
 /// Records of a run directory: `episodes.jsonl`, overlaid by any per-slot record files left by an
 /// interrupted invocation (always written after the last assembly, so they are newer).
-fn load_records(out_dir: &Path) -> Result<BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>> {
+fn load_records(root: &File) -> Result<BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>> {
     let mut out = BTreeMap::new();
-    load_record_lines(&out_dir.join("episodes.jsonl"), &mut out)?;
-    let slot_dir = out_dir.join(SLOT_RECORDS_DIR_V52);
-    if slot_dir.is_dir() {
-        let mut paths = Vec::new();
-        for entry in std::fs::read_dir(&slot_dir)
-            .with_context(|| format!("failed to read {}", slot_dir.display()))?
-        {
-            let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if entry.file_type()?.is_file() && name.ends_with(".json") && !name.starts_with('.') {
-                paths.push(entry.path());
-            }
+    let episodes_path = Path::new("episodes.jsonl");
+    if artifact_exists_file(root, episodes_path)? {
+        load_record_jsonl(root, episodes_path, &mut out)?;
+    }
+    let slot_dir = Path::new(SLOT_RECORDS_DIR_V52);
+    let entries = match ib_core::artifact::entries_at(root, slot_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => {
+            return Err(err).with_context(|| format!("failed to read {}", slot_dir.display()));
         }
-        paths.sort();
-        for path in paths {
-            load_record_lines(&path, &mut out)?;
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        if entry.name.starts_with('.') || !entry.name.ends_with(".json") {
+            continue;
         }
+        if entry.file_type != ib_core::artifact::FileType::RegularFile {
+            bail!("slot record {} is not a regular file", entry.name);
+        }
+        names.push(entry.name);
+    }
+    names.sort();
+    for name in names {
+        let relative = slot_dir.join(&name);
+        load_record_jsonl(root, &relative, &mut out)?;
     }
     Ok(out)
 }
 
-fn load_record_lines(
+fn load_record_jsonl(
+    root: &File,
     path: &Path,
     out: &mut BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>,
 ) -> Result<()> {
-    if !path.is_file() {
-        return Ok(());
-    }
-    let raw = std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let records: Vec<EpisodeExecutionRecordV52> = ib_v52_schemas::jsonl::parse_jsonl(&raw)
-        .map_err(|err| match err {
-            JsonlError::Utf8(source) => {
-                anyhow::Error::new(source).context(format!("failed to read {}", path.display()))
-            }
-            JsonlError::Line { line, source } => anyhow::Error::new(source)
-                .context(format!("invalid record at {} line {line}", path.display())),
+    let file = ib_core::artifact::regular_file_at(root, path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = Vec::new();
+    let mut line_number = 0;
+    while read_capped_line(&mut reader, &mut line, MAX_RUN_RECORD_LINE_BYTES)
+        .with_context(|| format!("failed to read {}", path.display()))?
+    {
+        line_number += 1;
+        let text = std::str::from_utf8(&line).map_err(|err| {
+            anyhow::Error::new(err).context(format!("failed to read {}", path.display()))
         })?;
-    for record in records {
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let record: EpisodeExecutionRecordV52 = serde_json::from_str(text).map_err(|err| {
+            anyhow::Error::new(err).context(format!(
+                "invalid record at {} line {line_number}",
+                path.display()
+            ))
+        })?;
+        validate_episode_id(&record.episode_id)?;
+        if record.repeat_index == 0 {
+            bail!("record {} has an invalid zero repeat index", path.display());
+        }
+        if path.parent() == Some(Path::new(SLOT_RECORDS_DIR_V52)) {
+            let expected = format!("{}.json", SlotIdV52::of_record(&record).stem());
+            if path.file_name().and_then(|name| name.to_str()) != Some(expected.as_str()) {
+                bail!("slot record filename does not match its episode and repeat IDs");
+            }
+        }
         out.insert(SlotIdV52::of_record(&record), record);
     }
     Ok(())
+}
+
+fn read_capped_line<R: BufRead>(
+    reader: &mut R,
+    line: &mut Vec<u8>,
+    max_bytes: usize,
+) -> std::io::Result<bool> {
+    line.clear();
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(!line.is_empty());
+        }
+        let count = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(available.len(), |index| index + 1);
+        if line.len().saturating_add(count) > max_bytes {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "run record line exceeds the size limit",
+            ));
+        }
+        let complete = available.get(count - 1) == Some(&b'\n');
+        line.extend_from_slice(&available[..count]);
+        reader.consume(count);
+        if complete {
+            return Ok(true);
+        }
+    }
+}
+
+fn artifact_exists_file(root: &File, relative: &Path) -> Result<bool> {
+    match ib_core::artifact::regular_file_at(root, relative) {
+        Ok(_) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err).with_context(|| format!("failed to inspect {}", relative.display())),
+    }
+}
+
+fn artifact_exists_dir(root: &File, relative: &Path) -> Result<bool> {
+    match ib_core::artifact::directory_at(root, relative, false) {
+        Ok(_) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err).with_context(|| format!("failed to inspect {}", relative.display())),
+    }
 }
 
 /// Work item for one planned slot.
@@ -1101,6 +1229,7 @@ fn preflight(
     let system_prompt_len = system_prompt_v52().len();
     let mut episode_by_id = BTreeMap::new();
     for episode in &dataset.episodes {
+        validate_episode_id(&episode.episode_id)?;
         let opening = render_v52_episode_opening(None, episode);
         let bytes = system_prompt_len + opening.len();
         if bytes > MAX_OPENING_BYTES_V52 {
@@ -1123,18 +1252,22 @@ fn preflight(
 /// The earlier invocations of a run directory: empty for a fresh run (which must not find an
 /// existing run), else those recorded by a manifest whose fingerprint matches (`--resume`).
 fn prior_invocations(
+    root: &File,
     out_dir: &Path,
     resume: bool,
     fingerprint: &str,
     fingerprint_inputs: &RunFingerprintInputsV52,
 ) -> Result<Vec<RunInvocationV52>> {
-    let manifest_path = out_dir.join("manifest.json");
     if !resume {
-        if manifest_path.exists()
-            || out_dir.join("episodes.jsonl").exists()
-            || out_dir.join("checkpoints").exists()
-            || out_dir.join(SLOT_RECORDS_DIR_V52).exists()
-        {
+        let existing = [
+            artifact_exists_file(root, Path::new("manifest.json"))?,
+            artifact_exists_file(root, Path::new("episodes.jsonl"))?,
+            artifact_exists_dir(root, Path::new("checkpoints"))?,
+            artifact_exists_dir(root, Path::new(SLOT_RECORDS_DIR_V52))?,
+            artifact_exists_dir(root, Path::new("transcripts"))?,
+            artifact_exists_dir(root, Path::new("configs"))?,
+        ];
+        if existing.into_iter().any(|present| present) {
             bail!(
                 "run directory {} already holds a run; use --resume with identical inputs or a fresh --out",
                 out_dir.display()
@@ -1142,10 +1275,15 @@ fn prior_invocations(
         }
         return Ok(Vec::new());
     }
-    let raw = std::fs::read(&manifest_path).with_context(|| {
+    let raw = ib_core::artifact::read_limited_at(
+        root,
+        Path::new("manifest.json"),
+        MAX_RUN_MANIFEST_BYTES,
+    )
+    .with_context(|| {
         format!(
             "--resume requires an existing run manifest at {}",
-            manifest_path.display()
+            out_dir.join("manifest.json").display()
         )
     })?;
     let manifest: Value = serde_json::from_slice(&raw).context("manifest.json is invalid")?;
@@ -1176,17 +1314,19 @@ fn prior_invocations(
 /// The resume plan (§7.5): keep slots with a terminal record, continue every other slot from its
 /// checkpoint, and refuse to restart a paused slot from turn 1.
 fn plan_slots(
-    out_dir: &Path,
+    root: &File,
     order: &[SlotIdV52],
     records: &BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>,
     fingerprint: &str,
 ) -> Result<Vec<(SlotIdV52, SlotPlan)>> {
-    let checkpoints_dir = out_dir.join("checkpoints");
     let mut plans = Vec::with_capacity(order.len());
     for slot in order {
-        let checkpoint = read_checkpoint(&checkpoints_dir.join(format!("{}.json", slot.stem())))?;
+        let checkpoint_path = Path::new("checkpoints").join(format!("{}.json", slot.stem()));
+        let checkpoint = read_checkpoint(root, &checkpoint_path)?;
         if let Some(cp) = &checkpoint
-            && cp.fingerprint != fingerprint
+            && (cp.fingerprint != fingerprint
+                || cp.episode_id != slot.episode_id
+                || cp.repeat_index != slot.repeat_index)
         {
             bail!(
                 "checkpoint for {} was written under a different fingerprint",
@@ -1213,7 +1353,7 @@ fn plan_slots(
 
 /// Rewrite `manifest.json` from its fixed members and the current record set.
 fn write_manifest(
-    out_dir: &Path,
+    root: &File,
     manifest: &mut RunManifestV52,
     records: &BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>,
     completed: bool,
@@ -1224,8 +1364,9 @@ fn write_manifest(
         .count();
     manifest.written_records = records.len();
     manifest.completed = completed;
-    manifest.withheld_bundle_sha256 = withheld_bundle_sha256(out_dir)?;
-    write_pretty_json(&out_dir.join("manifest.json"), manifest).map(drop)
+    manifest.withheld_bundle_sha256 =
+        ib_core::hashing::sha256_hex(withheld_bundle_listing_at(root)?.as_bytes());
+    write_pretty_json_at(root, Path::new("manifest.json"), manifest).map(drop)
 }
 
 /// Everything a slot worker needs besides its slot and checkpoint.
@@ -1234,7 +1375,7 @@ struct SlotWorkerShared {
     engine: Arc<dyn IgaEngineBackendV52>,
     provider: Arc<dyn Provider>,
     records: Arc<Mutex<BTreeMap<SlotIdV52, EpisodeExecutionRecordV52>>>,
-    out_dir: PathBuf,
+    run_lock: Arc<RunDirLockV52>,
     fingerprint: String,
 }
 
@@ -1248,7 +1389,7 @@ async fn run_planned_slot(
 ) -> Result<()> {
     let (episode, oracle, opening) = (&prepared.0, &prepared.1, prepared.2.as_str());
     let sink = RunDirSink {
-        out_dir: shared.out_dir.clone(),
+        run_lock: shared.run_lock.clone(),
         slot: slot.clone(),
         header: slot_header(&slot, opening, shared.provider.system_channel()),
     };
@@ -1268,9 +1409,9 @@ async fn run_planned_slot(
         sink: Some(&sink),
     };
     let (record, _final) = drive_slot(&ctx, checkpoint).await?;
-    write_committed_configs(&shared.out_dir, &slot, &record)?;
+    write_committed_configs(shared.run_lock.root(), &slot, &record)?;
     // O(1) per slot: only this slot's record file is written (assembled by the caller).
-    write_slot_record(&shared.out_dir, &slot, &record)?;
+    write_slot_record(shared.run_lock.root(), &slot, &record)?;
     shared.records.lock().await.insert(slot, record);
     Ok(())
 }
@@ -1355,8 +1496,15 @@ pub async fn run_v52_suite_with_seal(
 ) -> Result<Vec<EpisodeExecutionRecordV52>> {
     let episode_by_id = preflight(dataset, &seal, options)?;
 
-    let out_dir = options.out_dir.clone();
-    let _lock = RunDirLockV52::acquire(&out_dir)?;
+    if let Some(bytes) = &options.receipt_bytes {
+        let digest = sha256_hex(bytes);
+        if options.receipt_sha256.as_deref() != Some(digest.as_str()) {
+            bail!("probe receipt bytes do not match receipt_sha256");
+        }
+    }
+
+    let run_lock = Arc::new(RunDirLockV52::acquire(&options.out_dir)?);
+    let out_dir = run_lock.run_dir().to_path_buf();
 
     let system_prompt_sha256 = system_prompt_sha256_v52().to_owned();
     let repeats = options.repeats.max(1);
@@ -1375,18 +1523,29 @@ pub async fn run_v52_suite_with_seal(
         seal: seal.clone(),
     };
     let fingerprint = fingerprint_inputs.fingerprint();
-    let mut invocations =
-        prior_invocations(&out_dir, options.resume, &fingerprint, &fingerprint_inputs)?;
+    let mut invocations = prior_invocations(
+        run_lock.root(),
+        &out_dir,
+        options.resume,
+        &fingerprint,
+        &fingerprint_inputs,
+    )?;
 
     let episode_ids: Vec<String> = episode_by_id.keys().cloned().collect();
     let order = round_stratified_order(&episode_ids, repeats, concurrency, options.shuffle_seed);
     let mut records = if options.resume {
-        load_records(&out_dir)?
+        load_records(run_lock.root())?
     } else {
         BTreeMap::new()
     };
-    let plans = plan_slots(&out_dir, &order, &records, &fingerprint)?;
+    let plans = plan_slots(run_lock.root(), &order, &records, &fingerprint)?;
     records.retain(|slot, _| order.contains(slot));
+
+    // Persist only after lock acquisition, fingerprint validation, and checkpoint planning. A
+    // blocked or incompatible resume therefore cannot replace a receipt already in the run dir.
+    if let Some(bytes) = &options.receipt_bytes {
+        atomic_write_at(run_lock.root(), Path::new("probe_receipt.json"), bytes)?;
+    }
 
     invocations.push(RunInvocationV52 {
         started_at: utc_timestamp_now(),
@@ -1427,25 +1586,25 @@ pub async fn run_v52_suite_with_seal(
         invocations,
         withheld_bundle_sha256: String::new(),
     };
-    assemble_records(&out_dir, &records)?;
-    write_manifest(&out_dir, &mut manifest, &records, false)?;
+    assemble_records(run_lock.root(), &records)?;
+    write_manifest(run_lock.root(), &mut manifest, &records, false)?;
 
     let shared = SlotWorkerShared {
         engine,
         provider,
         records: Arc::new(Mutex::new(records)),
-        out_dir: out_dir.clone(),
+        run_lock: run_lock.clone(),
         fingerprint,
     };
     let (records, first_error) =
         dispatch_slots(plans, &episode_by_id, shared, options, concurrency).await?;
-    assemble_records(&out_dir, &records)?;
+    assemble_records(run_lock.root(), &records)?;
     let completed = order.iter().all(|slot| {
         records
             .get(slot)
             .is_some_and(|r| r.attempt_status != AttemptStatusV52::IncompleteProviderFailure)
     });
-    write_manifest(&out_dir, &mut manifest, &records, completed)?;
+    write_manifest(run_lock.root(), &mut manifest, &records, completed)?;
     if let Some(err) = first_error {
         return Err(err);
     }

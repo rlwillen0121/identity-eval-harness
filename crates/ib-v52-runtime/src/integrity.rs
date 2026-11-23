@@ -3,7 +3,7 @@
 //! `withheld_bundle_sha256`.
 
 use std::collections::BTreeSet;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -144,6 +144,19 @@ impl SlotIdV52 {
     pub fn stem(&self) -> String {
         format!("{}_r{}", self.episode_id, self.repeat_index)
     }
+}
+
+/// Episode IDs are persisted as individual artifact filename components.
+pub fn validate_episode_id(id: &str) -> Result<()> {
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        bail!("invalid episode ID for a run artifact");
+    }
+    Ok(())
 }
 
 /// The round-stratified slot order of §7.5 for `episode_ids` (any order), `repeats` rounds,
@@ -399,25 +412,35 @@ pub fn current_binary_sha256() -> Result<String> {
 /// exits (including on a crash).
 pub struct RunDirLockV52 {
     _file: File,
+    root: File,
+    run_dir: PathBuf,
     path: PathBuf,
 }
 
 impl RunDirLockV52 {
     pub fn acquire(run_dir: &Path) -> Result<Self> {
-        std::fs::create_dir_all(run_dir)
-            .with_context(|| format!("failed to create run directory {}", run_dir.display()))?;
-        let path = run_dir.join(".run.lock");
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&path)
+        let root = ib_core::artifact::directory(run_dir, true)
+            .with_context(|| format!("failed to open run directory {}", run_dir.display()))?;
+        ib_core::artifact::require_owned_dir(&root)
+            .with_context(|| format!("unsafe run directory {}", run_dir.display()))?;
+        let resolved_run_dir = match run_dir.file_name() {
+            Some(name) => {
+                let parent = run_dir
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new("."));
+                std::fs::canonicalize(parent)?.join(name)
+            }
+            None => std::fs::canonicalize(run_dir)?,
+        };
+        let path = resolved_run_dir.join(".run.lock");
+        let mut file = ib_core::artifact::lock_file(&root)
             .with_context(|| format!("failed to open run lock {}", path.display()))?;
         match file.try_lock() {
             Ok(()) => {}
             Err(std::fs::TryLockError::WouldBlock) => bail!(
                 "run directory {} is locked by another identitybench process",
-                run_dir.display()
+                resolved_run_dir.display()
             ),
             Err(std::fs::TryLockError::Error(err)) => {
                 return Err(err).with_context(|| format!("failed to lock {}", path.display()));
@@ -425,12 +448,27 @@ impl RunDirLockV52 {
         }
         file.set_len(0)?;
         writeln!(file, "{}", std::process::id())?;
-        Ok(Self { _file: file, path })
+        Ok(Self {
+            _file: file,
+            root,
+            run_dir: resolved_run_dir,
+            path,
+        })
     }
 
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    #[must_use]
+    pub fn run_dir(&self) -> &Path {
+        &self.run_dir
+    }
+
+    #[must_use]
+    pub fn root(&self) -> &File {
+        &self.root
     }
 }
 
@@ -442,46 +480,54 @@ impl RunDirLockV52 {
 /// `configs/*/*.json`, one `<sha256_hex>  <relative_posix_path>\n` line per file, sorted by path
 /// in ascending byte order.
 pub fn withheld_bundle_listing(run_dir: &Path) -> Result<String> {
-    let mut entries: Vec<(String, String)> = Vec::new();
-    let episodes = run_dir.join("episodes.jsonl");
-    if episodes.is_file() {
-        entries.push((
-            "episodes.jsonl".to_owned(),
-            sha256_hex(&std::fs::read(&episodes)?),
-        ));
-    }
-    let transcripts = run_dir.join("transcripts");
-    if transcripts.is_dir() {
-        for entry in std::fs::read_dir(&transcripts)? {
-            let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if entry.file_type()?.is_file() && name.ends_with(".jsonl") && !name.starts_with('.') {
-                entries.push((
-                    format!("transcripts/{name}"),
-                    sha256_hex(&std::fs::read(entry.path())?),
-                ));
-            }
+    let root = ib_core::artifact::directory(run_dir, false)?;
+    withheld_bundle_listing_at(&root)
+}
+
+pub(crate) fn withheld_bundle_listing_at(root: &File) -> Result<String> {
+    use ib_core::artifact::{self, FileType};
+    use ib_core::hashing::sha256_reader;
+
+    fn optional<T>(result: std::io::Result<T>) -> std::io::Result<Option<T>> {
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
         }
     }
-    let configs = run_dir.join("configs");
-    if configs.is_dir() {
-        for slot in std::fs::read_dir(&configs)? {
-            let slot = slot?;
-            if !slot.file_type()?.is_dir() {
+
+    let mut entries = Vec::new();
+    if let Some(file) = optional(artifact::regular_file_at(root, Path::new("episodes.jsonl")))? {
+        entries.push(("episodes.jsonl".to_owned(), sha256_reader(file)?));
+    }
+    let mut directories = vec![("transcripts".to_owned(), ".jsonl")];
+    for slot in optional(artifact::entries_at(root, Path::new("configs")))?.unwrap_or_default() {
+        if slot.file_type == FileType::Symlink {
+            bail!("linked config directory in withheld bundle");
+        }
+        if slot.file_type == FileType::Directory {
+            directories.push((format!("configs/{}", slot.name), ".json"));
+        }
+    }
+    for (dir, extension) in directories {
+        let listing = if dir == "transcripts" {
+            optional(artifact::entries_at(root, Path::new(&dir)))?.unwrap_or_default()
+        } else {
+            artifact::entries_at(root, Path::new(&dir))?
+        };
+        for file in listing {
+            if file.name.starts_with('.') || !file.name.ends_with(extension) {
                 continue;
             }
-            let slot_name = slot.file_name().to_string_lossy().into_owned();
-            for file in std::fs::read_dir(slot.path())? {
-                let file = file?;
-                let name = file.file_name().to_string_lossy().into_owned();
-                if file.file_type()?.is_file() && name.ends_with(".json") && !name.starts_with('.')
-                {
-                    entries.push((
-                        format!("configs/{slot_name}/{name}"),
-                        sha256_hex(&std::fs::read(file.path())?),
-                    ));
-                }
+            let path = format!("{dir}/{}", file.name);
+            if path.contains(['\n', '\r']) {
+                bail!("withheld bundle filename contains a line break");
             }
+            if file.file_type != FileType::RegularFile {
+                bail!("withheld bundle member is not a regular file");
+            }
+            let source = artifact::regular_file_at(root, Path::new(&path))?;
+            entries.push((path, sha256_reader(source)?));
         }
     }
     entries.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
@@ -686,12 +732,106 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn withheld_listing_refuses_linked_directories_and_ambiguous_names() {
+        let root = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let transcripts = root.path().join("transcripts");
+        std::os::unix::fs::symlink(other.path(), &transcripts).unwrap();
+        assert!(withheld_bundle_listing(root.path()).is_err());
+        std::fs::remove_file(&transcripts).unwrap();
+        std::fs::create_dir(&transcripts).unwrap();
+        std::fs::write(transcripts.join("two\nlines.jsonl"), b"fixture").unwrap();
+        assert!(withheld_bundle_listing(root.path()).is_err());
+    }
+
     #[test]
     fn run_lock_is_exclusive() {
         let dir = tempfile::tempdir().unwrap();
         let lock = RunDirLockV52::acquire(dir.path()).unwrap();
         assert!(RunDirLockV52::acquire(dir.path()).is_err());
         drop(lock);
+        assert!(RunDirLockV52::acquire(dir.path()).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod filesystem_guard_tests {
+    use super::*;
+
+    #[test]
+    fn episode_ids_are_safe_file_components() {
+        for id in ["v52_dev_F01_R1_s00", "episode-12", "A_3"] {
+            assert!(validate_episode_id(id).is_ok());
+        }
+        for id in [
+            "",
+            ".",
+            "..",
+            "../slot",
+            "/slot",
+            "dir\\slot",
+            "bad\nname",
+            "épisode",
+        ] {
+            assert!(validate_episode_id(id).is_err(), "accepted {id:?}");
+        }
+        assert!(validate_episode_id(&"a".repeat(129)).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_lock_accepts_legacy_readable_files_without_mutating_directory_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let lock_path = dir.path().join(".run.lock");
+        std::fs::write(&lock_path, b"old pid\n").unwrap();
+        std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let lock = RunDirLockV52::acquire(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        assert_eq!(
+            std::fs::metadata(&lock_path).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+        drop(lock);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_lock_refuses_linked_lock_files_without_touching_targets() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), b"sentinel").unwrap();
+        let lock = dir.path().join(".run.lock");
+        symlink(outside.path(), &lock).unwrap();
+        assert!(RunDirLockV52::acquire(dir.path()).is_err());
+        assert_eq!(std::fs::read(outside.path()).unwrap(), b"sentinel");
+
+        std::fs::remove_file(&lock).unwrap();
+        std::fs::hard_link(outside.path(), &lock).unwrap();
+        assert!(RunDirLockV52::acquire(dir.path()).is_err());
+        assert_eq!(std::fs::read(outside.path()).unwrap(), b"sentinel");
+    }
+
+    #[test]
+    fn run_lock_stays_held_until_worker_reference_is_dropped() {
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let owner = Arc::new(RunDirLockV52::acquire(dir.path()).unwrap());
+        let worker_reference = owner.clone();
+        drop(owner);
+        assert!(RunDirLockV52::acquire(dir.path()).is_err());
+        drop(worker_reference);
         assert!(RunDirLockV52::acquire(dir.path()).is_ok());
     }
 }
