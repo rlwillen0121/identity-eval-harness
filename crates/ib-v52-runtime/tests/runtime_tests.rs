@@ -1699,6 +1699,7 @@ fn summarize_v52_records_and_markdown_aggregate_eight_categories_and_subscores()
             system_prompt_channel: None,
             format_error_turns: 0,
             output_limit_turns: 0,
+            max_consecutive_rejections: None,
             provider_retries: 0,
             context_rollbacks: 0,
             compacted_requests: 0,
@@ -2608,8 +2609,12 @@ async fn run_v52_episode_iiq_eligibility_strictly_matches_legacy_iiq_prefix() {
         ),
         ..ModelResponse::default()
     };
-    // The turn budget is the fixed 50 turns of SPEC-v5.2 §3.1 (no override exists).
-    let provider1 = ScriptedProvider::new("codex_cli", false, vec![no_commit_resp.clone(); 50]);
+    // The turn budget is the fixed 44 turns of SPEC-v5.2 §3.1 (no override exists).
+    let provider1 = ScriptedProvider::new(
+        "codex_cli",
+        false,
+        vec![no_commit_resp.clone(); ib_v52_schemas::DEFAULT_MAX_TURNS_V52],
+    );
     let opts = RunV52EpisodeOptions::default();
     let rec_no_iiq = run_v52_episode(
         &ep_no_iiq,
@@ -2632,7 +2637,11 @@ async fn run_v52_episode_iiq_eligibility_strictly_matches_legacy_iiq_prefix() {
         "legacy_iiq/build_map.xml".to_owned(),
         "<Rule name=\"BuildMap\"/>".to_owned(),
     );
-    let provider2 = ScriptedProvider::new("codex_cli", false, vec![no_commit_resp; 50]);
+    let provider2 = ScriptedProvider::new(
+        "codex_cli",
+        false,
+        vec![no_commit_resp; ib_v52_schemas::DEFAULT_MAX_TURNS_V52],
+    );
     let rec_with_iiq = run_v52_episode(
         &ep_with_iiq,
         Some(&oracle_no_iiq),

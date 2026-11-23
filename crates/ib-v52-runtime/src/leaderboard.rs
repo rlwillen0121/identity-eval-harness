@@ -1110,12 +1110,12 @@ fn entry_json(
         })
         .collect();
     let complete = s.is_complete;
-    let estimated_cost_micros: u64 = match pricing {
+    let (estimated_cost_micros, slot_usage) = match pricing {
         Some(p) => {
             let rates = p
                 .rates_for_model(&run.model_id)
                 .expect("pricing rows are validated for every leaderboard run");
-            sum_cost_usd_micros(run.records.iter().map(|r| {
+            let cost = |r: &EpisodeExecutionRecordV52| {
                 rates.compute_cost_usd_micros(
                     r.input_tokens,
                     r.cached_input_tokens,
@@ -1123,9 +1123,13 @@ fn entry_json(
                     r.output_tokens,
                     r.reasoning_tokens,
                 )
-            }))
+            };
+            (
+                sum_cost_usd_micros(run.records.iter().map(cost)),
+                crate::report::slot_usage_quantiles(&run.records, cost),
+            )
         }
-        None => s.total_cost_usd_micros,
+        None => (s.total_cost_usd_micros, s.slot_usage.clone()),
     };
     let cost_per_resolved = (s.resolved_slots > 0)
         .then(|| estimated_cost_micros as f64 / s.resolved_slots as f64 / 1_000_000.0);
@@ -1133,6 +1137,7 @@ fn entry_json(
     json!({
         "scores": {
             "g_srr": complete.then(|| round6(s.observed_g_srr)),
+            "macro_cat_acc": opt6(s.macro_cat_acc),
             "resolved_slots": s.resolved_slots,
             "planned_slots": s.planned_slots,
             "observed_slots": s.observed_slots,
@@ -1140,7 +1145,6 @@ fn entry_json(
             "pass_hat_k": opt6(s.pass_hat_k),
             "pass_at_k": opt6(s.pass_at_k),
             "state_acc": opt6(s.state_acc),
-            "macro_cat_acc": opt6(s.macro_cat_acc),
             "category_pass_rates": if complete { Value::Object(cats) } else { Value::Null },
             "subscores": {
                 "nhi_custody_pass_rate": complete.then(|| round6(s.nhi_custody_pass_rate)),
@@ -1162,6 +1166,9 @@ fn entry_json(
             "format_error_turn_rate": opt6(s.format_error_turn_rate),
             "output_limit_turn_rate": opt6(s.output_limit_turn_rate),
             "parse_failure_rate": opt6(s.parse_failure_rate),
+            "format_error_turns": s.format_error_turns,
+            "output_limit_turns": s.output_limit_turns,
+            "max_consecutive_rejections": s.max_consecutive_rejections,
             "refusal_rate": opt6(s.refusal_rate),
             "mean_turns": (s.observed_slots > 0).then(|| round6(s.avg_turns_observed)),
             "duplicate_read_rate": opt6(s.duplicate_read_rate),
@@ -1183,6 +1190,7 @@ fn entry_json(
             "estimated_cost_usd": round6(estimated_cost_micros as f64 / 1_000_000.0),
             "estimated_cost_pricing_sha256": pricing_sha256,
             "cost_per_resolved_slot_usd": opt6(cost_per_resolved),
+            "per_slot_quantiles": slot_usage,
             "median_active_wall_s": opt6(s.median_active_wall_ms.map(|ms| ms / 1000.0)),
         },
         "metadata": {
@@ -1744,7 +1752,7 @@ pub fn render_leaderboard_markdown_v52(board: &Value) -> String {
             "> **TEST ONLY** (`--suite-override-for-test`). Not a leaderboard; never publish.\n\n",
         );
     }
-    md.push_str("| Rank | Model | Effort | Transport | G-SRR | 95% interval | Rank interval | Macro-Cat-Acc | Commit rate | (OG+AB)/Cm |\n| ---: | :--- | :--- | :--- | ---: | :---: | :---: | ---: | ---: | ---: |\n");
+    md.push_str("| Rank | Model | Effort | Transport | G-SRR | Macro-Cat-Acc | 95% interval | Rank interval | Commit rate | (OG+AB)/Cm |\n| ---: | :--- | :--- | :--- | ---: | ---: | :---: | :---: | ---: | ---: |\n");
     let fmt = |v: &Value| {
         v.as_f64()
             .map_or_else(|| "null".to_owned(), |x| format!("{x:.4}"))
@@ -1764,9 +1772,9 @@ pub fn render_leaderboard_markdown_v52(board: &Value) -> String {
             e["entry"]["reasoning_effort"].as_str().unwrap_or("?"),
             e["entry"]["transport_id"].as_str().unwrap_or("?"),
             fmt(&e["scores"]["g_srr"]),
+            fmt(&e["scores"]["macro_cat_acc"]),
             pair(&e["scores"]["g_srr_interval"]),
             pair(&e["scores"]["rank_interval"]),
-            fmt(&e["scores"]["macro_cat_acc"]),
             fmt(&e["scores"]["commit_rate"]),
             fmt(&e["scores"]["violations_per_committed_slot"]),
         ));

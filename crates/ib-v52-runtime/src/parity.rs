@@ -11,7 +11,7 @@
 //!   steps 0–9, the rollback fallback, `OUTPUT_LIMIT` and `FORMAT_ERROR` generations, search outputs,
 //!   repeated read/search fingerprints, `patch_config_file`, `update_notes`, and string and object write
 //!   `content`; every request stays within `max_request_bytes`.
-//! - **Worst-case bound:** a 49-turn, eight-action transcript at the maximum opening and output
+//! - **Worst-case bound:** a 43-turn, eight-action transcript at the maximum opening and output
 //!   limits and per-turn result ceiling fits after rollback and final result compaction.
 //! - **Opening bound:** system prompt plus Turn-1 message `<= max_opening_bytes` per episode; the
 //!   gate reports the largest opening it measured.
@@ -284,7 +284,7 @@ fn capped_eight_action_turn(turn: usize, generation_bytes: usize) -> TurnRecordV
     record
 }
 
-/// Exact turn-50 witness for the §7.2 post-fallback bound. The first build must require the
+/// Exact final-turn witness for the §7.2 post-fallback bound. The first build must require the
 /// workspace rollback; the second is the request sent after rollback and step 9.
 fn worst_case_postfallback_request() -> Result<CanonicalRequestV52, String> {
     static REQUEST: OnceLock<Result<CanonicalRequestV52, String>> = OnceLock::new();
@@ -310,7 +310,10 @@ fn build_worst_case_postfallback_request() -> Result<CanonicalRequestV52, String
         .collect();
     let latest_turn = render_uncompacted_transcript("", &history[history.len() - 1..]);
     let (_, latest_results) = latest_turn
-        .rsplit_once("\n\n=== TURN 49 RESULTS ===\n")
+        .rsplit_once(&format!(
+            "\n\n=== TURN {} RESULTS ===\n",
+            MAX_ASSISTANT_TURNS_V52 - 1
+        ))
         .expect("canonical result delimiter");
     if latest_results.len() != MAX_TURN_OUTPUT_BYTES_V52 {
         return Err(format!(
@@ -326,7 +329,7 @@ fn build_worst_case_postfallback_request() -> Result<CanonicalRequestV52, String
         ));
     }
     if build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52).is_ok() {
-        return Err("worst-case turn-50 witness did not require rollback".to_owned());
+        return Err("worst-case final-turn witness did not require rollback".to_owned());
     }
     if let Some(TurnRecordV52 {
         outcome:
@@ -348,18 +351,18 @@ fn build_worst_case_postfallback_request() -> Result<CanonicalRequestV52, String
     )
     .map_err(|e| {
         format!(
-            "worst-case turn-50 witness exceeds the ceiling after final compaction: {} bytes",
+            "worst-case final-turn witness exceeds the ceiling after final compaction: {} bytes",
             e.request_bytes_after_compaction
         )
     })?;
     if request.stats.per_step[9] == 0 {
-        return Err("worst-case turn-50 witness did not exercise final compaction".to_owned());
+        return Err("worst-case final-turn witness did not exercise final compaction".to_owned());
     }
     // Turns 1–9 each use one fewer digit in both headers and the generation marker.
     let expected = POST_FALLBACK_BOUND_BYTES - 9 * 3;
     if request.request_bytes != expected {
         return Err(format!(
-            "worst-case turn-50 witness is {} bytes; expected {expected}",
+            "worst-case final-turn witness is {} bytes; expected {expected}",
             request.request_bytes
         ));
     }
@@ -1111,11 +1114,11 @@ mod tests {
         assert_eq!(replayed, replay_parity_fixture_v52(MAX_REQUEST_BYTES_V52));
     }
 
-    /// The §7.2 bound: with the opening at `max_opening_bytes`, 48 older turns of maximal
+    /// The §7.2 bound: with the opening at `max_opening_bytes`, 42 older turns of maximal
     /// fixed-size markers, and a turn `t − 1` whose accepted generation is at the visible output
-    /// limit, the request for turn 50 fits after the rollback fallback.
+    /// limit, the request for turn 44 fits after the rollback fallback.
     #[test]
-    fn fallback_fits_a_worst_case_turn_fifty_request_under_the_ceiling() {
+    fn fallback_fits_a_worst_case_final_turn_request_under_the_ceiling() {
         let system_prompt = render_v52_system_prompt();
         let opening = format!(
             "=== SCENARIO ===\n{}",
@@ -1168,7 +1171,7 @@ mod tests {
             )
         };
         let mut history: Vec<TurnRecordV52> = Vec::new();
-        for turn in 1..=48 {
+        for turn in 1..MAX_ASSISTANT_TURNS_V52 - 1 {
             let record = match turn % 8 {
                 0 => rejected(
                     turn,
@@ -1215,8 +1218,11 @@ mod tests {
             turn_2_results[7].read_identity,
             turn_3_results[7].read_identity
         );
-        // Turn 49: eight actions and a generation exactly at the visible output limit.
-        history.push(capped_eight_action_turn(49, OUTPUT_LIMIT_BYTES_V52));
+        // The final history turn has eight actions and a generation exactly at the visible output limit.
+        history.push(capped_eight_action_turn(
+            MAX_ASSISTANT_TURNS_V52 - 1,
+            OUTPUT_LIMIT_BYTES_V52,
+        ));
         assert!(
             build_canonical_request(&system_prompt, &opening, &history, MAX_REQUEST_BYTES_V52)
                 .is_err(),
@@ -1235,16 +1241,15 @@ mod tests {
                 .expect("the fallback bounds the request");
         // At the maximum opening, each accepted turn is <=698 B after final compaction.
         assert!(
-            request.request_bytes <= MAX_OPENING_BYTES_V52 + 49 * 698,
+            request.request_bytes <= FINAL_BOUND_WITHOUT_ROLLBACK_BYTES,
             "{}",
             request.request_bytes
         );
         assert!(request.request_bytes <= MAX_REQUEST_BYTES_V52);
-        assert!(
-            request
-                .transcript
-                .contains("[COMPACTED_GENERATION turn=49 ")
-        );
+        assert!(request.transcript.contains(&format!(
+            "[COMPACTED_GENERATION turn={} ",
+            MAX_ASSISTANT_TURNS_V52 - 1
+        )));
         assert!(
             request
                 .transcript
@@ -1388,11 +1393,10 @@ mod tests {
         );
         assert!(request.request_bytes < postrollback_bytes);
         assert!(request.transcript.contains("[COMPACTED_GENERATION turn=1 "));
-        assert!(
-            request
-                .transcript
-                .contains("[COMPACTED_GENERATION turn=49 ")
-        );
+        assert!(request.transcript.contains(&format!(
+            "[COMPACTED_GENERATION turn={} ",
+            MAX_ASSISTANT_TURNS_V52 - 1
+        )));
     }
 
     #[test]
@@ -1401,7 +1405,7 @@ mod tests {
         let opening = maximum_opening(&system_prompt);
         let mut history = Vec::with_capacity(49);
         let path = format!("legacy_iiq/{}.xml", "p".repeat(350));
-        for turn in 1..=48 {
+        for turn in 1..MAX_ASSISTANT_TURNS_V52 - 1 {
             // Resolved paths remain in earlier read compaction markers. At this length the
             // markers alone keep the request above 176 KB until step 9 removes them.
             let actions = (0..8).map(|_| read(&path, 4_000)).collect();

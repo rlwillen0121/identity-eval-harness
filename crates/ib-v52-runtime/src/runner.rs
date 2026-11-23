@@ -42,12 +42,12 @@ use crate::manifest::{MANIFEST_SCHEMA_V52, RunInvocationV52, RunManifestV52, sam
 use crate::metrics::slot_metrics_v52;
 use crate::opening::render_v52_episode_opening;
 use crate::protocol::{
-    COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_CONSECUTIVE_REJECTIONS_V52,
-    MAX_OPENING_BYTES_V52, MAX_PROVIDER_RETRIES_V52, MAX_REQUEST_BYTES_V52,
-    MAX_TURN_OUTPUT_BYTES_V52, OUTPUT_LIMIT_BYTES_V52, PER_CALL_TIMEOUT_S_V52, PROTOCOL_ID_V52,
-    RejectionReasonV52, WALL_CLOCK_GUARD_MS_V52, compact_json, declared_tool_names_v52,
-    delimiter_cut_offset_v52, parse_v52_action_turn, render_v52_system_prompt,
-    single_message_request, system_prompt_sha256_v52, system_prompt_v52,
+    COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_OPENING_BYTES_V52,
+    MAX_PROVIDER_RETRIES_V52, MAX_REQUEST_BYTES_V52, MAX_TURN_OUTPUT_BYTES_V52,
+    OUTPUT_LIMIT_BYTES_V52, PER_CALL_TIMEOUT_S_V52, PROTOCOL_ID_V52, RejectionReasonV52,
+    WALL_CLOCK_GUARD_MS_V52, compact_json, declared_tool_names_v52, delimiter_cut_offset_v52,
+    parse_v52_action_turn, render_v52_system_prompt, single_message_request,
+    system_prompt_sha256_v52, system_prompt_v52,
 };
 use crate::report::{RunMetadataHintV52, summarize_with_slots};
 use crate::transcript::{
@@ -695,16 +695,6 @@ fn end_after_turn(checkpoint: &SlotCheckpointV52, committed: bool) -> Option<Slo
             None,
         ));
     }
-    if checkpoint.consecutive_rejections >= MAX_CONSECUTIVE_REJECTIONS_V52 {
-        // Takes precedence over the turn budget, including on turn 50 (§7.4).
-        return Some(slot_end(
-            AttemptStatusV52::WithinProtocolParseFailure,
-            "PARSE_FAILURE",
-            Some(format!(
-                "{MAX_CONSECUTIVE_REJECTIONS_V52} consecutive FORMAT_ERROR/OUTPUT_LIMIT generations"
-            )),
-        ));
-    }
     (checkpoint.turns.len() >= MAX_ASSISTANT_TURNS_V52).then(|| {
         slot_end(
             AttemptStatusV52::WithinProtocolStepLimit,
@@ -961,6 +951,20 @@ fn finalize_record(
         system_prompt_channel: Some(channel.as_str().to_owned()),
         format_error_turns: count_rejections(RejectionReasonV52::FormatError),
         output_limit_turns: count_rejections(RejectionReasonV52::OutputLimit),
+        max_consecutive_rejections: Some(
+            checkpoint
+                .turns
+                .iter()
+                .fold((0, 0), |(streak, longest), turn| {
+                    let streak = if matches!(turn.outcome, TurnOutcomeV52::Rejected { .. }) {
+                        streak + 1
+                    } else {
+                        0
+                    };
+                    (streak, longest.max(streak))
+                })
+                .1,
+        ),
         provider_retries: checkpoint.provider_retries,
         context_rollbacks: checkpoint.context_rollbacks,
         compacted_requests: checkpoint.compacted_requests,

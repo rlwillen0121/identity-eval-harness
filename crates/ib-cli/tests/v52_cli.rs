@@ -749,7 +749,7 @@ enum Behaviour {
     Gold,
     /// Commit the unchanged starter configuration.
     Starter,
-    /// Three prose replies: `FORMAT_ERROR` × 3 → `WITHIN_PROTOCOL_PARSE_FAILURE`.
+    /// Prose every turn exhausts the budget with `FORMAT_ERROR` results.
     Prose,
 }
 
@@ -839,7 +839,9 @@ fn scripted_responses(
                     ]
                 }
                 Behaviour::Starter => vec![actions(vec![commit.clone()])],
-                Behaviour::Prose => vec!["Reviewing.".to_owned(); 3],
+                Behaviour::Prose => {
+                    vec!["Reviewing.".to_owned(); ib_v52_schemas::DEFAULT_MAX_TURNS_V52]
+                }
             };
             for (t, text) in texts.into_iter().enumerate() {
                 let mut response = serde_json::Map::new();
@@ -1539,7 +1541,7 @@ fn leaderboard_over_two_dev_replay_runs() {
         Some(rounded6(33.0 / 36.0))
     );
     assert_eq!(
-        a["diagnostics"]["parse_failure_rate"].as_f64(),
+        a["diagnostics"]["turn_budget_exhaustion_rate"].as_f64(),
         Some(rounded6(3.0 / 36.0))
     );
     assert_eq!(unranked[1]["scores"]["resolved_slots"], 3);
@@ -2125,7 +2127,7 @@ fn commit_reveal_round_trip_with_the_test_key() {
     assert_eq!(entry["scores"]["planned_slots"], 48);
     assert_eq!(entry["scores"]["resolved_slots"], 12);
     assert_eq!(
-        entry["diagnostics"]["parse_failure_rate"].as_f64(),
+        entry["diagnostics"]["turn_budget_exhaustion_rate"].as_f64(),
         Some(rounded6(1.0 / 48.0))
     );
     assert_eq!(entry["scores"]["g_srr_interval"]["cp_n"], 48);

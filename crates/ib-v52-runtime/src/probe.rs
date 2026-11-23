@@ -525,6 +525,27 @@ pub fn verify_probe_receipt_binding(
     endpoint_identity: &str,
     binary_sha256: &str,
 ) -> Result<()> {
+    verify_probe_receipt_for_prompt(
+        receipt,
+        model_id,
+        reasoning_effort,
+        transport_id,
+        endpoint_identity,
+        binary_sha256,
+        system_prompt_sha256_v52(),
+    )
+}
+
+/// Verify a receipt against the system prompt of the binary that recorded the run.
+pub(crate) fn verify_probe_receipt_for_prompt(
+    receipt: &Value,
+    model_id: &str,
+    reasoning_effort: &str,
+    transport_id: &str,
+    endpoint_identity: &str,
+    binary_sha256: &str,
+    system_prompt_sha256: &str,
+) -> Result<()> {
     if receipt.get("schema_version").and_then(Value::as_str) != Some(PROBE_RECEIPT_SCHEMA) {
         bail!("probe receipt has an unknown schema_version");
     }
@@ -558,7 +579,6 @@ pub fn verify_probe_receipt_binding(
     {
         bail!("{CONTEXT_WINDOW_BELOW_MINIMUM_V52}");
     }
-    let system_prompt_sha256 = system_prompt_sha256_v52();
     for (key, expected) in [
         ("protocol_id", PROTOCOL_ID_V52),
         ("model_id", model_id),
@@ -570,10 +590,7 @@ pub fn verify_probe_receipt_binding(
     ] {
         let actual = receipt.get(key).and_then(Value::as_str);
         if actual != Some(expected) {
-            bail!(
-                "probe receipt {key} {} does not match the run ({expected})",
-                actual.unwrap_or("missing")
-            );
+            bail!("probe receipt {key} does not match the run");
         }
     }
     Ok(())

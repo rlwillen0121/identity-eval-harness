@@ -232,6 +232,9 @@ pub struct V52CalibrationReportArgs {
     /// Optional offline `v52 validate` JSON report for G-PARITY-V52 and the shortcut ceiling.
     #[arg(long)]
     pub validation_report: Option<PathBuf>,
+    /// Passing G-PROBE-V52 receipt for a run with no bound receipt. Repeat for other runs.
+    #[arg(long = "receipt", value_name = "RUN_DIR=PROBE_RECEIPT_JSON")]
+    pub receipts: Vec<String>,
     /// Output directory for `calibration_report.json` and `calibration_report.md`.
     #[arg(long, short)]
     pub out: PathBuf,
@@ -964,7 +967,22 @@ fn calibration_report(root: &Path, args: V52CalibrationReportArgs) -> Result<(Va
             "v52 calibration-report requires at least two --frontier run directories",
         ));
     }
+    let receipts = args
+        .receipts
+        .iter()
+        .map(|value| {
+            let (run, receipt) = value
+                .split_once('=')
+                .filter(|(run, receipt)| !run.is_empty() && !receipt.is_empty())
+                .ok_or_else(|| usage_error("--receipt requires <run_dir>=<probe_receipt.json>"))?;
+            Ok((
+                paths::resolve(root, Path::new(run)),
+                paths::resolve(root, Path::new(receipt)),
+            ))
+        })
+        .collect::<Result<_>>()?;
     let options = CalibrationReportOptionsV52 {
+        receipts,
         frontier_runs: args
             .frontier
             .iter()
