@@ -23,6 +23,49 @@ pub struct IgaDeploymentConfigV52 {
     pub access_reviews: AccessReviewsConfigV52,
 }
 
+/// The section name of a writable `config/<stem>.json` path (one of [`crate::CONFIG_FILES_V52`]),
+/// which is also the [`IgaDeploymentConfigV52`] field and JSON member holding that file.
+#[must_use]
+pub fn config_file_stem(path: &str) -> Option<&str> {
+    crate::CONFIG_FILES_V52
+        .contains(&path)
+        .then(|| &path["config/".len()..path.len() - ".json".len()])
+}
+
+impl IgaDeploymentConfigV52 {
+    /// The JSON value of the section stored in `config/<stem>.json`, or `None` for an unknown stem.
+    #[must_use]
+    pub fn section_json(&self, stem: &str) -> Option<serde_json::Value> {
+        let value = match stem {
+            "transforms" => serde_json::to_value(&self.transforms),
+            "identity_profile" => serde_json::to_value(&self.identity_profile),
+            "username_policy" => serde_json::to_value(&self.username_policy),
+            "lifecycle_states" => serde_json::to_value(&self.lifecycle_states),
+            "connectors" => serde_json::to_value(&self.connectors),
+            "attribute_sync" => serde_json::to_value(&self.attribute_sync),
+            "role_model" => serde_json::to_value(&self.role_model),
+            "workflows" => serde_json::to_value(&self.workflows),
+            "golive_plan" => serde_json::to_value(&self.golive_plan),
+            "nhi_and_agents" => serde_json::to_value(&self.nhi_and_agents),
+            "cloud_ciem" => serde_json::to_value(&self.cloud_ciem),
+            "access_reviews" => serde_json::to_value(&self.access_reviews),
+            _ => return None,
+        };
+        value.ok()
+    }
+
+    /// Reassemble a bundle from its per-file sections keyed by stem (the inverse of
+    /// [`Self::section_json`] over every [`crate::CONFIG_FILES_V52`] stem).
+    ///
+    /// # Errors
+    /// Fails when a section is missing, unknown, or invalid.
+    pub fn from_sections(
+        sections: serde_json::Map<String, serde_json::Value>,
+    ) -> serde_json::Result<Self> {
+        serde_json::from_value(serde_json::Value::Object(sections))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 1. config/identity_profile.json
 // ---------------------------------------------------------------------------

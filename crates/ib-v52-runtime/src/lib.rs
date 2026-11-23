@@ -56,6 +56,6 @@ pub use validation::{
     ValidationReportV52, find_budget_statements_v52, validate_v52_dataset,
 };
 pub use workspace::{
-    CONFIG_FILE_PATHS_V52, DEFAULT_READ_LINE_WINDOW, MAX_PREVIEW_CUBES, MAX_READ_LINES_PER_CALL,
+    DEFAULT_READ_LINE_WINDOW, MAX_PREVIEW_CUBES, MAX_READ_LINES_PER_CALL,
     VirtualWorkspaceRuntimeV52, WorkspaceStateV52, tool_definitions_v52,
 };

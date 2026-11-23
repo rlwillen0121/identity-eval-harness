@@ -12,6 +12,7 @@ use crate::protocol::{
     RejectionReasonV52, compact_json, cut_at_delimiter_marker, render_wire_message,
     strip_trailing_lf,
 };
+use crate::workspace::normalize_workspace_path;
 
 /// Per-generation provider usage (one turn, all attempts).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -399,14 +400,6 @@ enum OutputClass {
     Never,
 }
 
-fn normalize_path(raw: &str) -> &str {
-    let trimmed = raw.trim();
-    trimmed
-        .strip_prefix("./")
-        .or_else(|| trimmed.strip_prefix('/'))
-        .unwrap_or(trimmed)
-}
-
 fn classify_output(turn: &TurnRecordV52, idx: usize) -> OutputClass {
     let TurnOutcomeV52::Accepted { results, .. } = &turn.outcome else {
         return OutputClass::Never;
@@ -422,7 +415,7 @@ fn classify_output(turn: &TurnRecordV52, idx: usize) -> OutputClass {
                 .and_then(|item| item.get("arguments"))
                 .and_then(|args| args.get("path"))
                 .and_then(Value::as_str)
-                .map(normalize_path)
+                .map(normalize_workspace_path)
                 .unwrap_or("");
             if path.starts_with("config/") {
                 OutputClass::ConfigRead

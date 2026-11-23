@@ -18,9 +18,9 @@ use ib_providers::base::{
 };
 use ib_providers::json::{OVERSIZED_TEXT_BYTES, OVERSIZED_TEXT_SHA256};
 use ib_v52_schemas::{
-    AssertionFailureV52, AttemptStatusV52, CategoryIdV52, DeploymentScoreV52,
+    AssertionFailureV52, AttemptStatusV52, CONFIG_FILES_V52, CategoryIdV52, DeploymentScoreV52,
     EpisodeExecutionRecordV52, EpisodeV52, IgaEngineBackendV52, SealedEpisodeOracleV52,
-    ToolCallTraceV52,
+    ToolCallTraceV52, config_file_stem,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ use crate::transcript::{
     ActionResultV52, CanonicalRequestV52, DelimiterCutV52, TurnOutcomeV52, TurnRecordV52,
     TurnUsageV52, build_canonical_request, rolled_back_outputs,
 };
-use crate::workspace::{CONFIG_FILE_PATHS_V52, VirtualWorkspaceRuntimeV52, WorkspaceStateV52};
+use crate::workspace::{VirtualWorkspaceRuntimeV52, WorkspaceStateV52};
 
 /// `params.extra` key used by the offline replay provider to select a recorded response.
 pub const REPLAY_CACHE_KEY_PARAM: &str = "cache_key";
@@ -963,11 +963,12 @@ fn write_committed_configs(
     let Some(config) = &record.committed_config else {
         return Ok(());
     };
-    let value = serde_json::to_value(config)?;
     let dir = out_dir.join("configs").join(slot.stem());
-    for path in CONFIG_FILE_PATHS_V52 {
-        let stem = path.trim_start_matches("config/").trim_end_matches(".json");
-        let section = value.get(stem).cloned().unwrap_or(Value::Null);
+    for stem in CONFIG_FILES_V52
+        .iter()
+        .filter_map(|path| config_file_stem(path))
+    {
+        let section = config.section_json(stem).unwrap_or(Value::Null);
         write_pretty_json(&dir.join(format!("{stem}.json")), &section)?;
     }
     Ok(())

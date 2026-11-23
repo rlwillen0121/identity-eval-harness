@@ -25,9 +25,9 @@ use ib_v52_runtime::leaderboard::{
 use ib_v52_runtime::stats::{
     BOOTSTRAP_REPLICATES_V52, BootstrapDrawsV52, bootstrap_key_v52, joint_statistics_v52,
 };
-use ib_v52_runtime::workspace::CONFIG_FILE_PATHS_V52;
 use ib_v52_schemas::{
-    EpisodeV52, IgaDeploymentConfigV52, IgaEngineBackendV52, SealedEpisodeOracleV52, V52Suite,
+    CONFIG_FILES_V52, EpisodeV52, IgaDeploymentConfigV52, IgaEngineBackendV52,
+    SealedEpisodeOracleV52, V52Suite, config_file_stem,
 };
 use serde_json::{Map, Value, json};
 
@@ -611,8 +611,10 @@ fn replay_bundle_scores(
         };
         let mut sections = Map::new();
         let mut readable = true;
-        for path in CONFIG_FILE_PATHS_V52 {
-            let stem_name = path.trim_start_matches("config/").trim_end_matches(".json");
+        for stem_name in CONFIG_FILES_V52
+            .iter()
+            .filter_map(|path| config_file_stem(path))
+        {
             match std::fs::read(config_dir.join(format!("{stem_name}.json")))
                 .ok()
                 .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
@@ -624,7 +626,7 @@ fn replay_bundle_scores(
             }
         }
         let persisted: Option<IgaDeploymentConfigV52> = readable
-            .then(|| serde_json::from_value(Value::Object(sections)).ok())
+            .then(|| IgaDeploymentConfigV52::from_sections(sections).ok())
             .flatten();
         let Some(persisted) = persisted else {
             problems.push(format!("{stem}: committed config files missing or invalid"));
