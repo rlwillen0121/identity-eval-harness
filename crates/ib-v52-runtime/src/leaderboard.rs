@@ -17,12 +17,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use ib_v52_schemas::{
     AttemptStatusV52, CategoryIdV52, EpisodeExecutionRecordV52, FAMILIES_V52, REGIMES_V52,
-    SPEC_VERSION_V52, SuiteReportSummaryV52, V52Suite,
+    SPEC_VERSION_V52, SuiteReportSummaryV52,
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::config::LoadedPricingV52;
+use crate::failure_taxonomy::FailureTaxonomyV52;
 use crate::fsutil::pretty_json_bytes;
 use crate::integrity::{
     RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, withheld_bundle_sha256,
@@ -35,7 +36,7 @@ use crate::protocol::{
     COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_REQUEST_BYTES_V52, PROTOCOL_ID_V52,
     system_prompt_sha256_v52,
 };
-use crate::report::{RunMetadataHintV52, summarize_with_slots};
+use crate::report::{RunMetadataHintV52, is_public_reporting_suite, summarize_with_slots};
 use crate::runner::SlotCheckpointV52;
 use crate::runner::load_run_records_at;
 use crate::stats::{
@@ -135,6 +136,10 @@ impl LoadedRunV52 {
 
     fn manifest_str(&self, key: &str) -> Option<&str> {
         self.manifest.get(key).and_then(Value::as_str)
+    }
+
+    fn is_public(&self) -> bool {
+        is_public_reporting_suite(&self.summary.suite_id, &self.records)
     }
 }
 
@@ -335,11 +340,11 @@ fn eligibility_item3_stable_fingerprint(run: &LoadedRunV52) -> Vec<Ineligibility
             "the recorded fingerprint does not match its inputs or an invocation ran under a different fingerprint",
         ));
     }
-    let mut restart_problems = Vec::new();
+    let mut restart_problems = 0;
     let root = artifact::directory(&run.run_dir, false);
     for record in &run.records {
         if crate::integrity::validate_episode_id(&record.episode_id).is_err() {
-            restart_problems.push("invalid checkpoint episode identifier".to_owned());
+            restart_problems += 1;
             continue;
         }
         let stem = SlotIdV52::of_record(record).stem();
@@ -349,29 +354,20 @@ fn eligibility_item3_stable_fingerprint(run: &LoadedRunV52) -> Vec<Ineligibility
             .ok()
             .and_then(|dir| artifact::read_limited_at(dir, &path, 512 * 1024 * 1024).ok())
             .and_then(|b| serde_json::from_slice::<SlotCheckpointV52>(&b).ok());
-        match checkpoint {
-            None => restart_problems.push(format!("{stem}: checkpoint missing")),
-            Some(cp) => {
-                let ok = cp.fingerprint == fingerprint
-                    && cp.turns.len() == record.turns_used
-                    && cp.invocations <= invocations.len().max(1)
-                    && (record.attempt_status == AttemptStatusV52::IncompleteProviderFailure
-                        || cp.end.as_ref().map(|e| e.attempt_status)
-                            == Some(record.attempt_status));
-                if !ok {
-                    restart_problems.push(format!(
-                        "{stem}: checkpoint does not continue the recorded slot"
-                    ));
-                }
-            }
-        }
+        let continues_slot = checkpoint.is_some_and(|cp| {
+            cp.fingerprint == fingerprint
+                && cp.turns.len() == record.turns_used
+                && cp.invocations <= invocations.len().max(1)
+                && (record.attempt_status == AttemptStatusV52::IncompleteProviderFailure
+                    || cp.end.as_ref().map(|e| e.attempt_status) == Some(record.attempt_status))
+        });
+        restart_problems += usize::from(!continues_slot);
     }
-    if !restart_problems.is_empty() {
-        restart_problems.truncate(5);
+    if restart_problems > 0 {
         reasons.push(reason(
             3,
             "slot_restart_unverifiable",
-            restart_problems.join("; "),
+            format!("{restart_problems} slots have unverifiable checkpoints"),
         ));
     }
     reasons
@@ -419,7 +415,14 @@ fn eligibility_item6_withheld_bundle(run: &LoadedRunV52) -> Vec<IneligibilityRea
                 "withheld_bundle_mismatch",
                 format!("recorded {recorded}, run directory hashes to {actual}"),
             )),
-            Err(err) => reasons.push(reason(6, "withheld_bundle_missing", err.to_string())),
+            Err(err) => {
+                let detail = if run.is_public() {
+                    err.to_string()
+                } else {
+                    "could not read the withheld bundle".to_owned()
+                };
+                reasons.push(reason(6, "withheld_bundle_missing", detail));
+            }
         },
     }
     reasons
@@ -484,6 +487,11 @@ pub(crate) fn eligibility_item4_probe_receipt(run: &LoadedRunV52) -> Vec<Ineligi
             "context_window_below_minimum"
         } else {
             "probe_receipt_invalid"
+        };
+        let detail = if run.is_public() || code == "context_window_below_minimum" {
+            detail
+        } else {
+            "probe receipt did not pass the run binding checks".to_owned()
         };
         reasons.push(reason(4, code, detail));
     }
@@ -748,6 +756,13 @@ fn entry_json(
             "duplicate_read_rate": opt6(s.duplicate_read_rate),
             "provider_failure_slots": s.provider_error_slots,
         },
+        "efficiency": {
+            "mean_turns_per_resolved_slot": opt6(s.mean_turns_per_resolved_slot),
+            "median_turns_per_resolved_slot": opt6(s.median_turns_per_resolved_slot),
+            "mean_output_tokens_per_resolved_slot": opt6(s.mean_output_tokens_per_resolved_slot),
+            "mean_reasoning_tokens_per_resolved_slot": opt6(s.mean_reasoning_tokens_per_resolved_slot),
+            "mean_dry_runs_per_slot": opt6(s.mean_dry_runs_per_slot),
+        },
         "usage": {
             "uncached_input_tokens": s.total_input_tokens,
             "cache_read_tokens": s.total_cached_input_tokens,
@@ -787,6 +802,7 @@ fn slot_rows_json(run: &LoadedRunV52) -> Value {
                     "repeat_index": s.repeat_index,
                     "termination_reason": r.termination_reason,
                     "turns_used": r.turns_used,
+                    "dry_runs_used": r.dry_runs_used,
                     "committed": s.committed,
                     "g_srr": s.g_srr,
                     "state_acc": round6(s.state_acc),
@@ -794,6 +810,7 @@ fn slot_rows_json(run: &LoadedRunV52) -> Value {
                     "category_pass": s.category_pass.iter().map(|(c, p)| (c.as_str().to_owned(), json!(p))).collect::<Map<String, Value>>(),
                     "og": s.overgrants,
                     "ab": s.availability_breaches,
+                    "failures": r.score.as_ref().map_or(&[][..], |score| score.failures.as_slice()),
                 })
             })
             .collect(),
@@ -817,9 +834,7 @@ pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
             }
         }
     }
-    let suite: Option<V52Suite> = suite_id.parse().ok();
-    // Fail closed: an unrecognized suite is treated as private (no per-slot rows).
-    let private = suite.is_none_or(|s| s.is_private());
+    let private = runs.iter().any(|run| !run.is_public());
     if private && options.include_slot_rows {
         bail!(
             "{suite_id} is a private suite: per-slot rows are withheld until sunset (SPEC-v5.2 §10.3)"
@@ -913,6 +928,10 @@ pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
                 }
             }
             map.insert("marginals".to_owned(), marginals_json(run));
+            map.insert(
+                "failure_taxonomy".to_owned(),
+                json!(FailureTaxonomyV52::from_records(&run.records, private)),
+            );
             if options.include_slot_rows && !private {
                 map.insert("slots".to_owned(), slot_rows_json(run));
             }
@@ -995,6 +1014,7 @@ pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
         "method_notes": {
             "transport_residual": TRANSPORT_RESIDUAL_NOTE_V52,
             "cost_is_never_a_ranking_key": true,
+            "efficiency_is_never_a_ranking_key": true,
         },
         "withheld_until_sunset": if private {
             json!(["per-slot rows", "per-cell scores", "per-episode category and assertion vectors", "transcripts", "committed configs", "tool traces"])

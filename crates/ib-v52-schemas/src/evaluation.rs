@@ -427,6 +427,21 @@ pub struct SuiteReportSummaryV52 {
     /// Share of committed slots with any `OG` or `AB` violation; `None` when `Cm = 0`.
     #[serde(default)]
     pub committed_violation_share: Option<f64>,
+    /// Mean turns among resolved slots, pooled across repeats.
+    #[serde(default)]
+    pub mean_turns_per_resolved_slot: Option<f64>,
+    /// Median turns among resolved slots, pooled across repeats.
+    #[serde(default)]
+    pub median_turns_per_resolved_slot: Option<f64>,
+    /// Mean recorded output tokens among resolved slots, pooled across repeats.
+    #[serde(default)]
+    pub mean_output_tokens_per_resolved_slot: Option<f64>,
+    /// Mean recorded reasoning tokens among resolved slots, pooled across repeats.
+    #[serde(default)]
+    pub mean_reasoning_tokens_per_resolved_slot: Option<f64>,
+    /// Mean dry runs over observed slots, reported when at least one slot resolved.
+    #[serde(default)]
+    pub mean_dry_runs_per_slot: Option<f64>,
     /// Total estimated cost (micros) divided by resolved slots; `None` when no slot resolved.
     #[serde(default)]
     pub cost_per_resolved_slot_usd_micros: Option<f64>,
