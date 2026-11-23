@@ -391,8 +391,14 @@ pub fn load_probe_receipt(path: &Path) -> Result<LoadedProbeReceiptV52> {
     })
 }
 
-/// Refuse a run unless the receipt passed and its entry, `endpoint_identity`, `binary_sha256`
-/// and `system_prompt_sha256` match the run (§11.2.1 run binding).
+/// Message of the binding error for a declared context window under the §7.2 minimum.
+pub const CONTEXT_WINDOW_BELOW_MINIMUM_V52: &str =
+    "the declared context window is under 128000 tokens (§7.2)";
+const _: () = assert!(MIN_CONTEXT_WINDOW_TOKENS_V52 == 128_000);
+
+/// Refuse a run unless the receipt passed, declares a context window of at least
+/// `MIN_CONTEXT_WINDOW_TOKENS_V52` tokens (§7.2), and its entry, `endpoint_identity`,
+/// `binary_sha256` and `system_prompt_sha256` match the run (§11.2.1 run binding).
 pub fn verify_probe_receipt_binding(
     receipt: &Value,
     model_id: &str,
@@ -406,6 +412,13 @@ pub fn verify_probe_receipt_binding(
     }
     if receipt.get("passed").and_then(Value::as_bool) != Some(true) {
         bail!("probe receipt did not pass G-PROBE-V52");
+    }
+    if receipt
+        .get("context_window_tokens")
+        .and_then(Value::as_u64)
+        .is_none_or(|n| n < MIN_CONTEXT_WINDOW_TOKENS_V52)
+    {
+        bail!("{CONTEXT_WINDOW_BELOW_MINIMUM_V52}");
     }
     let system_prompt_sha256 = system_prompt_sha256_v52();
     for (key, expected) in [

@@ -15,7 +15,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use ib_core::hashing::sha256_hex;
 use ib_v52_schemas::{
     AttemptStatusV52, CategoryIdV52, EpisodeExecutionRecordV52, FAMILIES_V52, REGIMES_V52,
     SPEC_VERSION_V52, SuiteReportSummaryV52, V52Suite,
@@ -25,12 +24,16 @@ use serde_json::{Map, Value, json};
 
 use crate::config::LoadedPricingV52;
 use crate::fsutil::{atomic_write, write_pretty_json};
-use crate::integrity::{RunFingerprintInputsV52, SlotIdV52, withheld_bundle_sha256};
+use crate::integrity::{
+    RunFingerprintInputsV52, SealDigestsV52, SlotIdV52, withheld_bundle_sha256,
+};
 use crate::metrics::{SlotMetricsV52, slot_metrics_v52};
-use crate::probe::verify_probe_receipt_binding;
+use crate::probe::{
+    CONTEXT_WINDOW_BELOW_MINIMUM_V52, load_probe_receipt, verify_probe_receipt_binding,
+};
 use crate::protocol::{
-    COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_REQUEST_BYTES_V52,
-    MIN_CONTEXT_WINDOW_TOKENS_V52, PROTOCOL_ID_V52, system_prompt_sha256_v52,
+    COMPACTION_POLICY_ID_V52, MAX_ASSISTANT_TURNS_V52, MAX_REQUEST_BYTES_V52, PROTOCOL_ID_V52,
+    system_prompt_sha256_v52,
 };
 use crate::report::{RunMetadataHintV52, summarize_with_slots};
 use crate::runner::SlotCheckpointV52;
@@ -169,15 +172,6 @@ pub fn load_run_v52(run_dir: &Path) -> Result<LoadedRunV52> {
     })
 }
 
-/// Seal digests compared under §10.1 item 2.
-const SEAL_DIGEST_KEYS: [&str; 5] = [
-    "episodes_sha256",
-    "oracles_sha256",
-    "spec_sha256",
-    "contract_id",
-    "protocol_id",
-];
-
 /// Evaluate §10.1 items 1–6 for one run (item 7 and leaderboard-level conditions are applied by
 /// [`build_leaderboard_v52`]).
 #[must_use]
@@ -249,19 +243,18 @@ pub fn evaluate_eligibility_v52(
             "no published SEAL.json was supplied to compare the run's seal digests against",
         )),
         Some(seal) => {
-            let run_seal = run.manifest.get("seal").cloned().unwrap_or(Value::Null);
-            let published_suite = seal
-                .get("suite_id")
-                .or_else(|| seal.get("suite"))
-                .and_then(Value::as_str);
-            let mut differing: Vec<&str> = SEAL_DIGEST_KEYS
-                .iter()
-                .copied()
-                .filter(|k| run_seal.get(*k) != seal.get(*k))
-                .collect();
-            if published_suite != Some(suite_id) {
-                differing.push("suite_id");
-            }
+            let run_seal = run
+                .manifest
+                .get("seal")
+                .and_then(|s| SealDigestsV52::from_seal_json(s).ok());
+            let differing = match (run_seal, SealDigestsV52::from_seal_json(seal)) {
+                (Some(mut run_seal), Ok(published)) => {
+                    // The run's own suite is the manifest's suite_id.
+                    suite_id.clone_into(&mut run_seal.suite_id);
+                    run_seal.differing_fields(&published)
+                }
+                _ => vec!["unreadable"],
+            };
             if !differing.is_empty() {
                 reasons.push(reason(
                     2,
@@ -335,58 +328,7 @@ pub fn evaluate_eligibility_v52(
     }
 
     // Item 4: a passing G-PROBE-V52 receipt bound into the fingerprint, eligible under §7.2.
-    let receipt_sha = run.manifest_str("receipt_sha256");
-    let receipt_path = run.run_dir.join(RUN_PROBE_RECEIPT_FILENAME_V52);
-    match (receipt_sha, std::fs::read(&receipt_path)) {
-        (None, _) => reasons.push(reason(
-            4,
-            "probe_receipt_missing",
-            "the run fingerprint binds no G-PROBE-V52 receipt_sha256",
-        )),
-        (Some(_), Err(_)) => reasons.push(reason(
-            4,
-            "probe_receipt_missing",
-            format!("{RUN_PROBE_RECEIPT_FILENAME_V52} is not in the run directory"),
-        )),
-        (Some(expected), Ok(bytes)) => {
-            if sha256_hex(&bytes) != expected {
-                reasons.push(reason(
-                    4,
-                    "probe_receipt_digest_mismatch",
-                    "probe_receipt.json does not hash to the bound receipt_sha256",
-                ));
-            }
-            match serde_json::from_slice::<Value>(&bytes) {
-                Err(_) => reasons.push(reason(4, "probe_receipt_invalid", "not JSON")),
-                Ok(receipt) => {
-                    let binding = verify_probe_receipt_binding(
-                        &receipt,
-                        &run.model_id,
-                        &run.reasoning_effort,
-                        &run.transport_id,
-                        run.manifest_str("endpoint_identity").unwrap_or_default(),
-                        run.manifest_str("binary_sha256").unwrap_or_default(),
-                    );
-                    if let Err(err) = binding {
-                        reasons.push(reason(4, "probe_receipt_invalid", err.to_string()));
-                    }
-                    if receipt
-                        .get("context_window_tokens")
-                        .and_then(Value::as_u64)
-                        .is_none_or(|n| n < MIN_CONTEXT_WINDOW_TOKENS_V52)
-                    {
-                        reasons.push(reason(
-                            4,
-                            "context_window_below_minimum",
-                            format!(
-                                "the declared context window is under {MIN_CONTEXT_WINDOW_TOKENS_V52} tokens (§7.2)"
-                            ),
-                        ));
-                    }
-                }
-            }
-        }
-    }
+    reasons.extend(probe_receipt_reasons(run));
 
     // Item 5: no budget, ceiling or prompt override.
     let inputs = run.manifest.get("fingerprint_inputs");
@@ -426,6 +368,54 @@ pub fn evaluate_eligibility_v52(
             )),
             Err(err) => reasons.push(reason(6, "withheld_bundle_missing", err.to_string())),
         },
+    }
+    reasons
+}
+
+/// §10.1 item 4: the run directory holds the exact receipt bound into its fingerprint, and the
+/// receipt passes the run binding (which includes the §7.2 context-window minimum).
+fn probe_receipt_reasons(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
+    let Some(expected) = run.manifest_str("receipt_sha256") else {
+        return vec![reason(
+            4,
+            "probe_receipt_missing",
+            "the run fingerprint binds no G-PROBE-V52 receipt_sha256",
+        )];
+    };
+    let receipt_path = run.run_dir.join(RUN_PROBE_RECEIPT_FILENAME_V52);
+    if !receipt_path.is_file() {
+        return vec![reason(
+            4,
+            "probe_receipt_missing",
+            format!("{RUN_PROBE_RECEIPT_FILENAME_V52} is not in the run directory"),
+        )];
+    }
+    let Ok(loaded) = load_probe_receipt(&receipt_path) else {
+        return vec![reason(4, "probe_receipt_invalid", "not JSON")];
+    };
+    let mut reasons = Vec::new();
+    if loaded.receipt_sha256 != expected {
+        reasons.push(reason(
+            4,
+            "probe_receipt_digest_mismatch",
+            "probe_receipt.json does not hash to the bound receipt_sha256",
+        ));
+    }
+    if let Err(err) = verify_probe_receipt_binding(
+        &loaded.receipt,
+        &run.model_id,
+        &run.reasoning_effort,
+        &run.transport_id,
+        run.manifest_str("endpoint_identity").unwrap_or_default(),
+        run.manifest_str("binary_sha256").unwrap_or_default(),
+    ) {
+        let detail = err.to_string();
+        let code = if detail == CONTEXT_WINDOW_BELOW_MINIMUM_V52 {
+            "context_window_below_minimum"
+        } else {
+            "probe_receipt_invalid"
+        };
+        reasons.push(reason(4, code, detail));
     }
     reasons
 }
@@ -998,18 +988,10 @@ pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
     );
 
     let seal_summary = options.published_seal.as_ref().map(|seal| {
-        let mut m = Map::new();
-        m.insert(
-            "suite_id".to_owned(),
-            seal.get("suite_id")
-                .or_else(|| seal.get("suite"))
-                .cloned()
-                .unwrap_or(Value::Null),
-        );
-        for k in SEAL_DIGEST_KEYS {
-            m.insert(k.to_owned(), seal.get(k).cloned().unwrap_or(Value::Null));
-        }
-        Value::Object(m)
+        SealDigestsV52::from_seal_json(seal)
+            .ok()
+            .and_then(|digests| serde_json::to_value(digests).ok())
+            .unwrap_or(Value::Null)
     });
     Ok(json!({
         "schema_version": LEADERBOARD_SCHEMA_V52,
