@@ -180,10 +180,20 @@ pub fn evaluate_eligibility_v52(
     published_seal: Option<&Value>,
 ) -> Vec<IneligibilityReasonV52> {
     let mut reasons = Vec::new();
-    let suite_id = run.manifest_str("suite_id").unwrap_or("unknown");
-    let summary = &run.summary;
+    reasons.extend(eligibility_item1_complete(run));
+    reasons.extend(eligibility_item2_published_identity(run, published_seal));
+    reasons.extend(eligibility_item3_stable_fingerprint(run));
+    reasons.extend(eligibility_item4_probe_receipt(run));
+    reasons.extend(eligibility_item5_no_override(run));
+    reasons.extend(eligibility_item6_withheld_bundle(run));
+    reasons
+}
 
-    // Item 1: all 144 v52_core slots observed.
+/// §10.1 item 1: all planned slots observed, and the ranked suite has the 48 × 3 shape.
+fn eligibility_item1_complete(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
+    let mut reasons = Vec::new();
+    let summary = &run.summary;
+    let suite_id = run.manifest_str("suite_id").unwrap_or("unknown");
     if !summary.is_complete || run.manifest.get("completed").and_then(Value::as_bool) != Some(true)
     {
         reasons.push(reason(
@@ -209,8 +219,16 @@ pub fn evaluate_eligibility_v52(
             ),
         ));
     }
+    reasons
+}
 
-    // Item 2: protocol ID, seal digests and system_prompt_sha256 match the published values.
+/// §10.1 item 2: protocol ID, system prompt digest and seal digests match the published values.
+fn eligibility_item2_published_identity(
+    run: &LoadedRunV52,
+    published_seal: Option<&Value>,
+) -> Vec<IneligibilityReasonV52> {
+    let mut reasons = Vec::new();
+    let suite_id = run.manifest_str("suite_id").unwrap_or("unknown");
     let prompt_sha = system_prompt_sha256_v52();
     if run.manifest_str("protocol_id") != Some(PROTOCOL_ID_V52)
         || run
@@ -267,8 +285,12 @@ pub fn evaluate_eligibility_v52(
             }
         }
     }
+    reasons
+}
 
-    // Item 3: stable fingerprint across every resume, and no slot restarted.
+/// §10.1 item 3: one fingerprint across every invocation, and no slot restarted.
+fn eligibility_item3_stable_fingerprint(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
+    let mut reasons = Vec::new();
     let fingerprint = run.manifest_str("fingerprint").unwrap_or_default();
     let recomputed = run
         .manifest
@@ -326,11 +348,12 @@ pub fn evaluate_eligibility_v52(
             restart_problems.join("; "),
         ));
     }
+    reasons
+}
 
-    // Item 4: a passing G-PROBE-V52 receipt bound into the fingerprint, eligible under §7.2.
-    reasons.extend(probe_receipt_reasons(run));
-
-    // Item 5: no budget, ceiling or prompt override.
+/// §10.1 item 5: no budget, ceiling or prompt override.
+fn eligibility_item5_no_override(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
+    let mut reasons = Vec::new();
     let inputs = run.manifest.get("fingerprint_inputs");
     let compaction_ok = inputs
         .and_then(|i| i.get("compaction_policy_id"))
@@ -351,8 +374,12 @@ pub fn evaluate_eligibility_v52(
             ),
         ));
     }
+    reasons
+}
 
-    // Item 6: withheld_bundle_sha256 published with the entry.
+/// §10.1 item 6: the withheld bundle digest is published and matches the run directory.
+fn eligibility_item6_withheld_bundle(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
+    let mut reasons = Vec::new();
     match run.manifest_str("withheld_bundle_sha256") {
         None => reasons.push(reason(
             6,
@@ -374,7 +401,7 @@ pub fn evaluate_eligibility_v52(
 
 /// §10.1 item 4: the run directory holds the exact receipt bound into its fingerprint, and the
 /// receipt passes the run binding (which includes the §7.2 context-window minimum).
-fn probe_receipt_reasons(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
+fn eligibility_item4_probe_receipt(run: &LoadedRunV52) -> Vec<IneligibilityReasonV52> {
     let Some(expected) = run.manifest_str("receipt_sha256") else {
         return vec![reason(
             4,
@@ -730,27 +757,7 @@ fn slot_rows_json(run: &LoadedRunV52) -> Value {
 /// Fails when a run cannot be loaded, the runs span more than one suite, per-slot rows are
 /// requested for a private suite, or the shared statistics cannot be computed.
 pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
-    if options.runs.is_empty() {
-        bail!("leaderboard needs at least one --runs directory");
-    }
-    let runs: Vec<LoadedRunV52> = options
-        .runs
-        .iter()
-        .map(|dir| {
-            load_run_v52(dir).with_context(|| format!("failed to load run {}", dir.display()))
-        })
-        .collect::<Result<_>>()?;
-    let suites: BTreeSet<&str> = runs
-        .iter()
-        .map(|r| r.manifest_str("suite_id").unwrap_or("unknown"))
-        .collect();
-    if suites.len() != 1 {
-        bail!(
-            "every run on one leaderboard must share a suite; got {}",
-            suites.into_iter().collect::<Vec<_>>().join(", ")
-        );
-    }
-    let suite_id = suites.into_iter().next().unwrap_or("unknown").to_owned();
+    let (runs, suite_id) = load_suite_runs(&options.runs)?;
     let suite: Option<V52Suite> = suite_id.parse().ok();
     // Fail closed: an unrecognized suite is treated as private (no per-slot rows).
     let private = suite.is_none_or(|s| s.is_private());
@@ -763,139 +770,31 @@ pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
     let test_only = options.suite_override_for_test;
 
     // §10.1 item 7: one shared frozen pricing artifact.
-    let entry_pricing: BTreeSet<Option<&str>> = runs
-        .iter()
-        .map(|r| r.manifest_str("pricing_sha256"))
-        .collect();
-    let leaderboard_pricing: Option<String> = match &options.pricing {
-        Some(p) => Some(p.sha256.clone()),
-        None if entry_pricing.len() == 1 => entry_pricing
-            .iter()
-            .next()
-            .copied()
-            .flatten()
-            .map(str::to_owned),
-        None => None,
-    };
-
-    // Per-entry reasons.
+    let leaderboard_pricing = leaderboard_pricing_sha256(options, &runs);
     let tuples: Vec<(String, String, String)> =
         runs.iter().map(LoadedRunV52::entry_tuple).collect();
-    let mut reasons: Vec<Vec<IneligibilityReasonV52>> = runs
-        .iter()
-        .map(|r| evaluate_eligibility_v52(r, options.published_seal.as_ref()))
-        .collect();
-    for (i, run) in runs.iter().enumerate() {
-        if !ranked_suite {
-            reasons[i].insert(
-                0,
-                reason(
-                    0,
-                    "suite_not_ranked",
-                    format!(
-                        "{suite_id} is unranked; only {RANKED_SUITE_V52} is ranked (SPEC-v5.2 §2)"
-                    ),
-                ),
-            );
-        }
-        match (&leaderboard_pricing, run.manifest_str("pricing_sha256")) {
-            (None, _) => reasons[i].push(reason(
-                7,
-                "pricing_ambiguous",
-                "entries use different pricing artifacts and no --pricing artifact was supplied",
-            )),
-            (Some(shared), Some(own)) if shared == own => {}
-            (Some(shared), own) => reasons[i].push(reason(
-                7,
-                "pricing_mismatch",
-                format!(
-                    "entry pricing_sha256 {} != leaderboard {shared}",
-                    own.unwrap_or("missing")
-                ),
-            )),
-        }
-        if tuples.iter().filter(|t| **t == tuples[i]).count() > 1 {
-            reasons[i].push(reason(
-                0,
-                "duplicate_entry",
-                "two runs share this (model_id, reasoning_effort, transport_id)",
-            ));
-        }
-    }
+    let mut reasons = entry_reasons(
+        &runs,
+        &tuples,
+        &suite_id,
+        leaderboard_pricing.as_deref(),
+        options.published_seal.as_ref(),
+    );
     let eligible: Vec<bool> = reasons.iter().map(Vec::is_empty).collect();
 
     // Statistics (§9).
-    let episodes_sha = options
-        .published_seal
-        .as_ref()
-        .and_then(|s| s.get("episodes_sha256"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .or_else(|| {
-            runs.iter()
-                .find_map(|r| r.manifest.pointer("/seal/episodes_sha256"))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        });
     let complete: Vec<bool> = runs.iter().map(|r| r.summary.is_complete).collect();
-    let strata = if ranked_suite {
-        Some(ranked_strata_v52(&suite_id))
-    } else if test_only {
-        runs.iter()
-            .zip(&complete)
-            .find(|(_, c)| **c)
-            .map(|(r, _)| {
-                test_override_strata(r.slots.iter().map(|s| s.episode_id.clone()).collect())
-            })
-            .filter(|p| p.engagements.len() >= 2)
-    } else {
-        None
-    };
-    let mut intervals: Vec<Option<GsrrIntervalV52>> = vec![None; runs.len()];
-    let mut rank_intervals: Vec<Option<RankIntervalV52>> = vec![None; runs.len()];
-    let mut stats_note: Option<String> = None;
     let ranked_flags: Vec<bool> = (0..runs.len())
         .map(|i| complete[i] && (eligible[i] || test_only))
         .collect();
-    if let (Some(plan), Some(sha)) = (&strata, &episodes_sha) {
-        let draws = BootstrapDrawsV52::generate(
-            bootstrap_key_v52(sha),
-            &plan.stratum_sizes,
-            options.replicates,
-        )
-        .map_err(|e| anyhow::anyhow!("bootstrap draws: {e}"))?;
-        let mut stat_entries = Vec::new();
-        let mut stat_runs = Vec::new();
-        let mut stat_ranked = Vec::new();
-        for (i, run) in runs.iter().enumerate() {
-            if !complete[i] {
-                continue;
-            }
-            let Some(outcomes) = entry_outcomes_v52(run, plan) else {
-                reasons[i].push(reason(
-                    1,
-                    "engagement_set_mismatch",
-                    "the run's slots do not cover every engagement of the suite exactly k times",
-                ));
-                continue;
-            };
-            stat_entries.push(outcomes);
-            stat_ranked.push(ranked_flags[i]);
-            stat_runs.push(i);
-        }
-        let joint = joint_statistics_v52(&draws, &stat_entries, &stat_ranked)
-            .map_err(|e| anyhow::anyhow!("statistics: {e}"))?;
-        for (pos, &i) in stat_runs.iter().enumerate() {
-            intervals[i] = Some(joint.intervals[pos].clone());
-            rank_intervals[i] = joint.rank_intervals[pos];
-        }
-    } else if strata.is_none() {
-        stats_note = Some(format!(
-            "{suite_id} is unranked: §9 intervals apply to the ranked suite (pass --suite-override-for-test only to exercise them offline)"
-        ));
-    } else {
-        stats_note = Some("no episodes_sha256 is available to key the bootstrap".to_owned());
-    }
+    let stats = joint_entry_statistics(options, &runs, &suite_id, &ranked_flags, &mut reasons)?;
+    let StatisticsV52 {
+        episodes_sha,
+        strata,
+        intervals,
+        rank_intervals,
+        note: stats_note,
+    } = stats;
 
     // Order: ranked entries by §9 keys; then complete unranked by the same keys; then in progress.
     let ranked_now: Vec<bool> = (0..runs.len())
@@ -1044,6 +943,206 @@ pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
             Value::Null
         },
     }))
+}
+
+/// Load every run directory and require that they share one suite; returns the runs and suite.
+fn load_suite_runs(dirs: &[PathBuf]) -> Result<(Vec<LoadedRunV52>, String)> {
+    if dirs.is_empty() {
+        bail!("leaderboard needs at least one --runs directory");
+    }
+    let runs: Vec<LoadedRunV52> = dirs
+        .iter()
+        .map(|dir| {
+            load_run_v52(dir).with_context(|| format!("failed to load run {}", dir.display()))
+        })
+        .collect::<Result<_>>()?;
+    let suites: BTreeSet<&str> = runs
+        .iter()
+        .map(|r| r.manifest_str("suite_id").unwrap_or("unknown"))
+        .collect();
+    if suites.len() != 1 {
+        bail!(
+            "every run on one leaderboard must share a suite; got {}",
+            suites.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    let suite_id = suites.into_iter().next().unwrap_or("unknown").to_owned();
+    Ok((runs, suite_id))
+}
+
+/// §10.1 item 7: the leaderboard's pricing artifact: the supplied one, else the one every entry
+/// shares, else none.
+fn leaderboard_pricing_sha256(
+    options: &LeaderboardOptionsV52,
+    runs: &[LoadedRunV52],
+) -> Option<String> {
+    let entry_pricing: BTreeSet<Option<&str>> = runs
+        .iter()
+        .map(|r| r.manifest_str("pricing_sha256"))
+        .collect();
+    match &options.pricing {
+        Some(p) => Some(p.sha256.clone()),
+        None if entry_pricing.len() == 1 => entry_pricing
+            .iter()
+            .next()
+            .copied()
+            .flatten()
+            .map(str::to_owned),
+        None => None,
+    }
+}
+
+/// Each entry's §10.1 reasons plus the leaderboard-level ones: an unranked suite, a pricing
+/// artifact that is ambiguous or not shared (item 7), and a duplicate entry tuple.
+fn entry_reasons(
+    runs: &[LoadedRunV52],
+    tuples: &[(String, String, String)],
+    suite_id: &str,
+    leaderboard_pricing: Option<&str>,
+    published_seal: Option<&Value>,
+) -> Vec<Vec<IneligibilityReasonV52>> {
+    let ranked_suite = suite_id == RANKED_SUITE_V52;
+    let mut reasons: Vec<Vec<IneligibilityReasonV52>> = runs
+        .iter()
+        .map(|r| evaluate_eligibility_v52(r, published_seal))
+        .collect();
+    for (i, run) in runs.iter().enumerate() {
+        if !ranked_suite {
+            reasons[i].insert(
+                0,
+                reason(
+                    0,
+                    "suite_not_ranked",
+                    format!(
+                        "{suite_id} is unranked; only {RANKED_SUITE_V52} is ranked (SPEC-v5.2 §2)"
+                    ),
+                ),
+            );
+        }
+        match (leaderboard_pricing, run.manifest_str("pricing_sha256")) {
+            (None, _) => reasons[i].push(reason(
+                7,
+                "pricing_ambiguous",
+                "entries use different pricing artifacts and no --pricing artifact was supplied",
+            )),
+            (Some(shared), Some(own)) if shared == own => {}
+            (Some(shared), own) => reasons[i].push(reason(
+                7,
+                "pricing_mismatch",
+                format!(
+                    "entry pricing_sha256 {} != leaderboard {shared}",
+                    own.unwrap_or("missing")
+                ),
+            )),
+        }
+        if tuples.iter().filter(|t| **t == tuples[i]).count() > 1 {
+            reasons[i].push(reason(
+                0,
+                "duplicate_entry",
+                "two runs share this (model_id, reasoning_effort, transport_id)",
+            ));
+        }
+    }
+    reasons
+}
+
+/// The §9 statistics of a leaderboard: the bootstrap plan and key, and per-entry intervals.
+struct StatisticsV52 {
+    episodes_sha: Option<String>,
+    strata: Option<StrataPlanV52>,
+    intervals: Vec<Option<GsrrIntervalV52>>,
+    rank_intervals: Vec<Option<RankIntervalV52>>,
+    note: Option<String>,
+}
+
+/// Compute every complete entry's interval and the ranked entries' joint rank intervals from one
+/// shared set of draws (§9). An entry whose slots do not cover the plan gains an
+/// `engagement_set_mismatch` reason.
+fn joint_entry_statistics(
+    options: &LeaderboardOptionsV52,
+    runs: &[LoadedRunV52],
+    suite_id: &str,
+    ranked_flags: &[bool],
+    reasons: &mut [Vec<IneligibilityReasonV52>],
+) -> Result<StatisticsV52> {
+    let ranked_suite = suite_id == RANKED_SUITE_V52;
+    let test_only = options.suite_override_for_test;
+    let episodes_sha = options
+        .published_seal
+        .as_ref()
+        .and_then(|s| s.get("episodes_sha256"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            runs.iter()
+                .find_map(|r| r.manifest.pointer("/seal/episodes_sha256"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    let complete: Vec<bool> = runs.iter().map(|r| r.summary.is_complete).collect();
+    let strata = if ranked_suite {
+        Some(ranked_strata_v52(suite_id))
+    } else if test_only {
+        runs.iter()
+            .zip(&complete)
+            .find(|(_, c)| **c)
+            .map(|(r, _)| {
+                test_override_strata(r.slots.iter().map(|s| s.episode_id.clone()).collect())
+            })
+            .filter(|p| p.engagements.len() >= 2)
+    } else {
+        None
+    };
+    let mut intervals: Vec<Option<GsrrIntervalV52>> = vec![None; runs.len()];
+    let mut rank_intervals: Vec<Option<RankIntervalV52>> = vec![None; runs.len()];
+    let mut stats_note: Option<String> = None;
+    if let (Some(plan), Some(sha)) = (&strata, &episodes_sha) {
+        let draws = BootstrapDrawsV52::generate(
+            bootstrap_key_v52(sha),
+            &plan.stratum_sizes,
+            options.replicates,
+        )
+        .map_err(|e| anyhow::anyhow!("bootstrap draws: {e}"))?;
+        let mut stat_entries = Vec::new();
+        let mut stat_runs = Vec::new();
+        let mut stat_ranked = Vec::new();
+        for (i, run) in runs.iter().enumerate() {
+            if !complete[i] {
+                continue;
+            }
+            let Some(outcomes) = entry_outcomes_v52(run, plan) else {
+                reasons[i].push(reason(
+                    1,
+                    "engagement_set_mismatch",
+                    "the run's slots do not cover every engagement of the suite exactly k times",
+                ));
+                continue;
+            };
+            stat_entries.push(outcomes);
+            stat_ranked.push(ranked_flags[i]);
+            stat_runs.push(i);
+        }
+        let joint = joint_statistics_v52(&draws, &stat_entries, &stat_ranked)
+            .map_err(|e| anyhow::anyhow!("statistics: {e}"))?;
+        for (pos, &i) in stat_runs.iter().enumerate() {
+            intervals[i] = Some(joint.intervals[pos].clone());
+            rank_intervals[i] = joint.rank_intervals[pos];
+        }
+    } else if strata.is_none() {
+        stats_note = Some(format!(
+            "{suite_id} is unranked: §9 intervals apply to the ranked suite (pass --suite-override-for-test only to exercise them offline)"
+        ));
+    } else {
+        stats_note = Some("no episodes_sha256 is available to key the bootstrap".to_owned());
+    }
+
+    Ok(StatisticsV52 {
+        episodes_sha,
+        strata,
+        intervals,
+        rank_intervals,
+        note: stats_note,
+    })
 }
 
 /// Render a short Markdown view of a built leaderboard.
