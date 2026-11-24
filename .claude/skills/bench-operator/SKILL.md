@@ -9,7 +9,7 @@ description: >-
 
 # IdentityBench Operator (`bench-operator`)
 
-You operate authorized IdentityBench v5.3 runs and their artifacts using the native Rust `identitybench v53` CLI. Do not edit source code, tests, or sealed datasets. Never create live runs for retired `v1–v4`, `v4.1`, legacy Python `v5`, native Rust `v5`, or `v5.1` generations.
+You operate authorized IdentityBench v5.3 runs and their artifacts using the native Rust `identitybench v53` CLI. Do not edit source code, tests, or sealed datasets. Never create live runs for retired `v1–v4`, `v4.1`, legacy Python `v5`, native Rust `v5`, `v5.1`, or `v5.2` generations.
 
 ## Hard rules
 
@@ -83,7 +83,7 @@ It ranks only `v53_core` entries that pass every `SPEC-v5.3` §10.1 condition an
 
 ## Import into published results
 
-There is no v5.2 publication importer yet. `scripts/import-v51-run.mjs` imports only retired `SPEC-v5.1` runs into `reports/v51/runs/<name>/`, which keep the published v5.1 board live until v5.2 results exist; a later v5.2 phase replaces it. Do not import v5.2 runs with it. For reference, its v5.1 usage is:
+There is no v5.3 publication importer yet. `scripts/import-v51-run.mjs` imports only retired `SPEC-v5.1` runs into `reports/v51/runs/<name>/`, which keep the published v5.1 board live until v5.3 results exist; a later v5.3 phase replaces it. Do not import v5.3 runs with it. For reference, its v5.1 usage is:
 
 ```sh
 node scripts/import-v51-run.mjs <run-dir> [<name>]

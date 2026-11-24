@@ -1482,7 +1482,10 @@ fn entry_json(
             )
         }
         None if run_pricing_empty && s.total_cost_usd_micros == 0 => {
-            (0, s.slot_usage.clone(), false)
+            let mut quantiles = s.slot_usage.clone();
+            quantiles.median_cost_per_slot_usd = None;
+            quantiles.p95_cost_per_slot_usd = None;
+            (0, quantiles, false)
         }
         None => (s.total_cost_usd_micros, s.slot_usage.clone(), true),
     };

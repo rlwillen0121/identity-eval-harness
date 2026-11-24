@@ -835,7 +835,8 @@ fn blind_gate(
     engine: &dyn IgaEngineBackendV52,
 ) -> Result<ib_v52_runtime::GateResultV52> {
     let blind_map: BTreeMap<String, ib_v52_schemas::IgaDeploymentConfigV52> =
-        read_json(&paths::resolve(root, blind_path)).context("failed reading blind configs")?;
+        read_json(&paths::resolve(root, blind_path))
+            .map_err(|e| anyhow::anyhow!("failed reading blind configs: {e:#}"))?;
     let oracle_map: BTreeMap<&str, &ib_v52_schemas::SealedEpisodeOracleV52> = loaded
         .oracles
         .iter()

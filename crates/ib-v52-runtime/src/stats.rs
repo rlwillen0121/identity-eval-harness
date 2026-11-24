@@ -28,7 +28,7 @@ pub const INTERVAL_ALPHA_V52: f64 = 0.05;
 pub const QUANTILE_LO_V52: f64 = 0.025;
 pub const QUANTILE_HI_V52: f64 = 0.975;
 
-/// The 32-byte ChaCha20 key of the bootstrap RNG: `SHA-256(ASCII("identitybench-v5.2-bootstrap|")
+/// The 32-byte ChaCha20 key of the bootstrap RNG: `SHA-256(ASCII("identitybench-v5.3-bootstrap|")
 /// || ASCII(episodes_sha256))`, where `episodes_sha256` is the suite's 64-character lowercase hex
 /// digest.
 #[must_use]

@@ -279,7 +279,7 @@ impl<'a> RunSpec<'a> {
             receipt: true,
             duplicate_reads_per_twenty: 1,
             budget_slots: 0,
-            normal_turns: 20,
+            normal_turns: 12,
             seal_marker: "same",
             slot_tokens: &[],
         }
@@ -510,9 +510,9 @@ fn complete_synthetic_calibration_passes_all_checks_and_includes_exact_spread_bo
         assert_eq!(check(&report, gate)["status"], "pass", "{gate}");
     }
     assert_eq!(report["draft_turn_budget"], 20);
-    assert_eq!(report["freeze_turn_budget"], 40);
+    assert_eq!(report["freeze_turn_budget"], 24);
     let freeze = &check(&report, "G-BUDGET-V52 freeze turn budget")["measurements"][0];
-    assert_eq!(freeze["p95_frontier_turns_to_commit"], 20.0);
+    assert_eq!(freeze["p95_frontier_turns_to_commit"], 12.0);
     assert_eq!(freeze["committed_observations"], 108);
     assert_eq!(freeze["frontier_entry_count"], 3);
     assert_eq!(
@@ -607,16 +607,16 @@ fn efficiency_reports_usage_and_flags_only_best_frontier_without_blocking() {
 #[test]
 fn freeze_turn_budget_uses_type7_p95_ceil_and_bounds() {
     assert_eq!(
-        super::freeze_turn_budget_from_observations(&[20, 21]),
-        Some((20.95, 42))
+        super::freeze_turn_budget_from_observations(&[10, 11]),
+        Some((10.95, 22))
     );
     assert_eq!(
         super::freeze_turn_budget_from_observations(&[1, 2]),
-        Some((1.95, 24))
+        Some((1.95, 12))
     );
     assert_eq!(
-        super::freeze_turn_budget_from_observations(&[30, 31]),
-        Some((30.95, 50))
+        super::freeze_turn_budget_from_observations(&[20, 21]),
+        Some((20.95, 24))
     );
     assert_eq!(super::freeze_turn_budget_from_observations(&[]), None);
 }

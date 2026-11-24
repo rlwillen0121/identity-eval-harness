@@ -30,8 +30,8 @@ use crate::validation::{
 const DEV: &str = "v53_dev";
 const ENGAGEMENTS: usize = 12;
 const DRAFT_TURN_BUDGET_V52: usize = MAX_ASSISTANT_TURNS_V52;
-const MIN_FREEZE_TURN_BUDGET_V52: usize = 24;
-const MAX_FREEZE_TURN_BUDGET_V52: usize = 50;
+const MIN_FREEZE_TURN_BUDGET_V52: usize = 12;
+const MAX_FREEZE_TURN_BUDGET_V52: usize = 24;
 const BASELINE_MEDIAN_INPUT_TOKENS_V52: u32 = 525_204;
 const REGRESSION_MEDIAN_INPUT_TOKENS_V52: u32 = BASELINE_MEDIAN_INPUT_TOKENS_V52 * 5 / 4;
 const R12_SPEC_SHA256: &str = "55d0061702711758c59e1e03cf86d0f1cc070f45ef3a3d799c0965baba0c445f";
@@ -207,13 +207,13 @@ fn budget(run: &LoadedRunV52) -> Measurement {
     let median = type7_quantile(&observed, 0.5).expect("validated nonempty development run");
     let relation = if exact { "=" } else { ">" };
     Measurement::new(
-        Status::check(censored <= 2 && exact && median <= 25.0),
+        Status::check(censored <= 2 && exact && median <= 12.0),
         format!(
-            "{} had {censored}/36 turn-limited slots (maximum 2) and median turns {relation} {median} (maximum 25).",
+            "{} had {censored}/36 turn-limited slots (maximum 2) and median turns {relation} {median} (maximum 12).",
             label(run)
         ),
         json!({"entry":entry(run), "slots_at_turn_budget":censored, "run_turn_budget":turn_budget, "planned_slots":36, "max_slots_at_turn_budget":2,
-            "median_turns":exact.then_some(median), "median_turns_lower_bound":(!exact).then_some(median), "max_median_turns":25}),
+            "median_turns":exact.then_some(median), "median_turns_lower_bound":(!exact).then_some(median), "max_median_turns":12}),
     )
 }
 
@@ -314,7 +314,7 @@ fn freeze_turn_budget(frontier: &[LoadedRunV52]) -> Measurement {
     };
     let summary = match (p95, freeze_turn_budget) {
         (Some(p95), Some(turns)) => format!(
-            "Draft T={DRAFT_TURN_BUDGET_V52}. Across {} committed observations from {} frontier entries spanning {} reference models, Type-7 p95 turns-to-commit was {p95:.6}; freeze T=clamp(ceil(2 * {p95:.6}), 24, 50)={turns}.",
+            "Draft T={DRAFT_TURN_BUDGET_V52}. Across {} committed observations from {} frontier entries spanning {} reference models, Type-7 p95 turns-to-commit was {p95:.6}; freeze T=clamp(ceil(2 * {p95:.6}), {MIN_FREEZE_TURN_BUDGET_V52}, {MAX_FREEZE_TURN_BUDGET_V52})={turns}.",
             observations.len(),
             frontier.len(),
             model_committed.len()
@@ -345,7 +345,7 @@ fn freeze_turn_budget(frontier: &[LoadedRunV52]) -> Measurement {
             })).collect::<Vec<_>>(),
             "frontier_entry_committed_observations": entry_counts,
             "missing_reference_models": missing_models,
-            "formula": "clamp(ceil(2 * p95_frontier_turns_to_commit), 24, 50)"
+            "formula": "clamp(ceil(2 * p95_frontier_turns_to_commit), 12, 24)"
         }),
     )
 }
@@ -856,7 +856,7 @@ pub fn build_calibration_report_v52(options: &CalibrationReportOptionsV52) -> Re
         duplicate_reads(&reference_runs, &transports, validation.as_ref()),
     ];
     Ok(
-        json!({"schema_version":"identitybench.v5.2.calibration-report.v1", "suite_id":DEV, "seal":seal,
+        json!({"schema_version":"identitybench.v5.3.calibration-report.v1", "suite_id":DEV, "seal":seal,
         "draft_turn_budget":draft_turn_budget_value,"freeze_turn_budget":freeze_turn_budget_value,
         "efficiency_baseline": {
             "reference_model": "GPT-6.2 Astra",
@@ -897,7 +897,7 @@ pub fn write_calibration_report_v52(out: &Path, report: &Value) -> Result<()> {
     let mut md = ReportBytes(Vec::new());
     writeln!(
         md,
-        "# v5.2 calibration report\n\nOverall **{}**",
+        "# v5.3 calibration report\n\nOverall **{}**",
         report["overall_status"]
             .as_str()
             .context("missing overall calibration status")?
