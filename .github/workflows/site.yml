@@ -7,13 +7,13 @@ on:
     paths:
       - "site/**"
       - "reports/v51/runs/**"
-      - "datasets/v51/v51_core/SEAL.json"
+      - "archive/datasets/v51/v51_core/SEAL.json"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
       - "site/**"
       - "reports/v51/runs/**"
-      - "datasets/v51/v51_core/SEAL.json"
+      - "archive/datasets/v51/v51_core/SEAL.json"
       - ".github/workflows/site.yml"
 
 permissions:

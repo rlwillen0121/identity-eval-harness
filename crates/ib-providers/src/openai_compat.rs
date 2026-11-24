@@ -10,7 +10,6 @@ use ib_core::pyjson::{DumpOptions, PyNumber, classify_number, dumps};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use url::Url;
 
 use crate::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall, Usage,
@@ -18,32 +17,128 @@ use crate::base::{
 };
 use crate::env::paired_api_key_env;
 use crate::http::{
-    MAX_PROVIDER_RESPONSE_BYTES, read_bounded_response_body, redirect_provider_error,
+    MAX_PROVIDER_RESPONSE_BYTES, PLACEHOLDER_API_KEY, Redactor, env_var, is_vendor_host,
+    read_bounded_response_body, redirect_provider_error, status_error_class,
 };
-use crate::json::{bounded_token_count, load_object, raw_usage_payload, sanitize_response};
-use crate::subprocess::{redact, redact_diagnostics_map};
+use crate::json::{
+    BoundedJsonError, MAX_RESPONSE_DEPTH, MAX_RESPONSE_NODES, bounded_token_count, load_object,
+    parse_bounded_json, raw_usage_payload, sanitize_response,
+};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 pub const DEFAULT_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
 pub const DEFAULT_API_KEY_ENV: &str = "OPENAI_API_KEY";
-pub const OPENROUTER_BASE_URL_ENV: &str = "OPENROUTER_BASE_URL";
 pub const UNPARSED_ARGUMENTS_KEY: &str = "_unparsed_arguments";
 
-const PLACEHOLDER_API_KEY: &str = "not-set";
 const VENDOR_HOST: &str = "api.openai.com";
 pub const NO_TEMPERATURE_MODELS: &[&str] = &["gpt-5", "o1", "o3", "o4"];
 
-const CREDENTIAL_HEADERS: &[&str] = &[
-    "authorization",
-    "api-key",
-    "x-api-key",
-    "x-goog-api-key",
-    "cookie",
-    "set-cookie",
-    "proxy-authorization",
-    "x-auth-token",
-    "x-access-token",
-];
+fn credential_header_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "www-authenticate"
+            | "proxy-authenticate"
+            | "api-key"
+            | "x-api-key"
+            | "x-goog-api-key"
+            | "anthropic-api-key"
+            | "cookie"
+            | "set-cookie"
+    ) {
+        return true;
+    }
+    let chars: Vec<char> = name.chars().collect();
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    for (index, ch) in chars.iter().copied().enumerate() {
+        if !ch.is_ascii_alphanumeric() {
+            if !current.is_empty() {
+                parts.push(std::mem::take(&mut current).to_ascii_lowercase());
+            }
+            continue;
+        }
+        let previous = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+        let next = chars.get(index + 1).copied();
+        let camel_boundary = previous.is_some_and(|prev| {
+            (prev.is_ascii_lowercase() || prev.is_ascii_digit()) && ch.is_ascii_uppercase()
+        }) || (previous.is_some_and(|prev| prev.is_ascii_uppercase())
+            && ch.is_ascii_uppercase()
+            && next.is_some_and(|next| next.is_ascii_lowercase()));
+        if camel_boundary && !current.is_empty() {
+            parts.push(std::mem::take(&mut current).to_ascii_lowercase());
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        parts.push(current.to_ascii_lowercase());
+    }
+    if parts.iter().any(|part| {
+        matches!(
+            part.as_str(),
+            "auth"
+                | "authz"
+                | "authenticate"
+                | "authentication"
+                | "authorization"
+                | "token"
+                | "secret"
+                | "password"
+                | "passwd"
+                | "credential"
+                | "credentials"
+                | "cookie"
+        )
+    }) {
+        return true;
+    }
+    (parts
+        .windows(2)
+        .any(|pair| pair[0] == "api" && pair[1] == "key")
+        && !parts
+            .windows(3)
+            .any(|triple| triple[0] == "api" && triple[1] == "key" && triple[2] == "id"))
+        || parts
+            .windows(2)
+            .any(|pair| pair[0] == "client" && pair[1] == "secret")
+        || parts.iter().any(|part| {
+            matches!(
+                part.as_str(),
+                "apikey" | "authtoken" | "accesstoken" | "refreshtoken" | "clientsecret"
+            )
+        })
+        || parts.iter().enumerate().any(|(index, part)| {
+            part == "key"
+                && !parts
+                    .get(index + 1)
+                    .is_some_and(|next| matches!(next.as_str(), "id" | "name" | "type" | "version"))
+        })
+}
+
+fn credential_auth_scheme(value: &str) -> bool {
+    let mut words = value.split_ascii_whitespace();
+    let Some(scheme) = words.next() else {
+        return false;
+    };
+    matches!(
+        scheme.to_ascii_lowercase().as_str(),
+        "bearer"
+            | "basic"
+            | "token"
+            | "apikey"
+            | "api-key"
+            | "oauth"
+            | "oauth1"
+            | "oauth2"
+            | "digest"
+            | "negotiate"
+            | "signature"
+            | "hmac"
+            | "aws4-hmac-sha256"
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -93,10 +188,9 @@ pub fn headers_problem(value: &Value) -> Option<String> {
         if name.trim().is_empty() || !val.is_string() {
             return Some("must map non-empty header names to string values".to_string());
         }
-        let lower = name.to_lowercase();
-        if CREDENTIAL_HEADERS.contains(&lower.as_str()) {
+        if credential_header_name(name) || val.as_str().is_some_and(credential_auth_scheme) {
             return Some(format!(
-                "must not set {name:?}: credentials come from api_key_env"
+                "must not set credential-bearing header {name:?}: credentials come from api_key_env"
             ));
         }
     }
@@ -156,17 +250,7 @@ pub fn accepts_temperature(model: &str) -> bool {
 
 #[must_use]
 pub fn is_vendor_endpoint(base_url: Option<&str>) -> bool {
-    let Some(u) = base_url else {
-        return false;
-    };
-    Url::parse(u)
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .host_str()
-                .map(|h| h.eq_ignore_ascii_case(VENDOR_HOST))
-        })
-        .unwrap_or(false)
+    is_vendor_host(base_url, VENDOR_HOST)
 }
 
 #[must_use]
@@ -276,7 +360,7 @@ fn gateway_raw(reply: &Map<String, Value>) -> Map<String, Value> {
     raw
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAICompatConfig {
     pub model: String,
     pub api_key_env: Option<String>,
@@ -294,6 +378,12 @@ pub struct OpenAICompatConfig {
     pub env_override: Option<BTreeMap<String, String>>,
 }
 
+impl std::fmt::Debug for OpenAICompatConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAICompatConfig").finish_non_exhaustive()
+    }
+}
+
 impl OpenAICompatConfig {
     #[must_use]
     pub fn new(model: impl Into<String>) -> Self {
@@ -308,7 +398,8 @@ impl OpenAICompatConfig {
             provider_routing: None,
             headers: None,
             api: OpenAiApi::ChatCompletions,
-            max_retries: 4,
+            // SPEC-v5.2 §7.4: no adapter-internal retries; the runner owns the retry cap.
+            max_retries: 0,
             timeout_s: 600.0,
             retry_base_delay_s: 0.5,
             env_override: None,
@@ -353,8 +444,9 @@ impl OpenAICompatProvider {
                 ..DumpOptions::default()
             };
             let canonical = dumps(&val, &opts).map_err(|e| format!("provider_routing {e}"))?;
-            let copy = load_object(&canonical);
-            (Some(canonical), copy)
+            // The canonical (key-sorted) form feeds `endpoint_identity`; the request body carries
+            // the configured object verbatim.
+            (Some(canonical), Some(routing.clone()))
         } else {
             (None, None)
         };
@@ -426,23 +518,12 @@ impl OpenAICompatProvider {
         self.config.reasoning_effort_param
     }
 
-    fn get_env(&self, name: &str) -> Option<String> {
-        if let Some(ref map) = self.config.env_override {
-            map.get(name).cloned()
-        } else {
-            std::env::var(name).ok()
-        }
-    }
-
-    fn redaction_env_names(&self) -> Vec<&str> {
-        let mut names = Vec::new();
-        if let Some(ref k) = self.resolved_api_key_env {
-            names.push(k.as_str());
-        }
-        if let Some(ref b) = self.config.base_url_env {
-            names.push(b.as_str());
-        }
-        names
+    fn redactor(&self) -> Redactor<'_> {
+        Redactor::new(
+            self.config.env_override.as_ref(),
+            self.resolved_api_key_env.as_deref(),
+            self.config.base_url_env.as_deref(),
+        )
     }
 
     #[must_use]
@@ -471,47 +552,6 @@ impl OpenAICompatProvider {
             self.config.max_tokens_param.as_str().to_string(),
             Value::from(request.params.max_output_tokens),
         );
-
-        if let Some(ref schema) = request.output_schema {
-            let mut js = Map::new();
-            js.insert(
-                "name".to_string(),
-                Value::String(request.schema_name.clone()),
-            );
-            js.insert("schema".to_string(), Value::Object(schema.clone()));
-            js.insert("strict".to_string(), Value::Bool(true));
-
-            let mut rf = Map::new();
-            rf.insert("type".to_string(), Value::String("json_schema".to_string()));
-            rf.insert("json_schema".to_string(), Value::Object(js));
-            params.insert("response_format".to_string(), Value::Object(rf));
-        }
-
-        if !request.tools.is_empty() {
-            let tools = request
-                .tools
-                .iter()
-                .map(|tool| {
-                    let mut fn_obj = Map::new();
-                    fn_obj.insert("name".to_string(), Value::String(tool.name.clone()));
-                    fn_obj.insert(
-                        "description".to_string(),
-                        Value::String(tool.description.clone()),
-                    );
-                    fn_obj.insert(
-                        "parameters".to_string(),
-                        Value::Object(tool.input_schema.clone()),
-                    );
-                    fn_obj.insert("strict".to_string(), Value::Bool(true));
-
-                    let mut wrapper = Map::new();
-                    wrapper.insert("type".to_string(), Value::String("function".to_string()));
-                    wrapper.insert("function".to_string(), Value::Object(fn_obj));
-                    Value::Object(wrapper)
-                })
-                .collect();
-            params.insert("tools".to_string(), Value::Array(tools));
-        }
 
         if let Some(temp) = request.params.temperature
             && !self.drops_temperature
@@ -557,44 +597,6 @@ impl OpenAICompatProvider {
         );
         params.insert("store".to_string(), Value::Bool(false));
 
-        if let Some(ref schema) = request.output_schema {
-            let mut format = Map::new();
-            format.insert("type".to_string(), Value::String("json_schema".to_string()));
-            format.insert(
-                "name".to_string(),
-                Value::String(request.schema_name.clone()),
-            );
-            format.insert("schema".to_string(), Value::Object(schema.clone()));
-            format.insert("strict".to_string(), Value::Bool(true));
-
-            let mut text = Map::new();
-            text.insert("format".to_string(), Value::Object(format));
-            params.insert("text".to_string(), Value::Object(text));
-        }
-
-        if !request.tools.is_empty() {
-            let tools = request
-                .tools
-                .iter()
-                .map(|tool| {
-                    let mut item = Map::new();
-                    item.insert("type".to_string(), Value::String("function".to_string()));
-                    item.insert("name".to_string(), Value::String(tool.name.clone()));
-                    item.insert(
-                        "description".to_string(),
-                        Value::String(tool.description.clone()),
-                    );
-                    item.insert(
-                        "parameters".to_string(),
-                        Value::Object(tool.input_schema.clone()),
-                    );
-                    item.insert("strict".to_string(), Value::Bool(true));
-                    Value::Object(item)
-                })
-                .collect();
-            params.insert("tools".to_string(), Value::Array(tools));
-        }
-
         if let Some(temp) = request.params.temperature
             && !self.drops_temperature
         {
@@ -614,85 +616,23 @@ impl OpenAICompatProvider {
     }
 
     fn input_items(message: &Message) -> Vec<Map<String, Value>> {
-        match message.role {
-            Role::Tool => {
-                let mut item = Map::new();
-                item.insert(
-                    "type".to_string(),
-                    Value::String("function_call_output".to_string()),
-                );
-                item.insert(
-                    "call_id".to_string(),
-                    message
-                        .tool_call_id
-                        .as_ref()
-                        .map_or(Value::Null, |id| Value::String(id.clone())),
-                );
-                item.insert("output".to_string(), Value::String(message.content.clone()));
-                vec![item]
-            }
-            Role::Assistant => {
-                let mut items = Vec::new();
-                if !message.content.is_empty() {
-                    let mut m = Map::new();
-                    m.insert("role".to_string(), Value::String("assistant".to_string()));
-                    m.insert(
-                        "content".to_string(),
-                        Value::String(message.content.clone()),
-                    );
-                    items.push(m);
-                }
-                for call in &message.tool_calls {
-                    let args_str = dumps(
-                        &Value::Object(call.arguments.clone()),
-                        &DumpOptions {
-                            ensure_ascii: false,
-                            ..DumpOptions::default()
-                        },
-                    )
-                    .unwrap_or_else(|_| "{}".to_string());
-                    let mut m = Map::new();
-                    m.insert(
-                        "type".to_string(),
-                        Value::String("function_call".to_string()),
-                    );
-                    m.insert("call_id".to_string(), Value::String(call.id.clone()));
-                    m.insert("name".to_string(), Value::String(call.name.clone()));
-                    m.insert("arguments".to_string(), Value::String(args_str));
-                    items.push(m);
-                }
-                items
-            }
-            Role::User => {
-                let mut m = Map::new();
-                m.insert("role".to_string(), Value::String("user".to_string()));
-                m.insert(
-                    "content".to_string(),
-                    Value::String(message.content.clone()),
-                );
-                vec![m]
-            }
-        }
+        let role = match message.role {
+            Role::User => "user",
+            // An empty assistant turn sends no input item.
+            Role::Assistant if message.content.is_empty() => return Vec::new(),
+            Role::Assistant => "assistant",
+        };
+        let mut m = Map::new();
+        m.insert("role".to_string(), Value::String(role.to_string()));
+        m.insert(
+            "content".to_string(),
+            Value::String(message.content.clone()),
+        );
+        vec![m]
     }
 
     fn api_message(&self, message: &Message) -> Map<String, Value> {
         match message.role {
-            Role::Tool => {
-                let mut m = Map::new();
-                m.insert("role".to_string(), Value::String("tool".to_string()));
-                m.insert(
-                    "tool_call_id".to_string(),
-                    message
-                        .tool_call_id
-                        .as_ref()
-                        .map_or(Value::Null, |id| Value::String(id.clone())),
-                );
-                m.insert(
-                    "content".to_string(),
-                    Value::String(message.content.clone()),
-                );
-                m
-            }
             Role::Assistant => {
                 let mut m = Map::new();
                 m.insert("role".to_string(), Value::String("assistant".to_string()));
@@ -704,32 +644,6 @@ impl OpenAICompatProvider {
                         Value::String(message.content.clone())
                     },
                 );
-                if !message.tool_calls.is_empty() {
-                    let tcs = message
-                        .tool_calls
-                        .iter()
-                        .map(|call| {
-                            let args_str = dumps(
-                                &Value::Object(call.arguments.clone()),
-                                &DumpOptions {
-                                    ensure_ascii: false,
-                                    ..DumpOptions::default()
-                                },
-                            )
-                            .unwrap_or_else(|_| "{}".to_string());
-                            let mut fn_obj = Map::new();
-                            fn_obj.insert("name".to_string(), Value::String(call.name.clone()));
-                            fn_obj.insert("arguments".to_string(), Value::String(args_str));
-                            let mut wrapper = Map::new();
-                            wrapper.insert("id".to_string(), Value::String(call.id.clone()));
-                            wrapper
-                                .insert("type".to_string(), Value::String("function".to_string()));
-                            wrapper.insert("function".to_string(), Value::Object(fn_obj));
-                            Value::Object(wrapper)
-                        })
-                        .collect();
-                    m.insert("tool_calls".to_string(), Value::Array(tcs));
-                }
                 if self.config.model.contains("reflection/")
                     || self.config.model.contains("beam-1.0")
                 {
@@ -744,10 +658,7 @@ impl OpenAICompatProvider {
                     );
                     m.insert("reasoning".to_string(), Value::String(val.to_string()));
                 }
-                if self.config.model.contains("cohere/")
-                    && message.tool_calls.is_empty()
-                    && message.content.trim().is_empty()
-                {
+                if self.config.model.contains("cohere/") && message.content.trim().is_empty() {
                     m.insert("content".to_string(), Value::String(".".to_string()));
                 }
                 m
@@ -779,7 +690,7 @@ impl OpenAICompatProvider {
         let key = self
             .resolved_api_key_env
             .as_deref()
-            .and_then(|name| self.get_env(name))
+            .and_then(|name| env_var(self.config.env_override.as_ref(), name))
             .filter(|v| !v.is_empty());
         if let Some(k) = key {
             return Ok(k);
@@ -824,17 +735,7 @@ impl OpenAICompatProvider {
     }
 
     fn fail(&self, message: &str, raw: Option<Map<String, Value>>) -> ModelResponse {
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        ModelResponse {
-            error: Some(redact(
-                &format!("openai_compatible: {message}"),
-                env_ref,
-                &names,
-            )),
-            raw: raw.map(|r| redact_diagnostics_map(&r, env_ref, &names)),
-            ..ModelResponse::default()
-        }
+        self.redactor().fail("openai_compatible", message, raw)
     }
 
     async fn complete_inner(&self, request: &ModelRequest) -> ModelResponse {
@@ -922,9 +823,21 @@ impl OpenAICompatProvider {
                             return last_resp.expect("set");
                         }
                     } else {
-                        let parsed_val: Value = match serde_json::from_str(&text_body) {
-                            Ok(v) => v,
-                            Err(err) => {
+                        let parsed_val: Value = match parse_bounded_json(
+                            &text_body,
+                            MAX_RESPONSE_NODES,
+                            MAX_RESPONSE_DEPTH,
+                        ) {
+                            Ok((value, _)) => value,
+                            Err(BoundedJsonError::TooManyNodes | BoundedJsonError::TooDeep) => {
+                                return self.fail(
+                                    "malformed response (response exceeds structural limits)",
+                                    None,
+                                );
+                            }
+                            Err(BoundedJsonError::Invalid) => {
+                                let err = serde_json::from_str::<Value>(&text_body)
+                                    .expect_err("bounded JSON scan rejected invalid JSON");
                                 let label = if err.to_string().contains("recursion limit exceeded")
                                 {
                                     "RecursionError"
@@ -941,8 +854,8 @@ impl OpenAICompatProvider {
                             return self.fail("malformed response (expected JSON object)", None);
                         };
                         let outcome = match self.config.api {
-                            OpenAiApi::Responses => self.parse_responses_reply(reply_map, request),
-                            OpenAiApi::ChatCompletions => self.to_response(reply_map, request),
+                            OpenAiApi::Responses => self.parse_responses_reply(reply_map),
+                            OpenAiApi::ChatCompletions => self.to_response(reply_map),
                         };
                         return match outcome {
                             Ok(resp) => resp,
@@ -1017,11 +930,7 @@ impl OpenAICompatProvider {
         }
     }
 
-    fn to_response(
-        &self,
-        completion: &Map<String, Value>,
-        request: &ModelRequest,
-    ) -> Result<ModelResponse, String> {
+    fn to_response(&self, completion: &Map<String, Value>) -> Result<ModelResponse, String> {
         let usage_val = completion.get("usage");
         let (cost, _) = reported_cost(usage_val);
         let mut raw = Map::new();
@@ -1062,13 +971,10 @@ impl OpenAICompatProvider {
             .and_then(Value::as_array)
             .ok_or_else(|| "missing choices".to_string())?;
         if choices.is_empty() {
-            let env_ref = self.config.env_override.as_ref();
-            let names = self.redaction_env_names();
-            response.error = Some(redact(
-                "openai_compatible: response has no choices",
-                env_ref,
-                &names,
-            ));
+            response.error = Some(
+                self.redactor()
+                    .text("openai_compatible: response has no choices"),
+            );
             return Ok(response);
         }
 
@@ -1148,20 +1054,10 @@ impl OpenAICompatProvider {
                 });
             }
         }
-
-        if request.output_schema.is_some()
-            && let Some(ref text) = response.text
-        {
-            response.parsed = load_object(text);
-        }
         Ok(response)
     }
 
-    fn parse_responses_reply(
-        &self,
-        reply: &Map<String, Value>,
-        request: &ModelRequest,
-    ) -> Result<ModelResponse, String> {
+    fn parse_responses_reply(&self, reply: &Map<String, Value>) -> Result<ModelResponse, String> {
         let usage_val = reply.get("usage");
         let (cost, _) = reported_cost(usage_val);
         let mut raw = Map::new();
@@ -1198,13 +1094,10 @@ impl OpenAICompatProvider {
                     format!("{code}: {msg}")
                 })
                 .unwrap_or_else(|| "no error given".to_string());
-            let env_ref = self.config.env_override.as_ref();
-            let names = self.redaction_env_names();
-            response.error = Some(redact(
-                &format!("openai_compatible: response failed ({detail})"),
-                env_ref,
-                &names,
-            ));
+            response.error = Some(
+                self.redactor()
+                    .text(&format!("openai_compatible: response failed ({detail})")),
+            );
             return Ok(response);
         }
 
@@ -1215,6 +1108,7 @@ impl OpenAICompatProvider {
         let mut texts = Vec::new();
         let mut refusals = Vec::new();
         let mut calls = Vec::new();
+        let mut native_tool_events = std::collections::BTreeSet::new();
         for item_val in output {
             let item = item_val
                 .as_object()
@@ -1273,7 +1167,29 @@ impl OpenAICompatProvider {
                     name: name.to_string(),
                     arguments,
                 });
+            } else if matches!(
+                item_type,
+                "web_search_call"
+                    | "mcp_call"
+                    | "local_shell_call"
+                    | "code_interpreter_call"
+                    | "file_search_call"
+                    | "computer_call"
+            ) {
+                native_tool_events.insert(item_type.to_owned());
             }
+        }
+        if !native_tool_events.is_empty()
+            && let Some(ref mut r) = response.raw
+        {
+            r.insert(
+                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                Value::Bool(true),
+            );
+            r.insert(
+                crate::base::NATIVE_TOOL_EVENTS.to_owned(),
+                Value::Array(native_tool_events.into_iter().map(Value::String).collect()),
+            );
         }
 
         let joined_text = texts.concat();
@@ -1317,11 +1233,6 @@ impl OpenAICompatProvider {
         }
 
         response.tool_calls = calls;
-        if request.output_schema.is_some()
-            && let Some(ref text) = response.text
-        {
-            response.parsed = load_object(text);
-        }
         Ok(response)
     }
 }
@@ -1334,17 +1245,6 @@ impl Provider for OpenAICompatProvider {
 
     fn model(&self) -> &str {
         &self.config.model
-    }
-
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        (
-            "identitybench.providers.openai_compat",
-            "OpenAICompatProvider",
-        )
-    }
-
-    fn local_retry_limit(&self) -> Option<u32> {
-        Some(self.config.max_retries)
     }
 
     fn endpoint_identity(&self) -> String {
@@ -1399,14 +1299,7 @@ impl Provider for OpenAICompatProvider {
             );
             response.raw = Some(raw);
         }
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        if let Some(ref err) = response.error {
-            response.error = Some(redact(err, env_ref, &names));
-        }
-        if let Some(ref raw) = response.raw {
-            response.raw = Some(redact_diagnostics_map(raw, env_ref, &names));
-        }
+        self.redactor().response(&mut response);
         response
     }
 }
@@ -1418,12 +1311,7 @@ fn resolve_base_url(
     let Some(env_name) = base_url_env else {
         return Some(DEFAULT_BASE_URL.to_string());
     };
-    let val = if let Some(map) = env_override {
-        map.get(env_name).cloned()
-    } else {
-        std::env::var(env_name).ok()
-    };
-    if let Some(v) = val
+    if let Some(v) = env_var(env_override, env_name)
         && !v.is_empty()
     {
         return Some(v.trim_end_matches('/').to_string());
@@ -1432,19 +1320,5 @@ fn resolve_base_url(
         Some(DEFAULT_BASE_URL.to_string())
     } else {
         None
-    }
-}
-
-fn status_error_class(status: u16) -> &'static str {
-    match status {
-        400 => "BadRequestError",
-        401 => "AuthenticationError",
-        403 => "PermissionDeniedError",
-        404 => "NotFoundError",
-        409 => "ConflictError",
-        422 => "UnprocessableEntityError",
-        429 => "RateLimitError",
-        500..=599 => "InternalServerError",
-        _ => "APIStatusError",
     }
 }

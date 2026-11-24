@@ -1,13 +1,12 @@
 //! Anthropic Messages API provider (`anthropic`) and Messages-compatible servers (`anthropic_compatible`).
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::{Mutex, OnceLock};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde_json::{Map, Value};
-use url::Url;
 
 use crate::base::{
     Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall, Usage,
@@ -15,17 +14,19 @@ use crate::base::{
 };
 use crate::env::paired_api_key_env;
 use crate::http::{
-    MAX_PROVIDER_RESPONSE_BYTES, read_bounded_response_body, redirect_provider_error,
+    MAX_PROVIDER_RESPONSE_BYTES, PLACEHOLDER_API_KEY, Redactor, env_var, is_vendor_host,
+    read_bounded_response_body, redirect_provider_error, status_error_class,
 };
-use crate::json::{bounded_token_count, load_object, raw_usage_payload, sanitize_response};
-use crate::subprocess::{redact, redact_diagnostics_map};
+use crate::json::{
+    BoundedJsonError, MAX_RESPONSE_DEPTH, MAX_RESPONSE_NODES, MAX_USAGE_DEPTH, MAX_USAGE_NODES,
+    bounded_token_count, load_object, parse_bounded_json, raw_usage_payload, sanitize_response,
+    value_node_count,
+};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 pub const STREAMING_THRESHOLD_TOKENS: u64 = 16_000;
 const VENDOR_HOST: &str = "api.anthropic.com";
-const PLACEHOLDER_API_KEY: &str = "not-set";
-const TOOL_TURN_CACHE_SIZE: usize = 4096;
 pub const ASSISTANT_CONTENT_KEY: &str = "assistant_content";
 
 pub const NO_TEMPERATURE_MODELS: &[&str] = &[
@@ -47,20 +48,6 @@ pub fn accepts_temperature(model: &str) -> bool {
         .any(|family| model.contains(family))
 }
 
-fn is_vendor_endpoint(base_url: Option<&str>) -> bool {
-    let Some(base_url) = base_url else {
-        return false;
-    };
-    Url::parse(base_url)
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .host_str()
-                .map(|host| host.eq_ignore_ascii_case(VENDOR_HOST))
-        })
-        .unwrap_or(false)
-}
-
 fn parse_usage(usage_val: Option<&Value>) -> Usage {
     let Some(usage) = usage_val.and_then(Value::as_object) else {
         return Usage::default();
@@ -77,36 +64,7 @@ fn parse_usage(usage_val: Option<&Value>) -> Usage {
     }
 }
 
-#[derive(Debug, Default)]
-struct ToolTurnCache {
-    order: VecDeque<String>,
-    map: HashMap<String, Vec<Value>>,
-}
-
-impl ToolTurnCache {
-    fn get(&self, id: &str) -> Option<&Vec<Value>> {
-        self.map.get(id)
-    }
-
-    fn insert_turn(&mut self, blocks: Vec<Value>, calls: &[ToolCall]) {
-        for call in calls {
-            if self.map.contains_key(&call.id) {
-                self.order.retain(|x| x != &call.id);
-            }
-            self.order.push_back(call.id.clone());
-            self.map.insert(call.id.clone(), blocks.clone());
-        }
-        while self.map.len() > TOOL_TURN_CACHE_SIZE {
-            if let Some(oldest) = self.order.pop_front() {
-                self.map.remove(&oldest);
-            } else {
-                break;
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AnthropicConfig {
     pub model: String,
     pub api_key_env: Option<String>,
@@ -119,6 +77,12 @@ pub struct AnthropicConfig {
     pub env_override: Option<BTreeMap<String, String>>,
 }
 
+impl std::fmt::Debug for AnthropicConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnthropicConfig").finish_non_exhaustive()
+    }
+}
+
 impl AnthropicConfig {
     #[must_use]
     pub fn new(model: impl Into<String>) -> Self {
@@ -128,7 +92,8 @@ impl AnthropicConfig {
             base_url_env: None,
             cache_namespace: None,
             allow_custom_endpoint: false,
-            max_retries: 4,
+            // SPEC-v5.2 §7.4: no adapter-internal retries; the runner owns the retry cap.
+            max_retries: 0,
             timeout_s: 600.0,
             retry_base_delay_s: 0.5,
             env_override: None,
@@ -142,7 +107,6 @@ pub struct AnthropicProvider {
     kind: &'static str,
     resolved_api_key_env: Option<String>,
     base_url: Option<String>,
-    tool_turns: Mutex<ToolTurnCache>,
     client: OnceLock<Result<reqwest::Client, String>>,
 }
 
@@ -167,7 +131,7 @@ impl AnthropicProvider {
         let base_url =
             resolve_base_url(config.base_url_env.as_deref(), config.env_override.as_ref());
         if kind == "anthropic"
-            && !is_vendor_endpoint(base_url.as_deref())
+            && !is_vendor_host(base_url.as_deref(), VENDOR_HOST)
             && !config.allow_custom_endpoint
         {
             return Err(
@@ -180,7 +144,6 @@ impl AnthropicProvider {
             kind,
             resolved_api_key_env,
             base_url,
-            tool_turns: Mutex::new(ToolTurnCache::default()),
             client: OnceLock::new(),
         })
     }
@@ -196,22 +159,15 @@ impl AnthropicProvider {
     }
 
     fn get_env(&self, name: &str) -> Option<String> {
-        if let Some(ref map) = self.config.env_override {
-            map.get(name).cloned()
-        } else {
-            std::env::var(name).ok()
-        }
+        env_var(self.config.env_override.as_ref(), name)
     }
 
-    fn redaction_env_names(&self) -> Vec<&str> {
-        let mut names = Vec::new();
-        if let Some(ref k) = self.resolved_api_key_env {
-            names.push(k.as_str());
-        }
-        if let Some(ref b) = self.config.base_url_env {
-            names.push(b.as_str());
-        }
-        names
+    fn redactor(&self) -> Redactor<'_> {
+        Redactor::new(
+            self.config.env_override.as_ref(),
+            self.resolved_api_key_env.as_deref(),
+            self.config.base_url_env.as_deref(),
+        )
     }
 
     #[must_use]
@@ -227,7 +183,7 @@ impl AnthropicProvider {
         );
         params.insert(
             "messages".to_string(),
-            Value::Array(self.api_messages(&request.messages)),
+            Value::Array(Self::api_messages(&request.messages)),
         );
 
         if !request.system.is_empty() {
@@ -244,39 +200,11 @@ impl AnthropicProvider {
         }
 
         let mut output_config = Map::new();
-        if let Some(ref schema) = request.output_schema {
-            let mut fmt = Map::new();
-            fmt.insert("type".to_string(), Value::String("json_schema".to_string()));
-            fmt.insert("schema".to_string(), Value::Object(schema.clone()));
-            output_config.insert("format".to_string(), Value::Object(fmt));
-        }
         if let Some(ref effort) = request.params.effort {
             output_config.insert("effort".to_string(), Value::String(effort.clone()));
         }
         if !output_config.is_empty() {
             params.insert("output_config".to_string(), Value::Object(output_config));
-        }
-
-        if !request.tools.is_empty() {
-            let tools = request
-                .tools
-                .iter()
-                .map(|tool| {
-                    let mut m = Map::new();
-                    m.insert("name".to_string(), Value::String(tool.name.clone()));
-                    m.insert(
-                        "description".to_string(),
-                        Value::String(tool.description.clone()),
-                    );
-                    m.insert(
-                        "input_schema".to_string(),
-                        Value::Object(tool.input_schema.clone()),
-                    );
-                    m.insert("strict".to_string(), Value::Bool(true));
-                    Value::Object(m)
-                })
-                .collect();
-            params.insert("tools".to_string(), Value::Array(tools));
         }
 
         if let Some(temp) = request.params.temperature
@@ -287,41 +215,28 @@ impl AnthropicProvider {
         params
     }
 
-    fn api_messages(&self, messages: &[Message]) -> Vec<Value> {
+    fn api_messages(messages: &[Message]) -> Vec<Value> {
         let mut api: Vec<Map<String, Value>> = Vec::new();
         for message in messages {
-            if message.role == Role::Assistant {
-                let mut m = Map::new();
-                m.insert("role".to_string(), Value::String("assistant".to_string()));
-                m.insert(
-                    "content".to_string(),
-                    Value::Array(self.assistant_content(message)),
-                );
-                api.push(m);
-                continue;
-            }
-            let block = if message.role == Role::Tool {
-                let mut b = Map::new();
-                b.insert("type".to_string(), Value::String("tool_result".to_string()));
-                b.insert(
-                    "tool_use_id".to_string(),
-                    message
-                        .tool_call_id
-                        .as_ref()
-                        .map_or(Value::Null, |id| Value::String(id.clone())),
-                );
-                b.insert(
-                    "content".to_string(),
-                    Value::String(message.content.clone()),
-                );
-                Value::Object(b)
-            } else {
+            let text_block = || {
                 let mut b = Map::new();
                 b.insert("type".to_string(), Value::String("text".to_string()));
                 b.insert("text".to_string(), Value::String(message.content.clone()));
                 Value::Object(b)
             };
-
+            if message.role == Role::Assistant {
+                let blocks = if message.content.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![text_block()]
+                };
+                let mut m = Map::new();
+                m.insert("role".to_string(), Value::String("assistant".to_string()));
+                m.insert("content".to_string(), Value::Array(blocks));
+                api.push(m);
+                continue;
+            }
+            let block = text_block();
             if let Some(last) = api.last_mut()
                 && last.get("role").and_then(Value::as_str) == Some("user")
                 && let Some(Value::Array(arr)) = last.get_mut("content")
@@ -335,31 +250,6 @@ impl AnthropicProvider {
             api.push(m);
         }
         api.into_iter().map(Value::Object).collect()
-    }
-
-    fn assistant_content(&self, message: &Message) -> Vec<Value> {
-        if !message.tool_calls.is_empty()
-            && let Ok(guard) = self.tool_turns.lock()
-            && let Some(original) = guard.get(&message.tool_calls[0].id)
-        {
-            return original.clone();
-        }
-        let mut blocks = Vec::new();
-        if !message.content.is_empty() {
-            let mut b = Map::new();
-            b.insert("type".to_string(), Value::String("text".to_string()));
-            b.insert("text".to_string(), Value::String(message.content.clone()));
-            blocks.push(Value::Object(b));
-        }
-        for call in &message.tool_calls {
-            let mut b = Map::new();
-            b.insert("type".to_string(), Value::String("tool_use".to_string()));
-            b.insert("id".to_string(), Value::String(call.id.clone()));
-            b.insert("name".to_string(), Value::String(call.name.clone()));
-            b.insert("input".to_string(), Value::Object(call.arguments.clone()));
-            blocks.push(Value::Object(b));
-        }
-        blocks
     }
 
     fn get_client(&self) -> Result<&reqwest::Client, String> {
@@ -412,17 +302,7 @@ impl AnthropicProvider {
     }
 
     fn fail(&self, message: &str, raw: Option<Map<String, Value>>) -> ModelResponse {
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        ModelResponse {
-            error: Some(redact(
-                &format!("{}: {message}", self.kind),
-                env_ref,
-                &names,
-            )),
-            raw: raw.map(|r| redact_diagnostics_map(&r, env_ref, &names)),
-            ..ModelResponse::default()
-        }
+        self.redactor().fail(self.kind, message, raw)
     }
 
     async fn complete_inner(&self, request: &ModelRequest) -> ModelResponse {
@@ -526,9 +406,21 @@ impl AnthropicProvider {
                                 }
                             }
                         } else {
-                            let val: Value = match serde_json::from_str(&text_body) {
-                                Ok(v) => v,
-                                Err(err) => {
+                            let val: Value = match parse_bounded_json(
+                                &text_body,
+                                MAX_RESPONSE_NODES,
+                                MAX_RESPONSE_DEPTH,
+                            ) {
+                                Ok((value, _)) => value,
+                                Err(BoundedJsonError::TooManyNodes | BoundedJsonError::TooDeep) => {
+                                    return self.fail(
+                                        "malformed response (response exceeds structural limits)",
+                                        None,
+                                    );
+                                }
+                                Err(BoundedJsonError::Invalid) => {
+                                    let err = serde_json::from_str::<Value>(&text_body)
+                                        .expect_err("bounded JSON scan rejected invalid JSON");
                                     let label =
                                         if err.to_string().contains("recursion limit exceeded") {
                                             "RecursionError"
@@ -550,7 +442,7 @@ impl AnthropicProvider {
                             }
                         };
 
-                        return match self.to_response(&msg_map, request, req_id.as_deref()) {
+                        return match self.to_response(&msg_map, req_id.as_deref()) {
                             Ok(r) => r,
                             Err(problem) => {
                                 self.fail(&format!("malformed response ({problem})"), None)
@@ -588,7 +480,6 @@ impl AnthropicProvider {
     fn to_response(
         &self,
         message: &Map<String, Value>,
-        request: &ModelRequest,
         header_request_id: Option<&str>,
     ) -> Result<ModelResponse, String> {
         let content = message
@@ -682,28 +573,19 @@ impl AnthropicProvider {
                 });
             }
         }
-        if !calls.is_empty() {
-            if let Ok(mut guard) = self.tool_turns.lock() {
-                guard.insert_turn(content.clone(), &calls);
-            }
-            if let Some(ref mut r) = response.raw {
-                r.insert(ASSISTANT_CONTENT_KEY.to_string(), Value::Array(content));
-            }
+        if !calls.is_empty()
+            && let Some(ref mut r) = response.raw
+        {
+            r.insert(ASSISTANT_CONTENT_KEY.to_string(), Value::Array(content));
         }
         response.tool_calls = calls;
 
-        if request.output_schema.is_some() && !texts.is_empty() {
-            response.text = Some(texts[0].clone());
-            response.parsed = load_object(&texts[0]);
+        let joined = texts.concat();
+        response.text = if joined.is_empty() {
+            None
         } else {
-            let joined = texts.concat();
-            response.text = if joined.is_empty() {
-                None
-            } else {
-                Some(joined)
-            };
-        }
-
+            Some(joined)
+        };
         Ok(response)
     }
 }
@@ -716,14 +598,6 @@ impl Provider for AnthropicProvider {
 
     fn model(&self) -> &str {
         &self.config.model
-    }
-
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.anthropic_api", "AnthropicProvider")
-    }
-
-    fn local_retry_limit(&self) -> Option<u32> {
-        Some(self.config.max_retries)
     }
 
     fn endpoint_identity(&self) -> String {
@@ -764,41 +638,23 @@ impl Provider for AnthropicProvider {
             );
             response.raw = Some(raw);
         }
-        let env_ref = self.config.env_override.as_ref();
-        let names = self.redaction_env_names();
-        if let Some(ref err) = response.error {
-            response.error = Some(redact(err, env_ref, &names));
-        }
-        if let Some(ref raw) = response.raw {
-            response.raw = Some(redact_diagnostics_map(raw, env_ref, &names));
-        }
+        self.redactor().response(&mut response);
         response
-    }
-
-    fn remember_response(&self, response: &ModelResponse) {
-        if response.tool_calls.is_empty() {
-            return;
-        }
-        let Some(Value::Array(blocks)) = response
-            .raw
-            .as_ref()
-            .and_then(|r| r.get(ASSISTANT_CONTENT_KEY))
-        else {
-            return;
-        };
-        let valid: Vec<Value> = blocks.iter().filter(|b| b.is_object()).cloned().collect();
-        if !valid.is_empty()
-            && let Ok(mut guard) = self.tool_turns.lock()
-        {
-            guard.insert_turn(valid, &response.tool_calls);
-        }
     }
 }
 
 fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
+    assemble_sse_message_with_limit(body, MAX_RESPONSE_NODES)
+}
+
+fn assemble_sse_message_with_limit(
+    body: &str,
+    max_response_nodes: usize,
+) -> Result<Map<String, Value>, String> {
     let mut message: Option<Map<String, Value>> = None;
     let mut blocks: Vec<Map<String, Value>> = Vec::new();
     let mut partial_json: HashMap<usize, String> = HashMap::new();
+    let mut retained_nodes = 0usize;
 
     for line in body.lines() {
         let Some(data) = line.strip_prefix("data: ") else {
@@ -807,63 +663,79 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
         if data == "[DONE]" {
             continue;
         }
-        let event = load_object(data).ok_or_else(|| "invalid SSE JSON event".to_string())?;
+        let (event_value, _) = parse_bounded_json(data, max_response_nodes, MAX_RESPONSE_DEPTH)
+            .map_err(|error| match error {
+                BoundedJsonError::TooManyNodes | BoundedJsonError::TooDeep => {
+                    "SSE response exceeds structural limits".to_string()
+                }
+                BoundedJsonError::Invalid => "invalid SSE JSON event".to_string(),
+            })?;
+        let Some(event) = event_value.as_object() else {
+            return Err("invalid SSE JSON event".to_string());
+        };
         match event.get("type").and_then(Value::as_str) {
             Some("message_start") => {
-                if let Some(Value::Object(m)) = event.get("message") {
+                if let Some(message_value) = event.get("message").filter(|v| v.is_object()) {
+                    if message.is_some() {
+                        return Err("duplicate SSE message_start event".to_string());
+                    }
+                    retained_nodes =
+                        value_node_count(message_value, max_response_nodes, MAX_RESPONSE_DEPTH)
+                            .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+                    let Value::Object(m) = message_value else {
+                        return Err("invalid SSE message_start event".to_string());
+                    };
+                    if let Some(usage) = m.get("usage") {
+                        value_node_count(usage, MAX_USAGE_NODES, MAX_USAGE_DEPTH)
+                            .map_err(|_| "SSE usage exceeds structural limits".to_string())?;
+                    }
                     message = Some(m.clone());
                 }
             }
             Some("content_block_start") => {
-                if let Some(Value::Object(cb)) = event.get("content_block") {
+                if let Some(block_value) = event.get("content_block").filter(|v| v.is_object()) {
+                    if blocks.len() >= max_response_nodes {
+                        return Err("SSE response exceeds structural limits".to_string());
+                    }
+                    let block_nodes = value_node_count(
+                        block_value,
+                        max_response_nodes.saturating_sub(retained_nodes),
+                        MAX_RESPONSE_DEPTH,
+                    )
+                    .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+                    retained_nodes = retained_nodes.saturating_add(block_nodes);
+                    let Value::Object(cb) = block_value else {
+                        return Err("invalid SSE content block".to_string());
+                    };
                     blocks.push(cb.clone());
                 }
             }
             Some("content_block_delta") => {
-                let idx = event
-                    .get("index")
-                    .and_then(Value::as_u64)
-                    .map(|u| u as usize)
-                    .unwrap_or_else(|| blocks.len().saturating_sub(1));
-                if let (Some(block), Some(Value::Object(delta))) =
-                    (blocks.get_mut(idx), event.get("delta"))
+                let idx = match event.get("index") {
+                    Some(index) => index.as_u64().and_then(|value| usize::try_from(value).ok()),
+                    None => Some(blocks.len().saturating_sub(1)),
+                };
+                if let Some(idx) = idx
+                    && let (Some(block), Some(Value::Object(delta))) =
+                        (blocks.get_mut(idx), event.get("delta"))
                 {
                     match delta.get("type").and_then(Value::as_str) {
                         Some("text_delta") => {
                             if let Some(t) = delta.get("text").and_then(Value::as_str) {
-                                let cur = block
-                                    .get("text")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string();
-                                block
-                                    .insert("text".to_string(), Value::String(format!("{cur}{t}")));
+                                retained_nodes +=
+                                    usize::from(append_string_field(block, "text", t));
                             }
                         }
                         Some("thinking_delta") => {
                             if let Some(t) = delta.get("thinking").and_then(Value::as_str) {
-                                let cur = block
-                                    .get("thinking")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string();
-                                block.insert(
-                                    "thinking".to_string(),
-                                    Value::String(format!("{cur}{t}")),
-                                );
+                                retained_nodes +=
+                                    usize::from(append_string_field(block, "thinking", t));
                             }
                         }
                         Some("signature_delta") => {
                             if let Some(s) = delta.get("signature").and_then(Value::as_str) {
-                                let cur = block
-                                    .get("signature")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("")
-                                    .to_string();
-                                block.insert(
-                                    "signature".to_string(),
-                                    Value::String(format!("{cur}{s}")),
-                                );
+                                retained_nodes +=
+                                    usize::from(append_string_field(block, "signature", s));
                             }
                         }
                         Some("input_json_delta") => {
@@ -879,31 +751,50 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
                 if let Some(idx) = event
                     .get("index")
                     .and_then(Value::as_u64)
-                    .map(|u| u as usize)
+                    .and_then(|value| usize::try_from(value).ok())
                     && let Some(json_str) = partial_json.remove(&idx)
                     && let Some(block) = blocks.get_mut(idx)
-                    && let Some(parsed) = load_object(&json_str)
+                    && json_str.chars().count() <= crate::json::MAX_JSON_TEXT
+                    && let Ok((Value::Object(parsed), parsed_nodes)) = parse_bounded_json(
+                        &json_str,
+                        max_response_nodes.saturating_sub(retained_nodes),
+                        MAX_RESPONSE_DEPTH,
+                    )
                 {
+                    retained_nodes = retained_nodes.saturating_add(parsed_nodes);
                     block.insert("input".to_string(), Value::Object(parsed));
                 }
             }
             Some("message_delta") => {
                 if let Some(ref mut msg) = message {
                     if let Some(Value::Object(delta)) = event.get("delta") {
-                        for (k, v) in delta {
-                            msg.insert(k.clone(), v.clone());
-                        }
+                        merge_object(msg, delta, &mut retained_nodes, max_response_nodes)?;
                     }
                     if let Some(Value::Object(delta_usage)) = event.get("usage") {
-                        let mut existing = msg
-                            .get("usage")
-                            .and_then(Value::as_object)
-                            .cloned()
-                            .unwrap_or_default();
-                        for (k, v) in delta_usage {
-                            existing.insert(k.clone(), v.clone());
+                        let usage_value = event.get("usage").expect("matched usage object");
+                        value_node_count(usage_value, MAX_USAGE_NODES, MAX_USAGE_DEPTH)
+                            .map_err(|_| "SSE usage exceeds structural limits".to_string())?;
+                        if let Some(Value::Object(existing)) = msg.get_mut("usage") {
+                            merge_object(
+                                existing,
+                                delta_usage,
+                                &mut retained_nodes,
+                                max_response_nodes,
+                            )?;
+                            let usage_value =
+                                msg.get("usage").expect("usage object remains present");
+                            value_node_count(usage_value, MAX_USAGE_NODES, MAX_USAGE_DEPTH)
+                                .map_err(|_| "SSE usage exceeds structural limits".to_string())?;
+                        } else {
+                            let usage_nodes = value_node_count(
+                                usage_value,
+                                max_response_nodes.saturating_sub(retained_nodes),
+                                MAX_RESPONSE_DEPTH,
+                            )
+                            .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+                            retained_nodes = retained_nodes.saturating_add(usage_nodes);
+                            msg.insert("usage".to_string(), Value::Object(delta_usage.clone()));
                         }
-                        msg.insert("usage".to_string(), Value::Object(existing));
                     }
                 }
             }
@@ -921,6 +812,9 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
     }
 
     let mut msg = message.ok_or_else(|| "missing message_start event".to_string())?;
+    if retained_nodes >= max_response_nodes {
+        return Err("SSE response exceeds structural limits".to_string());
+    }
     msg.insert(
         "content".to_string(),
         Value::Array(blocks.into_iter().map(Value::Object).collect()),
@@ -928,17 +822,53 @@ fn assemble_sse_message(body: &str) -> Result<Map<String, Value>, String> {
     Ok(msg)
 }
 
+fn append_string_field(map: &mut Map<String, Value>, key: &str, suffix: &str) -> bool {
+    match map.entry(key.to_string()) {
+        serde_json::map::Entry::Vacant(entry) => {
+            entry.insert(Value::String(suffix.to_string()));
+            true
+        }
+        serde_json::map::Entry::Occupied(mut entry) => {
+            if let Value::String(value) = entry.get_mut() {
+                value.push_str(suffix);
+            }
+            false
+        }
+    }
+}
+
+fn merge_object(
+    target: &mut Map<String, Value>,
+    source: &Map<String, Value>,
+    retained_nodes: &mut usize,
+    max_nodes: usize,
+) -> Result<(), String> {
+    for (key, value) in source {
+        let old_nodes = target.get(key).map_or(0, |old| {
+            value_node_count(old, max_nodes, MAX_RESPONSE_DEPTH).unwrap_or(max_nodes)
+        });
+        let new_nodes = value_node_count(
+            value,
+            max_nodes.saturating_sub(retained_nodes.saturating_sub(old_nodes)),
+            MAX_RESPONSE_DEPTH,
+        )
+        .map_err(|_| "SSE response exceeds structural limits".to_string())?;
+        *retained_nodes = retained_nodes
+            .saturating_sub(old_nodes)
+            .saturating_add(new_nodes);
+        if *retained_nodes > max_nodes {
+            return Err("SSE response exceeds structural limits".to_string());
+        }
+        target.insert(key.clone(), value.clone());
+    }
+    Ok(())
+}
+
 fn resolve_base_url(
     base_url_env: Option<&str>,
     env_override: Option<&BTreeMap<String, String>>,
 ) -> Option<String> {
-    let get = |name: &str| -> Option<String> {
-        if let Some(map) = env_override {
-            map.get(name).cloned()
-        } else {
-            std::env::var(name).ok()
-        }
-    };
+    let get = |name: &str| env_var(env_override, name);
     if let Some(env_name) = base_url_env {
         let val = get(env_name).filter(|v| !v.is_empty())?;
         return Some(val.trim_end_matches('/').to_string());
@@ -949,16 +879,41 @@ fn resolve_base_url(
     Some(val.trim_end_matches('/').to_string())
 }
 
-fn status_error_class(status: u16) -> &'static str {
-    match status {
-        400 => "BadRequestError",
-        401 => "AuthenticationError",
-        403 => "PermissionDeniedError",
-        404 => "NotFoundError",
-        409 => "ConflictError",
-        422 => "UnprocessableEntityError",
-        429 => "RateLimitError",
-        500..=599 => "InternalServerError",
-        _ => "APIStatusError",
+#[cfg(test)]
+mod sse_security_tests {
+    use super::assemble_sse_message_with_limit;
+
+    #[test]
+    fn sse_events_share_a_preparse_node_budget_and_deltas_append_in_order() {
+        let mut body =
+            String::from("data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\"}}\n\n");
+        body.push_str(
+            "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+        );
+        for _ in 0..1_000 {
+            body.push_str(
+                "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}\n\n",
+            );
+        }
+        let assembled = assemble_sse_message_with_limit(&body, 64).unwrap();
+        assert_eq!(
+            assembled["content"][0]["text"].as_str().unwrap(),
+            "x".repeat(1_000)
+        );
+
+        let invalid_index = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\"}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":18446744073709551615,\"delta\":{\"type\":\"text_delta\",\"text\":\"ignored\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":\"bad\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ignored\"}}\n\n",
+        );
+        let assembled = assemble_sse_message_with_limit(invalid_index, 64).unwrap();
+        assert_eq!(assembled["content"][0]["text"], "");
+
+        let small_budget = "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\"}}\n\n";
+        assert!(matches!(
+            assemble_sse_message_with_limit(small_budget, 2),
+            Err(message) if message == "SSE response exceeds structural limits"
+        ));
     }
 }

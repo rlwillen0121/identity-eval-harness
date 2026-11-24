@@ -1,6 +1,6 @@
 //! `agy -p` (Google Antigravity CLI, headless) provider.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -11,16 +11,22 @@ use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
-    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, NEUTRAL_SYSTEM,
-    as_dict, as_int, parse_jsonl, read_sidecar_text, render_transcript, structured_text,
+    CliAdapter, CliConfig, CliProvider, Invocation, Isolation, NEUTRAL_SYSTEM, as_dict, as_int,
+    read_sidecar_text, render_transcript, structured_text, visit_jsonl,
 };
 use crate::subprocess::{ProcessResult, user_home_dir};
 
 pub const AGENT_NAME: &str = "identitybench";
 pub const AGENT_FILE: &str = ".gemini/config/agents/identitybench/agent.md";
-pub const SCHEMA_FILE: &str = "output_schema.json";
 pub const LOG_FILE: &str = "agy.log";
-pub const STRUCTURED_OUTPUT_TOOL: &str = "finish";
+/// Largest user message, in UTF-8 bytes, that `agy` delivers unmodified. The CLI truncates a
+/// longer user message client-side to about `191_985` bytes and appends
+/// `\n<truncated N bytes>`, so the adapter refuses to send one instead (`SPEC-v5.2` §7.2: silent
+/// truncation is forbidden). The uniform `176_000`-byte request ceiling keeps every canonical
+/// request below this bound; the guard is a defensive invariant.
+pub const AGY_MAX_USER_MESSAGE_BYTES: usize = 191_000;
+/// `ModelResponse::raw` `error_code` of a request refused by the capacity guard.
+pub const AGY_CAPACITY_ERROR_CODE: &str = "CLI_MESSAGE_CAPACITY_EXCEEDED";
 
 const RAW_KEYS: &[&str] = &["status", "num_turns", "duration_seconds", "conversation_id"];
 
@@ -29,13 +35,9 @@ static RESOLVED_RE: LazyLock<Regex> = LazyLock::new(|| {
         .expect("valid resolved regex")
 });
 
+/// The private agent file: no tools, no inherited components, then the system prompt.
 #[must_use]
-pub fn agent_definition(system: &str, structured: bool) -> String {
-    let tools = if structured {
-        format!("[{STRUCTURED_OUTPUT_TOOL}]")
-    } else {
-        "[]".to_string()
-    };
+pub fn agent_definition(system: &str) -> String {
     let front = [
         "---",
         &format!("name: {AGENT_NAME}"),
@@ -45,7 +47,7 @@ pub fn agent_definition(system: &str, structured: bool) -> String {
         "excludeDefaultComponents: true",
         "inheritCustomizations: false",
         "inheritMcp: false",
-        &format!("tools: {tools}"),
+        "tools: []",
         "---",
     ]
     .join("\n");
@@ -63,52 +65,62 @@ pub fn served_model(log_text: &str) -> Option<String> {
     found
 }
 
-fn is_structured_request(request: &ModelRequest) -> bool {
-    request.output_schema.is_some() && request.schema_name != ACTION_SCHEMA_NAME
-}
-
 #[must_use]
 pub fn recover_completed_agent_text(events: &[Map<String, Value>]) -> Option<String> {
-    let mut chunks_by_step: HashMap<i64, String> = HashMap::new();
-    let mut done_steps: HashSet<i64> = HashSet::new();
-    let mut last_step_index: Option<i64> = None;
-
+    let final_step_index = events.iter().rev().find_map(agent_response_step_index)?;
+    let mut text = CompletedStepText::default();
     for event in events {
-        if event.get("event").and_then(Value::as_str) != Some("step_update") {
-            continue;
-        }
-        let su = as_dict(event.get("step_update"));
-        let Some(step_index) = su.get("step_index").and_then(Value::as_i64) else {
-            continue;
-        };
-        if su.get("step_type").and_then(Value::as_str) != Some("agent_response") {
-            continue;
-        }
-        last_step_index = Some(step_index);
-        if let Some(delta) = su.get("text_delta").and_then(Value::as_str) {
-            chunks_by_step
-                .entry(step_index)
-                .or_default()
-                .push_str(delta);
-        }
-        if su.get("state").and_then(Value::as_str) == Some("DONE") {
-            done_steps.insert(step_index);
+        if agent_response_step_index(event) == Some(final_step_index) {
+            text.append(event);
         }
     }
+    text.finish()
+}
 
-    let last_idx = last_step_index?;
-    if !done_steps.contains(&last_idx) {
+fn agent_response_step_index(event: &Map<String, Value>) -> Option<i64> {
+    if event.get("event").and_then(Value::as_str) != Some("step_update") {
         return None;
     }
-    let candidate = chunks_by_step
-        .get(&last_idx)
-        .map(|s| s.trim())
-        .unwrap_or("");
-    if candidate.is_empty() {
-        None
-    } else {
-        Some(candidate.to_string())
+    let update = event.get("step_update")?.as_object()?;
+    if update.get("step_type").and_then(Value::as_str) != Some("agent_response") {
+        return None;
     }
+    update.get("step_index").and_then(Value::as_i64)
+}
+
+#[derive(Default)]
+struct CompletedStepText {
+    chunks: String,
+    done: bool,
+}
+
+impl CompletedStepText {
+    fn append(&mut self, event: &Map<String, Value>) {
+        let Some(update) = event.get("step_update").and_then(Value::as_object) else {
+            return;
+        };
+        if let Some(delta) = update.get("text_delta").and_then(Value::as_str) {
+            self.chunks.push_str(delta);
+        }
+        if update.get("state").and_then(Value::as_str) == Some("DONE") {
+            self.done = true;
+        }
+    }
+
+    fn finish(self) -> Option<String> {
+        self.done.then_some(self.chunks)
+    }
+}
+
+fn recover_agent_text_from_jsonl(stdout: &str, final_step_index: Option<i64>) -> Option<String> {
+    let final_step_index = final_step_index?;
+    let mut text = CompletedStepText::default();
+    visit_jsonl(stdout, |event| {
+        if agent_response_step_index(event) == Some(final_step_index) {
+            text.append(event);
+        }
+    });
+    text.finish()
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -117,10 +129,6 @@ pub struct AgyAdapter;
 impl CliAdapter for AgyAdapter {
     fn kind(&self) -> &'static str {
         "agy_cli"
-    }
-
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.agy_cli", "AgyCliProvider")
     }
 
     fn env_drop(&self) -> &'static [&'static str] {
@@ -172,6 +180,19 @@ impl CliAdapter for AgyAdapter {
         vec![io_dir.join(LOG_FILE)]
     }
 
+    fn preflight(&self, request: &ModelRequest) -> Result<(), (&'static str, String)> {
+        let bytes = render_transcript(&request.messages).len();
+        if bytes > AGY_MAX_USER_MESSAGE_BYTES {
+            return Err((
+                AGY_CAPACITY_ERROR_CODE,
+                format!(
+                    "user message is {bytes} bytes, over the {AGY_MAX_USER_MESSAGE_BYTES}-byte agy capacity guard; refusing to send a message the CLI would truncate"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     fn build(
         &self,
         config: &CliConfig,
@@ -190,14 +211,6 @@ impl CliAdapter for AgyAdapter {
         } else {
             &request.system
         };
-        let structured = is_structured_request(request);
-        if request.output_schema.is_some() && !structured {
-            notes.insert(
-                "json_schema".to_string(),
-                Value::String("withheld (JSON action protocol turn)".to_string()),
-            );
-        }
-
         let mut msg_inner = Map::new();
         msg_inner.insert("role".to_string(), Value::String("user".to_string()));
         msg_inner.insert(
@@ -222,14 +235,6 @@ impl CliAdapter for AgyAdapter {
             "--log-file".to_string(),
             io_dir.join(LOG_FILE).to_string_lossy().into_owned(),
         ];
-        if structured && let Some(schema) = &request.output_schema {
-            let schema_path = io_dir.join(SCHEMA_FILE);
-            let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                .unwrap_or_else(|_| "{}".to_string());
-            let _ = fs::write(&schema_path, schema_json);
-            argv.push("--json-schema".to_string());
-            argv.push(schema_path.to_string_lossy().into_owned());
-        }
         if let Some(eff) = effort {
             argv.push("--effort".to_string());
             argv.push(eff.to_string());
@@ -247,7 +252,7 @@ impl CliAdapter for AgyAdapter {
         .unwrap_or_else(|_| "{}".to_string());
 
         let mut home_files = BTreeMap::new();
-        home_files.insert(AGENT_FILE.to_string(), agent_definition(system, structured));
+        home_files.insert(AGENT_FILE.to_string(), agent_definition(system));
 
         Invocation {
             argv,
@@ -265,14 +270,37 @@ impl CliAdapter for AgyAdapter {
         io_dir: &Path,
     ) -> ModelResponse {
         let helper = CliProvider::new(*self, CliConfig::new("", "", 0.0));
-        let events = parse_jsonl(&result.stdout);
-        let results: Vec<Map<String, Value>> = events
-            .iter()
-            .filter(|e| e.get("event").and_then(Value::as_str) == Some("result"))
-            .map(|e| as_dict(e.get("result")))
-            .collect();
+        let mut result_payload: Option<Map<String, Value>> = None;
+        let mut final_step_index = None;
+        let mut native_tool_events: BTreeSet<String> = BTreeSet::new();
+        visit_jsonl(&result.stdout, |event| {
+            if let Some(step_index) = agent_response_step_index(event) {
+                final_step_index = Some(step_index);
+            }
+            if event.get("event").and_then(Value::as_str) == Some("step_update")
+                && let Some(step_type) = event
+                    .get("step_update")
+                    .and_then(Value::as_object)
+                    .and_then(|u| u.get("step_type"))
+                    .and_then(Value::as_str)
+                && matches!(
+                    step_type,
+                    "command_execution"
+                        | "file_change"
+                        | "mcp_tool_call"
+                        | "tool_call"
+                        | "function_call"
+                        | "web_search"
+                )
+            {
+                native_tool_events.insert(step_type.to_owned());
+            }
+            if event.get("event").and_then(Value::as_str) == Some("result") {
+                result_payload = Some(as_dict(event.get("result")));
+            }
+        });
 
-        if results.is_empty() {
+        let Some(payload) = result_payload.as_ref() else {
             let mut failed = helper.fail("no result event on stdout", Some(result), Some(request));
             let mut meta = Map::new();
             meta.insert("cli_buffered_error".to_string(), Value::Bool(true));
@@ -286,9 +314,8 @@ impl CliAdapter for AgyAdapter {
             );
             failed.raw = Some(meta);
             return failed;
-        }
+        };
 
-        let payload = &results[results.len() - 1];
         let usage_in = as_dict(payload.get("usage"));
         let cache_read = as_int(usage_in.get("cache_read_tokens"));
         let parsed = payload
@@ -306,6 +333,16 @@ impl CliAdapter for AgyAdapter {
         }
         if let Some(ct) = cli_text {
             raw.insert("cli_text".to_string(), Value::String(ct));
+        }
+        if !native_tool_events.is_empty() {
+            raw.insert(
+                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                Value::Bool(true),
+            );
+            raw.insert(
+                crate::base::NATIVE_TOOL_EVENTS.to_owned(),
+                Value::Array(native_tool_events.into_iter().map(Value::String).collect()),
+            );
         }
 
         let log_path = io_dir.join(LOG_FILE);
@@ -333,7 +370,6 @@ impl CliAdapter for AgyAdapter {
             ..ModelResponse::default()
         };
 
-        let structured = is_structured_request(request);
         let status = payload
             .get("status")
             .and_then(Value::as_str)
@@ -341,12 +377,12 @@ impl CliAdapter for AgyAdapter {
 
         if status != "SUCCESS" {
             let err_str = payload.get("error").and_then(Value::as_str).unwrap_or("");
-            if !structured
-                && result.returncode == 0
+            if result.returncode == 0
                 && err_str
                     .to_lowercase()
                     .contains("function call is empty - no input to parse")
-                && let Some(recovered) = recover_completed_agent_text(&events)
+                && let Some(recovered) =
+                    recover_agent_text_from_jsonl(&result.stdout, final_step_index)
             {
                 response.text = Some(recovered);
                 response.parsed = None;
@@ -431,8 +467,3 @@ impl CliAdapter for AgyAdapter {
 }
 
 pub type AgyCliProvider = CliProvider<AgyAdapter>;
-
-#[must_use]
-pub fn new_agy_provider(model: impl Into<String>) -> AgyCliProvider {
-    CliProvider::new(AgyAdapter, CliConfig::new(model, "agy", 900.0))
-}

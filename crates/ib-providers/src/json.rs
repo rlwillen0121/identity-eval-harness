@@ -5,6 +5,8 @@ use std::sync::LazyLock;
 
 use ib_core::pyjson::{PyNumber, classify_number};
 use regex::Regex;
+use serde::Deserializer;
+use serde::de::{self, DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Value};
 
 use crate::base::{ModelResponse, ToolCall, Usage};
@@ -18,6 +20,173 @@ pub const MAX_USAGE_NODES: usize = 4_096;
 pub const MAX_USAGE_STRING: usize = 16_384;
 const SCAN_WORK_BUDGET: isize = 256 * (MAX_JSON_TEXT as isize);
 pub const USAGE_MARKER: &str = "__identitybench_usage_marker__";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BoundedJsonError {
+    TooManyNodes,
+    TooDeep,
+    Invalid,
+}
+
+struct JsonNodeBudget {
+    nodes: usize,
+    max_nodes: usize,
+    max_depth: usize,
+    exceeded: Option<BoundedJsonError>,
+}
+
+struct JsonNodeSeed<'a> {
+    budget: &'a mut JsonNodeBudget,
+    depth: usize,
+}
+
+struct JsonNodeVisitor<'a> {
+    budget: &'a mut JsonNodeBudget,
+    depth: usize,
+}
+
+impl<'de> DeserializeSeed<'de> for JsonNodeSeed<'_> {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if self.depth > self.budget.max_depth {
+            self.budget.exceeded = Some(BoundedJsonError::TooDeep);
+            return Err(de::Error::custom("JSON nesting exceeds response limit"));
+        }
+        if self.budget.nodes >= self.budget.max_nodes {
+            self.budget.exceeded = Some(BoundedJsonError::TooManyNodes);
+            return Err(de::Error::custom("JSON nodes exceed response limit"));
+        }
+        self.budget.nodes += 1;
+        deserializer.deserialize_any(JsonNodeVisitor {
+            budget: self.budget,
+            depth: self.depth,
+        })
+    }
+}
+
+impl<'de> Visitor<'de> for JsonNodeVisitor<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+
+    fn visit_bool<E: de::Error>(self, _value: bool) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_i64<E: de::Error>(self, _value: i64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_u64<E: de::Error>(self, _value: u64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_f64<E: de::Error>(self, _value: f64) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_str<E: de::Error>(self, _value: &str) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_string<E: de::Error>(self, _value: String) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(())
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        while seq
+            .next_element_seed(JsonNodeSeed {
+                budget: &mut *self.budget,
+                depth: self.depth + 1,
+            })?
+            .is_some()
+        {}
+        Ok(())
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        while map.next_key::<IgnoredAny>()?.is_some() {
+            map.next_value_seed(JsonNodeSeed {
+                budget: &mut *self.budget,
+                depth: self.depth + 1,
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// Parse JSON without first building a DOM, then parse it into a `Value` only if it stays within
+/// the response's node and nesting limits. The returned count supports aggregate SSE budgets.
+pub(crate) fn parse_bounded_json(
+    text: &str,
+    max_nodes: usize,
+    max_depth: usize,
+) -> Result<(Value, usize), BoundedJsonError> {
+    let mut budget = JsonNodeBudget {
+        nodes: 0,
+        max_nodes,
+        max_depth,
+        exceeded: None,
+    };
+    let mut deserializer = serde_json::Deserializer::from_str(text);
+    let scan = JsonNodeSeed {
+        budget: &mut budget,
+        depth: 0,
+    }
+    .deserialize(&mut deserializer);
+    if let Some(error) = budget.exceeded {
+        return Err(error);
+    }
+    scan.map_err(|_| BoundedJsonError::Invalid)?;
+    deserializer.end().map_err(|_| BoundedJsonError::Invalid)?;
+    let value = serde_json::from_str(text).map_err(|_| BoundedJsonError::Invalid)?;
+    Ok((value, budget.nodes))
+}
+
+/// Count already-decoded JSON value nodes iteratively while enforcing structure limits.
+pub(crate) fn value_node_count(
+    value: &Value,
+    max_nodes: usize,
+    max_depth: usize,
+) -> Result<usize, BoundedJsonError> {
+    let mut pending = vec![(value, 0usize)];
+    let mut nodes = 0usize;
+    while let Some((current, depth)) = pending.pop() {
+        if depth > max_depth {
+            return Err(BoundedJsonError::TooDeep);
+        }
+        if nodes >= max_nodes {
+            return Err(BoundedJsonError::TooManyNodes);
+        }
+        nodes += 1;
+        match current {
+            Value::Array(values) => {
+                pending.extend(values.iter().map(|child| (child, depth + 1)));
+            }
+            Value::Object(values) => {
+                pending.extend(values.values().map(|child| (child, depth + 1)));
+            }
+            _ => {}
+        }
+    }
+    Ok(nodes)
+}
 
 static FENCE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?s)```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\r?\n(.*?)```").expect("valid fence regex")
@@ -468,6 +637,16 @@ pub(crate) fn sanitize_response_post_usage(
     kind: &str,
 ) -> ModelResponse {
     let mut malformed = false;
+    // Keep the size and digest of an oversized visible text so a runner can classify it as the
+    // model's own output (`SPEC-v5.2` §3.1 `OUTPUT_LIMIT`) rather than a transport failure.
+    let oversized_text = response.text.as_ref().and_then(|text| {
+        (text.chars().count() > MAX_JSON_TEXT).then(|| {
+            (
+                text.len(),
+                hex::encode(<sha2::Sha256 as sha2::Digest>::digest(text.as_bytes())),
+            )
+        })
+    });
     for field in [
         &mut response.text,
         &mut response.served_model,
@@ -542,10 +721,20 @@ pub(crate) fn sanitize_response_post_usage(
         response.parsed = None;
         response.tool_calls.clear();
         response.error = Some(format!("{kind}: malformed response"));
+        if let Some((bytes, digest)) = oversized_text {
+            let raw = response.raw.get_or_insert_with(Map::new);
+            raw.insert(OVERSIZED_TEXT_BYTES.to_string(), Value::from(bytes as u64));
+            raw.insert(OVERSIZED_TEXT_SHA256.to_string(), Value::String(digest));
+        }
     }
 
     response
 }
+
+/// `ModelResponse::raw` key carrying the UTF-8 byte length of a dropped oversized visible text.
+pub const OVERSIZED_TEXT_BYTES: &str = "oversized_text_bytes";
+/// `ModelResponse::raw` key carrying the SHA-256 (hex) of a dropped oversized visible text.
+pub const OVERSIZED_TEXT_SHA256: &str = "oversized_text_sha256";
 
 /// `text` decoded as one JSON object, or `None` (invalid, not an object, or too deep).
 #[must_use]
@@ -553,8 +742,11 @@ pub fn load_object(text: &str) -> Option<Map<String, Value>> {
     if text.chars().count() > MAX_JSON_TEXT {
         return None;
     }
-    match serde_json::from_str::<Value>(text) {
-        Ok(Value::Object(map)) => Some(map),
+    match parse_bounded_json(text, MAX_RESPONSE_NODES, MAX_RESPONSE_DEPTH)
+        .ok()
+        .map(|(value, _)| value)
+    {
+        Some(Value::Object(map)) => Some(map),
         _ => None,
     }
 }
@@ -770,4 +962,35 @@ pub fn extract_json_object(
     }
 
     objects.into_iter().last()
+}
+
+#[cfg(test)]
+mod bounded_parse_tests {
+    use super::{BoundedJsonError, MAX_JSON_TEXT, parse_bounded_json};
+    use serde_json::Value;
+
+    #[test]
+    fn preparse_budget_limits_nodes_and_depth_but_not_text_bytes() {
+        assert!(matches!(
+            parse_bounded_json(r#"{"items":[1,2]}"#, 3, 64),
+            Err(BoundedJsonError::TooManyNodes)
+        ));
+        assert!(matches!(
+            parse_bounded_json("[[[]]]", 10, 1),
+            Err(BoundedJsonError::TooDeep)
+        ));
+        assert!(matches!(
+            parse_bounded_json("{invalid", 10, 64),
+            Err(BoundedJsonError::Invalid)
+        ));
+
+        let visible = "x".repeat(MAX_JSON_TEXT + 1);
+        let input = serde_json::json!({"text": visible}).to_string();
+        let (value, nodes) = parse_bounded_json(&input, 2, 1).unwrap();
+        assert_eq!(nodes, 2);
+        assert_eq!(
+            value.get("text").and_then(Value::as_str).unwrap().len(),
+            MAX_JSON_TEXT + 1
+        );
+    }
 }

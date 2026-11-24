@@ -30,7 +30,6 @@ pub(crate) fn provider_timeout(seconds: f64) -> Result<Duration, &'static str> {
 pub enum Role {
     User,
     Assistant,
-    Tool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,14 +46,11 @@ pub struct ToolCall {
     pub arguments: Map<String, Value>,
 }
 
+/// One text message of a request. The v5.2 runtime sends exactly one `User` message per call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub role: Role,
     pub content: String,
-    #[serde(default)]
-    pub tool_calls: Vec<ToolCall>,
-    #[serde(default)]
-    pub tool_call_id: Option<String>,
 }
 
 impl Message {
@@ -63,28 +59,14 @@ impl Message {
         Self {
             role: Role::User,
             content: content.into(),
-            tool_calls: Vec::new(),
-            tool_call_id: None,
         }
     }
 
     #[must_use]
-    pub fn assistant(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+    pub fn assistant(content: impl Into<String>) -> Self {
         Self {
             role: Role::Assistant,
             content: content.into(),
-            tool_calls,
-            tool_call_id: None,
-        }
-    }
-
-    #[must_use]
-    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self {
-            role: Role::Tool,
-            content: content.into(),
-            tool_calls: Vec::new(),
-            tool_call_id: Some(tool_call_id.into()),
         }
     }
 }
@@ -108,30 +90,32 @@ impl Default for GenerationParams {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A model call: a system prompt, text messages and generation parameters. Requests carry no
+/// native tools and no output schema (`SPEC-v5.2` §7.1).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelRequest {
     pub system: String,
     pub messages: Vec<Message>,
-    pub output_schema: Option<Map<String, Value>>,
-    pub schema_name: String,
-    pub tools: Vec<ToolSpec>,
     pub params: GenerationParams,
 }
 
-impl Default for ModelRequest {
-    fn default() -> Self {
-        Self {
-            system: String::new(),
-            messages: Vec::new(),
-            output_schema: None,
-            schema_name: "decision".to_string(),
-            tools: Vec::new(),
-            params: GenerationParams::default(),
-        }
-    }
-}
+/// Internal replay key for the transport eligibility check. Never sent to the model.
+pub const NATIVE_TOOL_PROBE_KEY: &str = "probe_native_tool";
+/// Adapter-local evidence of native tool activity, without storing commands or arguments.
+pub const NATIVE_TOOL_ACTIVITY: &str = "native_tool_activity";
+/// Structured native-tool event kinds observed by the adapter, without commands or arguments.
+pub const NATIVE_TOOL_EVENTS: &str = "native_tool_events";
 
 impl ModelRequest {
+    #[must_use]
+    pub fn is_native_tool_probe(&self) -> bool {
+        self.params
+            .extra
+            .get(crate::replay::CACHE_KEY_PARAM)
+            .and_then(Value::as_str)
+            == Some(NATIVE_TOOL_PROBE_KEY)
+    }
+
     #[must_use]
     pub fn new(system: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
@@ -275,6 +259,28 @@ impl ProviderError {
     }
 }
 
+/// How a transport receives the system prompt (`SPEC-v5.2` §7.1).
+///
+/// `Native` transports deliver it through a dedicated system-instruction channel. `Inline`
+/// transports have none, so the adapter prefixes the single user message with the canonical
+/// `=== SYSTEM ===` block ([`crate::cli::prepend_system`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SystemChannel {
+    Native,
+    Inline,
+}
+
+impl SystemChannel {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Inline => "inline",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderCapabilities {
     pub native_structured_output: bool,
@@ -304,53 +310,17 @@ pub trait Provider: Send + Sync {
     fn kind(&self) -> &str;
     fn model(&self) -> &str;
 
-    /// Exact Python `(module, class)` tuple for provider accounting parity.
-    fn python_type_identity(&self) -> (&'static str, &'static str);
-
-    /// Local retry limit configured on this adapter, if applicable to provider accounting.
-    fn local_retry_limit(&self) -> Option<u32> {
-        None
-    }
-
-    /// Whether this adapter can resume an interrupted native decode by consuming the exact
-    /// opaque checkpoint from the previous physical request. A generic passthrough field or a
-    /// provider's unverified `resumable` claim is not sufficient; implementations opting in must
-    /// preserve the checkpoint, logical response, effort, cap, and reservation as one chain.
-    fn supports_opaque_continuation(&self) -> bool {
-        false
-    }
-
-    /// Whether this adapter explicitly guarantees aggregate usage includes its upstream retries.
-    /// This is false unless an adapter or injected test double makes the declaration itself.
-    fn usage_includes_retries(&self) -> bool {
-        false
-    }
-
     /// Non-secret identity of where requests go (SPEC §11.4). Never includes keys or raw private URLs.
     fn endpoint_identity(&self) -> String;
 
     fn capabilities(&self) -> ProviderCapabilities;
 
+    /// Channel through which this transport receives `ModelRequest::system`.
+    fn system_channel(&self) -> SystemChannel {
+        SystemChannel::Native
+    }
+
     async fn complete(&self, request: &ModelRequest) -> ModelResponse;
-
-    /// Recover a known physical response without starting a second decode. Adapters that
-    /// cannot retrieve a response leave the partial-decode safeguard in force.
-    async fn retrieve_response(&self, _request_id: &str) -> Option<ModelResponse> {
-        None
-    }
-
-    /// Optional documented context-count reconciliation. A missing result leaves a provider
-    /// context rejection unexplained; the runner must not infer a confirmed model limit.
-    fn reconcile_context_count(
-        &self,
-        _request: &ModelRequest,
-        _response: &ModelResponse,
-    ) -> Option<Map<String, Value>> {
-        None
-    }
-
-    /// Optional hook for stateful providers (e.g., Anthropic thinking block replay cache).
-    fn remember_response(&self, _response: &ModelResponse) {}
 }
 
 /// Short stable hash of endpoint parts (base URL, reported revision, cache namespace).

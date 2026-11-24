@@ -8,7 +8,7 @@
 //! Captured stdout/stderr are capped at [`MAX_CAPTURE_BYTES`] per stream with [`TRUNCATION_MARKER`].
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -22,7 +22,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command as TokioCommand};
 use url::Url;
 
-pub const DEFAULT_MAX_RETRIES: u32 = 3;
 pub const DEFAULT_RETRY_BASE_DELAY_S: f64 = 2.0;
 pub const MAX_CAPTURE_BYTES: usize = 16 * 1024 * 1024;
 pub const TRUNCATION_MARKER: &str = "\n[identitybench: output truncated at 16 MiB]";
@@ -79,7 +78,7 @@ static HOME_USER_PATH_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(/(?:Users|home)/)[^/\s"'<>:,)]+"#).expect("valid user path regex")
 });
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Command {
     pub argv: Vec<String>,
     pub cwd: PathBuf,
@@ -88,7 +87,13 @@ pub struct Command {
     pub stdin: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl std::fmt::Debug for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Command").finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct ProcessResult {
     pub returncode: i32,
     pub stdout: String,
@@ -96,6 +101,17 @@ pub struct ProcessResult {
     pub duration_s: f64,
     pub timed_out: bool,
     pub launch_error: Option<String>,
+}
+
+impl std::fmt::Debug for ProcessResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProcessResult")
+            .field("returncode", &self.returncode)
+            .field("duration_s", &self.duration_s)
+            .field("timed_out", &self.timed_out)
+            .field("has_launch_error", &self.launch_error.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 #[async_trait]
@@ -278,6 +294,27 @@ pub async fn run_command(command: &Command) -> ProcessResult {
 }
 
 pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -> ProcessResult {
+    run_command_supervised(command, max_capture_bytes, None).await
+}
+
+/// Like [`run_command_with_cap`], but once the direct child has exited, wait at most `exit_grace`
+/// for its output pipes to close. A descendant that still holds an inherited pipe (a daemon or
+/// helper the CLI started) is then killed with the process group, and the result keeps the
+/// direct child's exit status and the output captured so far instead of waiting for the
+/// overall timeout. Used where only the direct child's output matters (`--version`).
+pub async fn run_command_with_exit_grace(
+    command: &Command,
+    max_capture_bytes: usize,
+    exit_grace: Duration,
+) -> ProcessResult {
+    run_command_supervised(command, max_capture_bytes, Some(exit_grace)).await
+}
+
+async fn run_command_supervised(
+    command: &Command,
+    max_capture_bytes: usize,
+    exit_grace: Option<Duration>,
+) -> ProcessResult {
     let start = Instant::now();
     if command.argv.is_empty() {
         return ProcessResult {
@@ -357,16 +394,39 @@ pub async fn run_command_with_cap(command: &Command, max_capture_bytes: usize) -
     let stdout_capture = Mutex::new(Capture::default());
     let stderr_capture = Mutex::new(Capture::default());
     let work = async {
-        let ((), (), ()) = tokio::join!(
-            drain_stream(stdout_pipe, max_capture_bytes, &stdout_capture),
-            drain_stream(stderr_pipe, max_capture_bytes, &stderr_capture),
-            async {
-                if let Some(bytes) = stdin_bytes {
-                    feed_stdin(stdin_pipe, bytes).await;
+        let pipes = async {
+            let ((), (), ()) = tokio::join!(
+                drain_stream(stdout_pipe, max_capture_bytes, &stdout_capture),
+                drain_stream(stderr_pipe, max_capture_bytes, &stderr_capture),
+                async {
+                    if let Some(bytes) = stdin_bytes {
+                        feed_stdin(stdin_pipe, bytes).await;
+                    }
+                }
+            );
+        };
+        let status = match exit_grace {
+            None => {
+                pipes.await;
+                child.wait().await
+            }
+            Some(grace) => {
+                let mut pipes = std::pin::pin!(pipes);
+                tokio::select! {
+                    biased;
+                    () = &mut pipes => child.wait().await,
+                    status = child.wait() => {
+                        // The direct child exited. Bound the wait for pipes a descendant may
+                        // still hold, then kill the group so they close.
+                        if tokio::time::timeout(grace, &mut pipes).await.is_err() {
+                            kill_stragglers(pgid);
+                            pipes.await;
+                        }
+                        status
+                    }
                 }
             }
-        );
-        let status = child.wait().await;
+        };
         kill_stragglers(pgid);
         status
     };
@@ -554,7 +614,7 @@ pub fn redact(
     let source = match env {
         Some(m) => m,
         None => {
-            owned_env = std::env::vars().collect();
+            owned_env = crate::env::unicode_env_snapshot();
             &owned_env
         }
     };
@@ -563,7 +623,7 @@ pub fn redact(
     let mut hosts = BTreeSet::new();
     for (name, value) in source {
         let explicit = explicit_env_names.contains(&name.as_str());
-        if !explicit && !SECRET_NAME_RE.is_match(name) {
+        if !explicit && !name.eq_ignore_ascii_case("OPENROUTER") && !SECRET_NAME_RE.is_match(name) {
             continue;
         }
         if !value.is_empty() && (explicit || value.chars().count() >= MIN_SECRET_CHARS) {
@@ -608,11 +668,6 @@ pub fn redact(
         .into_owned();
 
     SECRET_VALUE_RE.replace_all(&current, REDACTED).into_owned()
-}
-
-#[must_use]
-pub fn redact_simple(text: &str) -> String {
-    redact(text, None, &[])
 }
 
 #[must_use]
@@ -678,13 +733,5 @@ pub fn tail(text: &str, limit: usize) -> String {
         let skip = count - limit;
         let tail_str: String = trimmed.chars().skip(skip).collect();
         format!("…{tail_str}")
-    }
-}
-
-pub fn cwd_or_dot(path: &Path) -> PathBuf {
-    if path.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        path.to_path_buf()
     }
 }

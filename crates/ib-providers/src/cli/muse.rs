@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
     CliAdapter, CliConfig, CliProvider, Invocation, Isolation, NEUTRAL_SYSTEM, as_dict, as_int,
-    link_credentials, parse_jsonl, render_transcript,
+    link_credentials, render_transcript, visit_jsonl,
 };
 use crate::json::load_object;
 use crate::subprocess::{ProcessResult, user_home_dir};
@@ -89,6 +89,11 @@ pub fn settings(system: &str) -> Map<String, Value> {
 #[must_use]
 pub fn trace_events(stderr: &str) -> Vec<Map<String, Value>> {
     let mut events = Vec::new();
+    visit_trace_events(stderr, |event| events.push(event.clone()));
+    events
+}
+
+fn visit_trace_events(stderr: &str, mut visit: impl FnMut(&Map<String, Value>)) {
     for line in stderr.lines() {
         if !line.starts_with("SSE RESPONSE: ") {
             continue;
@@ -96,10 +101,9 @@ pub fn trace_events(stderr: &str) -> Vec<Map<String, Value>> {
         if let Some((_, data)) = line.split_once("data: ")
             && let Some(event) = load_object(data)
         {
-            events.push(event);
+            visit(&event);
         }
     }
-    events
 }
 
 #[derive(Debug, Default, Clone)]
@@ -110,10 +114,6 @@ pub struct MuseAdapter {
 impl CliAdapter for MuseAdapter {
     fn kind(&self) -> &'static str {
         "muse_cli"
-    }
-
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.muse_cli", "MuseCliProvider")
     }
 
     fn env_drop_prefixes(&self) -> &'static [&'static str] {
@@ -181,7 +181,7 @@ impl CliAdapter for MuseAdapter {
     ) -> Invocation {
         let prompt = io_dir.join("prompt.txt");
         let _ = fs::write(&prompt, render_transcript(&request.messages));
-        let mut argv = vec![
+        let argv = vec![
             config.binary.clone(),
             "exec".to_string(),
             "--provider".to_string(),
@@ -209,14 +209,6 @@ impl CliAdapter for MuseAdapter {
             "--reasoning-effort".to_string(),
             effort.unwrap_or(DEFAULT_EFFORT).to_string(),
         ];
-        if let Some(schema) = &request.output_schema {
-            let schema_path = io_dir.join("schema.json");
-            let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                .unwrap_or_else(|_| "{}".to_string());
-            let _ = fs::write(&schema_path, schema_json);
-            argv.push("--output-schema".to_string());
-            argv.push(schema_path.to_string_lossy().into_owned());
-        }
 
         let mut raw = Map::new();
         raw.insert(
@@ -263,43 +255,43 @@ impl CliAdapter for MuseAdapter {
         _io_dir: &Path,
     ) -> ModelResponse {
         let helper = CliProvider::new(self.clone(), CliConfig::new("", "", 0.0));
-        let terminals: Vec<Map<String, Value>> = parse_jsonl(&result.stdout)
-            .into_iter()
-            .filter(|e| {
-                e.get("payload_type")
-                    .and_then(Value::as_str)
-                    .is_some_and(|s| s.starts_with("run.terminal."))
-            })
-            .map(|e| as_dict(e.get("payload")))
-            .collect();
+        let mut terminal = None;
+        visit_jsonl(&result.stdout, |event| {
+            if event
+                .get("payload_type")
+                .and_then(Value::as_str)
+                .is_some_and(|s| s.starts_with("run.terminal."))
+            {
+                terminal = Some(as_dict(event.get("payload")));
+            }
+        });
 
-        let events = trace_events(&result.stderr);
-        let responses: Vec<Map<String, Value>> = events
-            .iter()
-            .filter(|e| {
-                matches!(
-                    e.get("type").and_then(Value::as_str),
-                    Some("response.completed" | "response.incomplete")
-                )
-            })
-            .map(|e| as_dict(e.get("response")))
-            .collect();
+        let mut response_count = 0usize;
+        let mut payload = None;
+        let mut subscription_seen = false;
+        let mut last_subscription = None;
+        visit_trace_events(&result.stderr, |event| {
+            match event.get("type").and_then(Value::as_str) {
+                Some("response.completed" | "response.incomplete") => {
+                    response_count = response_count.saturating_add(1);
+                    payload = Some(as_dict(event.get("response")));
+                }
+                Some("response.subscription_usage") => {
+                    subscription_seen = true;
+                    last_subscription = Some(as_dict(event.get("subscription")));
+                }
+                _ => {}
+            }
+        });
 
-        let terminal = terminals.last().cloned().unwrap_or_default();
-        let payload = responses.last().cloned().unwrap_or_default();
+        let terminal = terminal.unwrap_or_default();
+        let payload = payload.unwrap_or_default();
         let usage = as_dict(payload.get("usage"));
         let cached = as_int(as_dict(usage.get("input_tokens_details")).get("cached_tokens"));
-        let subscription: Vec<Map<String, Value>> = events
-            .iter()
-            .filter(|e| {
-                e.get("type").and_then(Value::as_str) == Some("response.subscription_usage")
-            })
-            .map(|e| as_dict(e.get("subscription")))
-            .collect();
 
         let text = terminal.get("text").and_then(Value::as_str);
 
-        let sub_usage = subscription.last().map(|sub| {
+        let sub_usage = last_subscription.as_ref().map(|sub| {
             let mut m = Map::new();
             for (k, v) in sub {
                 let keep = match v {
@@ -354,27 +346,33 @@ impl CliAdapter for MuseAdapter {
                 .and_then(Value::as_str)
                 .unwrap_or("no completed terminal event");
             problem = Some(format!("exit {}: {reason}", result.returncode));
-        } else if responses.len() != 1 {
+        } else if response_count != 1 {
             problem = Some("expected exactly one provider response".to_string());
         } else if payload.get("model").and_then(Value::as_str) != Some(config.model.as_str()) {
             problem = Some("served model did not match the requested model".to_string());
-        } else if subscription.is_empty() {
+        } else if !subscription_seen {
             problem = Some("subscription accounting was not reported".to_string());
         } else if payload.get("status").and_then(Value::as_str) != Some("completed") {
             problem = Some("incomplete model response".to_string());
         }
 
-        let requests: Vec<Option<Map<String, Value>>> = result
-            .stderr
-            .lines()
-            .filter_map(|line| line.strip_prefix("REQUEST: "))
-            .map(load_object)
-            .collect();
-        if requests.len() != 1 || requests[0].is_none() {
+        let mut request_count = 0usize;
+        let mut request_obj = None;
+        for line in result.stderr.lines() {
+            if let Some(raw_request) = line.strip_prefix("REQUEST: ") {
+                request_count = request_count.saturating_add(1);
+                if request_count == 1 {
+                    request_obj = load_object(raw_request);
+                } else {
+                    request_obj = None;
+                }
+            }
+        }
+        if request_count != 1 || request_obj.is_none() {
             if problem.is_none() {
                 problem = Some("expected exactly one traced provider request".to_string());
             }
-        } else if let Some(req_obj) = requests[0].as_ref() {
+        } else if let Some(req_obj) = request_obj.as_ref() {
             let has_tools = req_obj.get("tools").is_some_and(|v| match v {
                 Value::Array(a) => !a.is_empty(),
                 Value::Bool(b) => *b,
@@ -400,11 +398,3 @@ impl CliAdapter for MuseAdapter {
 }
 
 pub type MuseCliProvider = CliProvider<MuseAdapter>;
-
-#[must_use]
-pub fn new_muse_provider(model: impl Into<String>) -> MuseCliProvider {
-    let mut cfg = CliConfig::new(model, "muse", 900.0);
-    cfg.effort = Some(DEFAULT_EFFORT.to_string());
-    cfg.max_retries = 0;
-    CliProvider::new(MuseAdapter::default(), cfg)
-}

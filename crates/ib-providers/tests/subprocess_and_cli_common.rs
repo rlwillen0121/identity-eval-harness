@@ -9,21 +9,20 @@ use tokio::sync::RwLock;
 static LIVE_GROUP_RWLOCK: RwLock<()> = RwLock::const_new(());
 
 use async_trait::async_trait;
-use ib_providers::base::{Message, ModelRequest, ModelResponse, Provider, ToolCall, Usage};
+use ib_providers::base::{Message, ModelRequest, ModelResponse, Usage};
 use ib_providers::cli::claude::ClaudeAdapter;
 use ib_providers::cli::{
-    ACTION_SCHEMA_NAME, CallDirGuard, CliConfig, CliProvider, MAX_ARG_BYTES, NEUTRAL_SYSTEM,
-    OWNER_FILE, SYSTEM_BEGIN, SYSTEM_END, SYSTEM_POINTER, base_child_env, link_credentials,
-    merge_attempts, owner_alive, parse_json_payload, parse_jsonl, prepend_system, probe_version,
-    render_transcript, scrub_stderr, served_models, structured_text, sweep_stale_call_dirs,
-    sync_back, system_override, valid_effort,
+    CallDirGuard, CliConfig, CliProvider, MAX_ARG_BYTES, NEUTRAL_SYSTEM, OWNER_FILE, SYSTEM_BEGIN,
+    base_child_env, link_credentials, merge_attempts, owner_alive, parse_json_payload, parse_jsonl,
+    prepend_system, probe_version, render_transcript, scrub_stderr, served_models, structured_text,
+    sweep_stale_call_dirs, sync_back, system_override, valid_effort,
 };
 use ib_providers::subprocess::{
     Command, ProcessResult, ProcessRunner, TRUNCATION_MARKER, is_transient_error, kill_all_live,
     live_groups, redact, redact_diagnostics, register_group, retry_transient, run_command,
     run_command_with_cap, tail, unregister_group, url_hostname,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Map, json};
 use tempfile::TempDir;
 
 fn sh_cmd(script: &str, stdin: Option<&str>, timeout_s: f64, cwd: PathBuf) -> Command {
@@ -313,6 +312,26 @@ fn transient_errors_and_redaction_and_tail() {
     assert!(r.contains("short=abc"));
     assert!(r.contains("/usr/bin:/bin"));
 
+    let openrouter = "synthetic-openrouter-marker-7319";
+    let openrouter_env = BTreeMap::from([("OPENROUTER".to_string(), openrouter.to_string())]);
+    let openrouter_redacted = redact(
+        &format!("credential={openrouter}"),
+        Some(&openrouter_env),
+        &[],
+    );
+    assert!(!openrouter_redacted.contains(openrouter));
+    assert!(openrouter_redacted.contains("<redacted>"));
+    let lowercase_openrouter_env =
+        BTreeMap::from([("openrouter".to_string(), openrouter.to_string())]);
+    assert!(
+        !redact(
+            &format!("credential={openrouter}"),
+            Some(&lowercase_openrouter_env),
+            &[],
+        )
+        .contains(openrouter)
+    );
+
     // Mixed-case inline URL redaction
     let mixed_host = ["MixedCase-GW", "Internal", "Lan"].join(".");
     let mixed = redact(
@@ -366,6 +385,94 @@ fn transient_errors_and_redaction_and_tail() {
     assert_eq!(kill_all_live(), 0);
 }
 
+#[test]
+fn json_payload_parser_keeps_selection_semantics_with_many_candidates() {
+    let mut stdout = format!("{}\n", json!({"type":"result","sequence":1}));
+    for sequence in 0..2_048 {
+        stdout.push_str(&json!({"type":"event","sequence":sequence}).to_string());
+        stdout.push('\n');
+    }
+    stdout.push_str(&json!({"type":"result","sequence":2}).to_string());
+    stdout.push('\n');
+    stdout.push_str(&json!({"type":"event","sequence":3}).to_string());
+
+    let parsed = parse_json_payload(&stdout).unwrap();
+    assert_eq!(parsed["sequence"], json!(2));
+
+    let fallback = parse_json_payload(
+        "{\"type\":\"event\",\"sequence\":4}\n{\"type\":\"event\",\"sequence\":5}",
+    )
+    .unwrap();
+    assert_eq!(fallback["sequence"], json!(5));
+}
+
+#[test]
+fn subprocess_debug_output_omits_prompts_environment_and_captured_text() {
+    let marker = "synthetic-debug-secret-marker";
+    let command = Command {
+        argv: vec!["cli".to_string(), marker.to_string()],
+        cwd: PathBuf::from("/tmp/private-test"),
+        env: BTreeMap::from([("API_TOKEN".to_string(), marker.to_string())]),
+        timeout_s: 1.0,
+        stdin: Some(marker.to_string()),
+    };
+    let command_debug = format!("{command:?}");
+    assert!(!command_debug.contains(marker));
+    assert!(!command_debug.contains("/tmp/private-test"));
+
+    let result = ProcessResult {
+        returncode: 1,
+        stdout: marker.to_string(),
+        stderr: marker.to_string(),
+        duration_s: 0.0,
+        timed_out: false,
+        launch_error: Some(marker.to_string()),
+    };
+    assert!(!format!("{result:?}").contains(marker));
+}
+
+#[test]
+fn sync_back_rejects_hard_linked_cli_sidecars() {
+    use ib_providers::cli::{CredentialLink, sync_back};
+
+    let tmp = TempDir::new().unwrap();
+    let original = tmp.path().join("original.json");
+    let unrelated = tmp.path().join("unrelated.json");
+    let cli_sidecar = tmp.path().join("cli-sidecar.json");
+    fs::write(&original, br#"{"value":"original"}"#).unwrap();
+    fs::write(&unrelated, br#"{"value":"changed"}"#).unwrap();
+    fs::hard_link(&unrelated, &cli_sidecar).unwrap();
+
+    sync_back(&[CredentialLink {
+        real: original.clone(),
+        link: cli_sidecar,
+        sync_back: true,
+    }]);
+    assert_eq!(fs::read(original).unwrap(), br#"{"value":"original"}"#);
+}
+
+#[cfg(unix)]
+#[test]
+fn owner_marker_reader_accepts_only_bounded_single_link_files() {
+    let tmp = TempDir::new().unwrap();
+    let owner = tmp.path().join(OWNER_FILE);
+    let target = tmp.path().join("target");
+    fs::write(&target, std::process::id().to_string()).unwrap();
+
+    std::os::unix::fs::symlink(&target, &owner).unwrap();
+    assert_eq!(owner_alive(tmp.path()), None);
+    fs::remove_file(&owner).unwrap();
+
+    fs::hard_link(&target, &owner).unwrap();
+    assert_eq!(owner_alive(tmp.path()), None);
+    fs::remove_file(&owner).unwrap();
+
+    fs::write(&owner, std::process::id().to_string()).unwrap();
+    assert_eq!(owner_alive(tmp.path()), Some(true));
+    fs::write(&owner, "1".repeat(33)).unwrap();
+    assert_eq!(owner_alive(tmp.path()), None);
+}
+
 #[tokio::test]
 async fn retry_transient_retries_and_gives_up() {
     let calls = Arc::new(Mutex::new(0u32));
@@ -394,33 +501,27 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
         render_transcript(&[Message::user("exact  text\n")]),
         "exact  text\n"
     );
-    let mut args = Map::new();
-    args.insert("id".to_string(), Value::String("U1".to_string()));
     let rendered = render_transcript(&[
         Message::user("Decide REQ-1."),
-        Message::assistant(
-            "Looking it up.",
-            vec![ToolCall {
-                id: "call_1".to_string(),
-                name: "get_identity".to_string(),
-                arguments: args,
-            }],
-        ),
-        Message::tool("call_1", r#"{"id": "U1"}"#),
+        Message::assistant("Looking it up."),
         Message::user("Now decide."),
     ]);
     assert_eq!(
         rendered,
-        "[User]\nDecide REQ-1.\n\n[Assistant]\nLooking it up.\n(tool call get_identity id=call_1: {\"id\": \"U1\"})\n\n[Tool result call_1]\n{\"id\": \"U1\"}\n\n[User]\nNow decide."
+        "[User]\nDecide REQ-1.\n\n[Assistant]\nLooking it up.\n\n[User]\nNow decide."
     );
 
     assert_eq!(prepend_system("", "body"), "body");
+    // Canonical SPEC-v5.2 §7.1 system block: `=== SYSTEM ===\n<system_prompt>\n` then the body.
     assert_eq!(
-        prepend_system("rules", "body"),
-        format!("{SYSTEM_BEGIN}\nrules\n{SYSTEM_END}\n\nbody")
+        prepend_system("rules\n\n", "=== SCENARIO ===\nbody"),
+        format!("{SYSTEM_BEGIN}\nrules\n=== SCENARIO ===\nbody")
     );
+    assert_eq!(SYSTEM_BEGIN, "=== SYSTEM ===");
+    // No pointer swap: an over-long system prompt is passed through unchanged.
     let big = "x".repeat(MAX_ARG_BYTES + 1);
-    assert_eq!(system_override(&big, "body", "").0, SYSTEM_POINTER);
+    let (system, body, _) = system_override(&big, "body", "");
+    assert_eq!((system.as_str(), body.as_str()), (big.as_str(), "body"));
     assert_eq!(system_override(" \n\t", "body", "").0, NEUTRAL_SYSTEM);
     assert!(valid_effort("xhigh"));
     assert!(!valid_effort("-bad"));
@@ -496,6 +597,18 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
     {
         let dir = CallDirGuard::new("identitybench-claude_cli-").unwrap();
         assert!(dir.path().join(OWNER_FILE).is_file());
+        assert_eq!(
+            fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(dir.path().join(OWNER_FILE))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
         assert_eq!(owner_alive(dir.path()), Some(true));
         let _ = sweep_stale_call_dirs(0.0);
         assert!(dir.path().is_dir(), "sweeper removed a live call directory");
@@ -552,11 +665,10 @@ fn cli_common_pure_helpers_and_credentials_and_call_dir() {
     let p2 = CliProvider::new(ClaudeAdapter, CliConfig::new("m2", "claude", 600.0));
     assert_eq!(p1.setup_revision(), p2.setup_revision());
     assert_eq!(
-        p1.python_type_identity(),
-        ("identitybench.providers.claude_cli", "ClaudeCliProvider")
+        p1.config().max_retries,
+        0,
+        "SPEC-v5.2 §7.4: no adapter retries"
     );
-    assert_eq!(p1.local_retry_limit(), Some(3));
-    assert_eq!(ACTION_SCHEMA_NAME, "tool_action");
 
     // Mock Runner integration
     struct DummyRunner;

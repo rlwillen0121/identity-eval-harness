@@ -1,7 +1,8 @@
 //! Replay provider: serves recorded responses by cache key, for CI and re-scoring (SPEC §11.1).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -13,11 +14,15 @@ use sha2::{Digest, Sha256};
 use crate::base::{
     ModelRequest, ModelResponse, Provider, ProviderCapabilities, ToolCall, Usage, hash_endpoint,
 };
-use crate::json::{bounded_token_count, inspect_and_clamp_usage, sanitize_response_post_usage};
+use crate::json::{
+    BoundedJsonError, MAX_RESPONSE_DEPTH, MAX_RESPONSE_NODES, bounded_token_count,
+    inspect_and_clamp_usage, parse_bounded_json, sanitize_response_post_usage,
+};
 use crate::subprocess::{redact, redact_diagnostics_map};
 
 pub const CACHE_KEY_PARAM: &str = "cache_key";
-pub const COST_FIELDS: &[&str] = &["cost_usd", "cost_source"];
+const MAX_REPLAY_RECORD_BYTES: usize = 16 * 1024 * 1024;
+const MAX_REPLAY_KEY_BYTES: usize = 4 * 1024;
 
 const RESPONSE_FIELDS: &[&str] = &[
     "text",
@@ -109,7 +114,7 @@ pub fn response_to_dict(response: &ModelResponse) -> Value {
         response
             .stop_reason
             .as_ref()
-            .map_or(Value::Null, |s| Value::String(s.clone())),
+            .map_or(Value::Null, |s| Value::String(redact(s, None, &[]))),
     );
     map.insert("refused".to_string(), Value::Bool(response.refused));
 
@@ -142,7 +147,7 @@ pub fn response_to_dict(response: &ModelResponse) -> Value {
         response
             .served_model
             .as_ref()
-            .map_or(Value::Null, |s| Value::String(s.clone())),
+            .map_or(Value::Null, |s| Value::String(redact(s, None, &[]))),
     );
     map.insert(
         "reported_cost_usd".to_string(),
@@ -175,7 +180,8 @@ pub fn response_from_dict(data: &Map<String, Value>) -> Result<ModelResponse, Re
         let mut sorted = unknown;
         sorted.sort_unstable();
         return Err(ReplayError(format!(
-            "unknown ModelResponse fields: {sorted:?}"
+            "unknown ModelResponse fields ({} fields)",
+            sorted.len()
         )));
     }
 
@@ -194,7 +200,10 @@ pub fn response_from_dict(data: &Map<String, Value>) -> Result<ModelResponse, Re
                 .collect();
             if !bad_u.is_empty() {
                 bad_u.sort_unstable();
-                return Err(ReplayError(format!("unknown Usage fields: {bad_u:?}")));
+                return Err(ReplayError(format!(
+                    "unknown Usage fields ({} fields)",
+                    bad_u.len()
+                )));
             }
             usage = Usage {
                 input_tokens: bounded_token_count(umap.get("input_tokens")),
@@ -321,7 +330,27 @@ pub fn response_from_dict(data: &Map<String, Value>) -> Result<ModelResponse, Re
     };
 
     inspect_and_clamp_usage(raw_usage_fields.as_ref(), &mut resp.usage, &mut resp.raw);
-    Ok(sanitize_response_post_usage(resp, "replay"))
+    Ok(sanitize_replay_response(resp, "replay"))
+}
+
+fn redact_replay_diagnostics(mut response: ModelResponse) -> ModelResponse {
+    if let Some(error) = response.error.as_mut() {
+        *error = redact(error, None, &[]);
+    }
+    for field in [&mut response.stop_reason, &mut response.served_model]
+        .into_iter()
+        .flatten()
+    {
+        *field = redact(field, None, &[]);
+    }
+    if let Some(raw) = response.raw.take() {
+        response.raw = Some(redact_diagnostics_map(&raw, None, &[]));
+    }
+    response
+}
+
+fn sanitize_replay_response(response: ModelResponse, kind: &str) -> ModelResponse {
+    redact_replay_diagnostics(sanitize_response_post_usage(response, kind))
 }
 
 pub fn recorded_cost_from(
@@ -347,16 +376,16 @@ pub fn recorded_cost_from(
                 PyNumber::Float(f) => f,
             };
             if !f.is_finite() || f < 0.0 {
-                return Err(ReplayError(format!(
-                    "'cost_usd' must be a non-negative number or null, got {n}"
-                )));
+                return Err(ReplayError(
+                    "'cost_usd' must be a finite non-negative number or null".to_string(),
+                ));
             }
             Some(f)
         }
-        Some(other) => {
-            return Err(ReplayError(format!(
-                "'cost_usd' must be a non-negative number or null, got {other}"
-            )));
+        Some(_) => {
+            return Err(ReplayError(
+                "'cost_usd' must be a finite non-negative number or null".to_string(),
+            ));
         }
         None => unreachable!(),
     };
@@ -364,21 +393,16 @@ pub fn recorded_cost_from(
     let source_str = record
         .get("cost_source")
         .and_then(Value::as_str)
-        .ok_or_else(|| {
-            ReplayError(format!(
-                "'cost_source' must be one of [\"metered\", \"reported\", \"unknown\", \"unmetered\"], got {:?}",
-                record.get("cost_source")
-            ))
-        })?;
+        .ok_or_else(|| ReplayError("'cost_source' must be a supported string".to_string()))?;
     let cost_source = match source_str {
         "metered" => CostSource::Metered,
         "reported" => CostSource::Reported,
         "unmetered" => CostSource::Unmetered,
         "unknown" => CostSource::Unknown,
-        other => {
-            return Err(ReplayError(format!(
-                "'cost_source' must be one of [\"metered\", \"reported\", \"unknown\", \"unmetered\"], got {other:?}"
-            )));
+        _ => {
+            return Err(ReplayError(
+                "'cost_source' must be a supported string".to_string(),
+            ));
         }
     };
 
@@ -391,56 +415,112 @@ pub fn recorded_cost_from(
 fn load_records(
     path: &Path,
 ) -> Result<BTreeMap<String, (ModelResponse, Option<RecordedCost>)>, ReplayError> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| ReplayError(format!("{}: could not read file ({e})", path.display())))?;
+    let file = File::open(path).map_err(|error| {
+        ReplayError(format!(
+            "replay file could not be read ({:?})",
+            error.kind()
+        ))
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut line = Vec::new();
     let mut records = BTreeMap::new();
-    for (idx, line) in text.lines().enumerate() {
-        let number = idx + 1;
-        if line.trim().is_empty() {
+    let mut number = 0usize;
+    loop {
+        line.clear();
+        let read = read_bounded_line(&mut reader, &mut line, MAX_REPLAY_RECORD_BYTES).map_err(
+            |error| {
+                if error.kind() == io::ErrorKind::InvalidData {
+                    ReplayError(format!(
+                        "replay line {} exceeds the {MAX_REPLAY_RECORD_BYTES} byte limit",
+                        number + 1
+                    ))
+                } else {
+                    ReplayError(format!("replay file read failed ({:?})", error.kind()))
+                }
+            },
+        )?;
+        if !read {
+            break;
+        }
+        number += 1;
+        if line.last() == Some(&b'\n') {
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+        }
+        let text = std::str::from_utf8(&line)
+            .map_err(|_| ReplayError(format!("replay line {number}: invalid UTF-8")))?;
+        if text.trim().is_empty() {
             continue;
         }
-        let parsed_line: Value = serde_json::from_str(line).map_err(|e| {
-            ReplayError(format!(
-                "{}:{number}: not a replay record ({e})",
-                path.display()
-            ))
-        })?;
+        let (parsed_line, _) = parse_bounded_json(text, MAX_RESPONSE_NODES, MAX_RESPONSE_DEPTH)
+            .map_err(|error| match error {
+                BoundedJsonError::TooManyNodes | BoundedJsonError::TooDeep => ReplayError(format!(
+                    "replay line {number}: record exceeds structural limits"
+                )),
+                BoundedJsonError::Invalid => {
+                    ReplayError(format!("replay line {number}: invalid JSON record"))
+                }
+            })?;
         let obj = parsed_line.as_object().ok_or_else(|| {
             ReplayError(format!(
-                "{}:{number}: not a replay record (expected object)",
-                path.display()
+                "replay line {number}: record must be a JSON object"
             ))
         })?;
         let key = obj.get("key").and_then(Value::as_str).ok_or_else(|| {
             ReplayError(format!(
-                "{}:{number}: not a replay record ('key' must be a string and 'response' an object)",
-                path.display()
+                "replay line {number}: 'key' must be a string and 'response' an object"
             ))
         })?;
+        if key.len() > MAX_REPLAY_KEY_BYTES {
+            return Err(ReplayError(format!(
+                "replay line {number}: key exceeds the {MAX_REPLAY_KEY_BYTES} byte limit"
+            )));
+        }
         let resp_obj = obj
             .get("response")
             .and_then(Value::as_object)
             .ok_or_else(|| {
                 ReplayError(format!(
-                    "{}:{number}: not a replay record ('key' must be a string and 'response' an object)",
-                    path.display()
+                    "replay line {number}: 'key' must be a string and 'response' an object"
                 ))
             })?;
-        let resp = response_from_dict(resp_obj).map_err(|e| {
-            ReplayError(format!(
-                "{}:{number}: not a replay record ({e})",
-                path.display()
-            ))
-        })?;
+        let resp = response_from_dict(resp_obj)
+            .map_err(|e| ReplayError(format!("replay line {number}: invalid response ({e})")))?;
         let cost = recorded_cost_from(obj).map_err(|e| {
-            ReplayError(format!(
-                "{}:{number}: not a replay record ({e})",
-                path.display()
-            ))
+            ReplayError(format!("replay line {number}: invalid recorded cost ({e})"))
         })?;
         records.insert(key.to_string(), (resp, cost));
     }
     Ok(records)
+}
+
+fn read_bounded_line(
+    reader: &mut impl BufRead,
+    output: &mut Vec<u8>,
+    max_bytes: usize,
+) -> io::Result<bool> {
+    output.clear();
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(!output.is_empty());
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let take = newline.map_or(available.len(), |index| index + 1);
+        if output.len().saturating_add(take) > max_bytes {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "replay record exceeds size limit",
+            ));
+        }
+        output.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        if newline.is_some() {
+            return Ok(true);
+        }
+    }
 }
 
 pub fn load_responses_jsonl(
@@ -482,7 +562,7 @@ impl ReplayProvider {
     ) -> Self {
         let sanitized = records
             .into_iter()
-            .map(|(k, v)| (k, sanitize_response_post_usage(v, "replay")))
+            .map(|(k, v)| (k, sanitize_replay_response(v, "replay")))
             .collect();
         Self::build_with_maps(model.into(), sanitized, BTreeMap::new())
     }
@@ -545,10 +625,6 @@ impl Provider for ReplayProvider {
         &self.model
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.replay", "ReplayProvider")
-    }
-
     fn endpoint_identity(&self) -> String {
         self.identity.clone()
     }
@@ -564,10 +640,105 @@ impl Provider for ReplayProvider {
             ));
         };
         let Some(recorded) = self.records.get(key) else {
-            return ModelResponse::with_error(format!(
-                "replay: no recorded response for key {key}"
-            ));
+            return ModelResponse::with_error("replay: no recorded response for requested key");
         };
-        sanitize_response_post_usage(recorded.clone(), self.kind())
+        sanitize_replay_response(recorded.clone(), self.kind())
+    }
+}
+
+#[cfg(test)]
+mod replay_security_tests {
+    use super::read_bounded_line;
+    use std::io::{BufReader, Cursor, ErrorKind};
+
+    #[test]
+    fn bounded_replay_line_reader_stops_at_limit_without_consuming_a_record() {
+        let mut reader = BufReader::new(Cursor::new(b"abc\ndef"));
+        let mut line = Vec::new();
+
+        assert!(read_bounded_line(&mut reader, &mut line, 4).unwrap());
+        assert_eq!(line, b"abc\n");
+        assert!(read_bounded_line(&mut reader, &mut line, 3).unwrap());
+        assert_eq!(line, b"def");
+        assert!(!read_bounded_line(&mut reader, &mut line, 3).unwrap());
+
+        let mut oversized = BufReader::new(Cursor::new(b"abcdef\n"));
+        assert_eq!(
+            read_bounded_line(&mut oversized, &mut line, 5)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn replay_record_redacts_metadata_but_preserves_visible_model_output() {
+        use crate::base::{ModelResponse, ToolCall};
+        use serde_json::{Map, json};
+
+        use super::{response_from_dict, response_to_dict};
+
+        let credential_pattern = "sk-123456789012345678901234";
+        let response = ModelResponse {
+            text: Some(credential_pattern.to_string()),
+            served_model: Some(credential_pattern.to_string()),
+            stop_reason: Some(credential_pattern.to_string()),
+            tool_calls: vec![ToolCall {
+                id: credential_pattern.to_string(),
+                name: "lookup".to_string(),
+                arguments: Map::new(),
+            }],
+            raw: Some(
+                json!({"assistant_content": credential_pattern, "id": credential_pattern})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            ..ModelResponse::default()
+        };
+        let dict = response_to_dict(&response);
+        assert_eq!(dict["text"], credential_pattern);
+        assert!(
+            !dict["served_model"]
+                .as_str()
+                .unwrap()
+                .contains(credential_pattern)
+        );
+        assert!(
+            !dict["stop_reason"]
+                .as_str()
+                .unwrap()
+                .contains(credential_pattern)
+        );
+        assert_eq!(dict["tool_calls"][0]["id"], credential_pattern);
+        assert!(
+            !dict["raw"]["id"]
+                .as_str()
+                .unwrap()
+                .contains(credential_pattern)
+        );
+        assert_eq!(dict["raw"]["assistant_content"], credential_pattern);
+
+        let round_trip = response_from_dict(dict.as_object().unwrap()).unwrap();
+        assert_eq!(round_trip.text.as_deref(), Some(credential_pattern));
+        assert!(
+            !round_trip
+                .served_model
+                .as_deref()
+                .unwrap()
+                .contains(credential_pattern)
+        );
+        assert!(
+            !round_trip
+                .stop_reason
+                .as_deref()
+                .unwrap()
+                .contains(credential_pattern)
+        );
+        assert_eq!(round_trip.tool_calls[0].id, credential_pattern);
+        assert_eq!(
+            round_trip.raw.unwrap()["assistant_content"],
+            credential_pattern
+        );
     }
 }

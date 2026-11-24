@@ -23,25 +23,23 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::base::{
-    Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, ToolCall,
+    Message, ModelRequest, ModelResponse, Provider, ProviderCapabilities, Role, SystemChannel,
     hash_endpoint,
 };
 use crate::json::{
     bounded_token_count, load_object, safe_nonnegative_float_add, sanitize_response,
 };
 use crate::subprocess::{
-    Command, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BASE_DELAY_S, MAX_CAPTURE_BYTES, ProcessResult,
-    ProcessRunner, SystemProcessRunner, is_transient_error, redact, retry_transient,
-    run_command_with_cap, tail,
+    Command, DEFAULT_RETRY_BASE_DELAY_S, MAX_CAPTURE_BYTES, ProcessResult, ProcessRunner,
+    SystemProcessRunner, is_transient_error, redact, retry_transient, run_command_with_exit_grace,
+    tail,
 };
 
-pub const SYSTEM_BEGIN: &str = "===== SYSTEM INSTRUCTIONS =====";
-pub const SYSTEM_END: &str = "===== END SYSTEM INSTRUCTIONS =====";
+/// Header of the optional canonical system block (`SPEC-v5.2` §7.1 transcript grammar).
+pub const SYSTEM_BEGIN: &str = "=== SYSTEM ===";
 pub const MAX_ARG_BYTES: usize = 100_000;
 pub const MAX_SIDECAR_BYTES: usize = MAX_CAPTURE_BYTES;
-pub const SYSTEM_POINTER: &str = "Your instructions are at the start of the user message, between the lines '===== SYSTEM INSTRUCTIONS =====' and '===== END SYSTEM INSTRUCTIONS ====='. Treat them as your system prompt.";
 pub const NEUTRAL_SYSTEM: &str = "You are a helpful assistant.";
-pub const ACTION_SCHEMA_NAME: &str = "tool_action";
 
 pub const STDERR_EXCERPT_CHARS: usize = 300;
 const MARK_CHARS: usize = 60;
@@ -50,7 +48,6 @@ const MAX_MARKS: usize = 400;
 const WINDOW_CHARS: usize = 24;
 
 pub const OWNER_FILE: &str = ".owner";
-pub const STALE_CALL_DIR_AGE_S: f64 = 2.0 * 60.0 * 60.0;
 
 static EFFORT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$").expect("valid effort regex"));
@@ -117,8 +114,17 @@ pub const HOME_RELATIVE_VARS: &[&str] = &["XDG_CONFIG_HOME", "XDG_DATA_HOME", "X
 /// child process. Require a single-link regular file, open it without following links or blocking
 /// on special files, and enforce the same 16 MiB limit used for captured stdout and stderr.
 pub fn read_sidecar_text(path: &Path) -> std::io::Result<String> {
+    read_bounded_regular_text(path, MAX_SIDECAR_BYTES, "CLI sidecar", "16 MiB")
+}
+
+fn read_bounded_regular_text(
+    path: &Path,
+    max_bytes: usize,
+    description: &str,
+    limit_description: &str,
+) -> std::io::Result<String> {
     let before = fs::symlink_metadata(path)?;
-    validate_sidecar_metadata(&before)?;
+    validate_private_file_metadata(&before, max_bytes, description, limit_description)?;
 
     let mut options = OpenOptions::new();
     options.read(true);
@@ -129,7 +135,7 @@ pub fn read_sidecar_text(path: &Path) -> std::io::Result<String> {
     }
     let mut file = options.open(path)?;
     let opened = file.metadata()?;
-    validate_sidecar_metadata(&opened)?;
+    validate_private_file_metadata(&opened, max_bytes, description, limit_description)?;
 
     #[cfg(unix)]
     {
@@ -143,33 +149,38 @@ pub fn read_sidecar_text(path: &Path) -> std::io::Result<String> {
 
     let mut bytes = Vec::with_capacity(
         usize::try_from(opened.len())
-            .unwrap_or(MAX_SIDECAR_BYTES)
-            .min(MAX_SIDECAR_BYTES),
+            .unwrap_or(max_bytes)
+            .min(max_bytes),
     );
     file.by_ref()
-        .take(MAX_SIDECAR_BYTES as u64 + 1)
+        .take(max_bytes as u64 + 1)
         .read_to_end(&mut bytes)?;
-    if bytes.len() > MAX_SIDECAR_BYTES {
+    if bytes.len() > max_bytes {
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
-            "CLI sidecar exceeds the 16 MiB limit",
+            format!("{description} exceeds the {limit_description} limit"),
         ));
     }
-    validate_sidecar_metadata(&file.metadata()?)?;
+    validate_private_file_metadata(&file.metadata()?, max_bytes, description, limit_description)?;
     String::from_utf8(bytes).map_err(|error| std::io::Error::new(ErrorKind::InvalidData, error))
 }
 
-fn validate_sidecar_metadata(metadata: &fs::Metadata) -> std::io::Result<()> {
+fn validate_private_file_metadata(
+    metadata: &fs::Metadata,
+    max_bytes: usize,
+    description: &str,
+    limit_description: &str,
+) -> std::io::Result<()> {
     if !metadata.file_type().is_file() {
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
-            "CLI sidecar is not a regular file",
+            format!("{description} is not a regular file"),
         ));
     }
-    if metadata.len() > MAX_SIDECAR_BYTES as u64 {
+    if metadata.len() > max_bytes as u64 {
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
-            "CLI sidecar exceeds the 16 MiB limit",
+            format!("{description} exceeds the {limit_description} limit"),
         ));
     }
     #[cfg(unix)]
@@ -178,7 +189,7 @@ fn validate_sidecar_metadata(metadata: &fs::Metadata) -> std::io::Result<()> {
         if metadata.nlink() != 1 {
             return Err(std::io::Error::new(
                 ErrorKind::InvalidData,
-                "CLI sidecar must have exactly one link",
+                format!("{description} must have exactly one link"),
             ));
         }
     }
@@ -198,18 +209,16 @@ const ALLOWED_SYNC_BACK_KEYS: &[&str] = &[
 
 // --------------------------------------------------------------------------- pure helpers
 
+/// Prefix `body` with the canonical `SPEC-v5.2` §7.1 system block
+/// (`=== SYSTEM ===\n<system_prompt>\n`) for transports without a system channel.
+/// The system prompt is inserted after removing its trailing LF bytes.
 #[must_use]
 pub fn prepend_system(system: &str, body: &str) -> String {
     if system.is_empty() {
         body.to_string()
     } else {
-        format!("{SYSTEM_BEGIN}\n{system}\n{SYSTEM_END}\n\n{body}")
+        format!("{SYSTEM_BEGIN}\n{}\n{body}", system.trim_end_matches('\n'))
     }
-}
-
-#[must_use]
-pub fn exceeds_arg_limit(text: &str) -> bool {
-    text.len() > MAX_ARG_BYTES
 }
 
 #[must_use]
@@ -226,14 +235,10 @@ pub fn system_override(
         );
         return (NEUTRAL_SYSTEM.to_string(), body.to_string(), notes);
     }
-    let combined_len = prefix.len() + system.len();
-    if combined_len > MAX_ARG_BYTES {
-        return (
-            SYSTEM_POINTER.to_string(),
-            prepend_system(system, body),
-            Map::new(),
-        );
-    }
+    // No pointer swap (SPEC-v5.2 §7.1): an over-long system argument is passed through
+    // unchanged, and the argv limit check fails the call as a provider error instead of
+    // rewriting what the model receives.
+    let _ = prefix;
     (system.to_string(), body.to_string(), Map::new())
 }
 
@@ -242,37 +247,14 @@ pub fn render_transcript(messages: &[Message]) -> String {
     if messages.len() == 1 && messages[0].role == Role::User {
         return messages[0].content.clone();
     }
-    let dump_opts = DumpOptions {
-        sort_keys: true,
-        ensure_ascii: false,
-        ..DumpOptions::default()
-    };
-    let mut parts = Vec::with_capacity(messages.len());
-    for message in messages {
-        match message.role {
-            Role::User => parts.push(format!("[User]\n{}", message.content)),
-            Role::Assistant => {
-                let mut lines = Vec::new();
-                if !message.content.is_empty() {
-                    lines.push(message.content.clone());
-                }
-                for call in &message.tool_calls {
-                    let args_json = dumps(&Value::Object(call.arguments.clone()), &dump_opts)
-                        .unwrap_or_else(|_| "{}".to_string());
-                    lines.push(format!(
-                        "(tool call {} id={}: {args_json})",
-                        call.name, call.id
-                    ));
-                }
-                parts.push(format!("[Assistant]\n{}", lines.join("\n")));
-            }
-            Role::Tool => {
-                let call_id = message.tool_call_id.as_deref().unwrap_or("");
-                parts.push(format!("[Tool result {call_id}]\n{}", message.content));
-            }
-        }
-    }
-    parts.join("\n\n")
+    messages
+        .iter()
+        .map(|message| match message.role {
+            Role::User => format!("[User]\n{}", message.content),
+            Role::Assistant => format!("[Assistant]\n{}", message.content),
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 #[must_use]
@@ -289,39 +271,42 @@ pub fn parse_json_payload(stdout: &str) -> Option<Map<String, Value>> {
     if let Some(whole) = load_object(text) {
         return Some(whole);
     }
-    let mut candidates = Vec::new();
+    let mut last_candidate: Option<Map<String, Value>> = None;
+    let mut last_result: Option<Map<String, Value>> = None;
     for raw_line in text.lines() {
         let line = raw_line.trim();
         if line.starts_with('{')
             && let Some(val) = load_object(line)
+            && let Some(previous) = last_candidate.replace(val)
+            && previous.get("type").and_then(Value::as_str) == Some("result")
         {
-            candidates.push(val);
+            last_result = Some(previous);
         }
     }
-    if candidates.is_empty() {
-        return None;
+    match last_candidate {
+        Some(candidate) if candidate.get("type").and_then(Value::as_str) == Some("result") => {
+            Some(candidate)
+        }
+        Some(candidate) => last_result.or(Some(candidate)),
+        None => None,
     }
-    if let Some(result_obj) = candidates
-        .iter()
-        .rev()
-        .find(|m| m.get("type").and_then(Value::as_str) == Some("result"))
-    {
-        return Some(result_obj.clone());
+}
+
+pub(crate) fn visit_jsonl(stdout: &str, mut visit: impl FnMut(&Map<String, Value>)) {
+    for raw_line in stdout.lines() {
+        let line = raw_line.trim();
+        if line.starts_with('{')
+            && let Some(value) = load_object(line)
+        {
+            visit(&value);
+        }
     }
-    candidates.pop()
 }
 
 #[must_use]
 pub fn parse_jsonl(stdout: &str) -> Vec<Map<String, Value>> {
     let mut events = Vec::new();
-    for raw_line in stdout.lines() {
-        let line = raw_line.trim();
-        if line.starts_with('{')
-            && let Some(val) = load_object(line)
-        {
-            events.push(val);
-        }
-    }
+    visit_jsonl(stdout, |event| events.push(event.clone()));
     events
 }
 
@@ -410,7 +395,7 @@ pub fn base_child_env(base: Option<&BTreeMap<String, String>>) -> BTreeMap<Strin
     let source = match base {
         Some(m) => m,
         None => {
-            owned = std::env::vars().collect();
+            owned = crate::env::unicode_env_snapshot();
             &owned
         }
     };
@@ -428,6 +413,9 @@ pub fn base_child_env(base: Option<&BTreeMap<String, String>>) -> BTreeMap<Strin
 static VERSION_CACHE: OnceLock<Mutex<HashMap<(String, EnvItems), String>>> = OnceLock::new();
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 const VERSION_PROBE_CAPTURE_BYTES: usize = 64 * 1024;
+/// After `<binary> --version` exits, how long its output pipes may stay open before the process
+/// group (for example a helper the CLI left running) is killed.
+const VERSION_PROBE_EXIT_GRACE: Duration = Duration::from_secs(1);
 
 /// `<binary> --version` (first non-empty line), cached per binary and environment.
 #[must_use]
@@ -483,7 +471,11 @@ fn probe_version_uncached_with_limits(
                 .enable_all()
                 .build()
                 .ok()?;
-            Some(runtime.block_on(run_command_with_cap(&command, max_capture_bytes)))
+            Some(runtime.block_on(run_command_with_exit_grace(
+                &command,
+                max_capture_bytes,
+                VERSION_PROBE_EXIT_GRACE,
+            )))
         })
     else {
         return "unknown".to_string();
@@ -499,8 +491,9 @@ fn probe_version_uncached_with_limits(
         };
     }
     // A direct child can exit successfully while a helper keeps its inherited pipes open. The
-    // supervised runner then reaches its deadline to reap the process group, but preserves the
-    // direct child's zero status and bounded output. Accept that completed probe result.
+    // supervised runner then waits only `VERSION_PROBE_EXIT_GRACE` before reaping the process
+    // group, and keeps the direct child's exit status and bounded output. A nonzero status,
+    // including a child killed at the deadline, is not a version.
     if result.returncode != 0 {
         return "unknown".to_string();
     }
@@ -508,7 +501,7 @@ fn probe_version_uncached_with_limits(
         for line in text.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
-                return trimmed.to_string();
+                return redact(trimmed, Some(env), &[]);
             }
         }
     }
@@ -534,27 +527,54 @@ mod version_probe_tests {
                 "[ \"$PROBE_MARKER\" = \"visible\" ] || exit 3\n",
                 "printf 'mock-version 1.2.3\\n'\n",
                 "head -c 131072 /dev/zero | tr '\\0' 'x'\n",
-                "sleep 30 &\n",
+                // A descendant that keeps the inherited stdout/stderr pipes open far past the
+                // deadline.
+                "sleep 120 &\n",
+                "printf '%s' \"$!\" > \"$PID_FILE\"\n",
                 "exit 0\n",
             ),
         )
         .expect("write mock version binary");
         fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
             .expect("make mock executable");
+        let pid_file = temp.path().join("descendant.pid");
         let env = BTreeMap::from([
             ("PATH".to_string(), "/usr/bin:/bin".to_string()),
             ("PROBE_MARKER".to_string(), "visible".to_string()),
+            (
+                "PID_FILE".to_string(),
+                pid_file.to_string_lossy().into_owned(),
+            ),
         ]);
+        // The production deadline: generous enough that the script always finishes under load, so
+        // the result never depends on scheduling. The bounded wait comes from the exit grace.
         let started = Instant::now();
         let version = probe_version_uncached_with_limits(
             &binary.to_string_lossy(),
             &env,
-            Duration::from_millis(250),
+            VERSION_PROBE_TIMEOUT,
             64,
         );
+        let elapsed = started.elapsed();
 
+        // First line of the direct child's bounded (64-byte) output.
         assert_eq!(version, "mock-version 1.2.3");
-        assert!(started.elapsed() < Duration::from_secs(5));
+        // Neither the 30 s deadline nor the 120 s descendant was waited for.
+        assert!(elapsed < VERSION_PROBE_TIMEOUT / 2, "{elapsed:?}");
+        // The pipe-holding descendant was killed with the process group.
+        let pid: i32 = fs::read_to_string(&pid_file)
+            .expect("descendant pid")
+            .trim()
+            .parse()
+            .expect("numeric pid");
+        let reap_deadline = Instant::now() + Duration::from_secs(20);
+        while kill(Pid::from_raw(pid), None).is_ok() {
+            assert!(
+                Instant::now() < reap_deadline,
+                "descendant {pid} survived the probe"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
 
         let failed_binary = temp.path().join("failed-version.sh");
         fs::write(&failed_binary, "#!/bin/sh\nexit 7\n").expect("write failing mock binary");
@@ -564,7 +584,7 @@ mod version_probe_tests {
             probe_version_uncached_with_limits(
                 &failed_binary.to_string_lossy(),
                 &env,
-                Duration::from_secs(1),
+                VERSION_PROBE_TIMEOUT,
                 64,
             ),
             "unknown"
@@ -582,6 +602,70 @@ mod version_probe_tests {
                 64,
             ),
             "not-installed"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn version_probe_redacts_metadata_before_endpoint_identity() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let binary = temp.path().join("mock-sensitive-version.sh");
+        fs::write(&binary, "#!/bin/sh\nprintf '%s\\n' \"$VERSION_LINE\"\n")
+            .expect("write mock version binary");
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
+            .expect("make mock executable");
+        let marker = "synthetic-openrouter-version-marker";
+        let env = BTreeMap::from([
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+            ("OPENROUTER".to_string(), marker.to_string()),
+            ("VERSION_LINE".to_string(), marker.to_string()),
+        ]);
+
+        assert_eq!(
+            probe_version_uncached_with_limits(
+                &binary.to_string_lossy(),
+                &env,
+                Duration::from_secs(5),
+                64,
+            ),
+            "<redacted>"
+        );
+
+        let mut config = CliConfig::new("fixture", "mock", 1.0);
+        config.version = Some(marker.to_string());
+        config.environment = Some(env);
+        assert!(!format!("{config:?}").contains(marker));
+        let explicit_version_provider = CliProvider::new(claude::ClaudeAdapter, config);
+        assert_eq!(
+            explicit_version_provider
+                .resolved_version
+                .get()
+                .map(String::as_str),
+            Some("<redacted>")
+        );
+
+        let wrapper_binary = temp.path().join("mock-wrapper-version.sh");
+        fs::write(
+            &wrapper_binary,
+            "#!/bin/sh\nprintf 'sk-testsecretvalue1234\\n'\n",
+        )
+        .expect("write mock wrapper binary");
+        fs::set_permissions(&wrapper_binary, fs::Permissions::from_mode(0o755))
+            .expect("make wrapper executable");
+        let wrapper = CliProvider::new(
+            claude::ClaudeAdapter,
+            CliConfig::new(
+                "fixture",
+                wrapper_binary.to_string_lossy().into_owned(),
+                5.0,
+            ),
+        );
+        let _ = wrapper.endpoint_identity();
+        assert_eq!(
+            wrapper.resolved_version.get().map(String::as_str),
+            Some("<redacted>")
         );
     }
 }
@@ -611,11 +695,15 @@ fn windows_set(text: &str) -> HashSet<String> {
 
 #[must_use]
 pub fn scrub_stderr(stderr: &str, request: Option<&ModelRequest>, limit: usize) -> String {
+    tail(&strip_prompt_echoes(stderr, request), limit)
+}
+
+fn strip_prompt_echoes(stderr: &str, request: Option<&ModelRequest>) -> String {
     if stderr.trim().is_empty() {
         return String::new();
     }
     let Some(req) = request else {
-        return tail(stderr, limit);
+        return stderr.to_string();
     };
 
     let mut texts: Vec<&str> = Vec::with_capacity(1 + req.messages.len());
@@ -660,7 +748,7 @@ pub fn scrub_stderr(stderr: &str, request: Option<&ModelRequest>, limit: usize) 
     };
 
     let kept: Vec<&str> = stderr.lines().filter(|line| !echoes_prompt(line)).collect();
-    tail(&kept.join("\n"), limit)
+    kept.join("\n")
 }
 
 // --------------------------------------------------------------------------- call directories
@@ -706,7 +794,8 @@ pub fn remove_live_call_dirs() -> usize {
 
 #[must_use]
 pub fn owner_alive(path: &Path) -> Option<bool> {
-    let content = fs::read_to_string(path.join(OWNER_FILE)).ok()?;
+    let content =
+        read_bounded_regular_text(&path.join(OWNER_FILE), 32, "owner marker", "32-byte").ok()?;
     let pid: i32 = content.trim().parse().ok()?;
     if pid <= 0 {
         return None;
@@ -733,9 +822,24 @@ pub struct CallDirGuard {
 
 impl CallDirGuard {
     pub fn new(prefix: &str) -> std::io::Result<Self> {
-        let dir = tempfile::Builder::new().prefix(prefix).tempdir()?;
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(prefix);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            builder.permissions(fs::Permissions::from_mode(0o700));
+        }
+        let dir = builder.tempdir()?;
+        let mut owner_options = OpenOptions::new();
+        owner_options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            owner_options.mode(0o600);
+        }
+        let mut owner = owner_options.open(dir.path().join(OWNER_FILE))?;
+        std::io::Write::write_all(&mut owner, std::process::id().to_string().as_bytes())?;
         let raw_path = dir.keep();
-        let _ = fs::write(raw_path.join(OWNER_FILE), std::process::id().to_string());
         register_call_dir(&raw_path);
         let resolved_path = fs::canonicalize(&raw_path).unwrap_or_else(|_| raw_path.clone());
         Ok(Self {
@@ -812,12 +916,18 @@ pub fn sweep_stale_call_dirs(max_age_s: f64) -> usize {
 
 // --------------------------------------------------------------------------- isolation & credentials
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Invocation {
     pub argv: Vec<String>,
     pub stdin: Option<String>,
     pub raw: Map<String, Value>,
     pub home_files: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for Invocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Invocation").finish_non_exhaustive()
+    }
 }
 
 impl Invocation {
@@ -832,17 +942,31 @@ impl Invocation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CredentialLink {
     pub real: PathBuf,
     pub link: PathBuf,
     pub sync_back: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+impl std::fmt::Debug for CredentialLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialLink")
+            .field("sync_back", &self.sync_back)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Isolation {
     pub env: BTreeMap<String, String>,
     pub links: Vec<CredentialLink>,
+}
+
+impl std::fmt::Debug for Isolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Isolation").finish_non_exhaustive()
+    }
 }
 
 pub fn link_credentials(
@@ -902,19 +1026,11 @@ pub fn sync_back(links: &[CredentialLink]) {
         if !item.sync_back {
             continue;
         }
-        let Ok(meta) = fs::symlink_metadata(&item.link) else {
+        let Ok(text) = read_sidecar_text(&item.link) else {
             continue;
         };
-        if meta.file_type().is_symlink() || !meta.is_file() {
-            continue;
-        }
-        let Ok(content) = fs::read(&item.link) else {
-            continue;
-        };
-        let Ok(text) = std::str::from_utf8(&content) else {
-            continue;
-        };
-        let Some(parsed) = load_object(text) else {
+        let content = text.as_bytes();
+        let Some(parsed) = load_object(&text) else {
             continue;
         };
         if parsed.is_empty() {
@@ -966,7 +1082,7 @@ pub fn sync_back(links: &[CredentialLink]) {
             continue;
         };
         use std::io::Write as _;
-        if tmp.write_all(&content).is_ok() {
+        if tmp.write_all(content).is_ok() {
             let _ = tmp.persist(&item.real);
         }
     }
@@ -996,7 +1112,7 @@ impl std::fmt::Debug for CliConfig {
             .field("effort", &self.effort)
             .field("timeout_s", &self.timeout_s)
             .field("binary", &self.binary)
-            .field("version", &self.version)
+            .field("has_version", &self.version.is_some())
             .field("max_retries", &self.max_retries)
             .field("retry_base_delay_s", &self.retry_base_delay_s)
             .finish_non_exhaustive()
@@ -1013,7 +1129,8 @@ impl CliConfig {
             binary: binary.into(),
             runner: Arc::new(SystemProcessRunner),
             version: None,
-            max_retries: DEFAULT_MAX_RETRIES,
+            // SPEC-v5.2 §7.4: adapters perform no internal retries; the runner owns the cap.
+            max_retries: 0,
             retry_base_delay_s: DEFAULT_RETRY_BASE_DELAY_S,
             environment: None,
         }
@@ -1022,9 +1139,13 @@ impl CliConfig {
 
 pub trait CliAdapter: Send + Sync {
     fn kind(&self) -> &'static str;
-    fn python_type_identity(&self) -> (&'static str, &'static str);
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::new(true, false, false)
+    }
+    /// Whether this CLI receives the system prompt through a dedicated flag/file (`Native`) or
+    /// inline as the canonical `=== SYSTEM ===` block of the user message (`Inline`).
+    fn system_channel(&self) -> SystemChannel {
+        SystemChannel::Native
     }
     fn supports_effort(&self) -> bool {
         true
@@ -1053,6 +1174,13 @@ pub trait CliAdapter: Send + Sync {
 
     fn stale_outputs(&self, _io_dir: &Path) -> Vec<PathBuf> {
         Vec::new()
+    }
+
+    /// Refuse a request before anything is spawned, for example when the CLI would silently
+    /// rewrite or truncate it. An `Err` becomes a provider failure carrying `(error_code,
+    /// message)`; it never reaches the model.
+    fn preflight(&self, _request: &ModelRequest) -> Result<(), (&'static str, String)> {
+        Ok(())
     }
 
     fn build(
@@ -1085,7 +1213,7 @@ impl<A: CliAdapter> CliProvider<A> {
     pub fn new(adapter: A, config: CliConfig) -> Self {
         let resolved_version = OnceLock::new();
         if let Some(ref v) = config.version {
-            let _ = resolved_version.set(v.clone());
+            let _ = resolved_version.set(redact(v, config.environment.as_ref(), &[]));
         }
         Self {
             adapter,
@@ -1156,7 +1284,7 @@ impl<A: CliAdapter> CliProvider<A> {
         let source = match base.or(self.config.environment.as_ref()) {
             Some(m) => m,
             None => {
-                owned = std::env::vars().collect();
+                owned = crate::env::unicode_env_snapshot();
                 &owned
             }
         };
@@ -1178,50 +1306,22 @@ impl<A: CliAdapter> CliProvider<A> {
     }
 
     fn compute_setup_revision(&self) -> String {
-        let mut args = Map::new();
-        args.insert("<arg>".to_string(), Value::String("<value>".to_string()));
         let transcript = vec![
             Message::user("<prompt>"),
-            Message::assistant(
-                "<reply>",
-                vec![ToolCall {
-                    id: "<call-id>".to_string(),
-                    name: "<tool>".to_string(),
-                    arguments: args,
-                }],
-            ),
-            Message::tool("<call-id>", "<result>"),
+            Message::assistant("<reply>"),
             Message::user("<follow-up>"),
         ];
-        let mut empty_obj_schema = Map::new();
-        empty_obj_schema.insert("type".to_string(), Value::String("object".to_string()));
-        empty_obj_schema.insert("properties".to_string(), Value::Object(Map::new()));
-
         let templates: Vec<(ModelRequest, Option<&str>)> = vec![
             (ModelRequest::new("", vec![Message::user("<prompt>")]), None),
             (
-                ModelRequest {
-                    system: "<system>".to_string(),
-                    messages: transcript.clone(),
-                    output_schema: Some(empty_obj_schema.clone()),
-                    ..ModelRequest::default()
-                },
+                ModelRequest::new("<system>", transcript.clone()),
                 if self.adapter.supports_effort() {
                     Some("<effort>")
                 } else {
                     None
                 },
             ),
-            (
-                ModelRequest {
-                    system: "<system>".to_string(),
-                    messages: transcript,
-                    output_schema: Some(empty_obj_schema),
-                    schema_name: ACTION_SCHEMA_NAME.to_string(),
-                    ..ModelRequest::default()
-                },
-                None,
-            ),
+            (ModelRequest::new("<system>", transcript), None),
         ];
 
         let dir = CallDirGuard::new(&format!("identitybench-{}-setup-", self.adapter.kind()))
@@ -1316,9 +1416,8 @@ impl<A: CliAdapter> CliProvider<A> {
 
         let large_system = Value::Array(vec![
             Value::from(MAX_ARG_BYTES as u64),
-            Value::String(SYSTEM_POINTER.to_string()),
             Value::String(SYSTEM_BEGIN.to_string()),
-            Value::String(SYSTEM_END.to_string()),
+            Value::String(self.adapter.system_channel().as_str().to_string()),
         ]);
 
         let mut setup = Map::new();
@@ -1351,7 +1450,15 @@ impl<A: CliAdapter> CliProvider<A> {
         let mut text = format!("{}: {message}", self.adapter.kind());
         if let Some(res) = result {
             let mut details = vec![format!("exit {}", res.returncode)];
-            let excerpt = scrub_stderr(&res.stderr, request, STDERR_EXCERPT_CHARS);
+            // Redact before taking the tail: the excerpt boundary can split a credential and
+            // leave a suffix that no longer matches the complete value.
+            let without_prompt_echoes = strip_prompt_echoes(&res.stderr, request);
+            let stderr = redact(
+                &without_prompt_echoes,
+                self.config.environment.as_ref(),
+                &[],
+            );
+            let excerpt = tail(&stderr, STDERR_EXCERPT_CHARS);
             if !excerpt.is_empty() {
                 details.push(format!("stderr: {excerpt}"));
             }
@@ -1382,15 +1489,24 @@ impl<A: CliAdapter> CliProvider<A> {
     }
 
     async fn complete_inner(&self, request: &ModelRequest) -> ModelResponse {
-        if !request.tools.is_empty() {
-            return self.fail(
-                "native tools are not supported by CLI providers; use context mode",
-                None,
-                Some(request),
-            );
-        }
         if request.messages.is_empty() {
             return self.fail("request has no messages", None, Some(request));
+        }
+        if let Err((error_code, message)) = self.adapter.preflight(request) {
+            let mut failed = self.fail(&message, None, Some(request));
+            let mut meta = Map::new();
+            meta.insert(
+                "error_code".to_string(),
+                Value::String(error_code.to_string()),
+            );
+            meta.insert(
+                "error_class".to_string(),
+                Value::String("TRANSPORT_CAPACITY".to_string()),
+            );
+            // Nothing was spawned, so the model provably never saw the request.
+            meta.insert("proven_unanswered".to_string(), Value::Bool(true));
+            failed.raw = Some(meta);
+            return failed;
         }
         let effort: Option<String> = if self.adapter.supports_effort() {
             request
@@ -1569,6 +1685,21 @@ impl<A: CliAdapter> CliProvider<A> {
         )
         .await;
 
+        // The probe also asks for a marker in the subprocess cwd. Inspect its directory
+        // entry before adapter cleanup or dropping the call directory, without opening it.
+        if request.is_native_tool_probe()
+            && !matches!(fs::symlink_metadata(work_dir.join("canary.txt")), Err(e) if e.kind() == ErrorKind::NotFound)
+        {
+            let raw = response.raw.get_or_insert_with(Map::new);
+            raw.insert(
+                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                Value::Bool(true),
+            );
+            raw.insert(
+                crate::base::NATIVE_TOOL_EVENTS.to_owned(),
+                Value::Array(vec![Value::String("canary_file_side_effect".to_owned())]),
+            );
+        }
         sync_back(&isolation.links);
         self.adapter.after_call(&work_dir, &env);
 
@@ -1608,14 +1739,6 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
         &self.config.model
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        self.adapter.python_type_identity()
-    }
-
-    fn local_retry_limit(&self) -> Option<u32> {
-        Some(self.config.max_retries)
-    }
-
     fn endpoint_identity(&self) -> String {
         let ver = self.resolved_version.get_or_init(|| {
             probe_version(
@@ -1637,6 +1760,10 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
         self.adapter.capabilities()
     }
 
+    fn system_channel(&self) -> SystemChannel {
+        self.adapter.system_channel()
+    }
+
     async fn complete(&self, request: &ModelRequest) -> ModelResponse {
         let mut response =
             sanitize_response(self.complete_inner(request).await, self.adapter.kind());
@@ -1648,6 +1775,19 @@ impl<A: CliAdapter> Provider for CliProvider<A> {
                 Value::Array(ignored.into_iter().map(Value::String).collect()),
             );
             response.raw = Some(raw);
+        }
+        if let Some(raw) = response.raw.take() {
+            response.raw = Some(crate::subprocess::redact_diagnostics_map(
+                &raw,
+                self.config.environment.as_ref(),
+                &[],
+            ));
+        }
+        for text in [&mut response.stop_reason, &mut response.served_model]
+            .into_iter()
+            .flatten()
+        {
+            *text = redact(text, self.config.environment.as_ref(), &[]);
         }
         response
     }

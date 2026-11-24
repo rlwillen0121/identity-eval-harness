@@ -9,4 +9,7 @@ pub mod error;
 pub mod pricing;
 
 pub use error::AccountingError;
-pub use pricing::{FrozenPricingRate, HasUsageTokenCounts, estimate_frozen_cost_micros};
+pub use pricing::{
+    FrozenPricingRate, HasUsageTokenCounts, TokenCounts, TokenRates, estimate_cost_micros,
+    estimate_frozen_cost_micros,
+};

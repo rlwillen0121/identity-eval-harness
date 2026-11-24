@@ -5,13 +5,13 @@ use ib_providers::anthropic_api::{
     ASSISTANT_CONTENT_KEY, AnthropicConfig, AnthropicProvider,
     accepts_temperature as anthropic_accepts_temperature,
 };
-use ib_providers::base::{Message, ModelRequest, Provider, ToolCall, ToolSpec};
+use ib_providers::base::{Message, ModelRequest, Provider, ToolCall};
 use ib_providers::openai_compat::{
     DEFAULT_BASE_URL, MaxTokensParam, OpenAICompatConfig, OpenAICompatProvider, OpenAiApi,
     UNPARSED_ARGUMENTS_KEY, accepts_temperature as openai_accepts_temperature, default_api_key_env,
     headers_problem, is_vendor_endpoint, provider_routing_problem,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -145,24 +145,6 @@ async fn spawn_mock_server(
     (format!("http://{addr}"), recorded)
 }
 
-fn lookup_tool() -> ToolSpec {
-    ToolSpec {
-        name: "get_identity".to_string(),
-        description: "Look up an identity by id.".to_string(),
-        input_schema: json!({"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"], "additionalProperties": false})
-            .as_object()
-            .unwrap()
-            .clone(),
-    }
-}
-
-fn decision_schema() -> Map<String, Value> {
-    json!({"type": "object", "properties": {"decision": {"type": "string"}}, "required": ["decision"], "additionalProperties": false})
-        .as_object()
-        .unwrap()
-        .clone()
-}
-
 #[test]
 fn endpoint_helpers_and_temperature_tables() {
     assert!(is_vendor_endpoint(Some(DEFAULT_BASE_URL)));
@@ -187,6 +169,32 @@ fn endpoint_helpers_and_temperature_tables() {
 
     assert!(headers_problem(&json!({"Authorization": "Bearer k"})).is_some());
     assert!(headers_problem(&json!({"x-opencode-session": "id"})).is_none());
+    for name in [
+        "x-refresh-token",
+        "x-client-secret",
+        "x-clientPassword",
+        "x-authToken",
+        "x-identity-auth",
+        "x-api-key",
+    ] {
+        assert!(
+            headers_problem(&json!({name: "opaque-test-marker"})).is_some(),
+            "{name}"
+        );
+    }
+    for value in [
+        "Bearer opaque-test-marker",
+        "Basic opaque-test-marker",
+        "OAuth opaque-test-marker",
+    ] {
+        let problem = headers_problem(&json!({"x-opencode-session": value}));
+        assert!(problem.is_some(), "{value}");
+        assert!(!problem.unwrap().contains("opaque-test-marker"));
+    }
+    assert!(headers_problem(&json!({"openai-organization": "research"})).is_none());
+    assert!(headers_problem(&json!({"x-api-version": "2024-01"})).is_none());
+    assert!(headers_problem(&json!({"x-key-id": "public-key-2"})).is_none());
+    assert!(headers_problem(&json!({"x-api-key-id": "public-key-2"})).is_none());
     assert!(provider_routing_problem(&json!({"allow_fallbacks": "false"})).is_some());
     assert!(
         provider_routing_problem(&json!({"order": ["Baidu"], "allow_fallbacks": false})).is_none()
@@ -256,8 +264,6 @@ async fn openai_chat_completions_byok_cost_routing_headers_and_usage() {
 
     let p = OpenAICompatProvider::new(cfg).unwrap();
     let mut req = ModelRequest::new("SYS", vec![Message::user("Decide.")]);
-    req.output_schema = Some(decision_schema());
-    req.tools = vec![lookup_tool()];
     req.params.temperature = Some(0.2);
     req.params.effort = Some("low".to_string());
 
@@ -268,7 +274,7 @@ async fn openai_chat_completions_byok_cost_routing_headers_and_usage() {
     assert_eq!(resp.usage.output_tokens, 40);
     assert_eq!(resp.usage.reasoning_tokens, 10);
     assert!((resp.reported_cost_usd.unwrap() - 0.0021).abs() < 1e-12);
-    assert_eq!(resp.parsed.as_ref().unwrap()["decision"], json!("DENY"));
+    assert_eq!(resp.text.as_deref(), Some("{\"decision\":\"DENY\"}"));
     assert_eq!(
         resp.tool_calls[0].arguments,
         json!({UNPARSED_ARGUMENTS_KEY: "{bad-json"})
@@ -419,8 +425,7 @@ async fn openai_responses_api_malformed_body_and_redacted_errors() {
     cfg.env_override = Some(env);
 
     let p = OpenAICompatProvider::new(cfg).unwrap();
-    let mut req = ModelRequest::new("POLICY", vec![Message::user("Decide.")]);
-    req.output_schema = Some(decision_schema());
+    let req = ModelRequest::new("POLICY", vec![Message::user("Decide.")]);
     let r1 = p.complete(&req).await;
     assert!(r1.ok());
     assert_eq!(r1.stop_reason.as_deref(), Some("tool_calls"));
@@ -452,7 +457,7 @@ async fn openai_responses_api_malformed_body_and_redacted_errors() {
 }
 
 #[tokio::test]
-async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
+async fn anthropic_messages_tool_use_detection_sse_stream_and_isolation() {
     let first_msg = MockReply::json(
         200,
         json!({
@@ -497,7 +502,6 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     let p = AnthropicProvider::new(cfg).unwrap();
     assert_eq!(p.kind(), "anthropic_compatible");
     let mut req1 = ModelRequest::new("POLICY", vec![Message::user("Decide.")]);
-    req1.tools = vec![lookup_tool()];
     req1.params.temperature = Some(0.0); // dropped for claude-opus-5-5!
 
     let r1 = p.complete(&req1).await;
@@ -516,21 +520,13 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     );
     assert!(r1.raw.as_ref().unwrap().contains_key(ASSISTANT_CONTENT_KEY));
 
-    // Follow-up request replays original thinking block and uses SSE (>16k tokens)
-    let mut req2 = ModelRequest::new(
-        "POLICY",
-        vec![
-            Message::user("Decide."),
-            Message::assistant("", r1.tool_calls.clone()),
-            Message::tool("toolu_9", "U9 record"),
-        ],
-    );
-    req2.output_schema = Some(decision_schema());
+    // Follow-up request uses SSE (>16k tokens)
+    let mut req2 = ModelRequest::new("POLICY", vec![Message::user("Decide.")]);
     req2.params.max_output_tokens = 20_000;
 
     let r2 = p.complete(&req2).await;
     assert!(r2.ok());
-    assert_eq!(r2.parsed.as_ref().unwrap()["decision"], json!("DENY"));
+    assert_eq!(r2.text.as_deref(), Some("{\"decision\":\"DENY\"}"));
 
     let reqs = recorded.lock().unwrap();
     assert_eq!(reqs.len(), 2);
@@ -538,10 +534,42 @@ async fn anthropic_messages_tool_turn_replay_sse_stream_and_isolation() {
     assert_eq!(reqs[0].headers["x-api-key"], "not-set");
     assert_eq!(reqs[0].path, "/v1/messages");
     assert!(reqs[0].body.get("temperature").is_none());
-    // Follow-up replayed the thinking block unchanged!
-    assert_eq!(
-        reqs[1].body["messages"][1]["content"][0]["signature"],
-        json!("sig-abc")
-    );
     assert_eq!(reqs[1].body["stream"], json!(true));
+}
+
+#[test]
+fn provider_routing_is_sent_verbatim_and_bound_into_endpoint_identity() {
+    let make = |routing: Option<Value>| {
+        let mut cfg = OpenAICompatConfig::new("deepseek/deepseek-v4");
+        cfg.base_url_env = Some("OPENROUTER_BASE_URL".to_string());
+        cfg.env_override = Some(BTreeMap::from([(
+            "OPENROUTER_BASE_URL".to_string(),
+            "https://openrouter.ai/api/v1".to_string(),
+        )]));
+        cfg.provider_routing = routing.map(|r| r.as_object().unwrap().clone());
+        OpenAICompatProvider::new(cfg).unwrap()
+    };
+    // Members deliberately out of sorted order: the body keeps the configured object verbatim.
+    let pinned = json!({"order": ["deepinfra"], "allow_fallbacks": false});
+    let reordered = json!({"allow_fallbacks": false, "order": ["deepinfra"]});
+    let other = json!({"order": ["together"], "allow_fallbacks": false});
+    let req = ModelRequest::new("SYS", vec![Message::user("x")]);
+
+    let unpinned = make(None);
+    assert!(unpinned.request_params(&req).get("provider").is_none());
+    let p = make(Some(pinned.clone()));
+    let body = p.request_params(&req);
+    assert_eq!(body["provider"], pinned);
+    assert_eq!(
+        serde_json::to_string(&body["provider"]).unwrap(),
+        r#"{"order":["deepinfra"],"allow_fallbacks":false}"#
+    );
+
+    // Upstream routing is part of the transport identity; member order is not.
+    assert_ne!(p.endpoint_identity(), unpinned.endpoint_identity());
+    assert_ne!(p.endpoint_identity(), make(Some(other)).endpoint_identity());
+    assert_eq!(
+        p.endpoint_identity(),
+        make(Some(reordered)).endpoint_identity()
+    );
 }

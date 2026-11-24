@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use md5::{Digest, Md5};
 use serde_json::{Map, Value};
 
-use crate::base::{ModelRequest, ModelResponse, ProviderCapabilities, Usage};
+use crate::base::{ModelRequest, ModelResponse, ProviderCapabilities, SystemChannel, Usage};
 use crate::cli::{
     CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_int, parse_json_payload,
     prepend_system, render_transcript,
@@ -92,10 +92,6 @@ impl CliAdapter for CursorAdapter {
         "cursor_cli"
     }
 
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.cursor_cli", "CursorCliProvider")
-    }
-
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::new(false, false, false)
     }
@@ -139,6 +135,10 @@ impl CliAdapter for CursorAdapter {
         if chats.is_dir() {
             let _ = fs::remove_dir_all(chats);
         }
+    }
+
+    fn system_channel(&self) -> SystemChannel {
+        SystemChannel::Inline
     }
 
     fn build(
@@ -222,14 +222,3 @@ impl CliAdapter for CursorAdapter {
 }
 
 pub type CursorCliProvider = CliProvider<CursorAdapter>;
-
-#[must_use]
-pub fn new_cursor_provider(model: Option<&str>, binary: Option<&str>) -> CursorCliProvider {
-    let bin = binary
-        .map(str::to_string)
-        .unwrap_or_else(resolve_cursor_binary);
-    CliProvider::new(
-        CursorAdapter,
-        CliConfig::new(model.unwrap_or("auto"), bin, 600.0),
-    )
-}

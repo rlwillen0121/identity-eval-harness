@@ -125,7 +125,7 @@ fn default_max_output_tokens() -> u64 {
 }
 
 /// One model configuration under test (SPEC §16).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelSpec {
     pub provider: ProviderKind,
@@ -150,6 +150,12 @@ pub struct ModelSpec {
     pub concurrency: Option<u64>,
     #[serde(default)]
     pub extra: Map<String, Value>,
+}
+
+impl std::fmt::Debug for ModelSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModelSpec").finish_non_exhaustive()
+    }
 }
 
 impl ModelSpec {
@@ -197,17 +203,12 @@ impl ModelSpec {
                 .chars()
                 .any(|c| (c as u32) < 32 || (c as u32) == 127)
         {
-            return Err(FactoryError::Validation(format!(
-                "invalid model name {:?}",
-                self.model
-            )));
+            return Err(FactoryError::Validation("invalid model name".to_string()));
         }
         if let Some(ref eff) = self.effort
             && (eff.starts_with('-') || eff.chars().any(|c| (c as u32) < 32 || (c as u32) == 127))
         {
-            return Err(FactoryError::Validation(format!(
-                "invalid effort value {eff:?}"
-            )));
+            return Err(FactoryError::Validation("invalid effort value".to_string()));
         }
         if self.max_output_tokens == 0 {
             return Err(FactoryError::Validation(
@@ -283,9 +284,7 @@ impl ModelSpec {
 
         for (name, value) in &self.extra {
             if let Some(prob) = extra_problem(name, value) {
-                return Err(FactoryError::Validation(format!(
-                    "extra.{name} {prob} (got {value})"
-                )));
+                return Err(FactoryError::Validation(format!("extra.{name} {prob}")));
             }
         }
         Ok(())
@@ -360,10 +359,6 @@ fn extra_problem(name: &str, value: &Value) -> Option<String> {
             _ => Some("must be a non-empty string".to_string()),
         },
     }
-}
-
-pub fn make_provider(spec: &ModelSpec) -> Result<Arc<dyn Provider>, FactoryError> {
-    make_provider_with_env(spec, None)
 }
 
 pub fn make_provider_with_env(

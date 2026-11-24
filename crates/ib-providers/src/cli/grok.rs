@@ -9,9 +9,9 @@ use serde_json::{Map, Value};
 
 use crate::base::{ModelRequest, ModelResponse, Usage};
 use crate::cli::{
-    ACTION_SCHEMA_NAME, CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict,
-    as_float, as_int, link_credentials, parse_json_payload, render_transcript, served_models,
-    structured_text, system_override,
+    CliAdapter, CliConfig, CliProvider, Invocation, Isolation, as_dict, as_float, as_int,
+    link_credentials, parse_json_payload, render_transcript, served_models, structured_text,
+    system_override,
 };
 use crate::subprocess::{ProcessResult, user_home_dir};
 
@@ -39,10 +39,6 @@ pub struct GrokAdapter;
 impl CliAdapter for GrokAdapter {
     fn kind(&self) -> &'static str {
         "grok_cli"
-    }
-
-    fn python_type_identity(&self) -> (&'static str, &'static str) {
-        ("identitybench.providers.grok_cli", "GrokCliProvider")
     }
 
     fn env_drop(&self) -> &'static [&'static str] {
@@ -97,7 +93,7 @@ impl CliAdapter for GrokAdapter {
         io_dir: &Path,
         _work_dir: &Path,
     ) -> Invocation {
-        let (system, body, mut notes) = system_override(
+        let (system, body, notes) = system_override(
             &request.system,
             &render_transcript(&request.messages),
             SYSTEM_FLAG,
@@ -127,18 +123,6 @@ impl CliAdapter for GrokAdapter {
             "json".to_string(),
         ];
 
-        if let Some(schema) = &request.output_schema {
-            if request.schema_name != ACTION_SCHEMA_NAME {
-                let schema_json = dumps(&Value::Object(schema.clone()), &DumpOptions::default())
-                    .unwrap_or_else(|_| "{}".to_string());
-                argv.push(format!("--json-schema={schema_json}"));
-            } else {
-                notes.insert(
-                    "json_schema".to_string(),
-                    Value::String("withheld (JSON action protocol turn)".to_string()),
-                );
-            }
-        }
         if let Some(eff) = effort {
             argv.push(format!("--reasoning-effort={eff}"));
         }
@@ -221,8 +205,3 @@ impl CliAdapter for GrokAdapter {
 }
 
 pub type GrokCliProvider = CliProvider<GrokAdapter>;
-
-#[must_use]
-pub fn new_grok_provider(model: impl Into<String>) -> GrokCliProvider {
-    CliProvider::new(GrokAdapter, CliConfig::new(model, "grok", 600.0))
-}
