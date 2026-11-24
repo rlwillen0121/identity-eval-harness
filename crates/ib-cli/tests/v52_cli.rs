@@ -1607,7 +1607,9 @@ fn leaderboard_over_two_dev_replay_runs() {
         .iter()
         .find(|e| e["entry"]["model_id"] == "replay-c")
         .unwrap();
-    assert!(reason_codes(c).contains(&"pricing_mismatch".to_owned()));
+    assert!(!reason_codes(c).contains(&"pricing_mismatch".to_owned()));
+    assert!(!reason_codes(c).contains(&"pricing_ambiguous".to_owned()));
+    assert_eq!(c["usage"]["estimated_cost_pricing_sha256"], table_sha);
 
     // Both runs used the same frozen table; leaderboard costs use each run's own row.
     for run in [&run_a, &run_b] {

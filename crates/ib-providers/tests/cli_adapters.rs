@@ -1391,3 +1391,101 @@ async fn codex_records_structured_native_tool_events_and_ignores_assistant_prose
     let raw_str = serde_json::to_string(raw).unwrap();
     assert!(!raw_str.contains("secret_cmd") && !raw_str.contains("secret_q"));
 }
+
+#[tokio::test]
+async fn codex_ignores_empty_builtin_codex_mcp_discovery_but_flags_real_mcp_calls() {
+    let valid = r#"{"actions":[{"action":"list_workspace","arguments":{}}]}"#;
+    let runner_benign = FakeRunner::single(move |_| {
+        ProcessResult {
+        returncode: 0,
+        stdout: [
+            json!({"type": "item.started", "item": {"id": "d1", "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resources", "arguments": {}, "status": "in_progress"}}),
+            json!({"type": "item.completed", "item": {"id": "d1", "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resources", "arguments": {}, "result": {"content": [{"type": "text", "text": "{\"resources\":[]}"}]}, "status": "completed"}}),
+            json!({"type": "item.started", "item": {"id": "d2", "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resource_templates", "arguments": {}, "status": "in_progress"}}),
+            json!({"type": "item.completed", "item": {"id": "d2", "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resource_templates", "arguments": {}, "status": "failed"}}),
+            json!({"type": "item.completed", "item": {"id": "a", "type": "agent_message", "text": valid}}),
+            json!({"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}}),
+        ]
+        .map(|e| e.to_string())
+        .join("\n"),
+        stderr: String::new(),
+        duration_s: 0.01,
+        timed_out: false,
+        launch_error: None,
+    }
+    });
+    let mut cfg = CliConfig::new("offline-model", "never-executed", 1.0);
+    cfg.runner = runner_benign;
+    cfg.version = Some("offline".into());
+    cfg.max_retries = 0;
+    let resp = CodexCliProvider::new(CodexAdapter, cfg)
+        .complete(&make_request("x", "SYS"))
+        .await;
+    assert!(resp.ok());
+    assert!(
+        resp.raw
+            .as_ref()
+            .and_then(|r| r.get(ib_providers::base::NATIVE_TOOL_ACTIVITY))
+            .is_none(),
+        "empty built-in codex MCP discovery must not set native_tool_activity"
+    );
+
+    for (label, events) in [
+        (
+            "non_empty_codex_mcp",
+            vec![
+                json!({"type": "item.started", "item": {"id": "m1", "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resources", "arguments": {}, "status": "in_progress"}}),
+                json!({"type": "item.completed", "item": {"id": "m1", "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resources", "arguments": {}, "result": {"content": [{"type": "text", "text": "{\"resources\":[{\"uri\":\"file:///etc/passwd\"}]}"}]}, "status": "completed"}}),
+            ],
+        ),
+        (
+            "external_mcp_server",
+            vec![
+                json!({"type": "item.completed", "item": {"id": "m2", "type": "mcp_tool_call", "server": "custom", "tool": "list_mcp_resources", "arguments": {}, "result": {"content": [{"type": "text", "text": "{\"resources\":[]}"}]}, "status": "completed"}}),
+            ],
+        ),
+        (
+            "incomplete_codex_discovery",
+            vec![
+                json!({"type": "item.started", "item": {"id": "m3", "type": "mcp_tool_call", "server": "codex", "tool": "list_mcp_resources", "arguments": {}, "status": "in_progress"}}),
+            ],
+        ),
+    ] {
+        let mut all_events = events;
+        all_events.push(json!({"type": "item.completed", "item": {"id": "a", "type": "agent_message", "text": valid}}));
+        all_events.push(
+            json!({"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}}),
+        );
+        let stdout = all_events
+            .into_iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let runner = FakeRunner::single(move |_| ProcessResult {
+            returncode: 0,
+            stdout: stdout.clone(),
+            stderr: String::new(),
+            duration_s: 0.01,
+            timed_out: false,
+            launch_error: None,
+        });
+        let mut c = CliConfig::new("offline-model", "never-executed", 1.0);
+        c.runner = runner;
+        c.version = Some("offline".into());
+        c.max_retries = 0;
+        let r = CodexCliProvider::new(CodexAdapter, c)
+            .complete(&make_request("x", "SYS"))
+            .await;
+        let raw = r.raw.as_ref().expect(label);
+        assert_eq!(
+            raw[ib_providers::base::NATIVE_TOOL_ACTIVITY],
+            json!(true),
+            "{label}"
+        );
+        assert_eq!(
+            raw[ib_providers::base::NATIVE_TOOL_EVENTS],
+            json!(["mcp_tool_call"]),
+            "{label}"
+        );
+    }
+}

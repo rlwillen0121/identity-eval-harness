@@ -2754,6 +2754,12 @@ async fn probe_passes_on_a_faithful_mock_transport_and_binds_the_receipt() {
     let requests = provider.requests();
     assert_eq!(requests.len(), 3);
     let sentinel = &requests[0];
+    assert!(sentinel.system.starts_with(&render_v52_system_prompt()));
+    assert!(
+        sentinel
+            .system
+            .contains(ib_v52_runtime::probe::PROBE_SYSTEM_OVERRIDE)
+    );
     assert_eq!(
         sentinel.system.len() + sentinel.messages[0].content.len(),
         ib_v52_runtime::MAX_REQUEST_BYTES_V52

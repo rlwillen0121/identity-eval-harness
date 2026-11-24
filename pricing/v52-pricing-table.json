@@ -97,6 +97,14 @@
       "output_micros_per_million": 6000000,
       "reasoning_micros_per_million": 6000000,
       "source_url": "https://docs.x.ai/developers/pricing"
+    },
+    "gpt-6-luna": {
+      "uncached_input_micros_per_million": 100000,
+      "cached_input_micros_per_million": 10000,
+      "cache_write_micros_per_million": 125000,
+      "output_micros_per_million": 500000,
+      "reasoning_micros_per_million": 500000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
     }
   }
 }

@@ -2022,25 +2022,13 @@ fn entry_reasons(
                 "entries use different pricing artifacts and no --pricing artifact was supplied",
             ));
         }
-        let matches_board = leaderboard_pricing.is_some_and(|shared| {
-            manifest_pricing == Some(shared) && bound_pricing == Some(shared)
-        });
-        let internally_consistent = manifest_pricing == bound_pricing;
-        if (leaderboard_pricing.is_some() && !matches_board)
-            || (leaderboard_pricing.is_none() && !internally_consistent)
-        {
-            let detail = match leaderboard_pricing {
-                Some(shared) => format!(
-                    "manifest pricing_sha256 {} and fingerprint_inputs.pricing_sha256 {} must both match leaderboard {shared}",
-                    manifest_pricing.unwrap_or("missing"),
-                    bound_pricing.unwrap_or("missing")
-                ),
-                None => format!(
-                    "manifest pricing_sha256 {} differs from fingerprint_inputs.pricing_sha256 {}",
-                    manifest_pricing.unwrap_or("missing"),
-                    bound_pricing.unwrap_or("missing")
-                ),
-            };
+        let internally_consistent = manifest_pricing.is_some() && manifest_pricing == bound_pricing;
+        if !internally_consistent {
+            let detail = format!(
+                "manifest pricing_sha256 {} differs from fingerprint_inputs.pricing_sha256 {}",
+                manifest_pricing.unwrap_or("missing"),
+                bound_pricing.unwrap_or("missing")
+            );
             reasons[i].push(reason(7, "pricing_mismatch", detail));
         }
         if tuples.iter().filter(|t| **t == tuples[i]).count() > 1 {

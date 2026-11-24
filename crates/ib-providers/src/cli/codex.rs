@@ -104,6 +104,63 @@ fn agent_message(event: &Map<String, Value>) -> Option<String> {
     None
 }
 
+fn is_codex_discovery_mcp_tool(item: &Map<String, Value>) -> bool {
+    item.get("server").and_then(Value::as_str) == Some("codex")
+        && matches!(
+            item.get("tool").and_then(Value::as_str),
+            Some("list_mcp_resources" | "list_mcp_resource_templates" | "read_mcp_resource")
+        )
+}
+
+fn is_empty_codex_mcp_result(item: &Map<String, Value>) -> bool {
+    let status = item.get("status").and_then(Value::as_str);
+    if status == Some("failed") {
+        return true;
+    }
+    if status != Some("completed") {
+        return false;
+    }
+    let Some(result) = item.get("result") else {
+        return false;
+    };
+    let Some(result_obj) = result.as_object() else {
+        return false;
+    };
+    let Some(content) = result_obj.get("content").and_then(Value::as_array) else {
+        return false;
+    };
+    if content.is_empty() {
+        return true;
+    }
+    if content.len() != 1 {
+        return false;
+    }
+    let Some(entry) = content[0].as_object() else {
+        return false;
+    };
+    if entry.get("type").and_then(Value::as_str) != Some("text") {
+        return false;
+    }
+    let Some(raw_text) = entry.get("text").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(parsed) = serde_json::from_str::<Value>(raw_text) else {
+        return false;
+    };
+    let Some(obj) = parsed.as_object() else {
+        return false;
+    };
+    let empty_resources = obj
+        .get("resources")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty);
+    let empty_templates = obj
+        .get("resourceTemplates")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty);
+    (empty_resources && obj.len() == 1) || (empty_templates && obj.len() == 1)
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CodexAdapter;
 
@@ -206,6 +263,7 @@ impl CliAdapter for CodexAdapter {
         let mut streamed_text: Option<String> = None;
         let mut turn_completed = false;
         let mut native_tool_events: BTreeSet<String> = BTreeSet::new();
+        let mut pending_codex_discovery_ids: BTreeSet<String> = BTreeSet::new();
 
         visit_jsonl(&result.stdout, |event| {
             let kind = event.get("type").and_then(Value::as_str);
@@ -234,30 +292,69 @@ impl CliAdapter for CodexAdapter {
             } else if matches!(
                 kind,
                 Some("item.started" | "item.updated" | "item.completed")
-            ) && let Some(item_kind) = event.get("item").and_then(|item| {
-                item.get("type")
-                    .or_else(|| item.get("item_type"))
+            ) && let Some(item_obj) = event.get("item").and_then(Value::as_object)
+                && let Some(item_kind) = item_obj
+                    .get("type")
+                    .or_else(|| item_obj.get("item_type"))
                     .and_then(Value::as_str)
-            }) && matches!(
-                item_kind,
-                "command_execution"
-                    | "file_change"
-                    | "mcp_tool_call"
-                    | "dynamic_tool_call"
-                    | "web_search"
-                    | "collab_tool_call"
-            ) {
-                raw.insert(
-                    crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
-                    Value::Bool(true),
-                );
-                native_tool_events.insert(item_kind.to_owned());
-            } else if let Some(message) = agent_message(event) {
-                streamed_text = Some(message);
+            {
+                if matches!(
+                    item_kind,
+                    "command_execution"
+                        | "file_change"
+                        | "dynamic_tool_call"
+                        | "web_search"
+                        | "collab_tool_call"
+                ) {
+                    raw.insert(
+                        crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                        Value::Bool(true),
+                    );
+                    native_tool_events.insert(item_kind.to_owned());
+                } else if item_kind == "mcp_tool_call" {
+                    if is_codex_discovery_mcp_tool(item_obj) {
+                        let item_id = item_obj.get("id").and_then(Value::as_str);
+                        if kind == Some("item.completed") {
+                            if let Some(id) = item_id {
+                                pending_codex_discovery_ids.remove(id);
+                            }
+                            if !is_empty_codex_mcp_result(item_obj) {
+                                raw.insert(
+                                    crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                                    Value::Bool(true),
+                                );
+                                native_tool_events.insert(item_kind.to_owned());
+                            }
+                        } else if let Some(id) = item_id {
+                            pending_codex_discovery_ids.insert(id.to_owned());
+                        } else {
+                            raw.insert(
+                                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                                Value::Bool(true),
+                            );
+                            native_tool_events.insert(item_kind.to_owned());
+                        }
+                    } else {
+                        raw.insert(
+                            crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                            Value::Bool(true),
+                        );
+                        native_tool_events.insert(item_kind.to_owned());
+                    }
+                } else if let Some(message) = agent_message(event) {
+                    streamed_text = Some(message);
+                }
             } else if let Some(err) = event_error(event) {
                 last_error = Some(err);
             }
         });
+        if !pending_codex_discovery_ids.is_empty() {
+            raw.insert(
+                crate::base::NATIVE_TOOL_ACTIVITY.to_owned(),
+                Value::Bool(true),
+            );
+            native_tool_events.insert("mcp_tool_call".to_owned());
+        }
 
         let (sidecar_text, output_file_rejected) =
             match read_sidecar_text(&io_dir.join(OUTPUT_FILE)) {
