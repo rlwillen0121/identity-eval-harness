@@ -18,14 +18,12 @@ use ib_v52_schemas::{
     LifecycleStatesConfigV52, NhiAndAgentConfigV52, NhiDecisionV52, NhiDispositionV52,
     OboDelegationVerdictV52, RoleModelConfigV52, SealedEpisodeOracleV52, TransformsConfigV52,
     UarDecisionKindV52, UarItemDecisionV52, UarSubjectKindV52, UsernameBasePatternV52,
-    UsernamePolicyConfigV52, WorkflowsConfigV52,
+    UsernamePolicyConfigV52, WorkflowsConfigV52, apply_category_section_v52,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 const SCHEMA_VERSION: &str = "v5.2";
-/// `spoke_disposition_overrides` keys owned by `integration_fulfillment` (§8.1).
-const INTEGRATION_OWNED_OVERRIDE_KEYS: [&str; 2] = ["sap", "epic"];
 
 /// A §8.1 baseline row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -156,6 +154,22 @@ pub struct ConstructedBaselineV52 {
     pub notes: Vec<String>,
 }
 
+/// Scope a baseline config so out-of-scope categories keep starter/baseline fields untouched.
+fn scope_baseline_config(
+    episode: &EpisodeV52,
+    raw: IgaDeploymentConfigV52,
+) -> IgaDeploymentConfigV52 {
+    let scored = episode.effective_scored_categories();
+    if scored.len() >= CategoryIdV52::ALL.len() {
+        return raw;
+    }
+    let mut scoped = episode.starter_configs.clone();
+    for cat in scored {
+        apply_category_section_v52(&mut scoped, &raw, cat);
+    }
+    scoped
+}
+
 /// Construct baseline `kind` for one episode.
 #[must_use]
 pub fn construct_baseline_v52(
@@ -168,9 +182,16 @@ pub fn construct_baseline_v52(
     let config = match kind {
         BaselineKindV52::OracleGold => oracle.gold_config.clone(),
         BaselineKindV52::NoopStarterCommit => episode.starter_configs.clone(),
-        BaselineKindV52::SchemaMinimal => schema_minimal_config_v52(),
-        BaselineKindV52::DenyEverything => deny_everything_config_v52(episode, engine, &mut notes),
-        BaselineKindV52::GrantEverything => grant_everything_config_v52(episode),
+        BaselineKindV52::SchemaMinimal => {
+            scope_baseline_config(episode, schema_minimal_config_v52())
+        }
+        BaselineKindV52::DenyEverything => {
+            let raw = deny_everything_config_v52(episode, engine, &mut notes);
+            scope_baseline_config(episode, raw)
+        }
+        BaselineKindV52::GrantEverything => {
+            scope_baseline_config(episode, grant_everything_config_v52(episode))
+        }
         BaselineKindV52::GoldMinus(category) => {
             gold_minus_config_v52(category, &episode.starter_configs, &oracle.gold_config)
         }
@@ -555,79 +576,7 @@ pub fn gold_minus_config_v52(
     gold: &IgaDeploymentConfigV52,
 ) -> IgaDeploymentConfigV52 {
     let mut cfg = gold.clone();
-    match category {
-        CategoryIdV52::IdentityResolution => {
-            cfg.transforms = starter.transforms.clone();
-            cfg.username_policy = starter.username_policy.clone();
-            cfg.identity_profile = IdentityProfileConfigV52 {
-                service_account_classifiers: gold
-                    .identity_profile
-                    .service_account_classifiers
-                    .clone(),
-                ..starter.identity_profile.clone()
-            };
-        }
-        CategoryIdV52::HumanLifecycle => {
-            let mut lifecycle = starter.lifecycle_states.clone();
-            for (state_id, rule) in &mut lifecycle.states {
-                let Some(gold_rule) = gold.lifecycle_states.states.get(state_id) else {
-                    continue;
-                };
-                for key in INTEGRATION_OWNED_OVERRIDE_KEYS {
-                    if let Some(disposition) = gold_rule.spoke_disposition_overrides.get(key) {
-                        // `IndexMap::insert` overwrites an existing key in place and appends a new key.
-                        rule.spoke_disposition_overrides
-                            .insert(key.to_owned(), *disposition);
-                    }
-                }
-            }
-            cfg.lifecycle_states = lifecycle;
-            cfg.workflows.emergency_leaver = starter.workflows.emergency_leaver.clone();
-            cfg.workflows.garden_leave = starter.workflows.garden_leave.clone();
-            cfg.workflows.contingent_expiry = starter.workflows.contingent_expiry.clone();
-        }
-        CategoryIdV52::NhiAgentGovernance => {
-            cfg.nhi_and_agents = starter.nhi_and_agents.clone();
-        }
-        CategoryIdV52::IntegrationFulfillment => {
-            cfg.connectors = starter.connectors.clone();
-            cfg.workflows
-                .headless_access_request
-                .post_provisioning_webhook = starter
-                .workflows
-                .headless_access_request
-                .post_provisioning_webhook
-                .clone();
-            for rule in cfg.lifecycle_states.states.values_mut() {
-                for key in INTEGRATION_OWNED_OVERRIDE_KEYS {
-                    rule.spoke_disposition_overrides.shift_remove(key);
-                }
-            }
-        }
-        CategoryIdV52::AccessPolicy => {
-            cfg.role_model = starter.role_model.clone();
-            cfg.workflows.headless_access_request = HeadlessAccessRequestWorkflowV52 {
-                post_provisioning_webhook: gold
-                    .workflows
-                    .headless_access_request
-                    .post_provisioning_webhook
-                    .clone(),
-                ..starter.workflows.headless_access_request.clone()
-            };
-        }
-        CategoryIdV52::CloudEntitlements => {
-            cfg.cloud_ciem = starter.cloud_ciem.clone();
-        }
-        CategoryIdV52::CertificationRemediation => {
-            cfg.access_reviews = starter.access_reviews.clone();
-        }
-        CategoryIdV52::ChangeCutoverSafety => {
-            cfg.attribute_sync = starter.attribute_sync.clone();
-            cfg.golive_plan = starter.golive_plan.clone();
-            cfg.identity_profile.service_account_classifiers =
-                starter.identity_profile.service_account_classifiers.clone();
-        }
-    }
+    apply_category_section_v52(&mut cfg, starter, category);
     cfg
 }
 

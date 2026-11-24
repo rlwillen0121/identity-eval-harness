@@ -51,7 +51,7 @@ fn repo_root() -> PathBuf {
 fn dev_dataset() -> &'static LoadedV52Dataset {
     static DATASET: std::sync::OnceLock<LoadedV52Dataset> = std::sync::OnceLock::new();
     DATASET.get_or_init(|| {
-        load_v52_dataset(&repo_root().join("datasets/v52/v52_dev")).expect("load v52_dev")
+        load_v52_dataset(&repo_root().join("datasets/v53/v53_dev")).expect("load v53_dev")
     })
 }
 
@@ -85,7 +85,7 @@ fn synthetic_core_dataset_48() -> (LoadedV52Dataset, SealDigestsV52) {
         let regime_id = format!("R{}", i % 4 + 1);
         let episode_id = format!("synthetic_core_{family_id}_{regime_id}_s00");
         episode.episode_id.clone_from(&episode_id);
-        episode.suite_id = "v52_core".to_owned();
+        episode.suite_id = "v53_core".to_owned();
         episode.family_id.clone_from(&family_id);
         oracle.episode_id = episode_id;
         oracle.family_id = family_id;
@@ -94,19 +94,19 @@ fn synthetic_core_dataset_48() -> (LoadedV52Dataset, SealDigestsV52) {
         oracles.push(oracle);
     }
     let seal = SealDigestsV52 {
-        suite_id: "v52_core".to_owned(),
+        suite_id: "v53_core".to_owned(),
         episodes_sha256: sha256_hex(b"synthetic-core-episodes"),
         oracles_sha256: sha256_hex(b"synthetic-core-oracles"),
         spec_sha256: sha256_hex(SPEC_BYTES),
         contract_id: ib_v52_schemas::CONTRACT_ID_V52.to_owned(),
-        protocol_id: Some("identitybench.v5.2.protocol.v1".to_owned()),
+        protocol_id: Some(ib_v52_schemas::PROTOCOL_ID_V52.to_owned()),
     };
     (
         LoadedV52Dataset {
             dataset_dir: PathBuf::new(),
             episodes,
             oracles,
-            seal: json!({"suite_id": "v52_core"}),
+            seal: json!({"suite_id": "v53_core"}),
             episodes_bytes: Vec::new(),
             oracles_bytes: Vec::new(),
             seal_bytes: Vec::new(),
@@ -122,12 +122,12 @@ fn f06_nested_retired_headless_oracle_is_denied() {
         .episodes
         .iter()
         .find(|episode| episode.family_id == "F06")
-        .expect("F06 v52_dev episode");
+        .expect("F06 v53_dev episode");
     let oracle = dataset
         .oracles
         .iter()
         .find(|oracle| oracle.episode_id == episode.episode_id)
-        .expect("F06 v52_dev oracle");
+        .expect("F06 v53_dev oracle");
     let engine = IgaEngineV52;
 
     let request = oracle
@@ -185,8 +185,10 @@ fn f06_nested_retired_headless_oracle_is_denied() {
             .as_deref(),
         Some("approved_provisioned")
     );
+    let mut ap_episode = episode.clone();
+    ap_episode.scored_categories = vec![CategoryIdV52::AccessPolicy];
     let score = engine
-        .evaluate_commit(episode, oracle, &mutated_config)
+        .evaluate_commit(&ap_episode, oracle, &mutated_config)
         .expect("score F06 negative mutation");
     assert_eq!(score.g_srr, 0);
     assert!(!score.category_pass[&CategoryIdV52::AccessPolicy]);
@@ -348,7 +350,7 @@ fn absent_control_preserves_fingerprint_inputs_and_controls_change_fingerprint()
         endpoint_identity: "endpoint".to_owned(),
         binary_sha256: "binary".to_owned(),
         seal: SealDigestsV52 {
-            suite_id: "v52_dev".to_owned(),
+            suite_id: "v53_dev".to_owned(),
             episodes_sha256: "episodes".to_owned(),
             oracles_sha256: "oracles".to_owned(),
             spec_sha256: "spec".to_owned(),
@@ -374,7 +376,7 @@ fn absent_control_preserves_fingerprint_inputs_and_controls_change_fingerprint()
         "endpoint_identity": "endpoint",
         "binary_sha256": "binary",
         "seal": {
-            "suite_id": "v52_dev",
+            "suite_id": "v53_dev",
             "episodes_sha256": "episodes",
             "oracles_sha256": "oracles",
             "spec_sha256": "spec",
@@ -808,7 +810,7 @@ async fn uncompacted_requests_satisfy_the_prefix_property_and_turn_one_grammar()
     assert_eq!(messages[0], opening);
     assert!(
         opening.starts_with(
-            "=== SCENARIO ===\n# IdentityBench v5.2 Declarative IGA Platform Reference"
+            "=== SCENARIO ===\n# IdentityBench v5.3 Declarative IGA Platform Reference"
         )
     );
     assert!(opening.contains(&format!(
@@ -816,7 +818,7 @@ async fn uncompacted_requests_satisfy_the_prefix_property_and_turn_one_grammar()
         ep.episode_id
     )));
     assert!(opening.ends_with('}'), "initial listing is compact JSON");
-    for budget in ["44", "assistant turns", "Max Actions", "131072"] {
+    for budget in ["20 assistant", "assistant turns", "Max Actions", "131072"] {
         assert!(
             !opening
                 [opening.find("# Scenario Assignment").unwrap()..opening.rfind("\n\n{").unwrap()]
@@ -1221,7 +1223,7 @@ async fn turn_output_cap_admits_exactly_and_discards_an_overflowing_effect() {
 
 #[tokio::test]
 async fn turn_output_cap_defers_the_suffix_identically_and_it_can_be_reissued() {
-    let (mut ep, oracle) = episode(2);
+    let (mut ep, oracle) = episode(0);
     let paths = [
         "context/cap_a.txt",
         "context/cap_b.txt",
@@ -2154,13 +2156,13 @@ fn sealed_subset(dir: &Path, n: usize) -> LoadedV52Dataset {
     std::fs::write(dir.join("episodes.jsonl"), &ep_bytes).unwrap();
     std::fs::write(dir.join("oracles.jsonl"), &or_bytes).unwrap();
     let seal = json!({
-        "suite": "v52_dev",
+        "suite": "v53_dev",
         "episode_count": n,
         "episodes_sha256": sha256_hex(&ep_bytes),
         "oracles_sha256": sha256_hex(&or_bytes),
         "spec_sha256": sha256_hex(SPEC_BYTES),
         "contract_id": ib_v52_schemas::CONTRACT_ID_V52,
-        "protocol_id": "identitybench.v5.2.protocol.v1",
+        "protocol_id": "identitybench.v5.3.protocol.v1",
     });
     std::fs::write(
         dir.join("SEAL.json"),
@@ -2223,7 +2225,7 @@ fn keyed_provider(
 
 fn suite_options(out: &Path) -> RunV52SuiteOptions {
     RunV52SuiteOptions {
-        suite_id: "v52_dev".to_owned(),
+        suite_id: "v53_dev".to_owned(),
         model_label: "mock".to_owned(),
         effort: "high".to_owned(),
         repeats: 3,
@@ -2250,7 +2252,7 @@ async fn reliability_extension_runs_only_r2_r3_and_preserves_its_k1_base() {
         .collect();
     let receipt_bytes = b"synthetic probe receipt".to_vec();
     let options_for = |out_dir: &Path| RunV52SuiteOptions {
-        suite_id: "v52_core".to_owned(),
+        suite_id: "v53_core".to_owned(),
         model_label: "offline-synthetic-core".to_owned(),
         effort: "high".to_owned(),
         repeats: 1,
@@ -2522,11 +2524,11 @@ async fn suite_run_checkpoints_resumes_and_refuses_on_fingerprint_mismatch() {
     assert_eq!(manifest["slot_order"], json!(expected_order));
     assert_eq!(
         manifest["protocol_id"],
-        json!("identitybench.v5.2.protocol.v1")
+        json!("identitybench.v5.3.protocol.v1")
     );
     assert_eq!(
         manifest["compaction_policy_id"],
-        json!("identitybench.v5.2.compaction.v4")
+        json!("identitybench.v5.3.compaction.v4")
     );
     for slot in &expected_order {
         assert!(
@@ -3666,19 +3668,19 @@ async fn finding9_and_10_unranked_requires_protocol_id_published_seal_and_reject
     assert!(err.to_string().contains("episodes_sha256"), "{err}");
     verify_v52_seal_against_published(&dataset, SPEC_BYTES, &dataset.seal).unwrap();
 
-    // Finding 10: suite runner rejects v52_blind_fixture even with a valid seal.
+    // Finding 10: suite runner rejects v53_blind_fixture even with a valid seal.
     let mut blind = dataset.clone();
-    blind.episodes[0].suite_id = "v52_blind_fixture".to_owned();
+    blind.episodes[0].suite_id = "v53_blind_fixture".to_owned();
     blind.episodes_bytes = serde_json::to_vec(&blind.episodes[0]).unwrap();
     blind.episodes_bytes.push(b'\n');
-    blind.seal["suite_id"] = json!("v52_blind_fixture");
+    blind.seal["suite_id"] = json!("v53_blind_fixture");
     blind.seal["episodes_sha256"] = json!(sha256_hex(&blind.episodes_bytes));
     let mut blind_opts = suite_options(&dir.path().join("run-blind"));
-    blind_opts.suite_id = "v52_blind_fixture".to_owned();
+    blind_opts.suite_id = "v53_blind_fixture".to_owned();
     let err = run_v52_suite(&blind, SPEC_BYTES, engine, provider, &blind_opts)
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("v52_blind_fixture"), "{err}");
+    assert!(err.to_string().contains("v53_blind_fixture"), "{err}");
 }
 
 #[tokio::test]
@@ -3722,13 +3724,13 @@ async fn finding12_and_14_report_uses_strict_completed_loader_and_redacts_privat
     std::fs::write(
         priv_dir.join("manifest.json"),
         serde_json::to_vec(&json!({
-            "suite_id": "v52_core", "completed": false, "model_id": "m",
+            "suite_id": "v53_core", "completed": false, "model_id": "m",
             "reasoning_effort": "high", "transport_id": "replay"
         }))
         .unwrap(),
     )
     .unwrap();
-    let secret_marker = "v52_core_F07_R3_s00_r1";
+    let secret_marker = "v53_core_F07_R3_s00_r1";
     std::fs::write(
         priv_dir
             .join(ib_v52_runtime::SLOT_RECORDS_DIR_V52)
@@ -3740,14 +3742,14 @@ async fn finding12_and_14_report_uses_strict_completed_loader_and_redacts_privat
         .unwrap_err()
         .to_string();
     assert!(
-        !report_err.contains(secret_marker) && !report_err.contains("v52_core_F07"),
+        !report_err.contains(secret_marker) && !report_err.contains("v53_core_F07"),
         "private report error leaked slot identity: {report_err}"
     );
     let lb_err = ib_v52_runtime::leaderboard::load_run_v52(&priv_dir)
         .unwrap_err()
         .to_string();
     assert!(
-        !lb_err.contains(secret_marker) && !lb_err.contains("v52_core_F07"),
+        !lb_err.contains(secret_marker) && !lb_err.contains("v53_core_F07"),
         "private leaderboard load error leaked slot identity: {lb_err}"
     );
 }

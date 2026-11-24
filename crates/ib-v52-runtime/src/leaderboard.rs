@@ -53,9 +53,9 @@ use crate::validation::{ValidationReportExpectationV52, verify_validation_report
 use ib_core::artifact;
 
 /// `leaderboard.json` schema identifier.
-pub const LEADERBOARD_SCHEMA_V52: &str = "identitybench.v5.2.leaderboard.v1";
+pub const LEADERBOARD_SCHEMA_V52: &str = "identitybench.v5.3.leaderboard.v1";
 /// The only ranked suite (§2, §9).
-pub const RANKED_SUITE_V52: &str = "v52_core";
+pub const RANKED_SUITE_V52: &str = "v53_core";
 /// Shape of the ranked headline: `48` scenarios × `1` repeat (§9, §10.1 item 1).
 pub const RANKED_ENGAGEMENTS_V52: usize = 48;
 pub const RANKED_REPEATS_V52: usize = 1;
@@ -63,9 +63,9 @@ pub const RANKED_REPEATS_V52: usize = 1;
 pub const RUN_PROBE_RECEIPT_FILENAME_V52: &str = "probe_receipt.json";
 
 /// The exposure acknowledgement every leaderboard states (§2.2).
-pub const CONTAMINATION_NOTICE_V52: &str = "Running a private suite through a hosted model API or CLI discloses its episodes to that provider. This is inherent to evaluating hosted models and is mitigated by sunset rotation: the private key and every withheld bundle are revealed at sunset (SPEC-v5.2 §2.2).";
+pub const CONTAMINATION_NOTICE_V52: &str = "Running a private suite through a hosted model API or CLI discloses its episodes to that provider. This is inherent to evaluating hosted models and is mitigated by sunset rotation: the private key and every withheld bundle are revealed at sunset (SPEC-v5.3 §2.2).";
 /// The disclosed CLI wrapper residual (§7.2).
-pub const TRANSPORT_RESIDUAL_NOTE_V52: &str = "CLI agent transports may carry a vendor wrapper prompt the harness cannot remove; each entry discloses its transport_id (SPEC-v5.2 §7.2).";
+pub const TRANSPORT_RESIDUAL_NOTE_V52: &str = "CLI agent transports may carry a vendor wrapper prompt the harness cannot remove; each entry discloses its transport_id (SPEC-v5.3 §7.2).";
 
 /// Options of [`build_leaderboard_v52`].
 #[derive(Debug, Clone)]
@@ -993,7 +993,7 @@ pub fn reliability_panel_entry_v52(
         || extension.summary.suite_id != RANKED_SUITE_V52
         || base.entry_tuple() != extension.entry_tuple()
     {
-        bail!("reliability extension must match its base v52_core entry tuple");
+        bail!("reliability extension must match its base v53_core entry tuple");
     }
     for key in [
         "protocol_id",
@@ -1460,7 +1460,8 @@ fn entry_json(
         })
         .collect();
     let complete = s.is_complete;
-    let (estimated_cost_micros, slot_usage) = match pricing {
+    let run_pricing_empty = run.manifest_str("pricing_sha256").unwrap_or("").is_empty();
+    let (estimated_cost_micros, slot_usage, cost_available) = match pricing {
         Some(p) => {
             let rates = p
                 .rates_for_model(&run.model_id)
@@ -1477,11 +1478,17 @@ fn entry_json(
             (
                 sum_cost_usd_micros(run.records.iter().map(cost)),
                 crate::report::slot_usage_quantiles(&run.records, cost),
+                true,
             )
         }
-        None => (s.total_cost_usd_micros, s.slot_usage.clone()),
+        None if run_pricing_empty && s.total_cost_usd_micros == 0 => {
+            (0, s.slot_usage.clone(), false)
+        }
+        None => (s.total_cost_usd_micros, s.slot_usage.clone(), true),
     };
-    let cost_per_resolved = (s.resolved_slots > 0)
+    let estimated_cost_usd =
+        cost_available.then(|| round6(estimated_cost_micros as f64 / 1_000_000.0));
+    let cost_per_resolved = (cost_available && s.resolved_slots > 0)
         .then(|| estimated_cost_micros as f64 / s.resolved_slots as f64 / 1_000_000.0);
     let manifest = &run.manifest;
     json!({
@@ -1545,7 +1552,7 @@ fn entry_json(
             "cache_write_tokens": s.total_cache_write_tokens,
             "output_tokens": s.total_output_tokens,
             "reasoning_tokens": s.total_reasoning_tokens,
-            "estimated_cost_usd": round6(estimated_cost_micros as f64 / 1_000_000.0),
+            "estimated_cost_usd": estimated_cost_usd,
             "estimated_cost_pricing_sha256": pricing_sha256,
             "cost_per_resolved_slot_usd": opt6(cost_per_resolved),
             "per_slot_quantiles": slot_usage,
@@ -1775,7 +1782,7 @@ pub fn build_leaderboard_v52(options: &LeaderboardOptionsV52) -> Result<Value> {
                 "replicates": options.replicates,
                 "strata": plan.description,
                 "rng": format!(
-                    "ChaCha20 (20 rounds), key SHA-256(\"identitybench-v5.2-bootstrap|\" || episodes_sha256), IETF nonce 0, block 0, word 0; idx = {}",
+                    "ChaCha20 (20 rounds), key SHA-256(\"identitybench-v5.3-bootstrap|\" || episodes_sha256), IETF nonce 0, block 0, word 0; idx = {}",
                     if plan.stratum_sizes.first() == Some(&4) { "next_u32() & 3".to_owned() } else { format!("next_u32() % {}", plan.stratum_sizes.first().copied().unwrap_or(0)) }
                 ),
                 "episodes_sha256": episodes_sha,
@@ -1961,25 +1968,34 @@ fn verified_shortcut_ceiling(
     Ok(Some(serde_json::to_value(ceiling)?))
 }
 
-/// §10.1 item 7: the leaderboard's pricing artifact: the supplied one, else the one every entry
-/// shares, else none.
+/// §10.1 item 7: the leaderboard's pricing artifact: the supplied one, else the non-empty one
+/// every entry shares, else none.
 fn leaderboard_pricing_sha256(
     options: &LeaderboardOptionsV52,
     runs: &[LoadedRunV52],
 ) -> Option<String> {
+    if let Some(p) = &options.pricing {
+        return Some(p.sha256.clone());
+    }
+    let any_empty = runs
+        .iter()
+        .any(|r| r.manifest_str("pricing_sha256").unwrap_or("").is_empty());
+    if any_empty {
+        return None;
+    }
     let entry_pricing: BTreeSet<Option<&str>> = runs
         .iter()
         .map(|r| r.manifest_str("pricing_sha256"))
         .collect();
-    match &options.pricing {
-        Some(p) => Some(p.sha256.clone()),
-        None if entry_pricing.len() == 1 => entry_pricing
+    if entry_pricing.len() == 1 {
+        entry_pricing
             .iter()
             .next()
             .copied()
             .flatten()
-            .map(str::to_owned),
-        None => None,
+            .map(str::to_owned)
+    } else {
+        None
     }
 }
 
@@ -1993,6 +2009,9 @@ fn entry_reasons(
     published_seal: Option<&Value>,
 ) -> Vec<Vec<IneligibilityReasonV52>> {
     let ranked_suite = suite_id == RANKED_SUITE_V52;
+    let all_unpriced = runs
+        .iter()
+        .all(|r| r.manifest_str("pricing_sha256").unwrap_or("").is_empty());
     let mut reasons: Vec<Vec<IneligibilityReasonV52>> = runs
         .iter()
         .map(|r| evaluate_eligibility_v52(r, published_seal))
@@ -2005,7 +2024,7 @@ fn entry_reasons(
                     0,
                     "suite_not_ranked",
                     format!(
-                        "{suite_id} is unranked; only {RANKED_SUITE_V52} is ranked (SPEC-v5.2 §2)"
+                        "{suite_id} is unranked; only {RANKED_SUITE_V52} is ranked (SPEC-v5.3 §2)"
                     ),
                 ),
             );
@@ -2015,7 +2034,7 @@ fn entry_reasons(
             .manifest
             .pointer("/fingerprint_inputs/pricing_sha256")
             .and_then(Value::as_str);
-        if leaderboard_pricing.is_none() {
+        if leaderboard_pricing.is_none() && !all_unpriced {
             reasons[i].push(reason(
                 7,
                 "pricing_ambiguous",
@@ -2145,7 +2164,7 @@ fn joint_entry_statistics(
 #[must_use]
 pub fn render_leaderboard_markdown_v52(board: &Value) -> String {
     let mut md = format!(
-        "# IdentityBench v5.2 Leaderboard — `{}`\n\n",
+        "# IdentityBench v5.3 Leaderboard — `{}`\n\n",
         board["suite_id"].as_str().unwrap_or("?")
     );
     if board["test_only"].as_bool() == Some(true) {
@@ -2384,6 +2403,7 @@ pub(crate) fn make_synthetic_core_run(dir: &Path, model_id: &str) -> SyntheticCo
             cost_usd_micros: 0,
             elapsed_wall_ms: 1,
             tool_trace: Vec::new(),
+            scored_categories: Vec::new(),
             score: Some(DeploymentScoreV52 {
                 g_srr: 0,
                 state_accuracy: 0.0,
@@ -2641,7 +2661,7 @@ mod r14b_regression_tests {
 
         // Wrong suite_id.
         let mut wrong_suite = val_report.clone();
-        wrong_suite["suite_id"] = json!("v52_dev");
+        wrong_suite["suite_id"] = json!("v53_dev");
         opts.validation_report = Some(wrong_suite);
         assert!(build_leaderboard_v52(&opts).is_err());
 

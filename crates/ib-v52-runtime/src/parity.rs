@@ -1405,8 +1405,8 @@ mod tests {
     fn final_compaction_handles_an_unrollbackable_rejected_latest_turn() {
         let system_prompt = render_v52_system_prompt();
         let opening = maximum_opening(&system_prompt);
-        let mut history = Vec::with_capacity(49);
-        let path = format!("legacy_iiq/{}.xml", "p".repeat(350));
+        let mut history = Vec::with_capacity(MAX_ASSISTANT_TURNS_V52 - 1);
+        let path = format!("legacy_iiq/{}.xml", "p".repeat(1_200));
         for turn in 1..MAX_ASSISTANT_TURNS_V52 - 1 {
             // Resolved paths remain in earlier read compaction markers. At this length the
             // markers alone keep the request above 176 KB until step 9 removes them.
@@ -1414,7 +1414,7 @@ mod tests {
             history.push(accepted(turn, actions));
         }
         history.push(rejected(
-            49,
+            MAX_ASSISTANT_TURNS_V52 - 1,
             RejectionReasonV52::FormatError,
             "not JSON".to_owned(),
         ));
@@ -1442,8 +1442,8 @@ mod tests {
         use std::io::BufRead;
 
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../datasets/v52/v52_dev/episodes.jsonl");
-        let file = std::fs::File::open(path).expect("public v52_dev episodes are available");
+            .join("../../datasets/v53/v53_dev/episodes.jsonl");
+        let file = std::fs::File::open(path).expect("public v53_dev episodes are available");
         let mut reader = std::io::BufReader::new(file);
         let mut line = String::new();
         reader.read_line(&mut line).unwrap();

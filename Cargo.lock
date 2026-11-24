@@ -591,7 +591,7 @@ dependencies = [
 
 [[package]]
 name = "ib-accounting"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -600,7 +600,7 @@ dependencies = [
 
 [[package]]
 name = "ib-cli"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "ib-core"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "hex",
  "rustix",
@@ -631,7 +631,7 @@ dependencies = [
 
 [[package]]
 name = "ib-providers"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "async-trait",
  "hex",
@@ -652,7 +652,7 @@ dependencies = [
 
 [[package]]
 name = "ib-v52-engine"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "ib-v52-schemas",
  "indexmap",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "ib-v52-generator"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "hex",
  "ib-core",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "ib-v52-runtime"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "ib-v52-schemas"
-version = "5.2.0"
+version = "5.3.0"
 dependencies = [
  "indexmap",
  "serde",

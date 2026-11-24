@@ -27,7 +27,7 @@ use crate::validation::{
     ValidationReportExpectationV52, ValidationReportV52, verify_validation_report_v52,
 };
 
-const DEV: &str = "v52_dev";
+const DEV: &str = "v53_dev";
 const ENGAGEMENTS: usize = 12;
 const DRAFT_TURN_BUDGET_V52: usize = MAX_ASSISTANT_TURNS_V52;
 const MIN_FREEZE_TURN_BUDGET_V52: usize = 24;
@@ -136,7 +136,7 @@ fn load_run(path: &Path, control: Option<RunControlV52>) -> Result<LoadedRunV52>
     let slots = ENGAGEMENTS * k;
     let binding = validate_manifest_fingerprint_binding(&run, false).map_err(anyhow::Error::msg)?;
     let inputs = &binding.inputs;
-    ensure!(inputs.seal.suite_id == DEV, "requires a v52_dev run");
+    ensure!(inputs.seal.suite_id == DEV, "requires a v53_dev run");
     ensure!(
         m["control"] == json!(control) && inputs.control == control,
         "unexpected control identity, expected {}",

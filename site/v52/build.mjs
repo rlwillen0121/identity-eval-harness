@@ -325,8 +325,8 @@ function defaultEmptyBoard(seal) {
 export function buildV52SiteData({
   leaderboardPath = path.join(ROOT, 'reports/v52/leaderboard.json'),
   historyPath = path.join(__dirname, 'data/history.json'),
-  sealPath = path.join(ROOT, 'datasets/v52/v52_core/SEAL.json'),
-  precommitPath = path.join(ROOT, 'datasets/v52/PRECOMMIT.json'),
+  sealPath = path.join(ROOT, 'archive/datasets/v52/v52_core/SEAL.json'),
+  precommitPath = path.join(ROOT, 'archive/datasets/v52/PRECOMMIT.json'),
 } = {}) {
   const seal = JSON.parse(fs.readFileSync(sealPath, 'utf8'));
   if (seal.suite_id !== SUITE_ID || seal.protocol_id !== PROTOCOL_ID) {

@@ -21,7 +21,7 @@ use crate::integrity::ChaCha20RngV52;
 /// `B`, the number of bootstrap replicates (§9).
 pub const BOOTSTRAP_REPLICATES_V52: usize = 10_000;
 /// Key preimage prefix: `SHA-256(ASCII(prefix) || ASCII(episodes_sha256))` (§9).
-pub const BOOTSTRAP_KEY_PREFIX_V52: &str = "identitybench-v5.2-bootstrap|";
+pub const BOOTSTRAP_KEY_PREFIX_V52: &str = "identitybench-v5.3-bootstrap|";
 /// Two-sided level of every reported interval (95%).
 pub const INTERVAL_ALPHA_V52: f64 = 0.05;
 /// Lower and upper quantile probabilities of the bootstrap and rank intervals.
@@ -668,21 +668,21 @@ mod tests {
         let key = bootstrap_key_v52(DEV_EPISODES_SHA);
         assert_eq!(
             hex::encode(key),
-            "a5b6d9d7b159f791f7cf672f402a92910c18c4aac740fdd0e66310dabc88f5c9"
+            "dfd0be68d25935a50dcd4fe6f281f153deccd13464f6ccca9759541376395e6f"
         );
         let mut rng = ChaCha20RngV52::from_key(key);
         let words: Vec<u32> = (0..8).map(|_| rng.next_u32()).collect();
         assert_eq!(
             words,
             [
-                1_490_611_025,
-                3_624_591_844,
-                1_265_474_225,
-                2_549_235_193,
-                2_525_704_710,
-                2_453_193_736,
-                806_110_130,
-                4_141_728_205
+                1_078_879_059,
+                3_141_676_841,
+                4_032_373_051,
+                2_445_260_250,
+                2_986_582_373,
+                1_194_325_553,
+                1_688_393_241,
+                1_294_236_347
             ]
         );
         // The first replicate's 36 draws (12 families × 3), `word & 3`.
@@ -692,7 +692,7 @@ mod tests {
             .iter()
             .map(|i| char::from(b'0' + i))
             .collect();
-        assert_eq!(first, "101120212232221311100000013301300332");
+        assert_eq!(first, "313211131121121210333312212313011230");
     }
 
     /// A hand-checked example: 2 strata × 3 scenarios (m = 2), k = 2 repeats, 4 replicates.

@@ -1072,7 +1072,7 @@ mod budget_tests {
     fn gold_transform_budget_headroom() {
         for suite in V52Suite::PUBLIC {
             let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../datasets/v52")
+                .join("../../datasets/v53")
                 .join(suite.as_str());
             let lines = |name| BufReader::new(File::open(dir.join(name)).unwrap()).lines();
             let mut maxima = [0; 5];

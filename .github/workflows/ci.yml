@@ -30,8 +30,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
-      - name: Verify static v4.1 site snapshot
-        run: node -e "const fs=require('fs');for (const f of ['site/data/leaderboard.json','site/data/history.json']) JSON.parse(fs.readFileSync(f,'utf8'));for (const f of ['site/index.html','site/assets/scripts/main.js']) if(!fs.existsSync(f)) throw new Error(f);console.log('static v4.1 snapshot OK')"
+      - name: Verify static site snapshot and run JS tests
+        run: |
+          node -e "const fs=require('fs');for (const f of ['site/data/leaderboard.json','site/data/history.json']) JSON.parse(fs.readFileSync(f,'utf8'));for (const f of ['site/index.html','site/assets/scripts/main.js']) if(!fs.existsSync(f)) throw new Error(f);console.log('static v4.1 snapshot OK')"
+          node --test "site/tests/*.test.mjs"
 
   rust-msrv:
     name: Rust minimum version (1.90.0)
@@ -47,7 +49,7 @@ jobs:
         run: cargo +1.90.0 check --workspace --locked
 
   rust:
-    name: Rust v5.2 (${{ matrix.os }})
+    name: Rust v5.3 (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -79,16 +81,16 @@ jobs:
       - name: Rust tests and executable workflows
         run: cargo test --workspace --locked
 
-      # Public suites only: v52_core and v52_full are private and never committed (SPEC-v5.2 §2.2).
-      - name: Validate sealed v5.2 public datasets with double build
+      # Public suites only: v53_core and v53_full are private and never committed (SPEC-v5.3 §2.2).
+      - name: Validate sealed v5.3 public datasets with double build
         run: |
           cargo build --release --locked -p ib-cli
-          for suite in v52_dev:12 v52_lite:24 v52_blind_fixture:48; do
+          for suite in v53_dev:12 v53_lite:24 v53_blind_fixture:48; do
             name="${suite%%:*}"
             count="${suite##*:}"
             validation="$RUNNER_TEMP/${name}-validation.json"
             set +e
-            ./target/release/identitybench v52 validate --suite "$name" --double-build > "$validation"
+            ./target/release/identitybench v53 validate --suite "$name" --double-build > "$validation"
             validation_status=$?
             set -e
             node - "$validation" "$validation_status" "$name" "$count" <<'JS'
@@ -98,7 +100,7 @@ jobs:
           const suite = process.argv[4];
           const count = Number(process.argv[5]);
           if (status !== 0) {
-            throw new Error(`expected exit 0 from v52 validate on ${suite}; got ${status}: ${JSON.stringify(report.gates)}`);
+            throw new Error(`expected exit 0 from v53 validate on ${suite}; got ${status}: ${JSON.stringify(report.gates)}`);
           }
           const expected = [
             'G-SEAL-V52',

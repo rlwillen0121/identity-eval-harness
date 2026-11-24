@@ -13,23 +13,23 @@ use ib_core::hashing::{sha256, sha256_parts};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
-/// Message prefix of the base-seed function: `"identitybench-v5.2|" + suite | family | regime | slot`.
-pub const BASE_SEED_MESSAGE_PREFIX_V52: &str = "identitybench-v5.2|";
-/// Preimage of the public key: `S_pub = SHA-256(ASCII("identitybench-v5.2-public|20261201"))`.
-pub const PUBLIC_KEY_PREIMAGE_V52: &str = "identitybench-v5.2-public|20261201";
+/// Message prefix of the base-seed function: `"identitybench-v5.3|" + suite | family | regime | slot`.
+pub const BASE_SEED_MESSAGE_PREFIX_V52: &str = "identitybench-v5.3|";
+/// Preimage of the public key: `S_pub = SHA-256(ASCII("identitybench-v5.3-public|20261201"))`.
+pub const PUBLIC_KEY_PREIMAGE_V52: &str = "identitybench-v5.3-public|20261201";
 /// Message prefix of the private key: `S_priv = HMAC-SHA256(K, ASCII(prefix) || B)`.
-pub const PRIVATE_KEY_MESSAGE_PREFIX_V52: &str = "identitybench-v5.2-private|";
+pub const PRIVATE_KEY_MESSAGE_PREFIX_V52: &str = "identitybench-v5.3-private|";
 /// Prefix of the key commitment: `C_K = SHA-256(ASCII(prefix) || K)`.
-pub const KEY_COMMITMENT_PREFIX_V52: &str = "identitybench-v5.2-commit|";
+pub const KEY_COMMITMENT_PREFIX_V52: &str = "identitybench-v5.3-commit|";
 /// The published **test** key `K_test` (§2.1). Never used to generate a real suite.
 pub const TEST_KEY_HEX_V52: &str =
     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 /// Published `S_pub` (§2.1 reference value).
 pub const PUBLISHED_S_PUB_HEX_V52: &str =
-    "0450d79292b9c457e22710f949c9cd7e883eb2da7b87847867aab46ae702c618";
+    "22f4b9f2231dffe70da80c928fca1cc4eee58173219106858d389345ed905b06";
 /// Published `C_K` of `K_test` (§2.1 reference value).
 pub const PUBLISHED_TEST_KEY_COMMITMENT_HEX_V52: &str =
-    "9feaee6d92c2624fa936147f07d47b9777d7f49475b02f5b997797fdd4297f95";
+    "1b8f2f613b9760f125365e0b2ac06333c1d5b474c3954d124b8c061208b449af";
 
 /// A published §2.1 test vector: `(suite_id, family_id, regime_id, seed_slot, base seed)` under `K_test`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,32 +44,32 @@ pub struct SeedTestVectorV52 {
 /// The four published §2.1 test vectors.
 pub const SEED_TEST_VECTORS_V52: [SeedTestVectorV52; 4] = [
     SeedTestVectorV52 {
-        suite_id: "v52_core",
+        suite_id: "v53_core",
         family_id: "F01",
         regime_id: "R1",
         seed_slot: "00",
-        base_seed: 8_309_108_455_832_339_255,
+        base_seed: 389_407_521_665_087_695,
     },
     SeedTestVectorV52 {
-        suite_id: "v52_core",
+        suite_id: "v53_core",
         family_id: "F12",
         regime_id: "R4",
         seed_slot: "00",
-        base_seed: 6_319_422_505_145_950_582,
+        base_seed: 17_183_623_369_791_456_326,
     },
     SeedTestVectorV52 {
-        suite_id: "v52_full",
+        suite_id: "v53_full",
         family_id: "F07",
         regime_id: "R3",
         seed_slot: "01",
-        base_seed: 7_940_477_648_644_388_992,
+        base_seed: 10_620_579_881_290_639_248,
     },
     SeedTestVectorV52 {
-        suite_id: "v52_dev",
+        suite_id: "v53_dev",
         family_id: "F05",
         regime_id: "R1",
         seed_slot: "00",
-        base_seed: 7_907_091_918_858_783_487,
+        base_seed: 14_628_347_904_916_082_639,
     },
 ];
 
@@ -167,9 +167,9 @@ pub fn base_seed(
 }
 
 /// Archived seals that define the retired seed set (§2.1): `generator_params.base_world_seeds` of every
-/// `v5_draft5` seal and `episode_seeds` of every `v5.1` seal. Retired `v5.0` final seals record only a
-/// suite-level seed and contribute none. The files are immutable and embedded at compile time.
-pub const RETIRED_SEED_SOURCES_V52: [(&str, &str, &str); 8] = [
+/// `v5_draft5` seal and `episode_seeds` of every `v5.1` and public `v5.2` seal.
+/// The files are immutable and embedded at compile time.
+pub const RETIRED_SEED_SOURCES_V52: [(&str, &str, &str); 11] = [
     (
         "archive/datasets/v5/v5_draft5/v5_dev/SEAL.json",
         "generator_params.base_world_seeds",
@@ -209,6 +209,21 @@ pub const RETIRED_SEED_SOURCES_V52: [(&str, &str, &str); 8] = [
         "archive/datasets/v51/v51_full/SEAL.json",
         "episode_seeds",
         include_str!("../../../archive/datasets/v51/v51_full/SEAL.json"),
+    ),
+    (
+        "archive/datasets/v52/v52_dev/SEAL.json",
+        "episode_seeds",
+        include_str!("../../../archive/datasets/v52/v52_dev/SEAL.json"),
+    ),
+    (
+        "archive/datasets/v52/v52_lite/SEAL.json",
+        "episode_seeds",
+        include_str!("../../../archive/datasets/v52/v52_lite/SEAL.json"),
+    ),
+    (
+        "archive/datasets/v52/v52_blind_fixture/SEAL.json",
+        "episode_seeds",
+        include_str!("../../../archive/datasets/v52/v52_blind_fixture/SEAL.json"),
     ),
 ];
 
@@ -279,20 +294,20 @@ mod tests {
             );
         }
         assert_eq!(
-            base_seed(&k_test, "v52_core", "F01", "R1", "00"),
-            0x734f_e21d_f614_c337
+            base_seed(&k_test, "v53_core", "F01", "R1", "00"),
+            0x0567_7413_e9b6_78cf
         );
         assert_eq!(
-            base_seed(&k_test, "v52_core", "F12", "R4", "00"),
-            0x57b3_1949_64d5_6176
+            base_seed(&k_test, "v53_core", "F12", "R4", "00"),
+            0xee78_7e69_7e85_4446
         );
         assert_eq!(
-            base_seed(&k_test, "v52_full", "F07", "R3", "01"),
-            0x6e32_3e59_da60_b880
+            base_seed(&k_test, "v53_full", "F07", "R3", "01"),
+            0x9363_e121_bcfd_2790
         );
         assert_eq!(
-            base_seed(&k_test, "v52_dev", "F05", "R1", "00"),
-            0x6dbb_a234_e5f0_8aff
+            base_seed(&k_test, "v53_dev", "F05", "R1", "00"),
+            0xcb02_54ea_4b5a_4fcf
         );
         assert_eq!(hex::encode(public_suite_key()), PUBLISHED_S_PUB_HEX_V52);
         assert_eq!(

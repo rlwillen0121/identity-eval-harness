@@ -9,7 +9,7 @@ description: >-
 
 # IdentityBench Operator (`bench-operator`)
 
-You operate authorized IdentityBench v5.2 runs and their artifacts using the native Rust `identitybench v52` CLI. Do not edit source code, tests, or sealed datasets. Never create live runs for retired `v1–v4`, `v4.1`, legacy Python `v5`, native Rust `v5`, or `v5.1` generations.
+You operate authorized IdentityBench v5.3 runs and their artifacts using the native Rust `identitybench v53` CLI. Do not edit source code, tests, or sealed datasets. Never create live runs for retired `v1–v4`, `v4.1`, legacy Python `v5`, native Rust `v5`, or `v5.1` generations.
 
 ## Hard rules
 
@@ -25,38 +25,38 @@ Build the native Rust CLI and validate the exact sealed suite without model call
 
 ```sh
 cargo build --release --locked -p ib-cli
-target/release/identitybench v52 validate --suite <v52_dev|v52_lite|v52_blind_fixture> --double-build
+target/release/identitybench v53 validate --suite <v53_dev|v53_lite|v53_blind_fixture> --double-build
 git status -sb
 ```
 
-`validate` defaults to `datasets/v52/<suite>` for public suites; pass `--dataset <dir>` only for an explicitly named candidate directory. Private suites (`v52_core`, `v52_full`) are never in the repository: validate them from the operator's offline directory, with the private key read at run time and never printed, logged, or committed:
+`validate` defaults to `datasets/v53/<suite>` for public suites; pass `--dataset <dir>` only for an explicitly named candidate directory. Private suites (`v53_core`, `v53_full`) are never in the repository: validate them from the operator's offline directory, with the private key read at run time and never printed, logged, or committed:
 
 ```sh
-target/release/identitybench v52 validate --suite <v52_core|v52_full> \
+target/release/identitybench v53 validate --suite <v53_core|v53_full> \
   --dataset <operator-dir> --double-build --private-key-file <key-file>
 ```
 
-`IDENTITYBENCH_V52_PRIVATE_KEY_HEX` may replace `--private-key-file`. Without the key, `G-DET-V52` cannot rebuild the suite and fails.
+`IDENTITYBENCH_V53_PRIVATE_KEY_HEX` may replace `--private-key-file`. Without the key, `G-DET-V52` cannot rebuild the suite and fails.
 
 ## Run and resume
 
 Only after current-turn authorization, run the requested configuration with its model YAML and pricing JSON (examples under `examples/v52/`):
 
 ```sh
-target/release/identitybench v52 run \
+target/release/identitybench v53 run \
   --config <model-config>.yaml \
-  --pricing <pricing>.json \
-  --suite <v52_dev|v52_lite|v52_core|v52_full> \
+  [--pricing <pricing>.json] \
+  --suite <v53_dev|v53_lite|v53_core|v53_full> \
   --repeats <1|3> \
   --out <run-dir>
 ```
 
-`run` validates the dataset, config, and pricing before reading the provider environment file (`.env` at the repository root by default; `--env-file <path>` or `--no-env-file` override it). It writes `manifest.json`, `episodes.jsonl`, `summary.json`, and `report.md` into `<run-dir>`.
+`run` validates the dataset, config, and optional pricing before reading the provider environment file (`.env` at the repository root by default; `--env-file <path>` or `--no-env-file` override it). It writes `manifest.json`, `episodes.jsonl`, `summary.json`, and `report.md` into `<run-dir>`.
 
 To continue an interrupted configuration, repeat the identical command with `--resume`:
 
 ```sh
-target/release/identitybench v52 run --config <model-config>.yaml --pricing <pricing>.json \
+target/release/identitybench v53 run --config <model-config>.yaml [--pricing <pricing>.json] \
   --suite <suite> --repeats <1|3> --out <run-dir> --resume
 ```
 
@@ -67,7 +67,7 @@ Resume keeps every recorded slot except `INCOMPLETE_PROVIDER_FAILURE` slots, and
 Report regeneration is deterministic and makes no model calls:
 
 ```sh
-target/release/identitybench v52 report --run <run-dir> [--out <report-dir>]
+target/release/identitybench v53 report --run <run-dir> [--pricing <pricing>.json] [--out <report-dir>]
 ```
 
 ## Leaderboard
@@ -75,11 +75,11 @@ target/release/identitybench v52 report --run <run-dir> [--out <report-dir>]
 Leaderboard construction is offline and makes no model calls:
 
 ```sh
-target/release/identitybench v52 leaderboard --runs <run-dir>... --out <board-dir> \
+target/release/identitybench v53 leaderboard --runs <run-dir>... --out <board-dir> \
   [--seal <published SEAL.json>] [--pricing <frozen pricing>.json]
 ```
 
-It ranks only `v52_core` entries that pass every `SPEC-v5.2` §10.1 condition and lists every other entry with its ineligibility reasons. For private suites it never writes per-slot rows or per-cell scores. `--suite-override-for-test` is test-only: its output is marked `test_only` and is never published.
+It ranks only `v53_core` entries that pass every `SPEC-v5.3` §10.1 condition and lists every other entry with its ineligibility reasons. For private suites it never writes per-slot rows or per-cell scores. `--suite-override-for-test` is test-only: its output is marked `test_only` and is never published.
 
 ## Import into published results
 

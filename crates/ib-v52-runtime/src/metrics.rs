@@ -61,13 +61,12 @@ pub fn regime_id_from_episode_id(episode_id: &str) -> Option<String> {
     well_formed.then(|| regime.to_owned())
 }
 
-/// Mean of the `8` per-category assertion accuracies of a score.
+/// Mean of the per-category assertion accuracies of a score over its scored categories.
 fn macro_of(rates: &IndexMap<CategoryIdV52, f64>) -> f64 {
-    CategoryIdV52::ALL
-        .iter()
-        .map(|c| rates.get(c).copied().unwrap_or(0.0))
-        .sum::<f64>()
-        / CategoryIdV52::ALL.len() as f64
+    if rates.is_empty() {
+        return 0.0;
+    }
+    rates.values().copied().sum::<f64>() / rates.len() as f64
 }
 
 /// Derive the §6.1 metrics of one slot from its execution record.
@@ -76,9 +75,20 @@ pub fn slot_metrics_v52(record: &EpisodeExecutionRecordV52) -> SlotMetricsV52 {
     let observed = !record.attempt_status.is_incomplete();
     let committed = record.attempt_status == AttemptStatusV52::Completed && record.committed;
     let score = record.score.as_ref().filter(|_| committed);
-    let category_pass: IndexMap<CategoryIdV52, bool> = CategoryIdV52::ALL
-        .iter()
-        .map(|&c| {
+    let scored_categories: Vec<CategoryIdV52> = if !record.scored_categories.is_empty() {
+        record.scored_categories.clone()
+    } else if let Some(s) = record
+        .score
+        .as_ref()
+        .filter(|s| !s.category_pass.is_empty())
+    {
+        s.category_pass.keys().copied().collect()
+    } else {
+        CategoryIdV52::ALL.to_vec()
+    };
+    let category_pass: IndexMap<CategoryIdV52, bool> = scored_categories
+        .into_iter()
+        .map(|c| {
             (
                 c,
                 score.is_some_and(|s| s.category_pass.get(&c).copied() == Some(true)),

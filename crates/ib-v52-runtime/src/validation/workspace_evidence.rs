@@ -1,8 +1,8 @@
 //! Verify potential oracle-value collisions against the public files used by this scenario.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ib_core::hashing::sha256_hex;
-use ib_v52_schemas::{CONFIG_FILES_V52, EpisodeV52, IgaDeploymentConfigV52};
+use ib_v52_schemas::{EpisodeV52, IgaDeploymentConfigV52};
 use serde_json::Value;
 
 use crate::workspace::{
@@ -14,19 +14,25 @@ use crate::workspace::{
 #[derive(Debug, Default, Clone)]
 pub(super) struct WorkspaceEvidence {
     files: BTreeMap<String, String>,
+    editable_configs: BTreeSet<String>,
 }
 
 impl WorkspaceEvidence {
     pub(super) fn new(episode: &EpisodeV52, config: &IgaDeploymentConfigV52) -> Self {
         let mut files: BTreeMap<_, _> = episode.readonly_files.clone().into_iter().collect();
-        for path in CONFIG_FILES_V52 {
+        let mut editable_configs = BTreeSet::new();
+        for path in episode.effective_editable_config_files() {
+            editable_configs.insert(path.to_owned());
             files.insert(
                 path.to_owned(),
                 serialize_config_file(config, path).expect("known config section"),
             );
         }
         files.insert(WORKING_NOTES_PATH.to_owned(), String::new());
-        Self { files }
+        Self {
+            files,
+            editable_configs,
+        }
     }
 
     pub(super) fn record_notes(&mut self, args: &Value, output: &Value) {
@@ -51,7 +57,7 @@ impl WorkspaceEvidence {
         let Some(file) = self.files.get(path) else {
             return false;
         };
-        if !search_in_scope(args, path) {
+        if !self.search_in_scope(args, path) {
             return false;
         }
         let Some(index) = hit["line"].as_u64().and_then(|n| n.checked_sub(1)) else {
@@ -86,7 +92,7 @@ impl WorkspaceEvidence {
         let total = self
             .files
             .iter()
-            .filter(|(path, _)| search_in_scope(args, path))
+            .filter(|(path, _)| self.search_in_scope(args, path))
             .map(|(_, file)| file.lines().filter(|line| line.contains(pattern)).count())
             .sum::<usize>();
         match field {
@@ -198,13 +204,31 @@ fn verified_notes_receipt<'a>(args: &'a Value, output: &Value) -> Option<(&'a st
         .then_some((content, sha256))
 }
 
-// The exact scopes exercised by the anti-oracle gate.
-fn search_in_scope(args: &Value, path: &str) -> bool {
-    match args["path_glob"].as_str().unwrap_or("**") {
-        "**" => is_searchable_path(path),
-        "config/*" => CONFIG_FILES_V52.contains(&path),
-        WORKING_NOTES_PATH => path == WORKING_NOTES_PATH,
-        _ => false,
+impl WorkspaceEvidence {
+    // The exact scopes exercised by the anti-oracle gate.
+    fn search_in_scope(&self, args: &Value, path: &str) -> bool {
+        match args["path_glob"].as_str().unwrap_or("**") {
+            "**" => {
+                (!path.starts_with("config/") || self.editable_configs.contains(path))
+                    && is_searchable_path(path)
+            }
+            "config/*" => self.editable_configs.contains(path),
+            WORKING_NOTES_PATH => path == WORKING_NOTES_PATH,
+            _ => false,
+        }
+    }
+
+    #[cfg(test)]
+    fn from_files(files: BTreeMap<String, String>) -> Self {
+        let editable_configs = files
+            .keys()
+            .filter(|p| p.starts_with("config/"))
+            .cloned()
+            .collect();
+        Self {
+            files,
+            editable_configs,
+        }
     }
 }
 
@@ -221,12 +245,10 @@ mod tests {
 
     #[test]
     fn search_metadata_is_derived_from_visible_matching_lines() {
-        let evidence = WorkspaceEvidence {
-            files: BTreeMap::from([
-                ("sources/hr.csv".into(), "x x\ny\nx\n".into()),
-                ("config/transforms.json".into(), "x\n".into()),
-            ]),
-        };
+        let evidence = WorkspaceEvidence::from_files(BTreeMap::from([
+            ("sources/hr.csv".into(), "x x\ny\nx\n".into()),
+            ("config/transforms.json".into(), "x\n".into()),
+        ]));
         let args = json!({"pattern":"x","max_matches":2});
         assert_eq!(evidence.search_number(&args, "/total"), Some(3));
         assert_eq!(evidence.search_number(&args, "/pages"), Some(2));
@@ -237,9 +259,10 @@ mod tests {
 
     #[test]
     fn search_evidence_requires_matching_public_text_and_line_in_scope() {
-        let evidence = WorkspaceEvidence {
-            files: BTreeMap::from([("sources/hr.csv".into(), "one\npublic match\n".into())]),
-        };
+        let evidence = WorkspaceEvidence::from_files(BTreeMap::from([(
+            "sources/hr.csv".into(),
+            "one\npublic match\n".into(),
+        )]));
         let args = json!({"pattern":"match","path_glob":"**"});
         let hit = json!({"path":"sources/hr.csv","line":2,"text":"public match"});
         assert!(evidence.public_hit(&args, &hit));
@@ -258,9 +281,10 @@ mod tests {
             "🙂{}tail",
             "x".repeat(crate::workspace::MAX_READ_RESULT_BYTES)
         );
-        let evidence = WorkspaceEvidence {
-            files: BTreeMap::from([("context/long.txt".into(), file.clone())]),
-        };
+        let evidence = WorkspaceEvidence::from_files(BTreeMap::from([(
+            "context/long.txt".into(),
+            file.clone(),
+        )]));
         let args = json!({"path":"context/long.txt","start_line":1,"end_line":1});
         let output = read_workspace_response_for_evidence("context/long.txt", &file, &args)
             .expect("readable public text has a derived response");

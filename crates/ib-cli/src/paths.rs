@@ -92,8 +92,8 @@ mod tests {
     fn resolve_keeps_absolute_paths_and_joins_relative_ones() {
         let root = Path::new("/repo");
         assert_eq!(
-            resolve(root, Path::new("datasets/v52/v52_dev")),
-            root.join("datasets/v52/v52_dev")
+            resolve(root, Path::new("datasets/v53/v53_dev")),
+            root.join("datasets/v53/v53_dev")
         );
         assert_eq!(resolve(root, Path::new("/abs/out")), Path::new("/abs/out"));
     }

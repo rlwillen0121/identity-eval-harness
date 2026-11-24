@@ -8,7 +8,7 @@ fn invalid_calibration_input_does_not_write_partial_report() {
     let second = temp.path().join("missing-frontier-b");
     let output = Command::new(env!("CARGO_BIN_EXE_identitybench"))
         .args([
-            "v52",
+            "v53",
             "calibration-report",
             "--frontier",
             first.to_str().unwrap(),
