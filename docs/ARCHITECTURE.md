@@ -12,7 +12,7 @@ The native Rust **IdentityBench v5.2** workspace in `crates/` (`identitybench v5
 | `reports/v51/runs/` | Published retired v5.1 run artifacts, kept while the site builds from them until v5.2 results exist (`summary.json`, `report.md`, `manifest.json`, per-slot `episodes.json`) |
 | `scripts/import-v51-run.mjs` | Imports a raw v5.1 run directory into `reports/v51/runs/<name>/` (v5.1 only; a v5.2 importer comes in a later phase) |
 | `examples/v52/` | Vendor-neutral model configs, pricing examples, and an offline replay fixture |
-| `site/` | Static leaderboard web app, still built from the published v5.1 `reports/v51/runs/` until v5.2 results exist (`site/tests/*.test.mjs` run with Node) |
+| `site/` | Static leaderboard web app. It currently serves the archived v4.1 snapshot until v5.2 results are published |
 | `archive/` | Retired specifications, sealed datasets, and reports for `v1–v4`, `v4.1`, Python `v5`, native Rust `v5`, and `v5.1` |
 
 ## Execution path
