@@ -1,10 +1,9 @@
 # Build tooling and docs live beside the site but are not part of it.
-build.py
+build.mjs
 README.md
 wrangler.jsonc
 __pycache__
 *.pyc
 .DS_Store
 .wrangler
-v52
 tests

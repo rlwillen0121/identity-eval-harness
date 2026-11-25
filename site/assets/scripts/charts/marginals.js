@@ -8,7 +8,7 @@ export function mount(root, data, store) {
     if (!models.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';
-      p.textContent = 'Awaiting ranked v5.2 entries to plot regime marginals.';
+      p.textContent = 'Awaiting ranked v5.3 entries to plot regime marginals.';
       canvas.append(p);
       return () => {};
     }

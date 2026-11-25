@@ -83,13 +83,15 @@ It ranks only `v53_core` entries that pass every `SPEC-v5.3` §10.1 condition an
 
 ## Import into published results
 
-There is no v5.3 publication importer yet. `scripts/import-v51-run.mjs` imports only retired `SPEC-v5.1` runs into `reports/v51/runs/<name>/`, which keep the published v5.1 board live until v5.3 results exist; a later v5.3 phase replaces it. Do not import v5.3 runs with it. For reference, its v5.1 usage is:
+Use `scripts/import-v53-run.mjs` to import publishable aggregate v5.3 leaderboard and run artifacts into `reports/v53/` (and rebuild `site/data/leaderboard.json` via `node site/build.mjs`):
 
 ```sh
-node scripts/import-v51-run.mjs <run-dir> [<name>]
+node scripts/import-v53-run.mjs --leaderboard <leaderboard-dir>
+node scripts/import-v53-run.mjs --run <run-dir> --name <slug>
+node site/build.mjs && node site/build.mjs --check
 ```
 
-The v5.1 importer requires a `SPEC-v5.1` summary, copies `summary.json`, `report.md`, and `manifest.json` verbatim, and writes a compact per-slot `episodes.json`. It does not copy committed configs, transcripts, tool traces, or commit notes. Use the existing `v51_<suite>_<provider>_<model>` naming convention, and review the imported files for secrets and private paths before committing.
+`import-v53-run.mjs` validates `SPEC-v5.3` / `identitybench.v5.3.leaderboard.v1`, refuses `test_only` boards and private-suite per-slot rows, scans for local filesystem paths and private episode identifiers, and copies only publishable aggregate artifacts (`leaderboard.json` + `leaderboard.md`, or `summary.json` + `report.md` per run). Never copy raw `manifest.json`, `episodes.jsonl`, `probe_receipt.json`, checkpoints, configs, or transcripts. Keep retired `scripts/import-v51-run.mjs` untouched for archival `SPEC-v5.1` reference only.
 
 ## Run integrity
 

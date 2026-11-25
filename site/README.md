@@ -1,7 +1,14 @@
-# IdentityBench leaderboard site (archived v4.1 snapshot)
+# IdentityBench v5.3 leaderboard site
 
-`identitybench.ai` temporarily serves the **archived IdentityBench v4.1 leaderboard** (`v41_full`, 37 models, as published on 2026-11-13) while IdentityBench v5.2 is calibrated and frozen. When v5.2 publishes, this directory will be replaced by the v5.2 board.
+`identitybench.ai` serves the live **IdentityBench v5.3 (`v53_core`, 48 private scenarios, `k = 1`)** static leaderboard built deterministically from published aggregate artifacts under `reports/v53/` and `datasets/v53/v53_core/SEAL.json`.
 
-This is a **frozen static snapshot** restored from commit `70180cd`. The original Python build script (`site/build.py`) is not restored, because the repository tracks no Python files. The data in `site/data/` is the published v4.1 output, and the report links point into `archive/`. CI only checks that the snapshot's data files parse and that the entry points exist.
+## Rebuild & verify
 
-Preview locally from `site/` with `npx wrangler@4 dev`. Deployment is unchanged: Cloudflare Workers Builds deploys `site/` on every push to `main`.
+```sh
+node scripts/import-v53-run.mjs --leaderboard <leaderboard-dir>
+node site/build.mjs
+node site/build.mjs --check
+node --test "site/tests/*.test.mjs"
+```
+
+Preview locally from `site/` with `npx wrangler@4 dev`. Deployment is unchanged: Cloudflare Workers Builds deploys `site/` on every push to `main` (and preview URLs on branches).

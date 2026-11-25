@@ -1,4 +1,4 @@
-import { END_TO_END_INTERVAL_METHOD, int, date, safetyScreenLabels } from './format.js';
+import { pct, int, date } from './format.js';
 import { mount as mountTable } from './table.js';
 import { mount as mountUpdates } from './updates.js';
 
@@ -31,15 +31,74 @@ export function createStore(initial) {
       state = next;
       [...listeners].forEach((fn) => fn(state, patch));
     },
-    subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
   };
+}
+
+export function leaderboardLede(data) {
+  if (!data.models?.length) {
+    return `Awaiting the first completed ${int(data.suite.episodes)}-scenario ranked entry.`;
+  }
+  const top = data.models[0];
+  return `${top.name} leads at ${pct(top.scores?.g_srr, 1)} strict end-to-end resolution across ${int(data.suite.episodes)} scenarios.`;
+}
+
+function fillSummary(data) {
+  const models = data.models || [];
+  document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
+  const topScore = models.length ? pct(Math.max(...models.map((m) => m.scores?.g_srr ?? 0)), 1) : '—';
+  const figures = [
+    [int(models.length), 'ranked entries'],
+    [int(data.suite.episodes), 'scenarios'],
+    [int(data.suite.categories), 'IGA categories'],
+    [topScore, 'top G-SRR'],
+  ];
+  const root = document.getElementById('hero-figures');
+  root.replaceChildren();
+  for (const [value, label] of figures) {
+    const group = document.createElement('div');
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = label;
+    dd.textContent = value;
+    group.append(dt, dd);
+    root.append(group);
+  }
+  const provenance = document.getElementById('provenance');
+  provenance.replaceChildren();
+  const rows = [
+    ['Suite', `${data.suite.id} (${data.suite.visibility})`],
+    ['Protocol', data.protocol_id],
+    ['Episodes SHA-256', data.suite.episodes_sha256],
+    ['Oracles SHA-256', data.suite.oracles_sha256],
+    ['Spec SHA-256', data.suite.spec_sha256],
+    ['Commit C_K', data.suite.c_k || '—'],
+    ['drand round', data.suite.round ? `${data.suite.round} (beacon ${data.suite.beacon_randomness_hex || 'pending'})` : '—'],
+    ['Pricing SHA-256', data.pricing_sha256 || 'Set at leaderboard build'],
+  ];
+  for (const [label, value] of rows) {
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = label;
+    dd.textContent = String(value);
+    provenance.append(dt, dd);
+  }
+  const contam = document.getElementById('contamination-note');
+  if (contam && data.contamination_notice) {
+    contam.textContent = data.contamination_notice;
+  }
+  document.getElementById('updated-date').textContent = `Updated ${date(data.updated)}`;
+  document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
 }
 
 function setupTheme() {
   const button = document.getElementById('theme-toggle');
   const os = window.matchMedia('(prefers-color-scheme: dark)');
-  const isDark = () => document.documentElement.dataset.theme
-    ? document.documentElement.dataset.theme === 'dark' : os.matches;
+  const isDark = () => (document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === 'dark' : os.matches);
   function render() {
     const dark = isDark();
     const label = `Switch to ${dark ? 'light' : 'dark'} theme`;
@@ -52,59 +111,13 @@ function setupTheme() {
   button.addEventListener('click', () => {
     const theme = isDark() ? 'light' : 'dark';
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('identitybench-theme', theme); } catch { /* Theme still works without storage. */ }
+    try { localStorage.setItem('identitybench-theme', theme); } catch { /* ignore */ }
     render();
   });
   os.addEventListener('change', render);
   render();
 }
 
-function fillSummary(data) {
-  const models = data.models;
-  document.getElementById('interval-method').textContent = END_TO_END_INTERVAL_METHOD;
-  const checks = safetyScreenLabels(data.screen);
-  document.getElementById('method-screen-count').textContent = int(checks.length);
-  const checkList = document.getElementById('method-screen-checks');
-  for (const label of checks) {
-    const item = document.createElement('li');
-    item.textContent = label;
-    checkList.append(item);
-  }
-  document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
-  const figures = [
-    [int(models.length), 'models'],
-    [int(data.suite.scenarios), 'scenarios'],
-    [int(data.suite.decisions), 'decisions checked per run'],
-    [`${int(models.filter((m) => m.screen_clear).length)} of ${int(models.length)}`, 'clear the safety screen'],
-  ];
-  const root = document.getElementById('hero-figures');
-  for (const [value, label] of figures) {
-    const group = document.createElement('div');
-    const dt = document.createElement('dt'), dd = document.createElement('dd');
-    dt.textContent = label;
-    dd.textContent = value;
-    group.append(dt, dd);
-    root.append(group);
-  }
-  const provenance = document.getElementById('provenance');
-  for (const [label, value] of [
-    ['Suite', data.suite.id], ['Seed', String(data.suite.seed)], ['Published', date(data.suite.published)],
-    ['Episodes SHA-256', data.suite.episodes_sha256], ['Oracles SHA-256', data.suite.oracles_sha256],
-  ]) {
-    const dt = document.createElement('dt'), dd = document.createElement('dd');
-    dt.textContent = label;
-    dd.textContent = value;
-    provenance.append(dt, dd);
-  }
-  document.getElementById('updated-date').textContent = `Updated ${date(data.updated)}`;
-  document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
-}
-
-export function leaderboardLede(data) {
-  return `Ranked by the ${int(data.suite.scenarios)} scenarios each resolves end to end: every wave correct, nothing unsafe, nothing missed.`;
-}
-
-// Chart labels are measured on a canvas, so wait briefly for the web fonts before drawing.
 async function fontsReady(limit = 1500) {
   if (!document.fonts?.load) return;
   const fonts = Promise.all([document.fonts.load('400 12px Inter'), document.fonts.load('400 10px "Geist Mono"')]);
@@ -121,7 +134,7 @@ async function boot() {
   const response = await fetch(new URL('../../data/leaderboard.json', import.meta.url));
   if (!response.ok) throw new Error(`Data request failed (${response.status})`);
   const data = await response.json();
-  const ids = new Set(data.models.map((m) => m.id));
+  const ids = new Set((data.models || []).map((m) => m.id));
   function selectionFromHash() {
     if (!location.hash.startsWith('#m=')) return null;
     try {
@@ -135,6 +148,7 @@ async function boot() {
   mountUpdates(document.getElementById('updates-root'), data, store);
   document.getElementById('load-status').hidden = true;
   reveal();
+
   let lastSelected = store.get().selected;
   function scrollToModel(id) {
     requestAnimationFrame(() => document.getElementById(`model-${id}`)?.scrollIntoView({ block: 'start' }));
@@ -153,17 +167,17 @@ async function boot() {
   if (lastSelected) scrollToModel(lastSelected);
 
   const charts = [
-    ['chart-frontier', () => import('./charts/frontier.js')],
+    ['chart-pareto', () => import('./charts/pareto.js')],
     ['chart-safety', () => import('./charts/safety.js')],
-    ['chart-outcomes', () => import('./charts/outcomes.js')],
-    ['chart-anatomy', () => import('./charts/anatomy.js')],
+    ['chart-marginals', () => import('./charts/marginals.js')],
+    ['chart-categories', () => import('./charts/categories.js')],
   ];
   await fontsReady();
   await Promise.all(charts.map(async ([id, load]) => {
     const root = document.getElementById(id);
     try {
-      const chart = await load();
-      await chart.mount(root, data, store);
+      const chartMod = await load();
+      await chartMod.mount(root, data, store);
     } catch (error) {
       console.error(`Chart unavailable: ${id}`, error);
       const note = document.createElement('p');
@@ -176,11 +190,11 @@ async function boot() {
 
 if (typeof document !== 'undefined') {
   boot().catch((error) => {
-    console.error('Unable to load IdentityBench results', error);
+    console.error('Unable to load IdentityBench v5.3 results', error);
     const status = document.getElementById('load-status');
     reveal();
     status.hidden = false;
     status.classList.add('is-error');
-    status.textContent = 'Results could not be loaded. Please reload the page or use the full report linked in Method.';
+    status.textContent = 'Results could not be loaded. Run node site/build.mjs or reload.';
   });
 }

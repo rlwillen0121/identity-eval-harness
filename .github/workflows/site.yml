@@ -6,14 +6,20 @@ on:
   push:
     paths:
       - "site/**"
-      - "reports/v51/runs/**"
-      - "archive/datasets/v51/v51_core/SEAL.json"
+      - "scripts/import-v53-run.mjs"
+      - "reports/v53/**"
+      - "datasets/v53/v53_core/SEAL.json"
+      - "datasets/v53/PRECOMMIT.json"
+      - "pricing/v53-pricing-table.json"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
       - "site/**"
-      - "reports/v51/runs/**"
-      - "archive/datasets/v51/v51_core/SEAL.json"
+      - "scripts/import-v53-run.mjs"
+      - "reports/v53/**"
+      - "datasets/v53/v53_core/SEAL.json"
+      - "datasets/v53/PRECOMMIT.json"
+      - "pricing/v53-pricing-table.json"
       - ".github/workflows/site.yml"
 
 permissions:
@@ -32,5 +38,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
-      - name: Verify static v4.1 site snapshot
-        run: node -e "const fs=require('fs');for (const f of ['site/data/leaderboard.json','site/data/history.json']) JSON.parse(fs.readFileSync(f,'utf8'));for (const f of ['site/index.html','site/assets/scripts/main.js']) if(!fs.existsSync(f)) throw new Error(f);console.log('static v4.1 snapshot OK')"
+      - name: Verify v5.3 site build and run JS tests
+        run: |
+          node site/build.mjs --check
+          node --test "site/tests/*.test.mjs"

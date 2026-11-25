@@ -22,7 +22,7 @@ export function mount(root, data, store) {
     if (!models.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';
-      p.textContent = 'Awaiting ranked v5.2 entries to plot the accuracy–cost Pareto frontier.';
+      p.textContent = 'Awaiting ranked v5.3 entries to plot the accuracy–cost Pareto frontier.';
       canvas.append(p);
       return () => {};
     }
@@ -33,7 +33,7 @@ export function mount(root, data, store) {
     const x = log([minCost, maxCost], [plot.left + 8, plot.right - 8]);
     const y = linear([0, 1], [plot.bottom, plot.top + 24]);
     const frontier = paretoFrontier(models, metric);
-    const svg = svgCanvas(canvas, width, 352, `Accuracy-cost Pareto chart across ${models.length} ranked v5.2 entries.`);
+    const svg = svgCanvas(canvas, width, 352, `Accuracy-cost Pareto chart across ${models.length} ranked v5.3 entries.`);
     yAxis(svg, plot, y, ticks(0, 1, 4), (v) => pct(v, 0));
     svg.append(text(plot.left, 12, metric === 'g_srr' ? 'G-SRR' : 'Macro-Cat-Acc', { class: 'chart-axis-title' }));
     for (const v of [1, 3, 10, 30, 100, 300]) {

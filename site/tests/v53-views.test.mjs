@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { CATEGORIES, FAMILIES, REGIMES, buildV52SiteData } from '../v52/build.mjs';
-import { formatInterval, gSrrPct, pct, tokPerSec, usd } from '../v52/assets/scripts/format.js';
-import { createStore, leaderboardLede } from '../v52/assets/scripts/main.js';
-import { mount as mountTable } from '../v52/assets/scripts/table.js';
-import { mount as mountDetail } from '../v52/assets/scripts/detail.js';
-import { mount as mountUpdates } from '../v52/assets/scripts/updates.js';
-import { mount as mountPareto } from '../v52/assets/scripts/charts/pareto.js';
-import { mount as mountCategories } from '../v52/assets/scripts/charts/categories.js';
-import { mount as mountMarginals } from '../v52/assets/scripts/charts/marginals.js';
-import { mount as mountSafety } from '../v52/assets/scripts/charts/safety.js';
+import { CATEGORIES, FAMILIES, REGIMES, buildV53SiteData } from '../build.mjs';
+import { formatInterval, gSrrPct, pct, tokPerSec, usd } from '../assets/scripts/format.js';
+import { createStore, leaderboardLede } from '../assets/scripts/main.js';
+import { mount as mountTable } from '../assets/scripts/table.js';
+import { mount as mountDetail } from '../assets/scripts/detail.js';
+import { mount as mountUpdates } from '../assets/scripts/updates.js';
+import { mount as mountPareto } from '../assets/scripts/charts/pareto.js';
+import { mount as mountCategories } from '../assets/scripts/charts/categories.js';
+import { mount as mountMarginals } from '../assets/scripts/charts/marginals.js';
+import { mount as mountSafety } from '../assets/scripts/charts/safety.js';
 import { installDOM } from './dom-stub.mjs';
 
 function sampleSiteData() {
-  const empty = buildV52SiteData({ leaderboardPath: '/nonexistent/leaderboard.json' });
+  const empty = buildV53SiteData({ leaderboardPath: '/nonexistent/leaderboard.json' });
   const model = {
     id: 'claude-haiku-5-5::high::claude_cli',
     rank: 1,
@@ -91,7 +91,7 @@ function sampleSiteData() {
   };
 }
 
-test('formatting helpers format v5.2 metrics cleanly', () => {
+test('formatting helpers format v5.3 metrics cleanly', () => {
   assert.equal(gSrrPct(0), '0%');
   assert.equal(pct(0.75, 1), '75.0%');
   assert.equal(usd(11.4), '$11.40');
@@ -100,15 +100,15 @@ test('formatting helpers format v5.2 metrics cleanly', () => {
   assert.equal(formatInterval({ lo: 1, hi: 2 }, false), '#1.0–#2.0');
 });
 
-test('v5.2 views and charts mount cleanly in empty and populated states', () => {
+test('v5.3 views and charts mount cleanly in empty and populated states', () => {
   const dom = installDOM();
-  const empty = buildV52SiteData({ leaderboardPath: '/nonexistent/leaderboard.json' });
+  const empty = buildV53SiteData({ leaderboardPath: '/nonexistent/leaderboard.json' });
   const emptyStore = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '', selected: null, hover: null });
   assert.match(leaderboardLede(empty), /Awaiting/);
 
   const emptyTable = dom.root();
   mountTable(emptyTable, empty, emptyStore);
-  assert.match(emptyTable.textContent, /No v5\.2 ranked runs/);
+  assert.match(emptyTable.textContent, /No v5\.3 ranked runs/);
 
   for (const mountChart of [mountPareto, mountCategories, mountMarginals, mountSafety]) {
     const chartRoot = dom.root();

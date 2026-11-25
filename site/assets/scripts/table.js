@@ -1,244 +1,250 @@
-import { END_TO_END_INTERVAL_METHOD, endToEndPct, pct, int, usd, safetyScreenDescription, escapeHTML as esc } from './format.js';
-import { mount as mountDetail, costBasis, statusGlyph } from './detail.js';
+import { V52_INTERVAL_METHOD, gSrrPct, pct, int, num, usd, formatInterval, tokPerSec, escapeHTML as esc } from './format.js';
+import { mount as mountDetail } from './detail.js';
 import { vendorLogo } from './logos.js';
 
 const arrow = (dir) => `<svg class="sort-arrow" viewBox="0 0 10 12" aria-hidden="true"><path d="${dir === 'asc' ? 'M5 10V2M2 5l3-3 3 3' : 'M5 2v8M2 7l3 3 3-3'}" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
-const OTHER_VENDOR = '__other__';
 const clamp = (n) => Math.min(1, Math.max(0, Number(n) || 0));
-
-export function foldVendorChips(vendors) {
-  const list = Array.isArray(vendors) ? vendors : [];
-  const regular = list.filter((vendor) => Number(vendor.count) >= 2).map((vendor) => ({
-    id: vendor.id,
-    label: vendor.label,
-    count: Number(vendor.count),
-    vendorIds: [vendor.id],
-    kind: 'vendor',
-  }));
-  const folded = list.filter((vendor) => Number(vendor.count) < 2);
-  if (folded.length) {
-    regular.push({
-      id: OTHER_VENDOR,
-      label: 'Other',
-      count: folded.reduce((sum, vendor) => sum + (Number(vendor.count) || 0), 0),
-      vendorIds: folded.map((vendor) => vendor.id),
-      kind: 'other',
-    });
-  }
-  return regular;
-}
-
-export function toggleVendorSelection(selectedIds, chip) {
-  const selected = new Set(selectedIds || []);
-  if (chip.kind === 'all' || chip.id === '') {
-    selected.clear();
-  } else if (chip.kind === 'other') {
-    const ids = chip.vendorIds || [];
-    const allSelected = ids.length > 0 && ids.every((id) => selected.has(id));
-    ids.forEach((id) => allSelected ? selected.delete(id) : selected.add(id));
-  } else if (selected.has(chip.id)) {
-    selected.delete(chip.id);
-  } else {
-    selected.add(chip.id);
-  }
-  return selected;
-}
 
 export function matchesModelQuery(model, query) {
   const needle = String(query ?? '').trim().toLocaleLowerCase('en-US');
   if (!needle) return true;
-  return `${model.name ?? ''} ${model.vendor_label ?? ''}`.toLocaleLowerCase('en-US').includes(needle);
+  return `${model.name ?? ''} ${model.vendor_label ?? ''} ${model.model_id ?? ''} ${model.transport_label ?? ''}`
+    .toLocaleLowerCase('en-US')
+    .includes(needle);
 }
 
-const sortValue = (model, key) => key === 'categories'
-  ? Object.values(model.categories || {}).reduce((sum, count) => sum + (Number(count) || 0), 0)
-  : model[key];
+function sortValue(model, key) {
+  switch (key) {
+    case 'rank': return Number(model.rank) || 0;
+    case 'name': return model.name || '';
+    case 'g_srr': return Number(model.scores?.g_srr) || 0;
+    case 'macro_cat_acc': return Number(model.scores?.macro_cat_acc) || 0;
+    case 'state_acc': return Number(model.scores?.state_acc) || 0;
+    case 'commit_rate': return Number(model.scores?.commit_rate) || 0;
+    case 'violations': return (Number(model.scores?.og_total) || 0) + (Number(model.scores?.ab_total) || 0);
+    case 'mean_turns': return Number(model.diagnostics?.mean_turns) || 0;
+    case 'cost_usd': return Number(model.usage?.estimated_cost_usd) || 0;
+    default: return Number(model.rank) || 0;
+  }
+}
 
 export function compareModels(a, b, key, dir = 'asc') {
   const direction = dir === 'desc' ? -1 : 1;
-  const av = sortValue(a, key), bv = sortValue(b, key);
+  const av = sortValue(a, key);
+  const bv = sortValue(b, key);
   const primary = typeof av === 'string' || typeof bv === 'string'
-    ? String(av ?? '').localeCompare(String(bv ?? ''), 'en')
-    : (Number(av) || 0) - (Number(bv) || 0);
+    ? String(av).localeCompare(String(bv), 'en')
+    : av - bv;
   if (primary) return primary * direction;
-  const rankOrder = (Number(a.rank) || 0) - (Number(b.rank) || 0);
-  return rankOrder;
+  return (Number(a.rank) || 0) - (Number(b.rank) || 0);
 }
 
-export function sortComparator(key, dir = 'asc') {
-  return (a, b) => compareModels(a, b, key, dir);
-}
-
-export const columnDefinitions = (data) => [
-  ['rank', '#', 'Rank by fully solved scenario count descending, unsafe rate ascending, cost ascending with local runs at zero, then model name.'],
-  ['name', 'Model', 'Model name and the organisation that provides it.'],
-  ['g_srr', 'End to end', `Scenarios resolved with every wave correct, no unsafe action, and nothing missed. The count is scenarios fully resolved; whiskers show a 95% interval for the rate computed with a ${END_TO_END_INTERVAL_METHOD}.`],
-  ['tasks_solved', 'Tasks solved', `Category tasks solved out of ${int(data.suite.tasks)} tasks in this suite.`],
-  ['categories', 'By category', `Solved category tasks in each governance category, out of ${int(data.suite.scenarios)} scenarios.`],
-  ['unsafe_rate', 'Unsafe', 'Committed unsafe action rate among decisions reached by the model.'],
-  ['cost_usd', 'Cost', 'Run cost is the billed amount when reported; otherwise retail token prices are applied to the run\'s recorded tokens. Local runs have no cost.'],
+export const columnDefinitions = () => [
+  ['rank', '#', 'Rank under SPEC-v5.3 §9 (G-SRR, Macro-Cat-Acc, commit rate, violations/committed, entry tuple).'],
+  ['name', 'Model', 'Model name, reasoning effort, and transport.'],
+  ['g_srr', 'G-SRR', `Strict end-to-end resolution across 48 scenarios with 95% interval (${V52_INTERVAL_METHOD}).`],
+  ['macro_cat_acc', 'Macro-Cat', 'Unweighted mean assertion accuracy across each scenario\'s in-scope IGA categories (companion score).'],
+  ['state_acc', 'State-Acc', 'Micro fraction of scenario assertions satisfied.'],
+  ['commit_rate', 'Commit', 'Share of planned scenarios with a valid deployment commit.'],
+  ['violations', 'OG / AB', 'Total overgrants (OG) and availability breaches (AB) across committed scenarios.'],
+  ['mean_turns', 'Turns', 'Mean turns per observed scenario (budget 20).'],
+  ['cost_usd', 'Est. cost', 'Side metric only: estimated USD from recorded tokens under the shared pricing table. Never affects rank.'],
 ];
 
 function intervalGraphic(model) {
-  const [lo, hi] = model.g_srr_ci.map((n) => clamp(n) * 120);
-  const x = clamp(model.g_srr) * 120;
-  const intervalLabel = `95% interval for end-to-end rate: ${endToEndPct(model.g_srr_ci[0])} to ${endToEndPct(model.g_srr_ci[1])}. Computed with a ${END_TO_END_INTERVAL_METHOD}.`;
-  return `<svg class="ci-whisker" viewBox="0 0 120 16" role="img" aria-label="${esc(intervalLabel)}" title="${esc(intervalLabel)}"><line class="ci-baseline" x1="0" x2="120" y1="8" y2="8"/><line x1="${lo}" x2="${hi}" y1="8" y2="8"/><line x1="${lo}" x2="${lo}" y1="5" y2="11"/><line x1="${hi}" x2="${hi}" y1="5" y2="11"/><circle cx="${x}" cy="8" r="2.5"/></svg>`;
+  const iv = model.scores?.g_srr_interval;
+  if (!iv) return '';
+  const lo = clamp(iv.lo) * 96;
+  const hi = clamp(iv.hi) * 96;
+  const x = clamp(model.scores?.g_srr) * 96;
+  const label = `95% interval: ${pct(iv.lo, 1)} to ${pct(iv.hi, 1)}`;
+  return `<svg class="ci-whisker" viewBox="0 0 96 16" role="img" aria-label="${esc(label)}" title="${esc(label)}"><line class="ci-baseline" x1="0" x2="96" y1="8" y2="8"/><line x1="${lo}" x2="${hi}" y1="8" y2="8"/><line x1="${lo}" x2="${lo}" y1="5" y2="11"/><line x1="${hi}" x2="${hi}" y1="5" y2="11"/><circle cx="${x}" cy="8" r="2.5"/></svg>`;
 }
 
-export function whisker(model, scenarios = null) {
-  const count = scenarios === null ? '' : `<span class="resolution-count muted" aria-label="${int(model.outcomes?.perfect)} of ${int(scenarios)} scenarios resolved end to end">${int(model.outcomes?.perfect)}</span>`;
-  return `<span class="resolution-measure"><span class="resolution-number${model.g_srr ? '' : ' muted'}">${endToEndPct(model.g_srr)}</span>${count}${intervalGraphic(model)}</span>`;
-}
-
-export function identityCellMarkup(model, screen, selected = false) {
-  const screenTitle = safetyScreenDescription(screen);
-  return `<td class="identity-cell"><button type="button" class="model-name" aria-expanded="${selected}"${selected ? ` aria-controls="detail-${esc(model.id)}"` : ''}>${vendorLogo(model.vendor, model.vendor_label)}${esc(model.name)}</button><span class="model-attribution"><span class="vendor-label">${esc(model.vendor_label)}</span>${model.screen_clear ? `<span class="screen-clear" role="img" aria-label="${esc(screenTitle)}" title="${esc(screenTitle)}">${statusGlyph(true)}</span>` : ''}</span></td>`;
-}
-
-function baselineOrder(kind) {
-  if (kind === 'oracle') return 0;
-  if (kind === 'noop') return 1;
-  return 2;
-}
-
-export function modelCellsMarkup(model, data, maxUnsafe, selected = false) {
-  const unsafeWidth = clamp(model.unsafe_rate / maxUnsafe) * 100;
-  const unsafeFill = Number(model.unsafe_rate) > 0
-    ? `<span class="unsafe-fill" style="width:${unsafeWidth}%"></span>` : '';
+export function modelCellsMarkup(model, selected = false) {
+  const s = model.scores || {};
+  const d = model.diagnostics || {};
+  const u = model.usage || {};
+  const rankIv = s.rank_interval ? `<span class="rank-interval" title="95% rank interval">${esc(formatInterval(s.rank_interval, false))}</span>` : '';
   return `
-    <td class="rank-cell">${int(model.rank)}</td>
-    ${identityCellMarkup(model, data.screen, selected)}
-    <td class="resolution-cell">${whisker(model, data.suite.scenarios)}</td>
-    <td class="desktop-col tasks-cell"><span class="tasks-measure"><span class="tasks-number">${pct(model.tasks_rate)}</span><span class="task-count">${int(model.tasks_solved)}</span><span class="tasks-track" aria-hidden="true"><span class="tasks-fill" style="width:${clamp(model.tasks_rate) * 100}%"></span></span></span></td>
-    <td class="desktop-col"><div class="category-bars">${data.categories.map((category) => `<span class="category-track" role="img" aria-label="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}" title="${esc(category.label)} ${int(model.categories[category.id])}/${int(data.suite.scenarios)}"><span class="category-fill" style="height:${clamp(model.categories[category.id] / data.suite.scenarios) * 100}%"></span></span>`).join('')}</div></td>
-    <td class="desktop-col unsafe-cell"><span class="unsafe-measure"><span class="unsafe-number">${pct(model.unsafe_rate)}</span><span class="unsafe-track" aria-hidden="true">${unsafeFill}</span></span></td>
-    <td class="desktop-col cost-cell" title="${esc(costBasis[model.cost_basis] || 'Basis not recorded')}">${model.cost_basis === 'local' ? '<span class="muted">local</span>' : usd(model.cost_usd)}</td>`;
+    <td class="rank-cell">${int(model.rank)}${rankIv}</td>
+    <td class="identity-cell">
+      <button type="button" class="model-name" aria-expanded="${selected}"${selected ? ` aria-controls="detail-${esc(model.id)}"` : ''}>
+        ${vendorLogo(model.vendor, model.vendor_label)}${esc(model.name)}
+      </button>
+      <div class="entry-pills">
+        <span>${esc(model.vendor_label)}</span>
+        <span class="entry-pill">${esc(model.reasoning_effort)}</span>
+        <span class="entry-pill">${esc(model.transport_label)}</span>
+      </div>
+    </td>
+    <td><span class="resolution-measure"><span class="resolution-number">${gSrrPct(s.g_srr)}</span><span class="resolution-count">${int(s.resolved_slots)}/${int(s.planned_slots)}</span>${intervalGraphic(model)}</span></td>
+    <td class="desktop-col">${pct(s.macro_cat_acc, 1)}</td>
+    <td class="desktop-col">${pct(s.state_acc, 1)}</td>
+    <td class="desktop-col">${pct(s.commit_rate, 0)}</td>
+    <td class="desktop-col">${int(s.og_total)} / ${int(s.ab_total)}</td>
+    <td class="desktop-col">${num(d.mean_turns, 1)}</td>
+    <td class="desktop-col" title="Side metric (never ranked); tokens/s: ${esc(tokPerSec(d.generation_tokens_per_second))}">${usd(u.estimated_cost_usd)}</td>
+  `;
+}
+
+function renderNonRankedSections(data) {
+  const parts = [];
+  const pending = data.pending || [];
+  const unranked = data.unranked || [];
+  const panel = data.reliability_panel;
+
+  if (pending.length) {
+    parts.push(`
+      <div class="subboard">
+        <h3>In progress (unranked)</h3>
+        <table class="subboard-table">
+          <thead><tr><th>Entry</th><th>Observed</th><th>Observed G-SRR</th><th>Provisional bounds</th><th>Mean turns</th></tr></thead>
+          <tbody>${pending.map((m) => {
+            const b = m.scores?.provisional_g_srr_bounds;
+            const boundsText = Array.isArray(b) ? `[${pct(b[0], 1)}, ${pct(b[1], 1)}]` : '—';
+            return `<tr><td>${esc(m.name)} <span class="muted">(${esc(m.reasoning_effort)} · ${esc(m.transport_label)})</span></td><td>${int(m.scores?.observed_slots)}/${int(m.scores?.planned_slots)}</td><td>${pct(m.scores?.g_srr ?? null, 1)}</td><td>${boundsText}</td><td>${num(m.diagnostics?.mean_turns, 1)}</td></tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    `);
+  }
+
+  if (unranked.length) {
+    parts.push(`
+      <div class="subboard">
+        <h3>Complete but unranked (§10.1 eligibility)</h3>
+        <table class="subboard-table">
+          <thead><tr><th>Entry</th><th>Observed G-SRR</th><th>Macro-Cat</th><th>Eligibility reasons</th></tr></thead>
+          <tbody>${unranked.map((m) => {
+            const reasons = (m.eligibility?.reasons || []).map((r) => r.code || r.detail).join(', ') || 'ineligible';
+            return `<tr><td>${esc(m.name)} <span class="muted">(${esc(m.reasoning_effort)} · ${esc(m.transport_label)})</span></td><td>${gSrrPct(m.scores?.g_srr)}</td><td>${pct(m.scores?.macro_cat_acc, 1)}</td><td class="muted">${esc(reasons)}</td></tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    `);
+  }
+
+  if (panel?.supplied && Array.isArray(panel.entries) && panel.entries.length) {
+    parts.push(`
+      <div class="subboard">
+        <h3>Reliability panel (k = 3)</h3>
+        <table class="subboard-table">
+          <thead><tr><th>Headline rank</th><th>Entry</th><th>pass^3</th><th>pass@3</th></tr></thead>
+          <tbody>${panel.entries.map((p) => {
+            const e = p.entry || {};
+            return `<tr><td>#${int(p.rank)}</td><td>${esc(e.model_id)} (${esc(e.reasoning_effort)} · ${esc(e.transport_id)})</td><td>${pct(p.scores?.pass_hat_3, 1)}</td><td>${pct(p.scores?.pass_at_3, 1)}</td></tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    `);
+  }
+
+  return parts.join('');
 }
 
 export function mount(rootEl, data, store) {
-  const vendorChips = foldVendorChips(data.vendors);
-  const columns = columnDefinitions(data);
-  const root = rootEl;
-  root.innerHTML = `
+  const models = data.models || [];
+  const vendors = data.vendors || [];
+  const columns = columnDefinitions();
+
+  if (!models.length && !(data.pending || []).length && !(data.unranked || []).length) {
+    rootEl.innerHTML = '<p class="empty-state">No v5.3 ranked runs are imported yet. Once a <code>v53_core</code> run finishes, run <code>identitybench v53 leaderboard</code>, <code>node scripts/import-v53-run.mjs --leaderboard ...</code>, and <code>node site/build.mjs</code>.</p>';
+    return () => {};
+  }
+
+  rootEl.innerHTML = `
     <div class="leaderboard-controls">
       <label class="sr-only" for="model-search">Filter models</label>
-      <input class="model-search" id="model-search" type="search" placeholder="Filter models" autocomplete="off" spellcheck="false">
+      <input class="model-search" id="model-search" type="search" placeholder="Filter models or transports" autocomplete="off" spellcheck="false">
       <div class="vendor-controls" role="group" aria-label="Filter by vendor">
         <button class="vendor-button" type="button" data-vendor="" aria-pressed="true">All</button>
-        ${vendorChips.map((chip) => `<button class="vendor-button" type="button"${chip.id === OTHER_VENDOR ? ' data-vendor-other' : ` data-vendor="${esc(chip.id)}"`} aria-pressed="false">${chip.kind === 'vendor' ? vendorLogo(chip.id, chip.label) : ''}${esc(chip.label)} <span class="vendor-count muted">${int(chip.count)}</span></button>`).join('')}
+        ${vendors.map((v) => `<button class="vendor-button" type="button" data-vendor="${esc(v.id)}" aria-pressed="false">${vendorLogo(v.id, v.label)}${esc(v.label)} <span class="vendor-count muted">${int(v.count)}</span></button>`).join('')}
       </div>
+      <span class="model-count" role="status" aria-live="polite"></span>
     </div>
-    <p class="table-key"><span class="screen-key">${statusGlyph(true)}Clears all ${int(data.screen.length)} safety checks</span><span class="category-key">Categories: ${data.categories.map((category) => esc(category.label)).join(' · ')}</span><span class="model-count" role="status" aria-live="polite"></span></p>
+    <p class="table-key"><span>Ordered by G-SRR → Macro-Cat-Acc → commit rate → (OG+AB)/committed. Cost is report-only.</span></p>
     <table class="leaderboard-table">
-      <caption class="sr-only">IdentityBench model results. Activate a model name to show its full results. Activate column headings to sort.</caption>
-      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"${['tasks_solved', 'categories', 'unsafe_rate', 'cost_usd'].includes(key) ? ' class="desktop-col"' : ''}><button type="button" class="sort-button" data-sort="${key}" title="${esc(title)}">${label}<span class="sort-indicator"></span></button></th>`).join('')}</tr></thead>
+      <caption class="sr-only">IdentityBench v5.3 ranked leaderboard</caption>
+      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"${['macro_cat_acc', 'state_acc', 'commit_rate', 'violations', 'mean_turns', 'cost_usd'].includes(key) ? ' class="desktop-col"' : ''}><button type="button" class="sort-button" data-sort="${key}" title="${esc(title)}">${label}<span class="sort-indicator"></span></button></th>`).join('')}</tr></thead>
       <tbody></tbody>
     </table>
-    <details class="baselines">
-      <summary>Reference baselines</summary>
-      <div class="baseline-wrap" tabindex="0" role="region" aria-label="Reference baseline results">
-        <table class="baseline-table"><caption class="sr-only">Oracle, no-op and trivial policy reference results</caption>
-          <thead><tr><th scope="col">Baseline</th><th scope="col">Tasks solved</th><th scope="col">End to end</th><th scope="col">Unsafe</th></tr></thead>
-          <tbody>${[...data.baselines].sort((a, b) => baselineOrder(a.kind) - baselineOrder(b.kind)).map((b) => `<tr><th scope="row"><span class="baseline-name">${esc(b.name)}</span><span class="baseline-description muted">${esc(b.description || '')}</span></th><td>${int(b.tasks_solved)} <span class="muted">(${pct(b.tasks_rate)})</span></td><td>${endToEndPct(b.g_srr)}</td><td>${pct(b.unsafe_rate)}</td></tr>`).join('')}</tbody>
-        </table>
-      </div>
-      <p>Trivial policies can pass many single-category tasks but resolve no scenario end to end, which is why end-to-end resolution is reported beside task accuracy.</p>
-    </details>`;
-  const body = root.querySelector('.leaderboard-table > tbody');
-  const search = root.querySelector('.model-search');
-  const count = root.querySelector('.model-count');
-  const maxUnsafe = Math.max(...data.models.map((m) => Number(m.unsafe_rate) || 0), 0.0001);
+    ${renderNonRankedSections(data)}
+  `;
+
+  const body = rootEl.querySelector('.leaderboard-table > tbody');
+  const search = rootEl.querySelector('.model-search');
+  const count = rootEl.querySelector('.model-count');
   let previous;
   let cleanupDetail;
 
   function highlight() {
     const { hover, selected } = store.get();
     body.querySelectorAll('.model-row').forEach((row) => {
-      const hovered = row.dataset.modelId === hover;
-      row.classList.toggle('is-highlighted', hovered);
+      row.classList.toggle('is-highlighted', row.dataset.modelId === hover);
       row.classList.toggle('is-selected', row.dataset.modelId === selected);
     });
   }
+
   function render() {
     const state = store.get();
     const signature = JSON.stringify([state.sort, [...state.vendors].sort(), state.query, state.selected]);
-    if (signature === previous) { highlight(); return; }
+    if (signature === previous) {
+      highlight();
+      return;
+    }
     previous = signature;
-    const focusedId = document.activeElement?.closest('.model-row')?.dataset.modelId;
     cleanupDetail?.();
-    const models = data.models.filter((model) => (!state.vendors.size || state.vendors.has(model.vendor))
-      && matchesModelQuery(model, state.query));
-    models.sort(sortComparator(state.sort.key, state.sort.dir));
+
+    const filtered = models.filter((m) => (!state.vendors.size || state.vendors.has(m.vendor)) && matchesModelQuery(m, state.query));
+    filtered.sort((a, b) => compareModels(a, b, state.sort.key, state.sort.dir));
     search.value = state.query;
-    count.textContent = `${int(models.length)}${models.length === data.models.length ? '' : ` of ${int(data.models.length)}`} models`;
-    root.querySelectorAll('[data-vendor], [data-vendor-other]').forEach((button) => {
-      let pressed;
-      if (button.hasAttribute('data-vendor-other')) {
-        const foldedIds = vendorChips.find((chip) => chip.id === OTHER_VENDOR)?.vendorIds || [];
-        pressed = foldedIds.length > 0 && foldedIds.every((id) => state.vendors.has(id));
-      } else {
-        const id = button.dataset.vendor;
-        pressed = id ? state.vendors.has(id) : !state.vendors.size;
-      }
-      button.setAttribute('aria-pressed', String(pressed));
+    count.textContent = `${int(filtered.length)}${filtered.length === models.length ? '' : ` of ${int(models.length)}`} ranked`;
+
+    rootEl.querySelectorAll('[data-vendor]').forEach((btn) => {
+      const id = btn.dataset.vendor;
+      btn.setAttribute('aria-pressed', String(id ? state.vendors.has(id) : !state.vendors.size));
     });
-    root.querySelectorAll('th[data-key]').forEach((th) => {
+    rootEl.querySelectorAll('th[data-key]').forEach((th) => {
       const active = th.dataset.key === state.sort.key;
       th.setAttribute('aria-sort', active ? (state.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
       th.querySelector('.sort-indicator').innerHTML = active ? arrow(state.sort.dir) : '';
     });
-    body.innerHTML = models.map((model) => {
-      const selected = model.id === state.selected;
-      return `<tr class="model-row" id="model-${esc(model.id)}" data-model-id="${esc(model.id)}">${modelCellsMarkup(model, data, maxUnsafe, selected)}</tr>${selected ? `<tr class="detail-row"><td colspan="7"><div class="model-detail" id="detail-${esc(model.id)}" role="region" aria-label="${esc(model.name)} detail"></div></td></tr>` : ''}`;
-    }).join('') || '<tr class="empty-row"><td colspan="7">No models match these filters. Clear the search or choose All vendors.</td></tr>';
-    const detail = body.querySelector('.model-detail');
-    if (detail) cleanupDetail = mountDetail(detail, data, store);
+
+    body.innerHTML = filtered.map((m) => {
+      const selected = m.id === state.selected;
+      return `<tr class="model-row" id="model-${esc(m.id)}" data-model-id="${esc(m.id)}">${modelCellsMarkup(m, selected)}</tr>${selected ? `<tr class="detail-row"><td colspan="9"><div class="model-detail" id="detail-${esc(m.id)}" role="region" aria-label="${esc(m.name)} detail"></div></td></tr>` : ''}`;
+    }).join('') || '<tr class="empty-row"><td colspan="9">No ranked models match these filters.</td></tr>';
+
+    const detailEl = body.querySelector('.model-detail');
+    if (detailEl) cleanupDetail = mountDetail(detailEl, data, store);
     highlight();
-    if (focusedId) [...body.querySelectorAll('.model-row')].find((row) => row.dataset.modelId === focusedId)?.querySelector('.model-name').focus({ preventScroll: true });
   }
+
   search.addEventListener('input', () => store.set({ query: search.value }));
-  search.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && search.value) {
-      event.preventDefault();
-      search.value = '';
-      store.set({ query: '' });
-    }
-  });
-  root.querySelector('.vendor-controls').addEventListener('click', (event) => {
-    const button = event.target.closest('[data-vendor], [data-vendor-other]');
+  rootEl.querySelector('.vendor-controls').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-vendor]');
     if (!button) return;
-    const chip = button.hasAttribute('data-vendor-other')
-      ? vendorChips.find((item) => item.kind === 'other')
-      : { id: button.dataset.vendor, kind: button.dataset.vendor ? 'vendor' : 'all' };
-    if (chip) store.set({ vendors: toggleVendorSelection(store.get().vendors, chip) });
+    const id = button.dataset.vendor;
+    const next = new Set(store.get().vendors);
+    if (!id) next.clear();
+    else if (next.has(id)) next.delete(id);
+    else next.add(id);
+    store.set({ vendors: next });
   });
-  root.querySelector('thead').addEventListener('click', (event) => {
+  rootEl.querySelector('thead').addEventListener('click', (event) => {
     const button = event.target.closest('[data-sort]');
     if (!button) return;
     const key = button.dataset.sort;
-    const current = store.get().sort;
-    const dir = current.key === key ? (current.dir === 'asc' ? 'desc' : 'asc')
-      : (['tasks_solved', 'categories', 'g_srr'].includes(key) ? 'desc' : 'asc');
+    const cur = store.get().sort;
+    const dir = cur.key === key ? (cur.dir === 'asc' ? 'desc' : 'asc') : (['rank', 'name', 'violations', 'mean_turns', 'cost_usd'].includes(key) ? 'asc' : 'desc');
     store.set({ sort: { key, dir } });
   });
   body.addEventListener('click', (event) => {
     const row = event.target.closest('.model-row');
     if (row) store.set({ selected: store.get().selected === row.dataset.modelId ? null : row.dataset.modelId });
   });
-  const modelRow = (target) => target instanceof Element ? target.closest('.model-row') : null;
-  for (const eventName of ['mouseover', 'focusin']) {
-    body.addEventListener(eventName, (event) => {
-      const row = modelRow(event.target);
-      if (row && row !== modelRow(event.relatedTarget)) store.set({ hover: row.dataset.modelId });
-    });
-  }
-  for (const eventName of ['mouseout', 'focusout']) {
-    body.addEventListener(eventName, (event) => {
-      const row = modelRow(event.target);
-      if (row && row !== modelRow(event.relatedTarget) && store.get().hover === row.dataset.modelId) store.set({ hover: null });
-    });
-  }
+
   render();
   const unsubscribe = store.subscribe(render);
   return () => { unsubscribe(); cleanupDetail?.(); };

@@ -8,10 +8,10 @@ import {
   CATEGORIES,
   FAMILIES,
   REGIMES,
-  buildV52SiteData,
-  serializeV52SiteData,
-} from '../v52/build.mjs';
-import { hasVendorLogo } from '../v52/assets/scripts/logos.js';
+  buildV53SiteData,
+  serializeV53SiteData,
+} from '../build.mjs';
+import { hasVendorLogo } from '../assets/scripts/logos.js';
 
 function makeEntry({ rank = null, status = 'ranked', modelId, effort = 'high', transport = 'claude_cli', gSrr, cost, reasons = [] }) {
   return {
@@ -73,21 +73,22 @@ function makeEntry({ rank = null, status = 'ranked', modelId, effort = 'high', t
   };
 }
 
-test('buildV52SiteData renders valid empty state from committed SEAL.json when no leaderboard exists', () => {
-  const data = buildV52SiteData({
+test('buildV53SiteData renders valid empty state from committed SEAL.json when no leaderboard exists', () => {
+  const data = buildV53SiteData({
     leaderboardPath: '/nonexistent/leaderboard.json',
   });
   assert.equal(data.schema, 2);
-  assert.equal(data.suite.id, 'v52_core');
+  assert.equal(data.suite.id, 'v53_core');
   assert.equal(data.suite.episodes, 48);
+  assert.equal(data.suite.turn_budget, 20);
   assert.equal(data.categories.length, 8);
   assert.equal(data.models.length, 0);
   assert.ok(data.suite.c_k);
   assert.ok(data.suite.round);
 });
 
-test('buildV52SiteData preserves §9 order regardless of cost and separates unranked/pending', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-v52-build-'));
+test('buildV53SiteData preserves §9 order regardless of cost and separates unranked/pending', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-v53-build-'));
   try {
     const lbPath = path.join(tmp, 'leaderboard.json');
     const histPath = path.join(tmp, 'history.json');
@@ -97,10 +98,10 @@ test('buildV52SiteData preserves §9 order regardless of cost and separates unra
     const inProgress = makeEntry({ rank: null, status: 'in_progress', modelId: 'gemini-4-neon', transport: 'agy_cli', gSrr: null, cost: 9.5 });
 
     fs.writeFileSync(lbPath, JSON.stringify({
-      schema_version: 'identitybench-v52-leaderboard-v1',
-      spec_version: 'SPEC-v5.2',
-      protocol_id: 'identitybench.v5.2.protocol.v1',
-      suite_id: 'v52_core',
+      schema_version: 'identitybench.v5.3.leaderboard.v1',
+      spec_version: 'SPEC-v5.3',
+      protocol_id: 'identitybench.v5.3.protocol.v1',
+      suite_id: 'v53_core',
       suite_visibility: 'private',
       test_only: false,
       pricing_sha256: 'a'.repeat(64),
@@ -113,7 +114,7 @@ test('buildV52SiteData preserves §9 order regardless of cost and separates unra
       { date: '2026-11-24', models: ['gpt-6.2-astra::high::codex_cli', 'claude-haiku-5-5::high::claude_cli'] },
     ]));
 
-    const data = buildV52SiteData({ leaderboardPath: lbPath, historyPath: histPath });
+    const data = buildV53SiteData({ leaderboardPath: lbPath, historyPath: histPath });
     assert.deepEqual(data.models.map((m) => m.model_id), ['gpt-6.2-astra', 'claude-haiku-5-5']);
     assert.equal(data.models[0].rank, 1);
     assert.equal(data.models[1].rank, 2);
@@ -123,8 +124,22 @@ test('buildV52SiteData preserves §9 order regardless of cost and separates unra
     for (const m of data.models) {
       assert.equal(hasVendorLogo(m.vendor), true, `missing logo for ${m.vendor}`);
     }
-    const serialized = serializeV52SiteData(data);
+    const serialized = serializeV53SiteData(data);
     assert.ok(serialized.endsWith('\n'));
+
+    const missingWithheld = path.join(tmp, 'leaderboard-bad.json');
+    fs.writeFileSync(missingWithheld, JSON.stringify({
+      schema_version: 'identitybench.v5.3.leaderboard.v1',
+      spec_version: 'SPEC-v5.3',
+      protocol_id: 'identitybench.v5.3.protocol.v1',
+      suite_id: 'v53_core',
+      suite_visibility: 'private',
+      test_only: false,
+      entries: [],
+      unranked_entries: [],
+      withheld_until_sunset: [],
+    }));
+    assert.throws(() => buildV53SiteData({ leaderboardPath: missingWithheld, historyPath: histPath }), /withheld_until_sunset/);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
