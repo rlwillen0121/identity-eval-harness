@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { CATEGORIES, FAMILIES, REGIMES, buildV53SiteData } from '../build.mjs';
-import { formatInterval, gSrrPct, pct, tokPerSec, usd } from '../assets/scripts/format.js';
+import { duration, formatInterval, gSrrPct, pct, tokPerSec, usd } from '../assets/scripts/format.js';
 import { createStore, leaderboardLede } from '../assets/scripts/main.js';
 import { mount as mountTable } from '../assets/scripts/table.js';
 import { mount as mountDetail } from '../assets/scripts/detail.js';
@@ -95,6 +95,9 @@ test('formatting helpers format v5.3 metrics cleanly', () => {
   assert.equal(gSrrPct(0), '0%');
   assert.equal(pct(0.75, 1), '75.0%');
   assert.equal(usd(11.4), '$11.40');
+  assert.equal(duration(45), '45s');
+  assert.equal(duration(228), '3.8 min');
+  assert.equal(duration(1320), '22 min');
   assert.equal(tokPerSec(92.4), '92.4 tok/s');
   assert.equal(formatInterval({ lo: 0.6, hi: 0.9 }, true), '60.0%–90.0%');
   assert.equal(formatInterval({ lo: 1, hi: 2 }, false), '#1.0–#2.0');
@@ -108,7 +111,7 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
 
   const emptyTable = dom.root();
   mountTable(emptyTable, empty, emptyStore);
-  assert.match(emptyTable.textContent, /No v5\.3 ranked runs/);
+  assert.match(emptyTable.textContent, /No ranked runs are published yet/);
 
   for (const mountChart of [mountPareto, mountCategories, mountMarginals, mountSafety]) {
     const chartRoot = dom.root();
@@ -125,13 +128,16 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   assert.match(tableRoot.textContent, /75\.0%/);
   assert.match(tableRoot.textContent, /By domain/);
   assert.match(tableRoot.textContent, /Safest first/);
+  assert.match(tableRoot.textContent, /Fastest/);
+  assert.match(tableRoot.textContent, /2 over · 1 broken/);
   assert.equal(tableRoot.querySelectorAll('.category-track').length, CATEGORIES.length);
-  assert.equal(tableRoot.querySelectorAll('.view-button').length, 3);
+  assert.equal(tableRoot.querySelectorAll('.view-button').length, 4);
 
   const detailRoot = dom.root();
   const cleanDetail = mountDetail(detailRoot, data, store);
   assert.match(detailRoot.textContent, /sod_bundle/);
-  assert.match(detailRoot.textContent, /Rare failures withheld/);
+  assert.match(detailRoot.textContent, /Rare failures/);
+  assert.match(detailRoot.textContent, /Technical details and audit hashes/);
 
   const updatesRoot = dom.root();
   const cleanUpdates = mountUpdates(updatesRoot, data, store);

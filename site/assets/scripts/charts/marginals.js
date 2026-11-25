@@ -8,6 +8,14 @@ const REGIME_SHORT = {
   R4: 'M&A',
 };
 
+function heatLegend() {
+  const elLegend = document.createElement('div');
+  elLegend.className = 'chart-legend';
+  elLegend.setAttribute('aria-hidden', 'true');
+  elLegend.innerHTML = '<span>0%</span><span class="legend-ramp"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span>100%</span>';
+  return elLegend;
+}
+
 export function mount(root, data, store) {
   const models = data.models || [];
   const regimes = data.regimes || [];
@@ -35,23 +43,31 @@ export function mount(root, data, store) {
       const marks = [];
       const regMap = model.marginals?.regime_g_srr || {};
       regimes.forEach((reg, ci) => {
-        const rate = regMap[reg.id] ?? 0;
-        const bucket = rate > 0 ? Math.max(1, Math.min(7, Math.ceil(scale(rate)))) : 0;
+        const raw = regMap[reg.id];
+        const valid = typeof raw === 'number' && Number.isFinite(raw);
+        const rate = valid ? raw : 0;
+        const bucket = valid && rate > 0 ? Math.max(1, Math.min(7, Math.ceil(scale(rate)))) : 0;
+        const cellX = left + ci * colW + 4;
+        const cellW = Math.max(10, colW - 8);
         const cell = el('rect', {
-          x: left + ci * colW + 4,
+          x: cellX,
           y: y + 2,
-          width: Math.max(10, colW - 8),
+          width: cellW,
           height: 18,
           rx: 3,
           fill: `var(--seq-${bucket})`,
           class: 'chart-heat-cell',
         });
+        const label = text(cellX + cellW / 2, y + 14.5, valid ? pct(rate, 0) : 'n/a', {
+          'text-anchor': 'middle',
+          class: `chart-cell-label${bucket >= 4 ? ' is-dark-cell' : ''}`,
+        });
         cell.addEventListener('pointerenter', () => {
-          tip.show(`<strong>${model.name}</strong><div><span>${reg.label}</span><b>${pct(rate, 1)}</b></div>`, left + ci * colW, y, model.id);
+          tip.show(`<strong>${model.name}</strong><div><span>${reg.label}</span><b>${valid ? pct(rate, 1) : 'n/a'}</b></div>`, cellX, y, model.id);
         });
         cell.addEventListener('pointerleave', () => tip.hide());
-        svg.append(cell);
-        marks.push(cell);
+        svg.append(cell, label);
+        marks.push(cell, label);
       });
       return { rowCtl, marks };
     });
@@ -59,5 +75,6 @@ export function mount(root, data, store) {
       for (const r of rows) r.rowCtl.sync(state, r.marks);
     };
   });
+  view.header.append(heatLegend());
   return () => view.destroy();
 }

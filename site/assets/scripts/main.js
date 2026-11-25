@@ -56,7 +56,7 @@ export function leaderboardLede(data) {
 function fillSummary(data) {
   const models = data.models || [];
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
-  const topScore = models.length ? pct(Math.max(...models.map((m) => m.scores?.g_srr ?? 0)), 1) : '—';
+  const topScore = models.length ? pct(Math.max(...models.map((m) => m.scores?.g_srr ?? 0)), 1) : 'n/a';
   const figures = [
     [int(models.length), 'models tested'],
     [int(data.suite.episodes), 'scenarios'],
@@ -82,8 +82,8 @@ function fillSummary(data) {
     ['Episodes SHA-256', data.suite.episodes_sha256],
     ['Oracles SHA-256', data.suite.oracles_sha256],
     ['Spec SHA-256', data.suite.spec_sha256],
-    ['Commit C_K', data.suite.c_k || '—'],
-    ['drand round', data.suite.round ? `${data.suite.round} (beacon ${data.suite.beacon_randomness_hex || 'pending'})` : '—'],
+    ['Commit C_K', data.suite.c_k || 'n/a'],
+    ['drand round', data.suite.round ? `${data.suite.round} (beacon ${data.suite.beacon_randomness_hex || 'pending'})` : 'n/a'],
     ['Pricing SHA-256', data.pricing_sha256 || 'Set at leaderboard build'],
   ];
   for (const [label, value] of rows) {

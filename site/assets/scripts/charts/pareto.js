@@ -18,22 +18,23 @@ export function paretoFrontier(models, metric = 'g_srr') {
 export function mount(root, data, store) {
   const models = data.models || [];
   let metric = 'g_srr';
-  const view = chart(root, 'Score vs. estimated cost', 'Higher and further left is better. Cost never affects rank.', store, ({ width, canvas, tip }) => {
-    if (!models.length) {
+  const view = chart(root, 'Score vs. estimated cost', 'Higher and further left is better. Blue line traces the best score available at each budget.', store, ({ width, canvas, tip }) => {
+    const priced = models.filter((m) => (m.usage?.estimated_cost_usd || 0) > 0);
+    if (!priced.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';
-      p.textContent = 'Awaiting completed runs to plot score vs. estimated cost.';
+      p.textContent = 'Awaiting priced runs to plot score vs. estimated cost.';
       canvas.append(p);
       return () => {};
     }
     const plot = { left: 46, right: width - 18, top: 22, bottom: 300 };
-    const costs = models.map((m) => m.usage?.estimated_cost_usd || 0).filter((c) => c > 0);
+    const costs = priced.map((m) => m.usage.estimated_cost_usd);
     const minCost = Math.min(1, ...costs);
     const maxCost = Math.max(100, ...costs) * 1.15;
     const x = log([minCost, maxCost], [plot.left + 8, plot.right - 8]);
     const y = linear([0, 1], [plot.bottom, plot.top + 24]);
-    const frontier = paretoFrontier(models, metric);
-    const svg = svgCanvas(canvas, width, 352, `Score vs. estimated cost across ${models.length} ranked models.`);
+    const frontier = paretoFrontier(priced, metric);
+    const svg = svgCanvas(canvas, width, 352, `Score vs. estimated cost across ${priced.length} priced models.`);
     yAxis(svg, plot, y, ticks(0, 1, 4), (v) => pct(v, 0));
     svg.append(text(plot.left, 12, metric === 'g_srr' ? 'End-to-end score' : 'Domain avg', { class: 'chart-axis-title' }));
     for (const v of [1, 3, 10, 30, 100, 300]) {
@@ -44,14 +45,14 @@ export function mount(root, data, store) {
         );
       }
     }
-    svg.append(text((plot.left + plot.right) / 2, 342, 'Estimated run cost · USD (log scale, side metric)', { 'text-anchor': 'middle', class: 'chart-axis-title' }));
+    svg.append(text((plot.left + plot.right) / 2, 342, 'Estimated run cost · USD (log scale)', { 'text-anchor': 'middle', class: 'chart-axis-title' }));
     const frontierPoints = frontier.map((m) => ({ x: x(m.usage.estimated_cost_usd), y: y(m.scores[metric]) }));
     const line = el('path', { d: stepPath(frontierPoints, plot.right), class: 'chart-frontier', stroke: 'var(--accent)' });
     svg.append(line);
     const ids = new Set(frontier.map((m) => m.id));
-    const points = models.map((m) => ({
+    const points = priced.map((m) => ({
       model: m,
-      x: (m.usage?.estimated_cost_usd || 0) > 0 ? x(m.usage.estimated_cost_usd) : plot.left + 12,
+      x: x(m.usage.estimated_cost_usd),
       y: y(m.scores?.[metric] ?? 0),
       color: ids.has(m.id) ? 'var(--accent)' : 'var(--ink-2)',
       opacity: ids.has(m.id) ? 1 : 0.65,

@@ -6,12 +6,12 @@ const decimal = (digits = 1) => number({ minimumFractionDigits: digits, maximumF
 const known = (n) => typeof n === 'number' && Number.isFinite(n);
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export const V52_INTERVAL_METHOD = 'outer union of a Rao–Wu stratified cluster bootstrap (10,000 replicates, Type-7 quantiles) and two-sided 95% Clopper–Pearson bounds';
+export const V52_INTERVAL_METHOD = '95% statistical confidence interval (bootstrap and Clopper-Pearson bounds)';
 
 export function pct(rate, digits = 1) {
   return known(rate)
     ? number({ style: 'percent', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(rate)
-    : '—';
+    : 'n/a';
 }
 
 export function gSrrPct(rate) {
@@ -19,31 +19,38 @@ export function gSrrPct(rate) {
 }
 
 export function int(n) {
-  return known(n) ? integer.format(n) : '—';
+  return known(n) ? integer.format(n) : 'n/a';
 }
 
 export function usd(n) {
-  return known(n) ? currency.format(n) : '—';
+  return known(n) ? currency.format(n) : 'n/a';
 }
 
 export function compact(n) {
-  return known(n) ? short.format(n) : '—';
+  return known(n) ? short.format(n) : 'n/a';
 }
 
 export function num(n, digits = 1) {
-  return known(n) ? decimal(digits).format(n) : '—';
+  return known(n) ? decimal(digits).format(n) : 'n/a';
 }
 
 export function seconds(n) {
-  return known(n) ? `${num(n, 1)} s` : '—';
+  return known(n) ? `${num(n, 1)} s` : 'n/a';
+}
+
+export function duration(sec) {
+  if (!known(sec) || sec <= 0) return 'n/a';
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const mins = sec / 60;
+  return mins >= 10 ? `${Math.round(mins)} min` : `${num(mins, 1)} min`;
 }
 
 export function tokPerSec(n) {
-  return known(n) ? `${num(n, 1)} tok/s` : '—';
+  return known(n) ? `${num(n, 1)} tok/s` : 'n/a';
 }
 
 export function formatInterval(iv, asPct = true) {
-  if (!iv || !known(iv.lo) || !known(iv.hi)) return '—';
+  if (!iv || !known(iv.lo) || !known(iv.hi)) return 'n/a';
   return asPct ? `${pct(iv.lo, 1)}–${pct(iv.hi, 1)}` : `#${num(iv.lo, 1)}–#${num(iv.hi, 1)}`;
 }
 
