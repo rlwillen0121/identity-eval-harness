@@ -123,6 +123,10 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   const cleanTable = mountTable(tableRoot, data, store);
   assert.match(tableRoot.textContent, /Claude Haiku 5\.5/);
   assert.match(tableRoot.textContent, /75\.0%/);
+  assert.match(tableRoot.textContent, /By category/);
+  assert.match(tableRoot.textContent, /Safety-first/);
+  assert.equal(tableRoot.querySelectorAll('.category-track').length, CATEGORIES.length);
+  assert.equal(tableRoot.querySelectorAll('.view-button').length, 3);
 
   const detailRoot = dom.root();
   const cleanDetail = mountDetail(detailRoot, data, store);

@@ -42,8 +42,15 @@ export function leaderboardLede(data) {
   if (!data.models?.length) {
     return `Awaiting the first completed ${int(data.suite.episodes)}-scenario ranked entry.`;
   }
-  const top = data.models[0];
-  return `${top.name} leads at ${pct(top.scores?.g_srr, 1)} strict end-to-end resolution across ${int(data.suite.episodes)} scenarios.`;
+  const topScore = Math.max(...data.models.map((m) => Number(m.scores?.g_srr) || 0));
+  const leaders = data.models.filter((m) => Math.abs((Number(m.scores?.g_srr) || 0) - topScore) < 1e-9);
+  if (leaders.length === 2) {
+    return `${leaders[0].name} and ${leaders[1].name} tie at ${pct(topScore, 1)} end-to-end resolution.`;
+  }
+  if (leaders.length > 2) {
+    return `${int(leaders.length)} models tie at ${pct(topScore, 1)} end-to-end resolution.`;
+  }
+  return `${leaders[0].name} leads at ${pct(topScore, 1)} end-to-end resolution.`;
 }
 
 function fillSummary(data) {
