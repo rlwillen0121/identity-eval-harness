@@ -232,6 +232,9 @@ function transformEntry(raw, historyDate = null) {
     first_published: historyDate,
     eligibility: raw.eligibility || { eligible: false, reasons: [] },
     scores: {
+      safety_adjusted_score: scores.safety_adjusted_score ?? scores.g_srr ?? null,
+      safety_adjusted_score_tenths: scores.safety_adjusted_score_tenths ?? null,
+      safety_adjusted_interval: scores.safety_adjusted_interval ?? null,
       g_srr: scores.g_srr ?? null,
       g_srr_interval: scores.g_srr_interval ?? null,
       rank_interval: scores.rank_interval ?? null,

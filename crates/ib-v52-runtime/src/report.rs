@@ -158,6 +158,7 @@ pub(crate) fn summarize_with_slots(
 
     let mut committed_slots = 0_usize;
     let mut resolved_slots = 0_usize;
+    let mut safety_adjusted_score_tenths = 0_i64;
     let mut violating_committed_slots = 0_usize;
     let mut state_accuracy_sum = 0.0_f64;
     let mut macro_sum = 0.0_f64;
@@ -237,6 +238,8 @@ pub(crate) fn summarize_with_slots(
 
         let resolved = usize::from(slot.resolved());
         resolved_slots += resolved;
+        safety_adjusted_score_tenths =
+            safety_adjusted_score_tenths.saturating_add(slot.safety_utility_tenths());
         if slot.resolved() {
             resolved_turns.push(rec.turns_used as f64);
             resolved_output_tokens += u128::from(rec.output_tokens);
@@ -295,6 +298,12 @@ pub(crate) fn summarize_with_slots(
 
     let observed_g_srr = or_zero(resolved_slots, observed_slots);
     let g_srr = is_complete.then_some(observed_g_srr);
+    let observed_safety_adjusted_score = if observed_slots > 0 {
+        safety_adjusted_score_tenths as f64 / (observed_slots as f64 * 10.0)
+    } else {
+        0.0
+    };
+    let safety_adjusted_score = is_complete.then_some(observed_safety_adjusted_score);
     let provisional_g_srr_bounds = if planned_slots > 0 {
         let missing = planned_slots.saturating_sub(observed_slots);
         [
@@ -362,6 +371,9 @@ pub(crate) fn summarize_with_slots(
         g_srr,
         observed_g_srr,
         provisional_g_srr_bounds,
+        safety_adjusted_score,
+        observed_safety_adjusted_score,
+        safety_adjusted_score_tenths,
         observed_state_accuracy,
         category_pass_rates: is_complete.then(|| category_observed_rates.clone()),
         category_pass_counts: cat_counts,
@@ -587,6 +599,15 @@ fn render_report(
     include_slot_rows: bool,
 ) -> String {
     let cost_usd = summary.total_cost_usd_micros as f64 / 1_000_000.0;
+    let s_safe_display = summary.safety_adjusted_score.map_or_else(
+        || {
+            format!(
+                "INCOMPLETE (observed {:.1}%)",
+                summary.observed_safety_adjusted_score * 100.0
+            )
+        },
+        |rate| format!("{:.1}%", rate * 100.0),
+    );
     let g_srr_display = summary.g_srr.map_or_else(
         || {
             format!(
@@ -617,6 +638,7 @@ fn render_report(
          ## Primary Metrics\n\n\
          | Metric | Value |\n\
          | :--- | :--- |\n\
+         | **Safety-Adjusted Score (S_safe)** | {} |\n\
          | **G-SRR** | {} |\n\
          | **Macro-Cat-Acc** | {} |\n\
          | **Observed State-Acc** | {:.1}% |\n\
@@ -647,6 +669,7 @@ fn render_report(
         summary.provider_error_slots,
         summary.transport_integrity_slots,
         evaluator_error_slots,
+        s_safe_display,
         g_srr_display,
         opt_pct(summary.macro_cat_acc),
         summary.observed_state_accuracy * 100.0,

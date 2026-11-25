@@ -20,6 +20,9 @@ function makeEntry({ rank = null, status = 'ranked', modelId, effort = 'high', t
     entry: { model_id: modelId, reasoning_effort: effort, transport_id: transport },
     eligibility: { eligible: reasons.length === 0, reasons },
     scores: {
+      safety_adjusted_score: gSrr === null ? null : Math.max(-3, gSrr - 1 / 480),
+      safety_adjusted_score_tenths: gSrr === null ? 40 : Math.round(gSrr * 48) * 10 - 1,
+      safety_adjusted_interval: gSrr === null ? null : { lo: Math.max(-3, gSrr - 0.1), hi: Math.min(1, gSrr + 0.1) },
       g_srr: gSrr,
       g_srr_interval: gSrr === null ? null : { lo: Math.max(0, gSrr - 0.1), hi: Math.min(1, gSrr + 0.1) },
       rank_interval: rank === null ? null : { lo: rank, hi: rank + 0.5 },

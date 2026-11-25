@@ -38,25 +38,31 @@ export function createStore(initial) {
   };
 }
 
+function modelScore(m) {
+  const s = m?.scores || {};
+  const val = s.safety_adjusted_score ?? s.g_srr;
+  return typeof val === 'number' && Number.isFinite(val) ? val : 0;
+}
+
 export function leaderboardLede(data) {
   if (!data.models?.length) {
     return `Awaiting the first completed ${int(data.suite.episodes)}-scenario ranked entry.`;
   }
-  const topScore = Math.max(...data.models.map((m) => Number(m.scores?.g_srr) || 0));
-  const leaders = data.models.filter((m) => Math.abs((Number(m.scores?.g_srr) || 0) - topScore) < 1e-9);
+  const topScore = Math.max(...data.models.map(modelScore));
+  const leaders = data.models.filter((m) => Math.abs(modelScore(m) - topScore) < 1e-9);
   if (leaders.length === 2) {
-    return `${leaders[0].name} and ${leaders[1].name} tie at ${pct(topScore, 1)} end-to-end resolution.`;
+    return `${leaders[0].name} and ${leaders[1].name} tie at ${pct(topScore, 1)} overall score.`;
   }
   if (leaders.length > 2) {
-    return `${int(leaders.length)} models tie at ${pct(topScore, 1)} end-to-end resolution.`;
+    return `${int(leaders.length)} models tie at ${pct(topScore, 1)} overall score.`;
   }
-  return `${leaders[0].name} leads at ${pct(topScore, 1)} end-to-end resolution.`;
+  return `${leaders[0].name} leads at ${pct(topScore, 1)} overall score.`;
 }
 
 function fillSummary(data) {
   const models = data.models || [];
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
-  const topScore = models.length ? pct(Math.max(...models.map((m) => m.scores?.g_srr ?? 0)), 1) : 'n/a';
+  const topScore = models.length ? pct(Math.max(...models.map(modelScore)), 1) : 'n/a';
   const figures = [
     [int(models.length), 'models tested'],
     [int(data.suite.episodes), 'scenarios'],

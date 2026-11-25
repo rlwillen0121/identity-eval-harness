@@ -30,6 +30,7 @@ export function mount(root, data, store) {
         y: y(m.scores?.violations_per_committed_slot ?? 0),
         color: total === 0 ? 'var(--good-ink)' : (total >= 20 ? 'var(--critical)' : 'var(--ink-2)'),
         lines: [
+          ['Safety score', pct(m.scores?.safety_adjusted_score ?? m.scores?.g_srr, 1)],
           ['End to end', gSrrPct(m.scores?.g_srr)],
           ['Overgrants / broken', `${int(m.scores?.og_total)} / ${int(m.scores?.ab_total)}`],
           ['Errors / scenario', num(m.scores?.violations_per_committed_slot, 2)],

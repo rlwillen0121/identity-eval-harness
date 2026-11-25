@@ -402,6 +402,15 @@ pub struct SuiteReportSummaryV52 {
     pub g_srr: Option<f64>,
     pub observed_g_srr: f64,
     pub provisional_g_srr_bounds: [f64; 2],
+    /// `v5.3.1` bounded safety-adjusted score `S_safe = N_safe / (10 * P)` when complete.
+    #[serde(default)]
+    pub safety_adjusted_score: Option<f64>,
+    /// Observed-slot `S_safe` (`N_safe / (10 * observed_slots)`).
+    #[serde(default)]
+    pub observed_safety_adjusted_score: f64,
+    /// Exact integer numerator `N_safe = 10*R - sum(min(30, og_i + ab_i))` over observed slots.
+    #[serde(default)]
+    pub safety_adjusted_score_tenths: i64,
     pub observed_state_accuracy: f64,
     pub category_pass_counts: IndexMap<CategoryIdV52, usize>,
     #[serde(default)]

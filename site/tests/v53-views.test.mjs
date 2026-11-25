@@ -29,6 +29,9 @@ function sampleSiteData() {
     first_published: '2026-11-24',
     eligibility: { eligible: true, reasons: [] },
     scores: {
+      safety_adjusted_score: 357 / 480,
+      safety_adjusted_score_tenths: 357,
+      safety_adjusted_interval: { lo: 0.6, hi: 0.86 },
       g_srr: 0.75,
       g_srr_interval: { lo: 0.61, hi: 0.87 },
       rank_interval: { lo: 1, hi: 1 },
@@ -125,7 +128,8 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   const tableRoot = dom.root();
   const cleanTable = mountTable(tableRoot, data, store);
   assert.match(tableRoot.textContent, /Claude Haiku 5\.5/);
-  assert.match(tableRoot.textContent, /75\.0%/);
+  assert.match(tableRoot.textContent, /74\.4%/);
+  assert.match(tableRoot.textContent, /36\/48/);
   assert.match(tableRoot.textContent, /By domain/);
   assert.match(tableRoot.textContent, /Safest first/);
   assert.match(tableRoot.textContent, /Fastest/);

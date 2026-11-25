@@ -634,6 +634,7 @@ fn check_bundles(
                     &ours[section],
                     &theirs,
                     &[
+                        "safety_adjusted_interval",
                         "g_srr_interval",
                         "rank_interval",
                         "provisional_g_srr_bounds",
@@ -1125,6 +1126,15 @@ fn replay_intervals(
             &[],
             &mut mismatched,
         );
+        if let Some(published_safe_iv) = e.pointer("/scores/safety_adjusted_interval") {
+            diff_values(
+                &format!("{name}.safety_adjusted_interval"),
+                &ib_v52_runtime::leaderboard::safety_interval_json(&joint.safety_intervals[pos]),
+                published_safe_iv,
+                &[],
+                &mut mismatched,
+            );
+        }
         let ours = joint.rank_intervals[pos]
             .as_ref()
             .map_or(Value::Null, rank_json);

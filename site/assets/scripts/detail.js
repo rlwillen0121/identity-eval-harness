@@ -87,7 +87,7 @@ export function mount(rootEl, data, store) {
         </div>
       </div>
       <p class="detail-verdict">${esc(verdictSentence(model))}</p>
-      <p class="model-id">End to end ${esc(gSrrPct(s.g_srr))} (95% range ${esc(formatInterval(s.g_srr_interval, true))} · rank range ${esc(formatInterval(s.rank_interval, false))})</p>
+      <p class="model-id">Score ${esc(pct(s.safety_adjusted_score ?? s.g_srr, 1))} · End to end ${esc(gSrrPct(s.g_srr))} (95% range ${esc(formatInterval(s.g_srr_interval, true))} · rank range ${esc(formatInterval(s.rank_interval, false))})</p>
       <p class="copy-status muted" role="status"></p>
       <div class="detail-columns">
         <div>

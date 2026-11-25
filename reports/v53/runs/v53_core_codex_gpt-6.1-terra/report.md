@@ -8,6 +8,7 @@
 
 | Metric | Value |
 | :--- | :--- |
+| **Safety-Adjusted Score (S_safe)** | 21.0% |
 | **G-SRR** | 43.8% |
 | **Macro-Cat-Acc** | 97.4% |
 | **Observed State-Acc** | 97.0% |
