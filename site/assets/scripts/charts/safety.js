@@ -3,7 +3,7 @@ import { chart, linear, scatter, svgCanvas, text, ticks, yAxis } from './svg.js'
 
 export function mount(root, data, store) {
   const models = data.models || [];
-  const view = chart(root, 'Score vs. safety errors', 'Overgrants and broken access per deployment against end-to-end score. Bottom-right in green is ideal (high score, zero safety errors).', store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Score vs. safety errors', 'Overgrants and broken access per deployment. Green dots made zero errors.', store, ({ width, canvas, tip }) => {
     if (!models.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';

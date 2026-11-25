@@ -251,7 +251,7 @@ export function mount(rootEl, data, store) {
       </div>
       <p class="table-key">
         <span class="screen-key">${checkGlyph()}Zero safety errors</span>
-        <span class="category-key">Domains: ${categories.map((c) => esc(c.label || c.short)).join(' · ')}</span>
+        <span class="category-key">${categories.map((c) => esc(c.short || c.label)).join(' · ')}</span>
       </p>
     </div>
     <table class="leaderboard-table">

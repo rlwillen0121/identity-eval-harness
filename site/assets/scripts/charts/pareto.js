@@ -18,7 +18,7 @@ export function paretoFrontier(models, metric = 'g_srr') {
 export function mount(root, data, store) {
   const models = data.models || [];
   let metric = 'g_srr';
-  const view = chart(root, 'Score vs. estimated cost', 'Higher and further left is better. Estimated from recorded tokens under one shared retail pricing table; cost never affects rank.', store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Score vs. estimated cost', 'Higher and further left is better. Cost never affects rank.', store, ({ width, canvas, tip }) => {
     if (!models.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';

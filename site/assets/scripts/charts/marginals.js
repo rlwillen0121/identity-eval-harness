@@ -11,7 +11,7 @@ const REGIME_SHORT = {
 export function mount(root, data, store) {
   const models = data.models || [];
   const regimes = data.regimes || [];
-  const view = chart(root, 'Performance by enterprise environment', 'End-to-end score across four enterprise operating models: Zero-Trust, Academic/Healthcare, Hybrid Cloud/ERP, and M&A.', store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'By enterprise environment', 'End-to-end score across four operating models.', store, ({ width, canvas, tip }) => {
     if (!models.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';
