@@ -84,19 +84,19 @@ export function compareModels(a, b, key, dir = 'asc') {
 }
 
 export const columnDefinitions = () => [
-  ['rank', '#', 'Canonical rank under SPEC-v5.3 §9 (G-SRR → Macro-Cat-Acc → commit rate → violations/committed). Hover for 95% rank interval.'],
-  ['name', 'Model', 'Model name, vendor, and reasoning effort. Green check marks zero overgrants and zero availability breaches.'],
-  ['g_srr', 'End to end', `Strict end-to-end resolution across 48 scenarios (zero violations, every in-scope category passed) with 95% interval (${V52_INTERVAL_METHOD}).`],
-  ['macro_cat_acc', 'Macro-Cat', 'Unweighted mean assertion accuracy across each scenario\'s in-scope IGA categories (SPEC-v5.3 companion score).'],
-  ['categories', 'By category', 'Exact pass rate across each of the 8 enterprise IGA categories. Hover any bar for the category score.'],
-  ['violations', 'OG / AB', 'Total overgrants (OG) and availability breaches (AB) across all 48 scenarios.'],
-  ['cost_usd', 'Est. cost', 'Side metric only: estimated USD from recorded tokens under the shared pricing table. Never affects rank.'],
+  ['rank', '#', 'Overall rank (End-to-end score → Domain avg → completion rate → lowest safety errors). Hover any rank for its 95% rank interval.'],
+  ['name', 'Model', 'Model name, provider, and reasoning effort. A green check marks zero overgrants and zero broken access across all 48 scenarios.'],
+  ['g_srr', 'End to end', `Scenarios resolved cleanly with every in-scope IAM domain passed and zero safety errors (G-SRR). Whiskers show a 95% interval (${V52_INTERVAL_METHOD}).`],
+  ['macro_cat_acc', 'Domain avg', 'Average assertion accuracy across each scenario\'s in-scope IAM domains (SPEC-v5.3 Macro-Cat-Acc).'],
+  ['categories', 'By domain', 'Exact pass rate across all 8 enterprise IAM domains. Hover any bar to see the domain score.'],
+  ['violations', 'Safety (OG / AB)', 'Total overgrants (unauthorized access left behind) and availability breaches (legitimate access broken) across all 48 scenarios.'],
+  ['cost_usd', 'Est. cost', 'Estimated run cost in USD under one shared retail pricing table. Shown as a side metric only; never affects rank.'],
 ];
 
 const VIEW_PRESETS = [
-  { id: 'canonical', label: 'Canonical (G-SRR)', sort: { key: 'rank', dir: 'asc' }, title: 'SPEC-v5.3 §9 canonical ranking (G-SRR → Macro-Cat → commit → violations)' },
-  { id: 'safety', label: 'Safety-first', sort: { key: 'violations', dir: 'asc' }, title: 'Sort by fewest OG + AB safety violations first, then highest G-SRR' },
-  { id: 'value', label: 'Best value', sort: { key: 'cost_per_resolved', dir: 'asc' }, title: 'Sort by lowest estimated cost per resolved scenario (report-only)' },
+  { id: 'canonical', label: 'Overall', sort: { key: 'rank', dir: 'asc' }, title: 'Standard ranking: End-to-end score → Domain avg → completion rate → lowest safety errors' },
+  { id: 'safety', label: 'Safest first', sort: { key: 'violations', dir: 'asc' }, title: 'Sort by fewest overgrants and broken access first, then highest End-to-end score' },
+  { id: 'value', label: 'Best value', sort: { key: 'cost_per_resolved', dir: 'asc' }, title: 'Sort by lowest estimated cost per solved scenario (side metric)' },
 ];
 
 function intervalGraphic(model) {
@@ -127,11 +127,11 @@ function safetyCellMarkup(model, maxViolations) {
   const ab = Number(s.ab_total) || 0;
   const total = og + ab;
   if (total === 0) {
-    return `<span class="safety-zero" title="Zero overgrants and zero availability breaches">${checkGlyph()}0 / 0</span>`;
+    return `<span class="safety-zero" title="Zero overgrants and zero broken access across all 48 scenarios">${checkGlyph()}None</span>`;
   }
   const width = maxViolations > 0 ? Math.max(4, clamp(total / maxViolations) * 100) : 0;
   const severity = total >= 20 ? ' is-high' : ' is-warn';
-  const title = `${int(og)} overgrants · ${int(ab)} availability breaches (${int(total)} total)`;
+  const title = `${int(og)} overgrants (unauthorized access) · ${int(ab)} availability breaches (broken access)`;
   return `<span class="unsafe-measure${severity}" title="${esc(title)}"><span class="unsafe-number">${int(og)} / ${int(ab)}</span><span class="unsafe-track" aria-hidden="true"><span class="unsafe-fill" style="width:${width}%"></span></span></span>`;
 }
 
@@ -238,7 +238,7 @@ export function mount(rootEl, data, store) {
   rootEl.innerHTML = `
     <div class="leaderboard-controls">
       <label class="sr-only" for="model-search">Filter models</label>
-      <input class="model-search" id="model-search" type="search" placeholder="Filter models or transports" autocomplete="off" spellcheck="false">
+      <input class="model-search" id="model-search" type="search" placeholder="Filter models" autocomplete="off" spellcheck="false">
       <div class="vendor-controls" role="group" aria-label="Filter by vendor">
         <button class="vendor-button" type="button" data-vendor="" aria-pressed="true">All</button>
         ${vendors.map((v) => `<button class="vendor-button" type="button" data-vendor="${esc(v.id)}" aria-pressed="false">${vendorLogo(v.id, v.label)}${esc(v.label)} <span class="vendor-count muted">${int(v.count)}</span></button>`).join('')}
@@ -250,8 +250,8 @@ export function mount(rootEl, data, store) {
         ${VIEW_PRESETS.map((p) => `<button class="view-button" type="button" data-preset="${esc(p.id)}" title="${esc(p.title)}" aria-pressed="false">${esc(p.label)}</button>`).join('')}
       </div>
       <p class="table-key">
-        <span class="screen-key">${checkGlyph()}Zero OG / AB</span>
-        <span class="category-key">Categories: ${categories.map((c) => esc(c.short || c.label)).join(' · ')}</span>
+        <span class="screen-key">${checkGlyph()}Zero safety errors</span>
+        <span class="category-key">Domains: ${categories.map((c) => esc(c.label || c.short)).join(' · ')}</span>
       </p>
     </div>
     <table class="leaderboard-table">

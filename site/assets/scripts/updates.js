@@ -22,7 +22,7 @@ export function mount(root, data, store) {
   }
 
   root.innerHTML = `
-    <p class="section-lede">When each ${int(data.suite.episodes)}-scenario ranked entry was first published.</p>
+    <p class="section-lede">When each model's full ${int(data.suite.episodes)}-scenario run was first added to the leaderboard.</p>
     <div class="updates-ledger">
       ${groups.map((g, idx) => `<section class="updates-day" aria-label="Published ${esc(date(g.date))}"><div class="updates-date-block"><time class="updates-date" datetime="${esc(g.date)}">${esc(date(g.date))}</time>${idx === groups.length - 1 ? '<span class="updates-launch">Launch</span>' : ''}</div><ul class="updates-models">${g.models.map((m) => `<li><button class="update-model-button" type="button" data-model-id="${esc(m.id)}"><span class="update-model-name">${vendorLogo(m.vendor, m.vendor_label)}${esc(m.name)}</span><span class="update-model-meta">#${int(m.rank)} · ${gSrrPct(m.scores?.g_srr)}</span></button></li>`).join('')}</ul></section>`).join('')}
     </div>

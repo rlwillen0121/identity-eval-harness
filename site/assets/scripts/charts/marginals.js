@@ -1,14 +1,21 @@
 import { pct } from '../format.js';
 import { chart, el, linear, modelRow, nameColumn, svgCanvas, text } from './svg.js';
 
+const REGIME_SHORT = {
+  R1: 'Zero-Trust',
+  R2: 'Multi-Affil.',
+  R3: 'Hybrid Cloud',
+  R4: 'M&A',
+};
+
 export function mount(root, data, store) {
   const models = data.models || [];
   const regimes = data.regimes || [];
-  const view = chart(root, 'Organization regime breakdown (R1–R4)', 'G-SRR across Regulated Zero-Trust, Academic/Healthcare, Hybrid Cloud/ERP, and M&A regimes.', store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Performance by enterprise environment', 'End-to-end score across four enterprise operating models: Zero-Trust, Academic/Healthcare, Hybrid Cloud/ERP, and M&A.', store, ({ width, canvas, tip }) => {
     if (!models.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';
-      p.textContent = 'Awaiting ranked v5.3 entries to plot regime marginals.';
+      p.textContent = 'Awaiting completed runs to plot environment scores.';
       canvas.append(p);
       return () => {};
     }
@@ -17,9 +24,9 @@ export function mount(root, data, store) {
     const top = 34;
     const colW = (width - left - 16) / Math.max(1, regimes.length);
     const height = top + models.length * rowH + 22;
-    const svg = svgCanvas(canvas, width, height, 'Regime G-SRR breakdown across R1 to R4.');
+    const svg = svgCanvas(canvas, width, height, 'End-to-end resolution heatmap across four enterprise environments.');
     regimes.forEach((reg, ci) => {
-      svg.append(text(left + ci * colW + colW / 2, 18, reg.id, { 'text-anchor': 'middle', class: 'chart-column-label' }));
+      svg.append(text(left + ci * colW + colW / 2, 18, REGIME_SHORT[reg.id] || reg.id, { 'text-anchor': 'middle', class: 'chart-column-label' }));
     });
     const scale = linear([0, 1], [0, 7]);
     const rows = models.map((model, ri) => {
@@ -40,7 +47,7 @@ export function mount(root, data, store) {
           class: 'chart-heat-cell',
         });
         cell.addEventListener('pointerenter', () => {
-          tip.show(`<strong>${model.name}</strong><div><span>${reg.id}: ${reg.label}</span><b>${pct(rate, 1)}</b></div>`, left + ci * colW, y, model.id);
+          tip.show(`<strong>${model.name}</strong><div><span>${reg.label}</span><b>${pct(rate, 1)}</b></div>`, left + ci * colW, y, model.id);
         });
         cell.addEventListener('pointerleave', () => tip.hide());
         svg.append(cell);

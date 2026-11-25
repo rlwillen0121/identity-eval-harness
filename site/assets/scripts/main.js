@@ -58,10 +58,10 @@ function fillSummary(data) {
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
   const topScore = models.length ? pct(Math.max(...models.map((m) => m.scores?.g_srr ?? 0)), 1) : '—';
   const figures = [
-    [int(models.length), 'ranked entries'],
+    [int(models.length), 'models tested'],
     [int(data.suite.episodes), 'scenarios'],
-    [int(data.suite.categories), 'IGA categories'],
-    [topScore, 'top G-SRR'],
+    [int(data.suite.categories), 'IAM domains'],
+    [topScore, 'top score'],
   ];
   const root = document.getElementById('hero-figures');
   root.replaceChildren();

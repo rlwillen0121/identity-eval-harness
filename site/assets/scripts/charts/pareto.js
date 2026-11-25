@@ -18,11 +18,11 @@ export function paretoFrontier(models, metric = 'g_srr') {
 export function mount(root, data, store) {
   const models = data.models || [];
   let metric = 'g_srr';
-  const view = chart(root, 'Accuracy vs. estimated cost (Pareto)', 'Side metric view under shared frozen retail pricing; cost never affects leaderboard ranking.', store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Score vs. estimated cost', 'Higher and further left is better. Estimated from recorded tokens under one shared retail pricing table; cost never affects rank.', store, ({ width, canvas, tip }) => {
     if (!models.length) {
       const p = document.createElement('p');
       p.className = 'status-note muted';
-      p.textContent = 'Awaiting ranked v5.3 entries to plot the accuracy–cost Pareto frontier.';
+      p.textContent = 'Awaiting completed runs to plot score vs. estimated cost.';
       canvas.append(p);
       return () => {};
     }
@@ -33,9 +33,9 @@ export function mount(root, data, store) {
     const x = log([minCost, maxCost], [plot.left + 8, plot.right - 8]);
     const y = linear([0, 1], [plot.bottom, plot.top + 24]);
     const frontier = paretoFrontier(models, metric);
-    const svg = svgCanvas(canvas, width, 352, `Accuracy-cost Pareto chart across ${models.length} ranked v5.3 entries.`);
+    const svg = svgCanvas(canvas, width, 352, `Score vs. estimated cost across ${models.length} ranked models.`);
     yAxis(svg, plot, y, ticks(0, 1, 4), (v) => pct(v, 0));
-    svg.append(text(plot.left, 12, metric === 'g_srr' ? 'G-SRR' : 'Macro-Cat-Acc', { class: 'chart-axis-title' }));
+    svg.append(text(plot.left, 12, metric === 'g_srr' ? 'End-to-end score' : 'Domain avg', { class: 'chart-axis-title' }));
     for (const v of [1, 3, 10, 30, 100, 300]) {
       if (v >= minCost && v <= maxCost) {
         svg.append(
@@ -44,7 +44,7 @@ export function mount(root, data, store) {
         );
       }
     }
-    svg.append(text((plot.left + plot.right) / 2, 342, 'Estimated run cost · USD (log scale, report-only)', { 'text-anchor': 'middle', class: 'chart-axis-title' }));
+    svg.append(text((plot.left + plot.right) / 2, 342, 'Estimated run cost · USD (log scale, side metric)', { 'text-anchor': 'middle', class: 'chart-axis-title' }));
     const frontierPoints = frontier.map((m) => ({ x: x(m.usage.estimated_cost_usd), y: y(m.scores[metric]) }));
     const line = el('path', { d: stepPath(frontierPoints, plot.right), class: 'chart-frontier', stroke: 'var(--accent)' });
     svg.append(line);
@@ -56,8 +56,8 @@ export function mount(root, data, store) {
       color: ids.has(m.id) ? 'var(--accent)' : 'var(--ink-2)',
       opacity: ids.has(m.id) ? 1 : 0.65,
       lines: [
-        ['G-SRR', gSrrPct(m.scores?.g_srr)],
-        ['Macro-Cat-Acc', pct(m.scores?.macro_cat_acc, 1)],
+        ['End to end', gSrrPct(m.scores?.g_srr)],
+        ['Domain avg', pct(m.scores?.macro_cat_acc, 1)],
         ['Est. cost', usd(m.usage?.estimated_cost_usd)],
       ],
     }));
@@ -70,8 +70,8 @@ export function mount(root, data, store) {
   const control = document.createElement('div');
   control.className = 'chart-segmented';
   control.setAttribute('role', 'group');
-  control.setAttribute('aria-label', 'Accuracy metric');
-  const buttons = [['g_srr', 'G-SRR'], ['macro_cat_acc', 'Macro-Cat-Acc']].map(([key, label]) => {
+  control.setAttribute('aria-label', 'Score metric');
+  const buttons = [['g_srr', 'End to end'], ['macro_cat_acc', 'Domain avg']].map(([key, label]) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
