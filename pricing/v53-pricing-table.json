@@ -2,6 +2,22 @@
   "schema": "identitybench-v52-pricing-table-v1",
   "as_of": "2026-11-25",
   "models": {
+    "claude-fable-5-2": {
+      "uncached_input_micros_per_million": 8000000,
+      "cached_input_micros_per_million": 200000,
+      "cache_write_micros_per_million": 10000000,
+      "output_micros_per_million": 40000000,
+      "reasoning_micros_per_million": 40000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-fable-5-1": {
+      "uncached_input_micros_per_million": 10000000,
+      "cached_input_micros_per_million": 250000,
+      "cache_write_micros_per_million": 12500000,
+      "output_micros_per_million": 50000000,
+      "reasoning_micros_per_million": 50000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
     "claude-opus-5-5": {
       "uncached_input_micros_per_million": 4000000,
       "cached_input_micros_per_million": 200000,

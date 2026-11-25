@@ -126,6 +126,8 @@ export const VENDOR_LABELS = {
 };
 
 export const MODEL_META = {
+  'claude-fable-5-2': { name: 'Claude Fable 5.2', vendor: 'anthropic' },
+  'claude-fable-5-1': { name: 'Claude Fable 5.1', vendor: 'anthropic' },
   'claude-opus-5-5': { name: 'Claude Opus 5.5', vendor: 'anthropic' },
   'claude-sonnet-5-5': { name: 'Claude Sonnet 5.5', vendor: 'anthropic' },
   'claude-haiku-5-5': { name: 'Claude Haiku 5.5', vendor: 'anthropic' },
