@@ -129,7 +129,9 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   assert.match(tableRoot.textContent, /By domain/);
   assert.match(tableRoot.textContent, /Safest first/);
   assert.match(tableRoot.textContent, /Fastest/);
-  assert.match(tableRoot.textContent, /2 over · 1 broken/);
+  assert.match(tableRoot.textContent, /3 errors/);
+  assert.match(tableRoot.textContent, /2 excess, 1 broken/);
+  assert.match(tableRoot.textContent, /Time \/ task/);
   assert.equal(tableRoot.querySelectorAll('.category-track').length, CATEGORIES.length);
   assert.equal(tableRoot.querySelectorAll('.view-button').length, 4);
 

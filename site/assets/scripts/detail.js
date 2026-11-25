@@ -117,13 +117,15 @@ export function mount(rootEl, data, store) {
           }).join('')}</div>
           <h4>By enterprise environment</h4>
           <div class="regime-grid">${(data.regimes || []).map((r) => `<div class="regime-chip" title="${esc(r.label)}"><div>${esc(REGIME_SHORT[r.id] || r.id)}</div><strong>${pct(regMarg[r.id], 0)}</strong></div>`).join('')}</div>
-          <h4>Speed &amp; estimated cost</h4>
+          <h4>Cost, speed &amp; tokens</h4>
           ${figures([
             ['Estimated total cost', usd(u.estimated_cost_usd)],
             ['Estimated cost per solved', usd(u.cost_per_resolved_slot_usd)],
+            ['Total tokens (all 48 scenarios)', compact((Number(u.uncached_input_tokens) || 0) + (Number(u.cache_read_tokens) || 0) + (Number(u.cache_write_tokens) || 0) + (Number(u.output_tokens) || 0))],
+            ['Output & thinking tokens', `${compact(u.output_tokens)} (${compact(u.reasoning_tokens)} thinking)`],
+            ['Input & cached tokens', `${compact(u.uncached_input_tokens)} uncached · ${compact((Number(u.cache_read_tokens) || 0) + (Number(u.cache_write_tokens) || 0))} cache`],
             ['Median time per scenario', duration(d.median_slot_wall_time_s)],
             ['Average turns per scenario', num(d.mean_turns, 1)],
-            ['Median turns when solved', num(e.median_turns_per_resolved_slot, 1)],
             ['Generation speed', tokPerSec(d.generation_tokens_per_second)],
             ['First published', model.first_published ? date(model.first_published) : 'Unpublished'],
           ])}
@@ -133,10 +135,9 @@ export function mount(rootEl, data, store) {
               ['Model ID', model.model_id || 'n/a'],
               ['Transport', model.transport_label || 'n/a'],
               ['State accuracy', pct(s.state_acc, 1)],
+              ['Median turns when solved', num(e.median_turns_per_resolved_slot, 1)],
               ['Turn latency (median / p95)', `${seconds(d.median_turn_latency_s)} / ${seconds(d.p95_turn_latency_s)}`],
-              ['Uncached / cached input', `${compact(u.uncached_input_tokens)} / ${compact(u.cache_read_tokens)}`],
-              ['Cache write tokens', compact(u.cache_write_tokens)],
-              ['Output / thinking tokens', `${compact(u.output_tokens)} / ${compact(u.reasoning_tokens)}`],
+              ['Cache read / write tokens', `${compact(u.cache_read_tokens)} / ${compact(u.cache_write_tokens)}`],
               ['Format retries', int(d.format_error_turns)],
               ['Pricing SHA-256', (meta.pricing_sha256 || 'n/a').slice(0, 16)],
               ['Probe SHA-256', (meta.receipt_sha256 || 'n/a').slice(0, 16)],

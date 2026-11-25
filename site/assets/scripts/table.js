@@ -1,4 +1,4 @@
-import { gSrrPct, pct, int, num, usd, duration, formatInterval, tokPerSec, escapeHTML as esc } from './format.js';
+import { gSrrPct, pct, int, num, usd, compact, duration, formatInterval, tokPerSec, escapeHTML as esc } from './format.js';
 import { mount as mountDetail } from './detail.js';
 import { vendorLogo } from './logos.js';
 
@@ -124,8 +124,8 @@ export const columnDefinitions = () => [
   ['g_srr', 'End to end', 'Share of 48 scenarios solved with every required domain check passed and zero safety errors, with a 95% confidence range.'],
   ['macro_cat_acc', 'Domain avg', 'Average accuracy across the IAM domains tested in each scenario.'],
   ['categories', 'By domain', 'Exact pass rate across all eight IAM domains. Hover any bar to read that domain score.'],
-  ['violations', 'Safety errors', 'Total overgrants (unauthorized access left behind) and broken access (legitimate access disrupted) across all 48 scenarios.'],
-  ['speed', 'Speed', 'Median wall-clock time to complete one scenario. Lower is faster.'],
+  ['violations', 'Safety', 'Total safety errors across all 48 scenarios: excess (unauthorized access left behind) and broken (legitimate access disrupted).'],
+  ['speed', 'Time / task', 'Median wall-clock time to complete one scenario (per task, not total run time). Lower is faster.'],
   ['cost_usd', 'Est. cost', 'Estimated USD for a full 48-scenario run under one shared retail pricing table. Only orders exact ties.'],
 ];
 
@@ -158,24 +158,25 @@ function categoryBarsMarkup(model, categories) {
   }).join('')}</div>`;
 }
 
-function safetyLabel(og, ab) {
-  if (og > 0 && ab > 0) return `${int(og)} over · ${int(ab)} broken`;
-  if (og > 0) return `${int(og)} over`;
+function safetyDetail(og, ab) {
+  if (og > 0 && ab > 0) return `${int(og)} excess, ${int(ab)} broken`;
+  if (og > 0) return `${int(og)} excess`;
   return `${int(ab)} broken`;
 }
 
-function safetyCellMarkup(model, maxViolations) {
+function safetyCellMarkup(model) {
   const s = model.scores || {};
   const og = Number(s.og_total) || 0;
   const ab = Number(s.ab_total) || 0;
   const total = og + ab;
   if (total === 0) {
-    return `<span class="safety-zero" title="Zero overgrants and zero broken access across all 48 scenarios">${checkGlyph()}None</span>`;
+    return `<span class="safety-badge is-clean" title="Zero excess access and zero broken access across all 48 scenarios">${checkGlyph()}Clean</span>`;
   }
-  const width = maxViolations > 0 ? Math.max(4, clamp(total / maxViolations) * 100) : 0;
-  const severity = total >= 20 ? ' is-high' : ' is-warn';
+  const severity = total >= 15 ? 'is-high' : 'is-warn';
+  const countLabel = `${int(total)} error${total === 1 ? '' : 's'}`;
+  const detail = safetyDetail(og, ab);
   const title = `${int(og)} overgrants (unauthorized access) and ${int(ab)} availability breaches (broken access)`;
-  return `<span class="unsafe-measure${severity}" title="${esc(title)}"><span class="unsafe-number">${esc(safetyLabel(og, ab))}</span><span class="unsafe-track" aria-hidden="true"><span class="unsafe-fill" style="width:${width}%"></span></span></span>`;
+  return `<div class="safety-stack" title="${esc(title)}"><span class="safety-badge ${severity}">${esc(countLabel)}</span><span class="safety-sub">${esc(detail)}</span></div>`;
 }
 
 function mobileHighlightMarkup(model, sortKey) {
@@ -205,7 +206,9 @@ export function modelCellsMarkup(model, selected = false, options = {}) {
   const speedTitle = `Median time per scenario: ${speedText} (${num(d.mean_turns, 1)} avg turns, ${tokPerSec(d.generation_tokens_per_second)})`;
   const showUnitCost = sortKey === 'cost_per_resolved';
   const costPrimary = showUnitCost ? `${usd(u.cost_per_resolved_slot_usd)}/solved` : usd(u.estimated_cost_usd);
-  const costTitle = `Estimated total: ${usd(u.estimated_cost_usd)} (${usd(u.cost_per_resolved_slot_usd)} per solved scenario)`;
+  const totalTok = (Number(u.uncached_input_tokens) || 0) + (Number(u.cache_read_tokens) || 0) + (Number(u.cache_write_tokens) || 0) + (Number(u.output_tokens) || 0);
+  const tokSub = totalTok > 0 ? `${compact(totalTok)} tok` : '';
+  const costTitle = `Estimated total: ${usd(u.estimated_cost_usd)} (${usd(u.cost_per_resolved_slot_usd)} per solved) · ${compact(totalTok)} total tokens (${compact(u.output_tokens)} output/thinking)`;
   const effortText = model.reasoning_effort && model.reasoning_effort !== 'transport_default'
     ? ` · ${model.reasoning_effort}`
     : '';
@@ -223,9 +226,9 @@ export function modelCellsMarkup(model, selected = false, options = {}) {
     <td class="resolution-cell"><span class="resolution-measure"><span class="resolution-number">${gSrrPct(s.g_srr)}</span><span class="resolution-count">${int(s.resolved_slots)}/${int(s.planned_slots)}</span>${intervalGraphic(model)}</span></td>
     <td class="desktop-col tasks-cell"><span class="tasks-measure"><span class="tasks-number">${pct(s.macro_cat_acc, 1)}</span><span class="tasks-track" aria-hidden="true"><span class="tasks-fill" style="width:${clamp(s.macro_cat_acc) * 100}%"></span></span></span></td>
     <td class="desktop-col">${categoryBarsMarkup(model, categories)}</td>
-    <td class="unsafe-cell">${safetyCellMarkup(model, maxViolations)}</td>
+    <td class="unsafe-cell">${safetyCellMarkup(model)}</td>
     <td class="desktop-col speed-cell" title="${esc(speedTitle)}">${esc(speedText)}</td>
-    <td class="desktop-col cost-cell" title="${esc(costTitle)}">${esc(costPrimary)}</td>
+    <td class="desktop-col cost-cell" title="${esc(costTitle)}"><div class="cost-stack"><span>${esc(costPrimary)}</span>${tokSub ? `<span class="cost-sub">${esc(tokSub)}</span>` : ''}</div></td>
   `;
 }
 
