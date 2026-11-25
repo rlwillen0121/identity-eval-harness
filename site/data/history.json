@@ -5,6 +5,7 @@
       "gemini-4-neon::high::agy_cli",
       "gemini-4-hydrogen::high::agy_cli",
       "gpt-6.2-astra::high::codex_cli",
+      "gpt-6.2-sol::high::codex_cli",
       "gpt-6.1-terra::high::codex_cli",
       "gpt-6-luna::high::codex_cli"
     ]
