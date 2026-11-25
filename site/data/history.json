@@ -9,5 +9,20 @@
       "gpt-6.1-terra::high::codex_cli",
       "gpt-6-luna::high::codex_cli"
     ]
+  },
+  {
+    "date": "2026-11-25",
+    "models": [
+      "claude-sonnet-5-5::high::claude_cli",
+      "claude-opus-5-5::high::claude_cli",
+      "gpt-6-astra::high::codex_cli",
+      "gemini-3.8-flash::high::agy_cli",
+      "gpt-6.1-sol::high::codex_cli",
+      "gpt-6-sol::high::codex_cli",
+      "gpt-daybreak-blue-latest::high::codex_cli",
+      "gpt-5.6-sol::high::codex_cli",
+      "gpt-5.6-terra::high::codex_cli",
+      "claude-haiku-5-5::high::claude_cli"
+    ]
   }
 ]
