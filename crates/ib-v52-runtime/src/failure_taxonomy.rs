@@ -96,7 +96,7 @@ impl<'a> FailureTaxonomyV52<'a> {
 
     pub(crate) fn append_markdown(&self, md: &mut String) {
         md.push_str(
-            "\n## Failure Taxonomy (SPEC-v5.2 §10.2–§10.3)\n\n\
+            "\n## Failure Taxonomy (SPEC-v5.3 §10.2–§10.3)\n\n\
              | Category | Check | Failures | Top-10 rank in category |\n\
              | :--- | :--- | ---: | ---: |\n",
         );

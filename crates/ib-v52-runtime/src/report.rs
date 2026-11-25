@@ -1044,7 +1044,7 @@ fn render_suite_metrics_section(summary: &SuiteReportSummaryV52) -> String {
         }
     };
     format!(
-        "\n## Suite Metrics (SPEC-v5.2 §6.2)\n\n\
+        "\n## Suite Metrics (SPEC-v5.3 §6.2)\n\n\
          Metrics over `P` are `null` unless the run is complete.\n\n\
          | Metric | Value |\n\
          | :--- | :--- |\n\
@@ -1095,7 +1095,7 @@ fn render_suite_metrics_section(summary: &SuiteReportSummaryV52) -> String {
 fn render_efficiency_section(summary: &SuiteReportSummaryV52) -> String {
     let usage = &summary.slot_usage;
     format!(
-        "\n## Efficiency (SPEC-v5.2 §6.2)\n\n\
+        "\n## Efficiency (SPEC-v5.3 §6.2)\n\n\
          | Metric | Value |\n\
          | :--- | ---: |\n\
          | Total input tokens per slot (median / p95) | {} / {} |\n\
