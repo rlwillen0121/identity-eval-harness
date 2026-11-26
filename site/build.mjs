@@ -15,6 +15,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateV53Confirmatory } from '../scripts/import-v53-run.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -342,6 +343,7 @@ export function buildV53SiteData({
   historyPath = path.join(__dirname, 'data/history.json'),
   sealPath = path.join(ROOT, 'datasets/v53/v53_core/SEAL.json'),
   precommitPath = path.join(ROOT, 'datasets/v53/PRECOMMIT.json'),
+  confirmatoryPath = path.join(ROOT, 'reports/v53/confirmatory.json'),
 } = {}) {
   const seal = JSON.parse(fs.readFileSync(sealPath, 'utf8'));
   if (seal.suite_id !== SUITE_ID || seal.protocol_id !== PROTOCOL_ID) {
@@ -350,6 +352,10 @@ export function buildV53SiteData({
   const precommit = readJsonIfExists(precommitPath);
   const history = readJsonIfExists(historyPath) || [];
   const rawBoard = readJsonIfExists(leaderboardPath) || defaultEmptyBoard(seal);
+  const fullReport = readJsonIfExists(confirmatoryPath);
+  const confirmatory = fullReport ? validateV53Confirmatory(
+    fullReport, sha256File(path.join(ROOT, 'datasets/v53/v53_full/SEAL.json')),
+  ) : null;
 
   if (rawBoard.test_only === true) {
     throw new Error('Refusing to build public site data from a test_only leaderboard');
@@ -369,9 +375,8 @@ export function buildV53SiteData({
       if (!historyById.has(id) || d < historyById.get(id)) historyById.set(id, d);
     }
   }
-  const latestDate =
-    history.map((h) => h?.date).filter(Boolean).sort().at(-1) ||
-    '2026-11-24';
+  const latestDate = [...history.map((h) => h?.date), confirmatory?.published_on]
+    .filter(Boolean).sort().at(-1) || '2026-11-24';
 
   // Preserve exact §9 ranking order emitted by `identitybench v53 leaderboard` (never re-sort by cost).
   const models = (rawBoard.entries || []).map((entry, idx) => {
@@ -444,6 +449,12 @@ export function buildV53SiteData({
     models,
     unranked,
     pending,
+    confirmatory: confirmatory ? {
+      ...confirmatory,
+      entries: confirmatory.entries.map((row) => ({
+        ...row, name: formatModelName(row.model_id), transport: formatTransport(row.transport_id),
+      })),
+    } : null,
     history,
     contamination_notice: rawBoard.contamination_notice ?? null,
     method_notes: rawBoard.method_notes ?? {},
