@@ -112,6 +112,9 @@
 .subboard h3 { font-size: 16px; margin: 0 0 8px; }
 .subboard-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .subboard-table th, .subboard-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--rule); }
+.full-suite-scroll { max-width: 100%; overflow-x: auto; }
+.full-suite-scroll .subboard-table { min-width: 680px; font-size: 13.5px; }
+.full-suite-scroll tbody th { font-weight: 500; }
 .empty-state { padding: 28px 20px; color: var(--ink-2); font-size: 14px; }
 .empty-row td { color: var(--ink-2); padding-block: 24px; }
 .copy-status { margin: 0; font-size: 12px; }

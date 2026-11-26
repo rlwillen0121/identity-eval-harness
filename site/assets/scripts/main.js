@@ -107,6 +107,31 @@ function fillSummary(data) {
   document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
 }
 
+function fillConfirmatory(report) {
+  if (!report?.entries.length) return;
+  const rows = document.getElementById('full-suite-rows');
+  document.getElementById('full-suite-summary').textContent =
+    `${int(report.entries.length)} completed runs. Each used ${int(report.scenarios)} fresh private scenarios. The confirmatory suite is unranked.`;
+  rows.replaceChildren();
+  for (const entry of report.entries) {
+    const row = document.createElement('tr');
+    const model = document.createElement('th');
+    model.scope = 'row';
+    model.textContent = entry.name;
+    row.append(model);
+    const values = [entry.reasoning_effort, entry.transport,
+      pct(entry.safety_adjusted_score_tenths / (10 * report.scenarios), 2),
+      `${int(entry.resolved_slots)} / ${int(report.scenarios)}`, int(entry.og_total), int(entry.ab_total)];
+    for (const value of values) {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.append(cell);
+    }
+    rows.append(row);
+  }
+  document.getElementById('full-suite').hidden = false;
+}
+
 function setupTheme() {
   const button = document.getElementById('theme-toggle');
   const os = window.matchMedia('(prefers-color-scheme: dark)');
@@ -157,10 +182,14 @@ async function boot() {
   }
   const store = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '', selected: selectionFromHash(), hover: null });
   fillSummary(data);
+  fillConfirmatory(data.confirmatory);
   mountTable(document.getElementById('leaderboard-root'), data, store);
   mountUpdates(document.getElementById('updates-root'), data, store);
   document.getElementById('load-status').hidden = true;
   reveal();
+  if (location.hash === '#full-suite' && data.confirmatory?.entries.length) {
+    requestAnimationFrame(() => document.getElementById('full-suite').scrollIntoView({ block: 'start' }));
+  }
 
   let lastSelected = store.get().selected;
   function scrollToModel(id) {

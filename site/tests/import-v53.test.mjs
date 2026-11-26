@@ -10,6 +10,7 @@ import {
   assertNoPrivateLeaks,
   importV53Leaderboard,
   importV53Run,
+  projectV53Confirmatory,
   validateV53Leaderboard,
   validateV53RunSummary,
 } from '../../scripts/import-v53-run.mjs';
@@ -69,7 +70,50 @@ test('validateV53Leaderboard rejects private per-slot rows and empty withheld_un
 test('assertNoPrivateLeaks rejects local paths and private episode IDs', () => {
   assert.throws(() => assertNoPrivateLeaks('path /Users/alice/foo', 'v53_core', 'doc'), /local filesystem path/);
   assert.throws(() => assertNoPrivateLeaks('failed on v53_core_F01_R1_s00', 'v53_core', 'doc'), /private episode identifier/);
+  assert.throws(() => assertNoPrivateLeaks('v53_full_F01_R1_s00_r1.jsonl', 'v53_full'), /private episode identifier/);
   assert.doesNotThrow(() => assertNoPrivateLeaks('public v53_dev_F01_R1_s00 ok', 'v53_dev', 'doc'));
+});
+
+test('confirmatory import projects complete full runs and accepts rounded native rates', () => {
+  const seal = {
+    suite_id: 'v53_full', episode_count: 96, protocol_id: 'identitybench.v5.3.protocol.v1',
+    contract_id: 'contract', spec_sha256: 'a'.repeat(64), episodes_sha256: 'b'.repeat(64),
+    oracles_sha256: 'c'.repeat(64),
+  };
+  const run = {
+    rank: null, status: 'unranked',
+    entry: { model_id: 'example-model', reasoning_effort: 'high', transport_id: 'codex_cli' },
+    eligibility: { reasons: [{ code: 'suite_not_ranked' }] },
+    scores: {
+      planned_slots: 96, observed_slots: 96, repeats: 1, resolved_slots: 17,
+      committed_slots: 85, safety_adjusted_score_tenths: -117, safety_adjusted_score: -0.121875,
+      g_srr: 0.177083, og_total: 290, ab_total: 10,
+    },
+    diagnostics: {
+      provider_failure_slots: 0, transport_integrity_slots: 0, turn_budget_exhaustion_rate: 0.114583,
+      parse_failure_rate: 0, refusal_rate: 0,
+    },
+    metadata: { withheld_bundle_sha256: 'd'.repeat(64), endpoint_identity: 'internal-detail' },
+    failure_taxonomy: { private_data: 'omit this entire field' },
+  };
+  const board = sampleLeaderboard({
+    suite_id: 'v53_full', ranked_suite: false, entries: [], unranked_entries: [run], published_seal: seal,
+  });
+  const project = () => projectV53Confirmatory(board, JSON.stringify(seal), '2026-11-26');
+  const [entry] = project().entries;
+  assert.equal(entry.safety_adjusted_score_tenths, -117);
+  assert.equal(entry.step_limit_slots, 11);
+  assert.equal(entry.withheld_bundle_sha256, 'd'.repeat(64));
+  assert.equal(entry.metadata, undefined);
+  assert.equal(entry.failure_taxonomy, undefined);
+  run.entry.model_id = 'https://private.example/v1';
+  assert.throws(project, /identity/);
+  run.entry.model_id = 'example-model';
+  run.diagnostics.provider_failure_slots = 1;
+  assert.throws(project, /incomplete/);
+  run.diagnostics.provider_failure_slots = 0;
+  run.scores.observed_slots = 95;
+  assert.throws(project, /incomplete/);
 });
 
 test('importV53Leaderboard and importV53Run copy only publishable artifacts', () => {
