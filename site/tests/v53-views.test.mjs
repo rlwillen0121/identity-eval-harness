@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { CATEGORIES, FAMILIES, REGIMES, buildV53SiteData } from '../build.mjs';
 import { duration, formatInterval, gSrrPct, pct, tokPerSec, usd } from '../assets/scripts/format.js';
-import { createStore, leaderboardLede } from '../assets/scripts/main.js';
+import { createStore, fillConfirmatory, leaderboardLede } from '../assets/scripts/main.js';
 import { mount as mountTable } from '../assets/scripts/table.js';
 import { mount as mountDetail } from '../assets/scripts/detail.js';
 import { mount as mountUpdates } from '../assets/scripts/updates.js';
@@ -14,7 +14,7 @@ import { mount as mountSafety } from '../assets/scripts/charts/safety.js';
 import { installDOM } from './dom-stub.mjs';
 
 function sampleSiteData() {
-  const empty = buildV53SiteData({ leaderboardPath: '/nonexistent/leaderboard.json' });
+  const empty = buildV53SiteData({ leaderboardPath: '/nonexistent/leaderboard.json', confirmatoryPath: '/nonexistent/confirmatory.json' });
   const model = {
     id: 'claude-haiku-5-5::high::claude_cli',
     rank: 1,
@@ -108,7 +108,7 @@ test('formatting helpers format v5.3 metrics cleanly', () => {
 
 test('v5.3 views and charts mount cleanly in empty and populated states', () => {
   const dom = installDOM();
-  const empty = buildV53SiteData({ leaderboardPath: '/nonexistent/leaderboard.json' });
+  const empty = buildV53SiteData({ leaderboardPath: '/nonexistent/leaderboard.json', confirmatoryPath: '/nonexistent/confirmatory.json' });
   const emptyStore = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '', selected: null, hover: null });
   assert.match(leaderboardLede(empty), /Awaiting/);
 
@@ -138,6 +138,15 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   assert.match(tableRoot.textContent, /Time \/ task/);
   assert.equal(tableRoot.querySelectorAll('.category-track').length, CATEGORIES.length);
   assert.equal(tableRoot.querySelectorAll('.view-button').length, 4);
+  const body = tableRoot.querySelector('tbody');
+  const modelButton = body.querySelector('.model-name');
+  modelButton.focus();
+  body.dispatchEvent({ type: 'click', target: modelButton });
+  assert.equal(store.get().selected, null);
+  assert.equal(document.activeElement, body.querySelector('.model-name'));
+  body.dispatchEvent({ type: 'click', target: document.activeElement });
+  assert.equal(store.get().selected, data.models[0].id);
+  assert.equal(document.activeElement, body.querySelector('.model-name'));
 
   const detailRoot = dom.root();
   const cleanDetail = mountDetail(detailRoot, data, store);
@@ -159,4 +168,51 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   cleanTable();
   cleanDetail();
   cleanUpdates();
+});
+
+test('full-suite results and publication dates render independently of core rankings', () => {
+  const dom = installDOM();
+  const data = sampleSiteData();
+  const [model] = data.models;
+  const report = {
+    scenarios: 96,
+    published_on: '2026-11-26',
+    entries: [{
+      name: model.name,
+      model_id: model.model_id,
+      reasoning_effort: model.reasoning_effort,
+      transport_id: model.transport_id,
+      transport: model.transport_label,
+      safety_adjusted_score_tenths: -12,
+      resolved_slots: 6,
+      og_total: 3,
+      ab_total: 2,
+      step_limit_slots: 6,
+      parse_failure_slots: 1,
+    }],
+  };
+  const root = dom.root();
+  root.innerHTML = `
+    <p id="full-suite-summary"></p>
+    <div class="full-suite-results"><table><tbody id="full-suite-rows"></tbody></table></div>
+    <p id="full-suite-safety"></p><p id="full-suite-pending"></p>
+  `;
+  fillConfirmatory(root, null);
+  assert.match(root.querySelector('#full-suite-summary').textContent, /No completed/);
+  assert.equal(root.querySelector('.full-suite-results').hidden, true);
+
+  const pending = { ...model, id: 'unmatched::high::claude_cli', name: 'Pending model' };
+  fillConfirmatory(root, report, [model, pending]);
+  assert.equal(root.querySelector('.full-suite-results').hidden, false);
+  assert.match(root.querySelector('#full-suite-summary').textContent, /96 fresh private scenarios/);
+  const row = root.querySelector('#full-suite-rows').querySelector('tr');
+  assert.deepEqual([...row.querySelectorAll('td')].slice(0, 2).map((cell) => cell.textContent), ['-1.25%', '6/96']);
+  assert.match(row.textContent, /6 turn limits, 1 parse failure/);
+  assert.equal(root.querySelector('#full-suite-pending').textContent, 'Awaiting full-suite results for Pending model.');
+
+  const updates = dom.root();
+  mountUpdates(updates, { ...data, models: [], confirmatory: report }, createStore({}));
+  assert.match(updates.textContent, /26 Nov 2026/);
+  assert.match(updates.textContent, /96-scenario full suite/);
+  assert.equal(updates.querySelector('.update-full-link').getAttribute('href'), '#full-suite');
 });
