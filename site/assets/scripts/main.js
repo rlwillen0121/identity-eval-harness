@@ -61,37 +61,32 @@ export function leaderboardLede(data) {
 
 function fillSummary(data) {
   const models = data.models || [];
+  document.getElementById('core-overview').textContent =
+    `${int(models.length)} models · ${int(data.suite.episodes)} scenarios`;
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
-  const topScore = models.length ? pct(Math.max(...models.map(modelScore)), 1) : 'n/a';
-  const figures = [
-    [int(models.length), 'models tested'],
-    [int(data.suite.episodes), 'scenarios'],
-    [int(data.suite.categories), 'IAM domains'],
-    [topScore, 'top score'],
-  ];
-  const root = document.getElementById('hero-figures');
-  root.replaceChildren();
-  for (const [value, label] of figures) {
-    const group = document.createElement('div');
-    const dt = document.createElement('dt');
-    const dd = document.createElement('dd');
-    dt.textContent = label;
-    dd.textContent = value;
-    group.append(dt, dd);
-    root.append(group);
-  }
+  const full = data.confirmatory;
+  const first = full?.entries?.[0];
+  document.getElementById('full-overview').textContent = first
+    ? `${int(full.entries.length)} complete · ${int(full.scenarios)} scenarios`
+    : 'Awaiting completed runs';
+  document.getElementById('full-overview-lede').textContent = first
+    ? `${first.name} · ${int(first.resolved_slots)}/${int(full.scenarios)} clean solves`
+    : 'Unranked results on fresh scenarios';
   const provenance = document.getElementById('provenance');
   provenance.replaceChildren();
   const rows = [
-    ['Suite', `${data.suite.id} (${data.suite.visibility})`],
+    ['Ranked suite', `${data.suite.id} (${data.suite.visibility})`],
     ['Protocol', data.protocol_id],
-    ['Episodes SHA-256', data.suite.episodes_sha256],
-    ['Oracles SHA-256', data.suite.oracles_sha256],
+    ['Core episodes SHA-256', data.suite.episodes_sha256],
+    ['Core oracles SHA-256', data.suite.oracles_sha256],
     ['Spec SHA-256', data.suite.spec_sha256],
     ['Commit C_K', data.suite.c_k || 'n/a'],
     ['drand round', data.suite.round ? `${data.suite.round} (beacon ${data.suite.beacon_randomness_hex || 'pending'})` : 'n/a'],
     ['Pricing SHA-256', data.pricing_sha256 || 'Set at leaderboard build'],
   ];
+  if (full) {
+    rows.push(['Confirmatory suite', `${full.suite_id} (private)`], ['Full-suite seal SHA-256', full.seal_sha256]);
+  }
   for (const [label, value] of rows) {
     const dt = document.createElement('dt');
     const dd = document.createElement('dd');
@@ -107,29 +102,72 @@ function fillSummary(data) {
   document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
 }
 
-function fillConfirmatory(report) {
-  if (!report?.entries.length) return;
-  const rows = document.getElementById('full-suite-rows');
-  document.getElementById('full-suite-summary').textContent =
-    `${int(report.entries.length)} completed runs. Each used ${int(report.scenarios)} fresh private scenarios. The confirmatory suite is unranked.`;
+export function fillConfirmatory(root, report, coreModels = []) {
+  const summary = root.querySelector('#full-suite-summary');
+  const pending = root.querySelector('#full-suite-pending');
+  const table = root.querySelector('.full-suite-results');
+  const safety = root.querySelector('#full-suite-safety');
+  const rows = root.querySelector('#full-suite-rows');
+  const entries = report?.entries || [];
   rows.replaceChildren();
-  for (const entry of report.entries) {
+  table.hidden = safety.hidden = entries.length === 0;
+  pending.hidden = true;
+  if (!entries.length) {
+    summary.textContent = 'No completed full-suite runs are published yet.';
+    return;
+  }
+  summary.textContent =
+    `${int(entries.length)} completed runs on ${int(report.scenarios)} fresh private scenarios. Each run has all ${int(report.scenarios)} outcomes scored. The confirmatory suite is unranked.`;
+  const completed = new Set(entries.map((row) => [row.model_id, row.reasoning_effort, row.transport_id].join('::')));
+  const awaiting = coreModels.filter((row) => !completed.has(row.id)).map((row) => row.name);
+  if (awaiting.length) {
+    const names = new Intl.ListFormat('en', { type: 'conjunction' }).format(awaiting);
+    pending.textContent = `Awaiting full-suite results for ${names}.`;
+    pending.hidden = false;
+  }
+  for (const entry of entries) {
     const row = document.createElement('tr');
     const model = document.createElement('th');
     model.scope = 'row';
-    model.textContent = entry.name;
+    model.textContent = `${entry.name} `;
+    const config = document.createElement('span');
+    config.className = 'full-suite-config';
+    const effort = entry.reasoning_effort === 'transport_default' ? 'Default' : entry.reasoning_effort;
+    config.textContent = `${effort[0].toUpperCase() + effort.slice(1)} · ${entry.transport} `;
+    model.append(config);
+    const terminal = [
+      [entry.step_limit_slots, 'turn limit'],
+      [entry.parse_failure_slots, 'parse failure'],
+      [entry.refusal_slots, 'refusal'],
+    ].filter(([count]) => count > 0)
+      .map(([count, label]) => `${int(count)} ${label}${count === 1 ? '' : 's'}`);
+    if (terminal.length) {
+      const note = document.createElement('span');
+      note.className = 'full-suite-config';
+      note.textContent = terminal.join(', ');
+      model.append(note);
+    }
     row.append(model);
-    const values = [entry.reasoning_effort, entry.transport,
+    const values = [
       pct(entry.safety_adjusted_score_tenths / (10 * report.scenarios), 2),
-      `${int(entry.resolved_slots)} / ${int(report.scenarios)}`, int(entry.og_total), int(entry.ab_total)];
+      `${int(entry.resolved_slots)}/${int(report.scenarios)}`,
+    ];
     for (const value of values) {
       const cell = document.createElement('td');
       cell.textContent = value;
       row.append(cell);
     }
+    const totals = document.createElement('td');
+    totals.className = 'full-suite-totals';
+    for (const [count, label] of [[entry.og_total, 'OG'], [entry.ab_total, 'AB']]) {
+      const value = document.createElement('span');
+      value.textContent = `${int(count)} ${label}`;
+      if (totals.childNodes.length) totals.append(document.createTextNode(' '));
+      totals.append(value);
+    }
+    row.append(totals);
     rows.append(row);
   }
-  document.getElementById('full-suite').hidden = false;
 }
 
 function setupTheme() {
@@ -169,7 +207,7 @@ function reveal() {
 
 async function boot() {
   setupTheme();
-  const response = await fetch(new URL('../../data/leaderboard.json', import.meta.url));
+  const response = await fetch(new URL('../../data/leaderboard.json', import.meta.url), { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Data request failed (${response.status})`);
   const data = await response.json();
   const ids = new Set((data.models || []).map((m) => m.id));
@@ -182,12 +220,12 @@ async function boot() {
   }
   const store = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '', selected: selectionFromHash(), hover: null });
   fillSummary(data);
-  fillConfirmatory(data.confirmatory);
+  fillConfirmatory(document.getElementById('full-suite'), data.confirmatory, data.models);
   mountTable(document.getElementById('leaderboard-root'), data, store);
   mountUpdates(document.getElementById('updates-root'), data, store);
   document.getElementById('load-status').hidden = true;
   reveal();
-  if (location.hash === '#full-suite' && data.confirmatory?.entries.length) {
+  if (location.hash === '#full-suite') {
     requestAnimationFrame(() => document.getElementById('full-suite').scrollIntoView({ block: 'start' }));
   }
 

@@ -446,7 +446,14 @@ export function mount(rootEl, data, store) {
   });
   body.addEventListener('click', (event) => {
     const row = event.target.closest('.model-row');
-    if (row) store.set({ selected: store.get().selected === row.dataset.modelId ? null : row.dataset.modelId });
+    if (!row) return;
+    const id = row.dataset.modelId;
+    const restoreFocus = row.querySelector('.model-name') === document.activeElement;
+    store.set({ selected: store.get().selected === id ? null : id });
+    if (restoreFocus) {
+      const updatedRow = [...body.querySelectorAll('.model-row')].find((candidate) => candidate.dataset.modelId === id);
+      updatedRow?.querySelector('.model-name')?.focus({ preventScroll: true });
+    }
   });
 
   render();
