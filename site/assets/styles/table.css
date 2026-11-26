@@ -149,9 +149,10 @@
   .unsafe-cell { white-space: normal; }
   .safety-badge { max-width: 100%; padding-inline: 5px; }
   .safety-sub { overflow-wrap: anywhere; }
-  .full-suite-table th, .full-suite-table td { padding-inline: 8px; }
-  .full-suite-table th:first-child { width: 40%; }
-  .full-suite-table th:last-child { width: 17%; }
+  .full-suite-table th, .full-suite-table td { padding-inline: 6px; }
+  .full-suite-table th:first-child { width: 34%; }
+  .full-suite-table th:nth-child(2) { width: 25%; }
+  .full-suite-table th:last-child { width: 22%; }
   .full-suite-totals span { display: block; }
   .full-suite-totals span + span { margin-left: 0; }
 }
