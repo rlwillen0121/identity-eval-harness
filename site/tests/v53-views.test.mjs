@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { CATEGORIES, FAMILIES, REGIMES, buildV53SiteData } from '../build.mjs';
 import { duration, formatInterval, gSrrPct, pct, tokPerSec, usd } from '../assets/scripts/format.js';
-import { createStore, fillConfirmatory, leaderboardLede } from '../assets/scripts/main.js';
+import { createStore, fillConfirmatory } from '../assets/scripts/main.js';
 import { mount as mountTable } from '../assets/scripts/table.js';
 import { mount as mountDetail } from '../assets/scripts/detail.js';
 import { mount as mountUpdates } from '../assets/scripts/updates.js';
@@ -110,7 +110,6 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   const dom = installDOM();
   const empty = buildV53SiteData({ leaderboardPath: '/nonexistent/leaderboard.json', confirmatoryPath: '/nonexistent/confirmatory.json' });
   const emptyStore = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '', selected: null, hover: null });
-  assert.match(leaderboardLede(empty), /Awaiting/);
 
   const emptyTable = dom.root();
   mountTable(emptyTable, empty, emptyStore);
@@ -154,10 +153,6 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   assert.match(detailRoot.textContent, /Rare failures/);
   assert.match(detailRoot.textContent, /Technical details and audit hashes/);
 
-  const updatesRoot = dom.root();
-  const cleanUpdates = mountUpdates(updatesRoot, data, store);
-  assert.match(updatesRoot.textContent, /24 Nov 2026/);
-
   for (const mountChart of [mountPareto, mountCategories, mountMarginals, mountSafety]) {
     const chartRoot = dom.root();
     const destroy = mountChart(chartRoot, data, store);
@@ -167,10 +162,9 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
 
   cleanTable();
   cleanDetail();
-  cleanUpdates();
 });
 
-test('exact core ties share the same label in the table, tooltip, and Updates across dates', () => {
+test('historical core ties share the same label in the table and tooltip', () => {
   const dom = installDOM();
   const data = sampleSiteData();
   data.models = [1, 2, 3].map((rank) => ({ ...data.models[0], id: `m${rank}`, rank }));
@@ -186,9 +180,6 @@ test('exact core ties share the same label in the table, tooltip, and Updates ac
     assert.equal(cell.textContent, 'T1');
     assert.match(cell.getAttribute('title'), /^Rank T1 /);
   }
-  const updates = dom.root();
-  mountUpdates(updates, data, store);
-  assert.equal(updates.textContent.match(/Core T1/g).length, 3);
 });
 
 test('full-suite results and publication dates render independently of core rankings', () => {
@@ -217,29 +208,27 @@ test('full-suite results and publication dates render independently of core rank
   root.innerHTML = `
     <p id="full-suite-summary"></p>
     <div class="full-suite-results"><table><tbody id="full-suite-rows"></tbody></table></div>
-    <p id="full-suite-safety"></p><p id="full-suite-pending"></p>
+    <p id="full-suite-safety"></p>
   `;
   fillConfirmatory(root, null);
   assert.match(root.querySelector('#full-suite-summary').textContent, /No completed/);
   assert.equal(root.querySelector('.full-suite-results').hidden, true);
 
-  const pending = { ...model, id: 'unmatched::high::claude_cli', name: 'Pending model' };
-  fillConfirmatory(root, report, [model, pending]);
+  fillConfirmatory(root, report);
   assert.equal(root.querySelector('.full-suite-results').hidden, false);
   assert.match(root.querySelector('#full-suite-summary').textContent, /96 fresh private scenarios/);
   const row = root.querySelector('#full-suite-rows').querySelector('tr');
   assert.deepEqual([...row.querySelectorAll('td')].slice(0, 3).map((cell) => cell.textContent), ['1', '-1.25%', '6/96']);
   assert.match(row.textContent, /No bound probe receipt/);
   assert.match(row.textContent, /6 turn limits, 1 parse failure/);
-  assert.equal(root.querySelector('#full-suite-pending').textContent, 'Awaiting full-suite results for Pending model.');
 
   const tie = { ...report.entries[0], model_id: 'second', probe_receipt_bound: true };
   fillConfirmatory(root, { ...report, entries: [report.entries[0], tie] });
   assert.deepEqual([...root.querySelectorAll('tr')].map((r) => r.querySelector('td').textContent), ['T1', 'T1']);
   assert.match(root.querySelector('#full-suite-summary').textContent, /1 of 2 runs have a bound context-probe receipt/);
   const updates = dom.root();
-  mountUpdates(updates, { ...data, models: [], confirmatory: report }, createStore({}));
+  mountUpdates(updates, report);
   assert.match(updates.textContent, /26 Nov 2026/);
-  assert.match(updates.textContent, /96-scenario full suite/);
-  assert.equal(updates.querySelector('.update-full-link').getAttribute('href'), '#full-suite');
+  assert.match(updates.textContent, /96-scenario leaderboard/);
+  assert.equal(updates.querySelector('.update-full-link').getAttribute('href'), '#leaderboard');
 });

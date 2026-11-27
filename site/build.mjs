@@ -1,16 +1,9 @@
 #!/usr/bin/env node
 /**
- * Deterministic zero-dependency site data generator for IdentityBench v5.3 (core and full standings).
- *
- * Reads (when present):
- *   - reports/v53/leaderboard.json        `identitybench.v5.3.leaderboard.v1` (from `v53 leaderboard`)
- *   - reports/v53/confirmatory.json       validated aggregate full standings
- *   - datasets/v53/v53_core/SEAL.json     published suite seal
- *   - datasets/v53/PRECOMMIT.json         commit-reveal commitment
- *   - site/data/history.json              first-publication dates
+ * Deterministic site data generator for the IdentityBench full leaderboard.
  *
  * Usage:
- *   node site/build.mjs [--input <leaderboard.json>] [--history <history.json>] [--seal <SEAL.json>] [--precommit <PRECOMMIT.json>] [--out <out.json>] [--check]
+ *   node site/build.mjs [--input <confirmatory.json>] [--out <out.json>] [--check]
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -341,7 +334,7 @@ function defaultEmptyBoard(seal) {
 
 export function buildV53SiteData({
   leaderboardPath = path.join(ROOT, 'reports/v53/leaderboard.json'),
-  historyPath = path.join(__dirname, 'data/history.json'),
+  historyPath = path.join(ROOT, 'reports/v53/core-history.json'),
   sealPath = path.join(ROOT, 'datasets/v53/v53_core/SEAL.json'),
   precommitPath = path.join(ROOT, 'datasets/v53/PRECOMMIT.json'),
   confirmatoryPath = path.join(ROOT, 'reports/v53/confirmatory.json'),
@@ -477,21 +470,51 @@ export function serializeV53SiteData(data) {
   return `${JSON.stringify(data, null, 1)}\n`;
 }
 
+export function buildFullSiteData({
+  confirmatoryPath = path.join(ROOT, 'reports/v53/confirmatory.json'),
+} = {}) {
+  const sealPath = path.join(ROOT, 'datasets/v53/v53_full/SEAL.json');
+  const seal = JSON.parse(fs.readFileSync(sealPath, 'utf8'));
+  if (seal.suite_id !== 'v53_full' || seal.episode_count !== 96 || seal.protocol_id !== PROTOCOL_ID) {
+    throw new Error('Unexpected v53_full seal');
+  }
+  const sealHash = sha256File(sealPath);
+  const fullReport = readJsonIfExists(confirmatoryPath);
+  const report = fullReport ? validateV53Confirmatory(fullReport, sealHash) : null;
+  return {
+    schema: 3,
+    updated: report?.published_on ?? null,
+    suite: {
+      id: seal.suite_id,
+      scenarios: seal.episode_count,
+      protocol_id: seal.protocol_id,
+      seal_sha256: sealHash,
+      episodes_sha256: seal.episodes_sha256,
+      oracles_sha256: seal.oracles_sha256,
+      spec_sha256: seal.spec_sha256,
+      c_k: seal.c_k,
+      round: seal.round,
+    },
+    confirmatory: report ? {
+      ...report,
+      entries: report.entries.map((row) => ({
+        ...row,
+        name: formatModelName(row.model_id),
+        transport: formatTransport(row.transport_id),
+      })),
+    } : null,
+  };
+}
+
 function parseArgs(argv) {
   const args = {
-    input: path.join(ROOT, 'reports/v53/leaderboard.json'),
-    history: path.join(__dirname, 'data/history.json'),
-    seal: path.join(ROOT, 'datasets/v53/v53_core/SEAL.json'),
-    precommit: path.join(ROOT, 'datasets/v53/PRECOMMIT.json'),
+    input: path.join(ROOT, 'reports/v53/confirmatory.json'),
     out: path.join(__dirname, 'data/leaderboard.json'),
     check: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     if (flag === '--input') args.input = argv[++i];
-    else if (flag === '--history') args.history = argv[++i];
-    else if (flag === '--seal') args.seal = argv[++i];
-    else if (flag === '--precommit') args.precommit = argv[++i];
     else if (flag === '--out') args.out = argv[++i];
     else if (flag === '--check') args.check = true;
     else if (flag === '--help' || flag === '-h') args.help = true;
@@ -503,17 +526,12 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    console.log('Usage: node site/build.mjs [--input <leaderboard.json>] [--history <history.json>] [--seal <SEAL.json>] [--out <out.json>] [--check]');
+    console.log('Usage: node site/build.mjs [--input <confirmatory.json>] [--out <out.json>] [--check]');
     return;
   }
-  const data = buildV53SiteData({
-    leaderboardPath: args.input,
-    historyPath: args.history,
-    sealPath: args.seal,
-    precommitPath: args.precommit,
-  });
+  const data = buildFullSiteData({ confirmatoryPath: args.input });
   const next = serializeV53SiteData(data);
-  const counts = `core: ${data.models.length} ranked, ${data.unranked.length} unranked, ${data.pending.length} pending; full: ${data.confirmatory?.entries.length ?? 0} ranked`;
+  const counts = `${data.confirmatory?.entries.length ?? 0} ranked runs on ${data.suite.scenarios} scenarios`;
   if (args.check) {
     const current = fs.existsSync(args.out) ? fs.readFileSync(args.out, 'utf8') : '';
     if (current !== next) {
