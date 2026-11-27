@@ -62,19 +62,14 @@ function fillProvenance({ suite, updated }) {
 export function fillConfirmatory(root, report, selected = null) {
   const summary = root.querySelector('#full-suite-summary');
   const table = root.querySelector('.full-suite-results');
-  const safety = root.querySelector('#full-suite-safety');
   const entries = report?.entries || [];
   table.replaceChildren();
-  table.hidden = safety.hidden = entries.length === 0;
+  table.hidden = entries.length === 0;
   if (!entries.length) {
     summary.textContent = 'No completed full-suite runs are published yet.';
     return null;
   }
-  summary.textContent = `${int(entries.length)} ranked configurations on ${int(report.scenarios)} fresh private scenarios.`;
-  if (entries.every((entry) => typeof entry.probe_receipt_bound === 'boolean')) {
-    const bound = entries.filter((entry) => entry.probe_receipt_bound).length;
-    summary.textContent += ` ${int(bound)} of ${int(entries.length)} runs have a bound context-probe receipt.`;
-  }
+  summary.textContent = `${int(report.scenarios)} private scenarios test how AI manages access in simulated enterprises.`;
   const store = createStore({ sort: { key: 'rank', dir: 'asc' }, query: '', vendors: new Set(), selected });
   mountFullTable(table, report, store);
   return store;
@@ -116,6 +111,11 @@ async function boot() {
   const data = await response.json();
   fillProvenance(data);
   const entries = data.confirmatory?.entries || [];
+  if (entries.length && entries.every((entry) => typeof entry.probe_receipt_bound === 'boolean')) {
+    const bound = entries.filter((entry) => entry.probe_receipt_bound).length;
+    document.getElementById('receipt-coverage').textContent =
+      `${int(bound)} of ${int(entries.length)} ranked runs recorded a fingerprint-bound context-probe receipt. Each entry lists its receipt status.`;
+  }
   function fromHash() {
     if (!location.hash.startsWith('#m=')) return null;
     try {
