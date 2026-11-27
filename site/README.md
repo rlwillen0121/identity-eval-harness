@@ -1,11 +1,11 @@
 # IdentityBench v5.3 leaderboard site
 
-`identitybench.ai` serves the live **IdentityBench v5.3 (`v53_core`, 48 private scenarios, `k = 1`)** static leaderboard built deterministically from published aggregate artifacts under `reports/v53/` and `datasets/v53/v53_core/SEAL.json`.
+`identitybench.ai` serves the **96-scenario `v53_full` leaderboard (`k = 1`)**. The site builds from `reports/v53/confirmatory.json` and `datasets/v53/v53_full/SEAL.json`.
 
 ## Rebuild & verify
 
 ```sh
-node scripts/import-v53-run.mjs --leaderboard <leaderboard-dir>
+node scripts/import-v53-run.mjs --confirmatory <native-full-leaderboard-dir> --published-on YYYY-MM-DD
 node site/build.mjs
 node site/build.mjs --check
 node --test "site/tests/*.test.mjs"
