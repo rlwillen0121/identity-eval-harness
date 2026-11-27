@@ -1,7 +1,6 @@
 import { int, date } from './format.js';
 import { mount as mountFullTable } from './full-table.js';
 import { mountAnalysis } from './charts/full.js';
-import { mount as mountUpdates } from './updates.js';
 
 function sameStoreValue(key, left, right) {
   if (key === 'vendors' && left instanceof Set && right instanceof Set) {
@@ -124,7 +123,6 @@ async function boot() {
     } catch { return null; }
   }
   const store = fillConfirmatory(document.getElementById('full-suite'), data.confirmatory, fromHash());
-  mountUpdates(document.getElementById('updates-root'), data.confirmatory);
   document.getElementById('load-status').hidden = true;
   reveal();
 
