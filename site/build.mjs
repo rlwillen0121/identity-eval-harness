@@ -484,6 +484,8 @@ export function buildFullSiteData({
   return {
     schema: 3,
     updated: report?.published_on ?? null,
+    categories: CATEGORIES.map(({ id, short, title }) => ({ id, short, title })),
+    regimes: REGIMES,
     suite: {
       id: seal.suite_id,
       scenarios: seal.episode_count,
