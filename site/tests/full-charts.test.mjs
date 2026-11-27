@@ -142,7 +142,7 @@ test('heatmap keyboard selection opens the full configuration and clears table f
     const chart = root.querySelector(`#chart-${id}`);
     const rows = chart.querySelectorAll('.chart-model-row');
     assert.equal(rows.length, 1);
-    assert.match(rows[0].getAttribute('aria-label'), id === 'categories' ? /Access policy: 0.0%/ : /Zero-trust: 25.0%/);
+    assert.match(rows[0].getAttribute('aria-label'), id === 'categories' ? /Access policy: 0.0%/ : /Regulated access: 25.0%/);
     rows[0].dispatchEvent({ type: 'keydown', key: 'Enter' });
     assert.equal(store.get().selected, 'priced');
     assert.equal(store.get().query, '');
@@ -183,8 +183,8 @@ test('heatmaps distinguish an observed zero from an unavailable value', () => {
   const chart = root.querySelector('#chart-marginals');
   const row = chart.querySelector('.chart-model-row');
   assert.equal(row.getAttribute('role'), 'button');
-  assert.match(row.getAttribute('aria-label'), /Zero-trust: 0\.0%/);
-  assert.match(row.getAttribute('aria-label'), /Multi-affiliate: n\/a/);
+  assert.match(row.getAttribute('aria-label'), /Regulated access: 0\.0%/);
+  assert.match(row.getAttribute('aria-label'), /People with two roles: n\/a/);
 
   const zeroCell = row.querySelector('.chart-heat-zero');
   assert.equal(zeroCell.tagName, 'rect');

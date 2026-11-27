@@ -1,16 +1,24 @@
 import { heatmap } from './heatmap.js';
 
-const labels = { R1: 'Zero-trust', R2: 'Multi-aff.', R3: 'Hybrid', R4: 'M&A' };
+const headings = {
+  R1: ['Regulated', 'access'],
+  R2: ['People with', 'two roles'],
+  R3: ['Cloud and', 'legacy apps'],
+  R4: ['Company', 'mergers'],
+};
 
 export function mount(root, data, store) {
   root.classList.add('chart-environments');
   return heatmap(root, data, store, {
-    title: 'By enterprise environment',
-    subtitle: 'Clean solve rate across 24 scenarios in each of four enterprise environments.',
-    empty: 'No full-suite environment solve rates have been published.',
+    title: 'How often did models solve the task?',
+    subtitle: 'Each column shows the share of 24 scenarios solved safely. A student who leaves a campus job, for example, should keep access to classes.',
+    empty: 'No full-suite results by setting are available yet.',
     scrollLabel: 'enterprise environments',
     columnWidth: 54,
-    columns: (data.regimes ?? []).map(({ id, label }) => ({ id, title: label, short: labels[id] ?? id })),
+    columns: (data.regimes ?? []).map(({ id, label }) => {
+      const lines = headings[id] ?? [label ?? id];
+      return { id, lines, title: lines.join(' ') };
+    }),
     rates: (model) => model.marginals?.regime_g_srr,
   });
 }
