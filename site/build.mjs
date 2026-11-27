@@ -501,7 +501,7 @@ export function buildFullSiteData({
         const vendor = inferVendor(row.model_id);
         return {
           ...row,
-          id: entryIdOf({ entry: row }),
+          id: [row.model_id, row.reasoning_effort, row.transport_id].map(encodeURIComponent).join('::'),
           name: formatModelName(row.model_id),
           transport: formatTransport(row.transport_id),
           vendor,
