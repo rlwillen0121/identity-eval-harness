@@ -38,7 +38,8 @@ h1 { font: 400 clamp(30px, 3.5vw, 44px)/1.1 var(--serif); letter-spacing: -.02em
 .suite-card-label { color: var(--accent-ink); font: 11px/1.5 var(--mono); }
 .suite-card-note { color: var(--ink-2); font-size: 12.5px; line-height: 1.4; }
 .study-note { margin: 12px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; max-width: 82ch; }
-.board { margin-top: 26px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); scroll-margin-top: 16px; }
+.core-section { margin-top: 40px; }
+.board { border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); scroll-margin-top: 16px; }
 
 .section { margin-top: 112px; border-top: 1px solid var(--rule); padding-top: 40px; min-width: 0; }
 h2 { font: 400 clamp(28px, 3.2vw, 38px)/1.12 var(--serif); letter-spacing: -.016em; margin: 0 0 28px; }

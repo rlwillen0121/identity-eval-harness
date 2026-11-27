@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Deterministic zero-dependency site data generator for IdentityBench v5.3 (`v5.3 · core`).
+ * Deterministic zero-dependency site data generator for IdentityBench v5.3 (core and full standings).
  *
  * Reads (when present):
  *   - reports/v53/leaderboard.json        `identitybench.v5.3.leaderboard.v1` (from `v53 leaderboard`)
+ *   - reports/v53/confirmatory.json       validated aggregate full standings
  *   - datasets/v53/v53_core/SEAL.json     published suite seal
  *   - datasets/v53/PRECOMMIT.json         commit-reveal commitment
  *   - site/data/history.json              first-publication dates
@@ -512,7 +513,7 @@ function main() {
     precommitPath: args.precommit,
   });
   const next = serializeV53SiteData(data);
-  const counts = `${data.models.length} ranked, ${data.unranked.length} unranked, ${data.pending.length} pending`;
+  const counts = `core: ${data.models.length} ranked, ${data.unranked.length} unranked, ${data.pending.length} pending; full: ${data.confirmatory?.entries.length ?? 0} ranked`;
   if (args.check) {
     const current = fs.existsSync(args.out) ? fs.readFileSync(args.out, 'utf8') : '';
     if (current !== next) {

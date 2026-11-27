@@ -11,6 +11,7 @@ import {
   importV53Leaderboard,
   importV53Run,
   projectV53Confirmatory,
+  validateV53Confirmatory,
   validateV53Leaderboard,
   validateV53RunSummary,
 } from '../../scripts/import-v53-run.mjs';
@@ -83,7 +84,7 @@ test('confirmatory import projects complete full runs and accepts rounded native
   const run = {
     rank: null, status: 'unranked',
     entry: { model_id: 'example-model', reasoning_effort: 'high', transport_id: 'codex_cli' },
-    eligibility: { reasons: [{ code: 'suite_not_ranked' }] },
+    eligibility: { eligible: false, reasons: [{ code: 'suite_not_ranked' }] },
     scores: {
       planned_slots: 96, observed_slots: 96, repeats: 1, resolved_slots: 17,
       committed_slots: 85, safety_adjusted_score_tenths: -117, safety_adjusted_score: -0.121875,
@@ -93,7 +94,7 @@ test('confirmatory import projects complete full runs and accepts rounded native
       provider_failure_slots: 0, transport_integrity_slots: 0, turn_budget_exhaustion_rate: 0.114583,
       parse_failure_rate: 0, refusal_rate: 0,
     },
-    metadata: { withheld_bundle_sha256: 'd'.repeat(64), endpoint_identity: 'internal-detail' },
+    metadata: { receipt_sha256: 'a'.repeat(64), withheld_bundle_sha256: 'd'.repeat(64), endpoint_identity: 'internal-detail' },
     failure_taxonomy: { private_data: 'omit this entire field' },
   };
   const board = sampleLeaderboard({
@@ -101,6 +102,30 @@ test('confirmatory import projects complete full runs and accepts rounded native
   });
   const project = () => projectV53Confirmatory(board, JSON.stringify(seal), '2026-11-26');
   const [entry] = project().entries;
+  assert.equal(entry.rank, 1);
+  assert.equal(entry.probe_receipt_bound, true);
+  run.eligibility.reasons.push({ code: 'probe_receipt_missing' });
+  assert.throws(project, /receipt binding/);
+  run.metadata.receipt_sha256 = null;
+  assert.equal(project().entries[0].probe_receipt_bound, false);
+  run.eligibility.reasons.push({ code: 'probe_receipt_digest_mismatch' });
+  assert.throws(project, /incomplete or inconsistent/);
+  run.eligibility.reasons.pop();
+  run.eligibility.reasons.push({ code: 'native_tool_activity' });
+  assert.throws(project, /incomplete or inconsistent/);
+  run.eligibility.reasons.pop();
+  run.diagnostics.transport_integrity_slots = 1;
+  assert.throws(project, /incomplete or inconsistent/);
+  run.diagnostics.transport_integrity_slots = 0;
+  board.test_only = true;
+  assert.throws(project, /test_only/);
+  board.test_only = false;
+  run.scores.committed_slots -= 1;
+  assert.throws(project, /termination counts/);
+  run.scores.committed_slots += 1;
+  run.scores.safety_adjusted_score = 0;
+  assert.throws(project, /incomplete or inconsistent/);
+  run.scores.safety_adjusted_score = -117 / 960;
   assert.equal(entry.safety_adjusted_score_tenths, -117);
   assert.equal(entry.step_limit_slots, 11);
   assert.equal(entry.withheld_bundle_sha256, 'd'.repeat(64));
@@ -116,6 +141,32 @@ test('confirmatory import projects complete full runs and accepts rounded native
   assert.throws(project, /incomplete/);
 });
 
+test('full publication verifies exact competition ranks, byte-wise display order, and receipt status', () => {
+  const seal = 'a'.repeat(64);
+  const row = (rank, model_id, reasoning_effort, transport_id, numerator) => ({
+    rank, probe_receipt_bound: false, model_id, reasoning_effort, transport_id,
+    resolved_slots: 0, safety_adjusted_score_tenths: numerator, og_total: -numerator, ab_total: 0,
+    step_limit_slots: 0, parse_failure_slots: 0, refusal_slots: 0, withheld_bundle_sha256: 'b'.repeat(64),
+  });
+  const canonical = {
+    suite_id: 'v53_full', scenarios: 96, repeats: 1, published_on: '2026-11-26', seal_sha256: seal,
+    entries: [row(1, 'Z', 'low', 'a', 0), row(2, 'A', 'high', 'a', -12), row(2, 'A', 'low', 'a', -12),
+      row(2, 'A', 'low', 'z', -12), row(2, 'a', 'low', 'a', -12), row(6, 'W', 'high', 'a', -13)],
+  };
+  assert.deepEqual(validateV53Confirmatory(canonical, seal), canonical);
+  const invalid = structuredClone(canonical);
+  invalid.entries[4].rank = 5;
+  assert.throws(() => validateV53Confirmatory(invalid, seal), /rank or display order/);
+  invalid.entries[4].rank = 2;
+  [invalid.entries[1], invalid.entries[2]] = [invalid.entries[2], invalid.entries[1]];
+  assert.throws(() => validateV53Confirmatory(invalid, seal), /rank or display order/);
+  for (const key of ['rank', 'probe_receipt_bound']) {
+    const incomplete = structuredClone(canonical);
+    delete incomplete.entries[2][key];
+    assert.throws(() => validateV53Confirmatory(incomplete, seal), /Reimport the native offline leaderboard/);
+  }
+});
+
 test('importV53Leaderboard and importV53Run copy only publishable artifacts', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-v53-import-'));
   try {
@@ -128,6 +179,9 @@ test('importV53Leaderboard and importV53Run copy only publishable artifacts', ()
     assert.equal(lbRes.rankedCount, 1);
     assert.ok(fs.existsSync(path.join(lbOut, 'leaderboard.json')));
     assert.ok(fs.existsSync(path.join(lbOut, 'leaderboard.md')));
+    fs.writeFileSync(path.join(lbSrc, 'leaderboard.json'), JSON.stringify(sampleLeaderboard({ suite_id: 'v53_full' })));
+    assert.throws(() => importV53Leaderboard({ srcDir: lbSrc, outDir: lbOut }), /Use --confirmatory/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(lbOut, 'leaderboard.json'))).suite_id, 'v53_core');
 
     const runSrc = path.join(tmp, 'run_src');
     const runOut = path.join(tmp, 'run_out');

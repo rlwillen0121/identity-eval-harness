@@ -170,6 +170,27 @@ test('v5.3 views and charts mount cleanly in empty and populated states', () => 
   cleanUpdates();
 });
 
+test('exact core ties share the same label in the table, tooltip, and Updates across dates', () => {
+  const dom = installDOM();
+  const data = sampleSiteData();
+  data.models = [1, 2, 3].map((rank) => ({ ...data.models[0], id: `m${rank}`, rank }));
+  data.history = [
+    { date: '2026-11-26', models: ['m2', 'm3'] }, { date: '2026-11-24', models: ['m1'] },
+  ];
+  const store = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '' });
+  const table = dom.root();
+  mountTable(table, data, store);
+  const cells = table.querySelectorAll('.rank-cell');
+  assert.equal(cells.length, 3);
+  for (const cell of cells) {
+    assert.equal(cell.textContent, 'T1');
+    assert.match(cell.getAttribute('title'), /^Rank T1 /);
+  }
+  const updates = dom.root();
+  mountUpdates(updates, data, store);
+  assert.equal(updates.textContent.match(/Core T1/g).length, 3);
+});
+
 test('full-suite results and publication dates render independently of core rankings', () => {
   const dom = installDOM();
   const data = sampleSiteData();
@@ -178,6 +199,7 @@ test('full-suite results and publication dates render independently of core rank
     scenarios: 96,
     published_on: '2026-11-26',
     entries: [{
+      rank: 1, probe_receipt_bound: false,
       name: model.name,
       model_id: model.model_id,
       reasoning_effort: model.reasoning_effort,
@@ -206,10 +228,15 @@ test('full-suite results and publication dates render independently of core rank
   assert.equal(root.querySelector('.full-suite-results').hidden, false);
   assert.match(root.querySelector('#full-suite-summary').textContent, /96 fresh private scenarios/);
   const row = root.querySelector('#full-suite-rows').querySelector('tr');
-  assert.deepEqual([...row.querySelectorAll('td')].slice(0, 2).map((cell) => cell.textContent), ['-1.25%', '6/96']);
+  assert.deepEqual([...row.querySelectorAll('td')].slice(0, 3).map((cell) => cell.textContent), ['1', '-1.25%', '6/96']);
+  assert.match(row.textContent, /No bound probe receipt/);
   assert.match(row.textContent, /6 turn limits, 1 parse failure/);
   assert.equal(root.querySelector('#full-suite-pending').textContent, 'Awaiting full-suite results for Pending model.');
 
+  const tie = { ...report.entries[0], model_id: 'second', probe_receipt_bound: true };
+  fillConfirmatory(root, { ...report, entries: [report.entries[0], tie] });
+  assert.deepEqual([...root.querySelectorAll('tr')].map((r) => r.querySelector('td').textContent), ['T1', 'T1']);
+  assert.match(root.querySelector('#full-suite-summary').textContent, /1 of 2 runs have a bound context-probe receipt/);
   const updates = dom.root();
   mountUpdates(updates, { ...data, models: [], confirmatory: report }, createStore({}));
   assert.match(updates.textContent, /26 Nov 2026/);

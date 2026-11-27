@@ -90,6 +90,19 @@ test('buildV53SiteData renders valid empty state from committed SEAL.json when n
   assert.ok(data.suite.round);
 });
 
+test('site build rejects legacy full rows until the native leaderboard is reimported', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-legacy-full-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const report = JSON.parse(fs.readFileSync(new URL('../../reports/v53/confirmatory.json', import.meta.url)));
+  for (const row of report.entries) {
+    delete row.rank;
+    delete row.probe_receipt_bound;
+  }
+  const confirmatoryPath = path.join(tmp, 'confirmatory.json');
+  fs.writeFileSync(confirmatoryPath, JSON.stringify(report));
+  assert.throws(() => buildV53SiteData({ confirmatoryPath }), /Reimport the native offline leaderboard with --confirmatory/);
+});
+
 test('buildV53SiteData preserves §9 order regardless of cost and separates unranked/pending', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-v53-build-'));
   try {
