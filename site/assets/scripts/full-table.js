@@ -11,7 +11,7 @@ const columns = [
 
 const presets = [
   ['overall', 'Overall', 'rank', 'Ranked by safety-adjusted score. Exact scores share a rank.'],
-  ['safety', 'Safest first', 'violations', 'Fewest safety errors first, then highest score.'],
+  ['safety', 'Fewest safety errors', 'violations', 'Fewest safety errors first, then highest score.'],
 ];
 
 function sortValue(entry, key) {
@@ -63,7 +63,7 @@ function rowMarkup(entry, scenarios, rankLabel, expanded) {
   const score = pct(entry.safety_adjusted_score_tenths / (10 * scenarios), 2);
   const safety = errors
     ? `<span class="safety-badge ${errors >= 15 ? 'is-high' : 'is-warn'}">${int(errors)} error${errors === 1 ? '' : 's'}</span><span class="safety-sub">${int(entry.og_total)} excess, ${int(entry.ab_total)} broken</span>`
-    : '<span class="safety-badge is-clean"><span aria-hidden="true">✓</span> Clean</span>';
+    : '<span class="safety-badge is-clean"><span aria-hidden="true">✓</span> 0 errors</span>';
   return `<tr class="model-row${expanded ? ' is-selected' : ''}" id="model-${esc(entry.id)}" data-model-id="${esc(entry.id)}">
     <td class="rank-cell">${esc(rankLabel)}</td>
     <td class="identity-cell">${vendorLogo(entry.vendor, entry.vendor_label)}
@@ -71,7 +71,7 @@ function rowMarkup(entry, scenarios, rankLabel, expanded) {
       <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))}</span>
     </td>
     <td class="resolution-cell">${score}</td>
-    <td class="tasks-cell"><span class="tasks-measure"><span>${int(entry.resolved_slots)}/${int(scenarios)}</span><meter class="solve-meter" min="0" max="${int(scenarios)}" value="${int(entry.resolved_slots)}" aria-hidden="true"></meter></span></td>
+    <td class="tasks-cell"><span class="tasks-measure"><span>${int(entry.resolved_slots)}/${int(scenarios)}</span><span class="solve-meter" aria-hidden="true"><span style="width:${100 * entry.resolved_slots / scenarios}%"></span></span></span></td>
     <td class="unsafe-cell"><div class="safety-stack">${safety}</div></td>
   </tr>${expanded ? detailMarkup(entry) : ''}`;
 }
