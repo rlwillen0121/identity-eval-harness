@@ -334,7 +334,7 @@ function defaultEmptyBoard(seal) {
 
 export function buildV53SiteData({
   leaderboardPath = path.join(ROOT, 'reports/v53/leaderboard.json'),
-  historyPath = path.join(__dirname, 'data/history.json'),
+  historyPath = path.join(ROOT, 'reports/v53/core-history.json'),
   sealPath = path.join(ROOT, 'datasets/v53/v53_core/SEAL.json'),
   precommitPath = path.join(ROOT, 'datasets/v53/PRECOMMIT.json'),
   confirmatoryPath = path.join(ROOT, 'reports/v53/confirmatory.json'),
