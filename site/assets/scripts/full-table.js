@@ -5,9 +5,8 @@ import { vendorLogo } from './logos.js';
 const columns = [
   ['rank', '#', 'Published rank', 'asc'],
   ['name', 'Model', 'Model name', 'asc'],
-  ['score', 'Score', 'Safety-adjusted score', 'desc'],
-  ['resolved', 'Solves', 'Scenarios solved with zero safety errors', 'desc'],
-  ['violations', 'Safety', 'Total overgrants and availability breaches', 'asc'],
+  ['score', 'Safety-adjusted score', 'Safety-adjusted score', 'desc'],
+  ['violations', 'Safety errors', 'Total overgrants and availability breaches', 'asc'],
   ['tokens', 'Tokens', 'Total recorded tokens', 'asc'],
   ['cost', 'Est. cost', 'Estimated retail cost of the run', 'asc'],
   ['time', 'Time / task', 'Mean elapsed time per scenario', 'asc'],
@@ -17,7 +16,6 @@ function sortValue(entry, key) {
   switch (key) {
     case 'name': return entry.name;
     case 'score': return entry.safety_adjusted_score_tenths;
-    case 'resolved': return entry.resolved_slots;
     case 'tokens': return entry.analysis?.total_tokens;
     case 'cost': return entry.analysis?.estimated_cost_pricing_sha256 ? entry.analysis.estimated_cost_usd : null;
     case 'time': return entry.analysis?.mean_task_time_s;
@@ -35,7 +33,7 @@ function compare(a, b, { key, dir }) {
   return (dir === 'desc' ? -delta : delta) || a.rank - b.rank;
 }
 
-function detailMarkup(entry) {
+function detailMarkup(entry, scenarios) {
   const receipt = entry.probe_receipt_bound === undefined ? 'Status unavailable'
     : entry.probe_receipt_bound ? 'Bound probe receipt' : 'No bound probe receipt';
   const fields = (pairs) => pairs.map(([label, value]) =>
@@ -48,6 +46,7 @@ function detailMarkup(entry) {
           ['Transport', entry.transport], ['Context probe', receipt],
         ])}</dl></div>
         <div><h3>Scored outcomes</h3><dl class="detail-figures">${fields([
+          ['Clean solves', `${int(entry.resolved_slots)}/${int(scenarios)}`],
           ['Overgrants', int(entry.og_total)], ['Availability breaches', int(entry.ab_total)],
           ['Turn limits', int(entry.step_limit_slots)], ['Parse failures', int(entry.parse_failure_slots)],
           ['Refusals', int(entry.refusal_slots)],
@@ -57,31 +56,38 @@ function detailMarkup(entry) {
     </div></td></tr>`;
 }
 
-function rowMarkup(entry, scenarios, rankLabel, expanded) {
+function rowMarkup(entry, scenarios, rankLabel, expanded, scoreFloor) {
   const tokens = sortValue(entry, 'tokens');
   const cost = sortValue(entry, 'cost');
   const time = sortValue(entry, 'time');
   const errors = entry.og_total + entry.ab_total;
-  const score = pct(entry.safety_adjusted_score_tenths / (10 * scenarios), 2);
-  const safety = errors
-    ? `<span class="safety-badge ${errors >= 15 ? 'is-high' : 'is-warn'}">${int(errors)} error${errors === 1 ? '' : 's'}</span><span class="safety-sub">${int(entry.og_total)} excess, ${int(entry.ab_total)} broken</span>`
-    : '<span class="safety-badge is-clean"><span aria-hidden="true">✓</span> 0 errors</span>';
+  const score = entry.safety_adjusted_score_tenths / (10 * scenarios);
+  const scale = 100 / (1 - scoreFloor);
+  const zero = -scoreFloor * scale;
+  const start = zero + Math.min(0, score) * scale;
   return `<tr role="row" class="model-row${expanded ? ' is-selected' : ''}" id="model-${esc(entry.id)}" data-model-id="${esc(entry.id)}">
     <td class="rank-cell">${esc(rankLabel)}</td>
     <td class="identity-cell">${vendorLogo(entry.vendor, entry.vendor_label)}
       <button type="button" class="model-name" aria-label="${esc(entry.name)}, ${esc(effortLabel(entry.reasoning_effort))}, ${esc(entry.transport)}" aria-expanded="${expanded}"${expanded ? ` aria-controls="detail-${esc(entry.id)}"` : ''}>${esc(entry.name)}</button>
       <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))}</span>
     </td>
-    <td class="resolution-cell"><span class="metric-caption">Score</span>${score}</td>
-    <td class="tasks-cell"><span class="tasks-measure"><span>${int(entry.resolved_slots)}/${int(scenarios)}</span><span class="solve-meter" aria-hidden="true"><span style="width:${100 * entry.resolved_slots / scenarios}%"></span></span></span></td>
-    <td class="unsafe-cell"><div class="safety-stack">${safety}</div></td>
+    <td class="resolution-cell"><span class="score-comparison"><span class="metric-caption">Score</span>
+      <svg class="score-bar" viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 6H100" class="score-track"/>
+        <rect class="score-fill${score < 0 ? ' negative' : ''}" x="${start}" y="3" width="${Math.abs(score) * scale}" height="6" rx="1"/>
+        <path d="M${zero} 1v10" class="score-zero"/>
+      </svg><span class="score-value">${pct(score, 2)}</span></span></td>
+    <td class="error-count"><span class="metric-caption">Safety errors</span>${int(errors)}</td>
     <td class="usage-cell" title="${int(tokens)} total tokens"><span class="metric-caption">Tokens</span>${compact(tokens)}</td>
     <td class="usage-cell"><span class="metric-caption">Est. cost</span>${usd(cost)}</td>
     <td class="usage-cell"><span class="metric-caption">Time / task</span>${duration(time)}</td>
-  </tr>${expanded ? detailMarkup(entry) : ''}`;
+  </tr>${expanded ? detailMarkup(entry, scenarios) : ''}`;
 }
 
 export function mount(root, { entries, scenarios }, store) {
+  // Keep the same zero line for every row, including after sorting or filtering.
+  const lowest = entries.reduce((min, entry) => Math.min(min, entry.safety_adjusted_score_tenths), 0);
+  const scoreFloor = Math.floor(lowest / (10 * scenarios) * 4) / 4;
   const vendors = new Map();
   const ranks = new Map();
   for (const entry of entries) {
@@ -101,7 +107,7 @@ export function mount(root, { entries, scenarios }, store) {
       </div>
       <span class="model-count" role="status"></span>
       <label class="mobile-sort">Sort by
-        <select class="sort-select" aria-label="Sort leaderboard">${columns.map(([key, label]) => `<option value="${key}">${key === 'rank' ? 'Rank' : label}</option>`).join('')}</select>
+        <select class="sort-select" aria-label="Sort leaderboard">${columns.map(([key, label]) => `<option value="${key}">${({ rank: 'Rank', score: 'Score' })[key] || label}</option>`).join('')}</select>
       </label>
     </div>
     <table role="table" class="leaderboard-table explorer-table" aria-label="Full-suite leaderboard" aria-describedby="full-suite-summary">
@@ -131,7 +137,7 @@ export function mount(root, { entries, scenarios }, store) {
       header.querySelector('.sort-indicator').textContent = sorted ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
     }
     body.innerHTML = filtered.map((entry) => rowMarkup(entry, scenarios,
-      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id)).join('')
+      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id, scoreFloor)).join('')
       || `<tr class="empty-row"><td colspan="${columns.length}">No configurations match these filters.</td></tr>`;
   }
 
