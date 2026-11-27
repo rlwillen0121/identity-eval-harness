@@ -19,7 +19,13 @@ export function paretoFrontier(models, metric = 'safety_adjusted_score') {
 export function mount(root, data, store) {
   const models = data.models || [];
   let metric = 'safety_adjusted_score';
-  const view = chart(root, 'Score vs. estimated cost', 'Higher and further left is better. The blue line traces the best score among plotted runs at each budget.', store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Score vs. estimated cost', 'Cost uses shared frozen retail pricing. The blue line traces the best score among plotted runs at each budget.', store, ({ width, canvas, tip }) => {
+    if (metric === 'macro_cat_acc') {
+      const note = document.createElement('p');
+      note.className = 'chart-sub';
+      note.textContent = 'Graded accuracy averages assertion pass rates across applicable IAM domains within each scenario, then averages across scenarios.';
+      canvas.append(note);
+    }
     const measured = models.filter((m) => Number.isFinite(m.scores?.[metric]) && Number.isFinite(m.usage?.estimated_cost_usd));
     const priced = measured.filter((m) => m.usage.estimated_cost_usd > 0);
     const free = measured.filter((m) => m.usage.estimated_cost_usd === 0);
@@ -48,7 +54,7 @@ export function mount(root, data, store) {
     const frontier = paretoFrontier(priced, metric);
     const svg = svgCanvas(canvas, width, 352, `Score vs. estimated cost across ${priced.length} priced models.`);
     yAxis(svg, plot, y, ticks(minScore, 1, Math.min(8, (1 - minScore) * 4)), (v) => pct(v, 0));
-    const axisLabel = metric === 'safety_adjusted_score' ? 'Safety score' : (metric === 'g_srr' ? 'End-to-end score' : 'Domain avg');
+    const axisLabel = metric === 'safety_adjusted_score' ? 'Safety score' : (metric === 'g_srr' ? 'End-to-end score' : 'Graded accuracy');
     svg.append(text(plot.left, 12, axisLabel, { class: 'chart-axis-title' }));
     for (const v of [1, 3, 10, 30, 100, 300]) {
       if (v >= minCost && v <= maxCost) {
@@ -72,7 +78,7 @@ export function mount(root, data, store) {
       lines: [
         ['Safety score', pct(m.scores?.safety_adjusted_score, 2)],
         ['End to end', gSrrPct(m.scores?.g_srr)],
-        ...(Number.isFinite(m.scores?.macro_cat_acc) ? [['Domain avg', pct(m.scores.macro_cat_acc, 1)]] : []),
+        ...(Number.isFinite(m.scores?.macro_cat_acc) ? [['Graded accuracy', pct(m.scores.macro_cat_acc, 1)]] : []),
         ['Est. cost', usd(m.usage?.estimated_cost_usd)],
       ],
     }));
@@ -86,7 +92,7 @@ export function mount(root, data, store) {
   control.className = 'chart-segmented';
   control.setAttribute('role', 'group');
   control.setAttribute('aria-label', 'Score metric');
-  const buttons = [['safety_adjusted_score', 'Score'], ['g_srr', 'End to end'], ['macro_cat_acc', 'Domain avg']].map(([key, label]) => {
+  const buttons = [['safety_adjusted_score', 'Score'], ['g_srr', 'End to end'], ['macro_cat_acc', 'Graded accuracy']].map(([key, label]) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;

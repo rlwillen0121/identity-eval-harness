@@ -76,3 +76,16 @@ test('a zero-dollar configuration is named alongside a log-scaled cost plot', ()
   assert.match(chart.textContent, /\$0 estimates for free-run/);
   assert.equal(chart.querySelectorAll('.chart-mark').length, 1);
 });
+
+test('chart filters match transport labels, effort and the full table configuration ID', () => {
+  const configuration = { ...entry('opaque-config', 100, 1), model_id: 'gpt-config',
+    transport: 'Codex CLI', transport_id: 'codex_cli', reasoning_effort: 'xhigh' };
+  const { root, store } = mount([configuration]);
+  const mark = root.querySelector('#chart-safety').querySelector('.chart-mark');
+  for (const query of ['Codex CLI', 'codex_cli', 'xhigh', 'gpt-config', 'opaque-config']) {
+    store.set({ query, vendors: new Set() });
+    assert.equal(mark.getAttribute('opacity'), '1', query);
+  }
+  store.set({ query: 'unrelated' });
+  assert.equal(mark.getAttribute('opacity'), '0.3');
+});

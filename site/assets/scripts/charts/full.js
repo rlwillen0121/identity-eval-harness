@@ -8,9 +8,9 @@ export function fullChartData({ confirmatory, categories = [], regimes = [] }) {
   const models = (confirmatory?.entries || []).map((entry) => {
     const analysis = entry.analysis ?? {};
     return {
-      id: entry.id, name: entry.name, rank: entry.rank,
+      id: entry.id, model_id: entry.model_id, name: entry.name, rank: entry.rank,
       vendor: entry.vendor, vendor_label: entry.vendor_label,
-      reasoning_effort: entry.reasoning_effort, transport: entry.transport,
+      reasoning_effort: entry.reasoning_effort, transport: entry.transport, transport_id: entry.transport_id,
       scores: {
         safety_adjusted_score: entry.safety_adjusted_score_tenths / (10 * scenarios),
         g_srr: entry.resolved_slots / scenarios,

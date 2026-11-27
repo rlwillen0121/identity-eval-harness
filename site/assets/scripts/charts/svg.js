@@ -1,3 +1,4 @@
+import { matchesConfiguration as matches } from '../filter.js';
 import {escapeHTML} from '../format.js';
 import {vendorLogo, vendorLogoBody} from '../logos.js';
 
@@ -106,11 +107,7 @@ export function placeLabels(points, bounds, occupied = []) {
   return labels;
 }
 
-export function matches(model, state) {
-  const query = (state.query || '').trim().toLocaleLowerCase('en-US');
-  const vendor = !state.vendors?.size || state.vendors.has(model.vendor);
-  return vendor && `${model.name} ${model.vendor_label} ${model.id}`.toLocaleLowerCase('en-US').includes(query);
-}
+export { matches };
 
 export function markState(model, state, base = 'var(--ink-2)', opacity = 1) {
   const filtered = !matches(model, state);
@@ -200,11 +197,15 @@ export function bindMark(node, model, lines, store, tip, position) {
   node.setAttribute('data-focus-key', `${model.id}:${lines[0][0]}`);
   node.addEventListener('focus', show);
   node.addEventListener('blur', () => { setHover(store, null); tip.hide(); });
-  node.addEventListener('click', () => store.set({selected: model.id}));
+  const select = () => {
+    tip.hide();
+    store.set({selected: model.id});
+  };
+  node.addEventListener('click', select);
   node.addEventListener('keydown', event => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      store.set({selected: model.id});
+      select();
     } else if (event.key === 'Escape') { setHover(store, null); tip.hide(); }
   });
   return {
@@ -357,7 +358,10 @@ export function scatter(svg, points, plot, store, tip, root, labelIds = new Set(
   });
   overlay.addEventListener('click', event => {
     locate(event);
-    if (nearest) store.set({selected: nearest.model.id});
+    if (nearest) {
+      tip.hide();
+      store.set({selected: nearest.model.id});
+    }
   });
   svg.append(marks, leaders, labels, overlay);
   const obstacles = [...(options.obstacles || []),
