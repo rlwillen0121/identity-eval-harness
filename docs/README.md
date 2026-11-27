@@ -1,20 +1,30 @@
 # IdentityBench documentation
 
-The native Rust **IdentityBench v5.2** harness (`crates/`, `identitybench v52`) is the sole live benchmark. Start with the [project README](../README.md) for the overview, published results, and quickstart.
+The live benchmark is native Rust **IdentityBench v5.3** (`identitybench v53`). The sole current public ranking uses the 96-scenario `v53_full` suite; the original `v53_core` board is historical. The v5.3.1 scoring addendum governs current public ranking while the frozen v5.3 specification and seals remain unchanged.
+
+## Current v5.3 references
 
 | Topic | Reference |
 | --- | --- |
-| Native Rust v5.2 guide, commands, validation gates, and run semantics | [RUST.md](RUST.md) |
-| v5.2 normative contract (`v5.2.0`, Draft) | [SPEC-v5.2.md](../SPEC-v5.2.md) |
-| Workspace layout and trust boundaries | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Dataset sealing, validation, runs, and publication | [RELEASE.md](RELEASE.md) |
-| v5.2 suites, seeds, digests, tuning, and contamination notice | [Dataset card](../datasets/README.md) |
-| Published retired v5.1 run artifacts (`v51_core`; still shown on the site until v5.2 results exist) | [`reports/v51/runs/`](../reports/v51/runs/) |
-| Security policy | [SECURITY.md](../SECURITY.md) |
-| Contributor and operator lanes | [AGENTS.md](../AGENTS.md) |
-| Release history and citation | [CHANGELOG.md](../CHANGELOG.md), [CITATION.cff](../CITATION.cff) |
-| Retired native Rust v5.1 (`legacy-v5.1`): specification and sealed suites | [Archive](../archive/README.md), [`archive/specs/v5.1/`](../archive/specs/v5.1/), [`archive/datasets/v51/`](../archive/datasets/v51/) |
-| Retired native Rust v5 (`legacy-v5`): specifications, datasets, runs, baselines, conformance, and leaderboard | [Archive](../archive/README.md), [`archive/specs/v5/`](../archive/specs/v5/), [`archive/reports/v5/`](../archive/reports/v5/), [v5 conformance guide](../archive/reports/v5/RUST-CONFORMANCE.md) |
-| Archived Python `v5` Draft 5 preview and native audit | [Preliminary `v5_core` report](../archive/reports/v5-python-draft5/preliminary-core/report.md), [historical audit](../archive/reports/v5-python-draft5/rust-final-audit/historical/AUDIT.md), [Daybreak Blue follow-up](../archive/reports/v5-python-draft5/rust-final-audit/DAYBREAK.md) |
-| Archived v4.1 specification and results | [SPEC-v4.1.md](../archive/specs/SPEC-v4.1.md), [full report](../archive/reports/v41-full/report.md), [method](../archive/reports/v41-full/METHOD.md), [lite report](../archive/reports/v41-lite/report.md), [orchestration study](../archive/reports/v41-lite/skill_orchestration.html) |
-| All retired generations (`v1–v4`, `v4.1`, Python `v5`, native `v5`) | [Archive](../archive/README.md) |
+| Project overview, build, and public-suite validation quickstart | [Project README](../README.md) |
+| Frozen v5.3.0 normative contract and protocol | [SPEC-v5.3.md](../SPEC-v5.3.md) |
+| Current ranking, scoring, eligibility, and publication rules | [v5.3.1 scoring addendum](v531-scoring-addendum.md) |
+| Official 96-scenario board | [IdentityBench leaderboard](https://identitybench.ai/#full-suite), [published aggregate](../reports/v53/confirmatory.json) |
+| Suite roles, seals, validation, and anti-leakage | [Dataset card](../datasets/README.md) |
+| Original protocol freeze and seal digests | [v5.3 freeze record](v53-freeze-record.md) |
+| Clean-room conformance gate and its method | [v5.3 blind audit](v53-blind-audit.md) |
+| Contributor, operator, and publication boundaries | [AGENTS.md](../AGENTS.md) |
+| Result artifact index, including the historical core board | [v5.3 reports](../reports/v53/README.md) |
+
+## Historical references
+
+These pages document the retired native Rust v5.2 benchmark and are preserved for historical reproduction. They are not current v5.3 command or release instructions.
+
+| Historical topic | Reference |
+| --- | --- |
+| v5.2 commands and gate semantics | [RUST.md](RUST.md) |
+| v5.2 workspace layout and trust boundaries | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| v5.2 dataset and release procedure | [RELEASE.md](RELEASE.md) |
+| v5.2 specification and original freeze record | [Archive](../archive/README.md), [`archive/specs/v5.2/`](../archive/specs/v5.2/) |
+| v5.2 blind-audit and review records | [`v52-blind-audit.md`](v52-blind-audit.md), [`v52-review-dispositions.md`](v52-review-dispositions.md), [`v52-hardening-round2.md`](v52-hardening-round2.md) |
+| Retired v1–v5.1 specifications, datasets, and results | [Archive](../archive/README.md) |

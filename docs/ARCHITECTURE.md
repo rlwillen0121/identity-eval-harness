@@ -1,12 +1,14 @@
 # IdentityBench architecture
 
-The native Rust **IdentityBench v5.2** workspace in `crates/` (`identitybench v52`) is the sole live benchmark harness, with zero Python source or runtime dependencies. Its normative contract is [SPEC-v5.2.md](../SPEC-v5.2.md) (`v5.2.0`, still in Draft); implementation and documentation are being reconciled to that v5.2 contract. [AGENTS.md](../AGENTS.md) defines contributor, blind-review, and operator boundaries. Retired implementations are reproducible from `legacy-v1-v4` (`v1–v4`), `legacy-v4.1` (`v4.1` and Python `v5`), `legacy-v5` (native Rust `v5`), and `legacy-v5.1` (native Rust `v5.1`), as described in the [archive](../archive/README.md).
+> **Historical guide:** this page describes the retired v5.2 workspace. For the live v5.3 architecture and contract, start with [SPEC-v5.3.md](../SPEC-v5.3.md) and the [project README](../README.md). The v5.2 material below is retained for historical reference.
+
+This historical architecture note describes the native Rust **IdentityBench v5.2** workspace in `crates/` (`identitybench v52`) as it existed before v5.2 retirement. Its normative contract was [SPEC-v5.2.md](../archive/specs/v5.2/SPEC-v5.2.md) (`v5.2.0`, Draft); implementation and documentation were being reconciled to that contract. [AGENTS.md](../AGENTS.md) defines contributor, blind-review, and operator boundaries. Retired implementations are reproducible from `legacy-v1-v4` (`v1–v4`), `legacy-v4.1` (`v4.1` and Python `v5`), `legacy-v5` (native Rust `v5`), and `legacy-v5.1` (native Rust `v5.1`), as described in the [archive](../archive/README.md).
 
 ## Workspace layout
 
 | Path | Responsibility |
 | --- | --- |
-| `crates/` | Native Rust v5.2 workspace (8 crates; sole live `identitybench v52` execution path); see the [crate map](RUST.md#crate-map) |
+| `crates/` | Native Rust v5.2 workspace (8 crates; historical `identitybench v52` execution path); see the [crate map](RUST.md#crate-map) |
 | `SPEC-v5.2.md` | Normative contract (Draft), digest-bound by every v5.2 `SEAL.json` |
 | `datasets/v52/` | Provisionally sealed public suites `v52_dev`, `v52_lite`, `v52_blind_fixture`; README stubs for the private, never-committed `v52_core` and `v52_full`; see the [dataset card](../datasets/README.md) |
 | `reports/v51/runs/` | Published retired v5.1 run artifacts, kept while the site builds from them until v5.2 results exist (`summary.json`, `report.md`, `manifest.json`, per-slot `episodes.json`) |
