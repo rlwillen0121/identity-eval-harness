@@ -98,6 +98,20 @@
 }
 .chart-segmented button:hover { color: var(--ink); }
 .chart-segmented button[aria-pressed="true"] { background: var(--ink); color: var(--page); }
+.chart-efficiency-switch { flex: 0 0 auto; gap: 1px; }
+.chart-efficiency-switch button { padding: 4px 9px; white-space: nowrap; }
+.chart-efficiency-switch button:focus-visible { position: relative; z-index: 1; }
+.chart-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.chart-score-select select {
+  max-width: 150px;
+  min-height: 30px;
+  border: 1px solid var(--axis);
+  border-radius: 6px;
+  padding: 4px 20px 4px 8px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font: 400 12px/1.3 var(--sans);
+}
 .chart-tooltip {
   position: absolute;
   z-index: 3;
@@ -145,6 +159,7 @@
   .chart-title { font-size: 21px; }
   .chart-sub, .chart-caption, .chart-legend { font-size: 12px; }
   .chart-segmented button { padding: 5px 10px; }
+  .chart-efficiency-switch button { padding: 4px 7px; font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .analysis-chart *, .analysis-chart *::before, .analysis-chart *::after { transition: none; }

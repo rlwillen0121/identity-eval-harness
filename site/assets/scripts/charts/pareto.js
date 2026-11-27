@@ -1,85 +1,159 @@
-import { gSrrPct, pct, usd } from '../format.js';
+import { compact, duration, gSrrPct, num, pct, usd } from '../format.js';
 import { chart, el, log, linear, scatter, stepObstacles, stepPath, svgCanvas, text, ticks, yAxis } from './svg.js';
 
-export function paretoFrontier(models, metric = 'safety_adjusted_score') {
-  const valueOf = (m) => m.scores?.[metric];
-  const paid = models
-    .filter((m) => (m.usage?.estimated_cost_usd ?? 0) > 0 && Number.isFinite(valueOf(m)))
+const METRICS = [
+  {
+    id: 'cost', label: 'Cost', accessibleLabel: 'Estimated total cost', field: 'estimated_cost_usd',
+    axisLabel: 'Estimated total cost · USD (log scale)',
+    tick: (value) => value < 1 ? usd(value) : `$${compact(value)}`,
+    zeroNote: (models) => `$0 estimates for ${models.map((m) => m.name).join(', ')}`,
+  },
+  {
+    id: 'tokens', label: 'Tokens', accessibleLabel: 'Total tokens', field: 'total_tokens',
+    axisLabel: 'Total tokens (log scale)',
+    tick: compact,
+    zeroNote: (models) => `zero token totals for ${models.map((m) => m.name).join(', ')}`,
+  },
+  {
+    id: 'time', label: 'Time / task', accessibleLabel: 'Mean time per task', field: 'mean_task_time_s',
+    axisLabel: 'Mean time per task (log scale)',
+    tick: formatTimeTick,
+    zeroNote: (models) => `0s mean time per task for ${models.map((m) => m.name).join(', ')}`,
+  },
+];
+
+const SCORE_METRICS = [
+  { id: 'safety_adjusted_score', label: 'Score', axisLabel: 'Safety-adjusted score', tooltipLabel: (n) => `Safety-adjusted score (${n} scenarios)`, format: (m) => pct(m.scores?.safety_adjusted_score, 2) },
+  { id: 'g_srr', label: 'Clean solve rate', axisLabel: 'Clean solve rate', tooltipLabel: (n) => `Clean solve rate (${n} scenarios)`, format: (m) => gSrrPct(m.scores?.g_srr) },
+  { id: 'macro_cat_acc', label: 'Domain accuracy', axisLabel: 'Domain accuracy', tooltipLabel: (n) => `Domain accuracy averaged across ${n} scenarios`, format: (m) => pct(m.scores?.macro_cat_acc, 1) },
+];
+
+function formatTaskTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return 'n/a';
+  if (seconds === 0) return '0s';
+  return seconds < 60 ? `${num(seconds, 1)} s` : duration(seconds);
+}
+
+function formatTimeTick(seconds) {
+  if (seconds < 1) return `${num(seconds, 1)}s`;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  return `${Math.round(seconds / 3600)} h`;
+}
+
+const valueOf = (model, field) => model.usage?.[field];
+
+export function paretoFrontier(models, scoreMetric = 'safety_adjusted_score', xMetric = 'estimated_cost_usd') {
+  const scoreOf = (m) => m.scores?.[scoreMetric];
+  const measured = models
+    .filter((m) => valueOf(m, xMetric) > 0 && Number.isFinite(valueOf(m, xMetric)) && Number.isFinite(scoreOf(m)))
     .slice()
-    .sort((a, b) => a.usage.estimated_cost_usd - b.usage.estimated_cost_usd || valueOf(b) - valueOf(a) || a.rank - b.rank);
+    .sort((a, b) => valueOf(a, xMetric) - valueOf(b, xMetric) || scoreOf(b) - scoreOf(a) || a.rank - b.rank);
   let best = -Infinity;
-  return paid.filter((m) => {
-    const val = valueOf(m);
+  return measured.filter((m) => {
+    const val = scoreOf(m);
     if (val <= best) return false;
     best = val;
     return true;
   });
 }
 
+function logCandidates(metric, min, max) {
+  const values = new Set();
+  // Time ticks use whole seconds, minutes or hours at the scale of the observations.
+  const units = metric.id === 'time' ? [[1, 0, 60], [60, 60, 3600], [3600, 3600, Infinity]] : [[1, 0, Infinity]];
+  for (const [unit, start, end] of units) {
+    const low = Math.floor(Math.log10(min) - Math.log10(unit)) - 1;
+    const high = Math.ceil(Math.log10(max) - Math.log10(unit)) + 1;
+    for (let exponent = low; exponent <= high; exponent++) {
+      for (const multiplier of [1, 2, 5]) {
+        const value = unit * multiplier * (10 ** exponent);
+        if (value > 0 && value >= start && value < end) values.add(value);
+      }
+    }
+  }
+  return [...values].sort((a, b) => a - b);
+}
+
+function logAxis(metric, observedMin, observedMax) {
+  const candidates = logCandidates(metric, observedMin, observedMax);
+  let min = candidates.filter((value) => value <= observedMin).at(-1) ?? observedMin;
+  let max = candidates.find((value) => value >= observedMax) ?? observedMax;
+  let selected = candidates.filter((value) => value >= min && value <= max);
+  while (selected.length < 3) {
+    const lower = candidates.filter((value) => value < min).at(-1);
+    const upper = candidates.find((value) => value > max);
+    if (!lower && !upper) break;
+    if (!upper || (lower && Math.log(observedMin / lower) <= Math.log(upper / observedMax))) min = lower;
+    else max = upper;
+    selected = candidates.filter((value) => value >= min && value <= max);
+  }
+  if (!selected.length) selected = [observedMin, observedMax].filter((value, index, all) => index === 0 || value !== all[0]);
+  if (selected.length > 5) {
+    selected = Array.from({ length: 5 }, (_, index) => selected[Math.round(index * (selected.length - 1) / 4)]);
+  }
+  return { domain: [min, max], ticks: selected };
+}
+
 export function mount(root, data, store) {
   const models = data.models || [];
-  let metric = 'safety_adjusted_score';
-  const view = chart(root, 'Score vs. estimated cost', 'Cost uses shared frozen retail pricing. The blue line traces the best score among plotted runs at each budget.', store, ({ width, canvas, tip }) => {
-    if (metric === 'macro_cat_acc') {
+  let metric = METRICS[0];
+  let scoreMetric = SCORE_METRICS[0];
+  const view = chart(root, 'Score vs. resource use', 'The blue line shows the best score among plotted runs at each resource budget.', store, ({ width, canvas, tip }) => {
+    const measured = models.filter((m) => Number.isFinite(m.scores?.[scoreMetric.id]) && Number.isFinite(valueOf(m, metric.field)));
+    const positive = measured.filter((m) => valueOf(m, metric.field) > 0);
+    const zero = measured.filter((m) => valueOf(m, metric.field) === 0);
+    if (zero.length) {
       const note = document.createElement('p');
       note.className = 'chart-sub';
-      note.textContent = 'Graded accuracy averages assertion pass rates across applicable IAM domains within each scenario, then averages across scenarios.';
+      const zeroSummary = metric.zeroNote ? metric.zeroNote(zero) : `zero values for ${zero.map((m) => m.name).join(', ')}`;
+      note.textContent = `The logarithmic axis excludes ${zeroSummary}.`;
       canvas.append(note);
     }
-    const measured = models.filter((m) => Number.isFinite(m.scores?.[metric]) && Number.isFinite(m.usage?.estimated_cost_usd));
-    const priced = measured.filter((m) => m.usage.estimated_cost_usd > 0);
-    const free = measured.filter((m) => m.usage.estimated_cost_usd === 0);
-    if (free.length) {
-      const note = document.createElement('p');
-      note.className = 'chart-sub';
-      note.textContent = `The logarithmic cost axis excludes $0 estimates for ${free.map((m) => m.name).join(', ')}.`;
-      canvas.append(note);
-    }
-    if (!priced.length) {
-      if (!free.length) {
+    if (!positive.length) {
+      if (!zero.length) {
         const p = document.createElement('p');
         p.className = 'status-note muted';
-        p.textContent = 'No full-suite configurations have a published cost and score for this metric.';
+        p.textContent = `No full-suite configurations have a published ${metric.accessibleLabel.toLowerCase()} and score.`;
         canvas.append(p);
       }
       return () => {};
     }
     const plot = { left: 46, right: width - 18, top: 22, bottom: 300 };
-    const costs = priced.map((m) => m.usage.estimated_cost_usd);
-    const minCost = Math.min(1, ...costs);
-    const maxCost = Math.max(100, ...costs) * 1.15;
-    const x = log([minCost, maxCost], [plot.left + 8, plot.right - 8]);
-    const minScore = Math.min(0, ...priced.map((m) => Math.floor(4 * m.scores[metric]) / 4));
+    const values = positive.map((m) => valueOf(m, metric.field));
+    const observedMin = Math.min(...values);
+    const observedMax = Math.max(...values);
+    const { domain, ticks: xTicks } = logAxis(metric, observedMin, observedMax);
+    const x = log(domain, [plot.left + 8, plot.right - 8]);
+    const minScore = Math.min(0, ...positive.map((m) => Math.floor(4 * m.scores[scoreMetric.id]) / 4));
     const y = linear([minScore, 1], [plot.bottom, plot.top + 24]);
-    const frontier = paretoFrontier(priced, metric);
-    const svg = svgCanvas(canvas, width, 352, `Score vs. estimated cost across ${priced.length} priced models.`);
-    yAxis(svg, plot, y, ticks(minScore, 1, Math.min(8, (1 - minScore) * 4)), (v) => pct(v, 0));
-    const axisLabel = metric === 'safety_adjusted_score' ? 'Safety score' : (metric === 'g_srr' ? 'End-to-end score' : 'Graded accuracy');
-    svg.append(text(plot.left, 12, axisLabel, { class: 'chart-axis-title' }));
-    for (const v of [1, 3, 10, 30, 100, 300]) {
-      if (v >= minCost && v <= maxCost) {
-        svg.append(
-          el('line', { x1: x(v), x2: x(v), y1: plot.bottom, y2: plot.bottom + 5, class: 'chart-axis' }),
-          text(x(v), plot.bottom + 20, `$${v}`, { 'text-anchor': 'middle', class: 'chart-tick' }),
-        );
-      }
+    const frontier = paretoFrontier(positive, scoreMetric.id, metric.field);
+    const svg = svgCanvas(canvas, width, 352, `Scatter plot of ${scoreMetric.label.toLowerCase()} across 96 scenarios against ${metric.accessibleLabel.toLowerCase()} for ${positive.length} configurations.`);
+    yAxis(svg, plot, y, ticks(minScore, 1, Math.min(8, Math.max(1, Math.ceil((1 - minScore) * 4)))), (v) => pct(v, 0));
+    svg.append(text(plot.left, 12, scoreMetric.axisLabel, { class: 'chart-axis-title' }));
+    for (const v of xTicks) {
+      svg.append(
+        el('line', { x1: x(v), x2: x(v), y1: plot.bottom, y2: plot.bottom + 5, class: 'chart-axis' }),
+        text(x(v), plot.bottom + 20, metric.tick(v), { 'text-anchor': 'middle', class: 'chart-tick' }),
+      );
     }
-    svg.append(text((plot.left + plot.right) / 2, 342, 'Estimated run cost · USD (log scale)', { 'text-anchor': 'middle', class: 'chart-axis-title' }));
-    const frontierPoints = frontier.map((m) => ({ x: x(m.usage.estimated_cost_usd), y: y(m.scores[metric]) }));
+    svg.append(text((plot.left + plot.right) / 2, 342, metric.axisLabel, { 'text-anchor': 'middle', class: 'chart-axis-title' }));
+    const frontierPoints = frontier.map((m) => ({ x: x(valueOf(m, metric.field)), y: y(m.scores[scoreMetric.id]) }));
     const line = el('path', { d: stepPath(frontierPoints, plot.right), class: 'chart-frontier', stroke: 'var(--accent)' });
     svg.append(line);
     const ids = new Set(frontier.map((m) => m.id));
-    const points = priced.map((m) => ({
+    const points = positive.map((m) => ({
       model: m,
-      x: x(m.usage.estimated_cost_usd),
-      y: y(m.scores[metric]),
+      x: x(valueOf(m, metric.field)),
+      y: y(m.scores[scoreMetric.id]),
       color: ids.has(m.id) ? 'var(--accent)' : 'var(--ink-2)',
       opacity: ids.has(m.id) ? 1 : 0.65,
       lines: [
-        ['Safety score', pct(m.scores?.safety_adjusted_score, 2)],
-        ['End to end', gSrrPct(m.scores?.g_srr)],
-        ...(Number.isFinite(m.scores?.macro_cat_acc) ? [['Graded accuracy', pct(m.scores.macro_cat_acc, 1)]] : []),
-        ['Est. cost', usd(m.usage?.estimated_cost_usd)],
+        [scoreMetric.tooltipLabel(data.scenarios ?? 96), scoreMetric.format(m)],
+        ...SCORE_METRICS.filter((score) => score.id !== scoreMetric.id).map((score) => [score.tooltipLabel(data.scenarios ?? 96), score.format(m)]),
+        ['Estimated total cost', usd(m.usage?.estimated_cost_usd)],
+        ['Total tokens', compact(m.usage?.total_tokens)],
+        ['Mean time per task', formatTaskTime(m.usage?.mean_task_time_s)],
       ],
     }));
     const sync = scatter(svg, points, plot, store, tip, root, ids, { labelMode: 'frontier', obstacles: stepObstacles(frontierPoints, plot.right) });
@@ -89,22 +163,42 @@ export function mount(root, data, store) {
     };
   });
   const control = document.createElement('div');
-  control.className = 'chart-segmented';
-  control.setAttribute('role', 'group');
-  control.setAttribute('aria-label', 'Score metric');
-  const buttons = [['safety_adjusted_score', 'Score'], ['g_srr', 'End to end'], ['macro_cat_acc', 'Graded accuracy']].map(([key, label]) => {
+  control.className = 'chart-controls';
+  const switcher = document.createElement('div');
+  switcher.className = 'chart-segmented chart-efficiency-switch';
+  switcher.setAttribute('role', 'group');
+  switcher.setAttribute('aria-label', 'Horizontal axis metric');
+  const buttons = METRICS.map((nextMetric) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = label;
-    btn.setAttribute('aria-pressed', String(key === metric));
+    btn.textContent = nextMetric.label;
+    btn.setAttribute('aria-label', nextMetric.accessibleLabel);
+    btn.setAttribute('data-metric', nextMetric.id);
+    btn.setAttribute('aria-pressed', String(nextMetric === metric));
     btn.addEventListener('click', () => {
-      metric = key;
-      buttons.forEach(([b, k]) => b.setAttribute('aria-pressed', String(k === metric)));
+      metric = nextMetric;
+      buttons.forEach((button, index) => button.setAttribute('aria-pressed', String(METRICS[index] === metric)));
       view.redraw();
     });
-    control.append(btn);
-    return [btn, key];
+    switcher.append(btn);
+    return btn;
   });
+  const scoreLabel = document.createElement('label');
+  scoreLabel.className = 'chart-score-select';
+  const scoreSelect = document.createElement('select');
+  scoreSelect.setAttribute('aria-label', 'Vertical axis score metric');
+  for (const option of SCORE_METRICS) {
+    const item = document.createElement('option');
+    item.value = option.id;
+    item.textContent = option.label;
+    scoreSelect.append(item);
+  }
+  scoreSelect.addEventListener('change', () => {
+    scoreMetric = SCORE_METRICS.find((option) => option.id === scoreSelect.value) || SCORE_METRICS[0];
+    view.redraw();
+  });
+  scoreLabel.append(scoreSelect);
+  control.append(switcher, scoreLabel);
   view.header.append(control);
   return () => view.destroy();
 }

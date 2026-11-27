@@ -5,12 +5,13 @@ import { createStore } from '../assets/scripts/main.js';
 import { fullChartData, mountAnalysis } from '../assets/scripts/charts/full.js';
 import { paretoFrontier } from '../assets/scripts/charts/pareto.js';
 
-function entry(id, score, cost) {
+function entry(id, score, cost, totalTokens = 12500, meanTaskTime = 30.5) {
   return { id, name: id, rank: 1, vendor: 'google', vendor_label: 'Google', resolved_slots: 12,
     reasoning_effort: 'high', transport: 'Example CLI',
     safety_adjusted_score_tenths: score, og_total: 36, ab_total: 12,
     analysis: { category_pass_rates: { policy: 0 }, regime_g_srr: { R1: 0.25 },
-      macro_cat_acc: 0.5, estimated_cost_usd: cost, estimated_cost_pricing_sha256: 'a'.repeat(64) } };
+      macro_cat_acc: 0.5, estimated_cost_usd: cost, estimated_cost_pricing_sha256: 'a'.repeat(64),
+      total_tokens: totalTokens, mean_task_time_s: meanTaskTime } };
 }
 
 function mount(entries) {
@@ -25,21 +26,63 @@ function mount(entries) {
   return { root, store, opened, data };
 }
 
+function metricButton(chart, id) {
+  return chart.querySelector('.chart-efficiency-switch').querySelectorAll('button')
+    .find((button) => button.getAttribute('data-metric') === id);
+}
+
 test('cost frontier and plotted coordinates preserve negative, zero and positive full-suite scores', () => {
-  const { data, root } = mount([entry('negative', -240, 1), entry('zero', 0, 3),
-    entry('positive', 480, 10), entry('dominated', -120, 9)]);
+  const { data, root } = mount([entry('negative', -240, 1, 12500, 30.5), entry('zero', 0, 3, 22500, 62),
+    entry('positive', 480, 10, 85000, 123), entry('dominated', -120, 9, 76000, 118)]);
   assert.deepEqual(paretoFrontier(fullChartData(data).models).map((m) => m.id), ['negative', 'zero', 'positive']);
+  assert.deepEqual(fullChartData(data).models[0].usage, {
+    estimated_cost_usd: 1, total_tokens: 12500, mean_task_time_s: 30.5,
+  });
   const chart = root.querySelector('#chart-pareto');
   const marks = chart.querySelectorAll('.chart-mark');
   const ys = marks.map((m) => Number(m.querySelector('circle').getAttribute('cy')));
   assert.ok(ys[0] > ys[1] && ys[1] > ys[2]);
   assert.match(marks[0].getAttribute('aria-label'), /-25.00%/);
   assert.ok(chart.querySelectorAll('.chart-tick').some((t) => t.textContent === '-25%'));
-  const buttons = chart.querySelector('.chart-segmented').querySelectorAll('button');
+  const xTickLabels = () => chart.querySelectorAll('.chart-tick').filter((tick) => tick.getAttribute('text-anchor') === 'middle');
+  assert.ok(xTickLabels().length >= 3 && xTickLabels().length <= 5);
+  const buttons = chart.querySelector('.chart-efficiency-switch').querySelectorAll('button');
+  assert.equal(chart.querySelector('.chart-efficiency-switch').getAttribute('aria-label'), 'Horizontal axis metric');
+  assert.deepEqual(buttons.map((button) => button.getAttribute('aria-label')),
+    ['Estimated total cost', 'Total tokens', 'Mean time per task']);
+  const firstMark = chart.querySelector('[data-model-id="negative"]');
+  const firstCircle = firstMark.querySelector('circle');
+  const costX = firstCircle.getAttribute('cx');
+  assert.match(firstMark.getAttribute('aria-label'), /Estimated total cost: \$1\.00/);
+  assert.match(firstMark.getAttribute('aria-label'), /Total tokens: 12\.5K/);
+  assert.match(firstMark.getAttribute('aria-label'), /Mean time per task: 30\.5 s/);
+  firstMark.focus();
+  const tip = chart.querySelector('.chart-tooltip');
+  assert.equal(tip.hidden, false);
+  assert.match(tip.textContent, /Total tokens/);
+  assert.match(tip.textContent, /Mean time per task/);
+
+  buttons[1].dispatchEvent({ type: 'click' });
+  assert.equal(buttons[1].getAttribute('aria-pressed'), 'true');
+  assert.ok(xTickLabels().length >= 3 && xTickLabels().length <= 5);
+  assert.notEqual(chart.querySelector('[data-model-id="negative"] circle').getAttribute('cx'), costX);
+  const tokenYs = chart.querySelectorAll('.chart-mark').map((m) => m.querySelector('circle').getAttribute('cy'));
   buttons[2].dispatchEvent({ type: 'click' });
   assert.equal(buttons[2].getAttribute('aria-pressed'), 'true');
-  assert.ok(chart.querySelectorAll('.chart-mark').every((m) =>
-    m.querySelector('circle').getAttribute('cy') === chart.querySelector('circle').getAttribute('cy')));
+  assert.ok(xTickLabels().length >= 3 && xTickLabels().length <= 5);
+  assert.ok(xTickLabels().every((tick) => /(?:s|min|h)$/.test(tick.textContent)));
+  assert.notEqual(chart.querySelector('[data-model-id="negative"] circle').getAttribute('cx'), costX);
+  assert.deepEqual(chart.querySelectorAll('.chart-mark').map((m) => m.querySelector('circle').getAttribute('cy')), tokenYs);
+
+  const scoreSelect = chart.querySelector('select[aria-label="Vertical axis score metric"]');
+  scoreSelect.value = 'g_srr';
+  scoreSelect.dispatchEvent({ type: 'change' });
+  assert.match(chart.querySelector('[data-model-id="negative"]').getAttribute('aria-label'),
+    /Clean solve rate \(96 scenarios\): 12\.5%/);
+  scoreSelect.value = 'macro_cat_acc';
+  scoreSelect.dispatchEvent({ type: 'change' });
+  assert.match(chart.querySelector('[data-model-id="negative"]').getAttribute('aria-label'),
+    /Domain accuracy averaged across 96 scenarios: 50\.0%/);
 });
 
 test('optional analysis never creates zero-valued costs or heatmap cells for unreported runs', () => {
@@ -75,6 +118,40 @@ test('a zero-dollar configuration is named alongside a log-scaled cost plot', ()
   const chart = root.querySelector('#chart-pareto');
   assert.match(chart.textContent, /\$0 estimates for free-run/);
   assert.equal(chart.querySelectorAll('.chart-mark').length, 1);
+});
+
+test('zero and missing time remain distinct and zero-only metrics get an exclusion note', () => {
+  const zero = entry('zero-time', 100, 1, 1000, 0);
+  const missing = entry('unknown-time', 200, 2, 2000, null);
+  let { root } = mount([zero, missing]);
+  const timeChart = root.querySelector('#chart-pareto');
+  assert.match(timeChart.querySelector('[data-model-id="zero-time"]').getAttribute('aria-label'), /Mean time per task: 0s/);
+  assert.match(timeChart.querySelector('[data-model-id="unknown-time"]').getAttribute('aria-label'), /Mean time per task: n\/a/);
+  metricButton(timeChart, 'time').dispatchEvent({ type: 'click' });
+  assert.match(timeChart.textContent, /0s mean time per task for zero-time/);
+  assert.equal(timeChart.querySelectorAll('svg').length, 0);
+
+  ({ root } = mount([entry('zero-only', 100, 1, 0, 20)]));
+  const tokensChart = root.querySelector('#chart-pareto');
+  metricButton(tokensChart, 'tokens').dispatchEvent({ type: 'click' });
+  assert.match(tokensChart.textContent, /zero token totals for zero-only/);
+  assert.equal(tokensChart.querySelectorAll('svg').length, 0);
+});
+
+test('log axes remain finite for the smallest and largest finite positive values', () => {
+  const { root } = mount([
+    entry('tiny', -5, Number.MIN_VALUE, Number.MIN_VALUE, Number.MIN_VALUE),
+    entry('huge', 500, Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE),
+  ]);
+  const chart = root.querySelector('#chart-pareto');
+  for (const metric of ['cost', 'tokens', 'time']) {
+    metricButton(chart, metric).dispatchEvent({ type: 'click' });
+    for (const mark of chart.querySelectorAll('.chart-mark')) {
+      const circle = mark.querySelector('circle');
+      assert.ok(Number.isFinite(Number(circle.getAttribute('cx'))));
+      assert.ok(Number.isFinite(Number(circle.getAttribute('cy'))));
+    }
+  }
 });
 
 test('chart filters match transport labels, effort and the full table configuration ID', () => {
