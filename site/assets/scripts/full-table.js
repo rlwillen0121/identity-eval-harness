@@ -172,5 +172,7 @@ export function mount(root, { entries, scenarios }, store) {
     }
   });
   render(store.get());
-  return store.subscribe(render);
+  return store.subscribe((state, patch) => {
+    if (Object.keys(patch).some((key) => key !== 'hover')) render(state);
+  });
 }
