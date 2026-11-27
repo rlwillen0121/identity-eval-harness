@@ -1,8 +1,10 @@
 import { date, pct, escapeHTML as esc, int } from './format.js';
+import { computeTieMeta } from './table.js';
 import { vendorLogo } from './logos.js';
 
 export function mount(root, data, store) {
   const byId = new Map((data.models || []).map((m) => [m.id, m]));
+  const { labels } = computeTieMeta(data.models || []);
   const groups = (data.history || [])
     .map((h) => ({
       date: h.date || '',
@@ -29,7 +31,7 @@ export function mount(root, data, store) {
   }
 
   root.innerHTML = `
-    <p class="section-lede">Publication dates for ranked core entries and full-suite results.</p>
+    <p class="section-lede">Publication dates for the core and full leaderboards.</p>
     <div class="updates-ledger">
       ${groups.map((g) => `
         <section class="updates-day" aria-label="Published ${esc(date(g.date))}">
@@ -38,8 +40,8 @@ export function mount(root, data, store) {
             ${g.launch ? '<span class="updates-launch">Launch</span>' : ''}
           </div>
           <ul class="updates-models">
-            ${g.full ? `<li><a class="update-model-button update-full-link" href="#full-suite"><span class="update-model-name">${int(g.full.scenarios)}-scenario full suite</span><span class="update-model-meta">${int(g.full.count)} complete</span></a></li>` : ''}
-            ${g.models.map((m) => `<li><button class="update-model-button" type="button" data-model-id="${esc(m.id)}"><span class="update-model-name">${vendorLogo(m.vendor, m.vendor_label)}${esc(m.name)}</span><span class="update-model-meta">#${int(m.rank)} · ${pct(m.scores?.safety_adjusted_score ?? m.scores?.g_srr, 1)}</span></button></li>`).join('')}
+            ${g.full ? `<li><a class="update-model-button update-full-link" href="#full-suite"><span class="update-model-name">${int(g.full.scenarios)}-scenario full suite</span><span class="update-model-meta">${int(g.full.count)} ranked</span></a></li>` : ''}
+            ${g.models.map((m) => `<li><button class="update-model-button" type="button" data-model-id="${esc(m.id)}"><span class="update-model-name">${vendorLogo(m.vendor, m.vendor_label)}${esc(m.name)}</span><span class="update-model-meta">Core ${esc(labels.get(m.id))} · ${pct(m.scores?.safety_adjusted_score ?? m.scores?.g_srr, 1)}</span></button></li>`).join('')}
           </ul>
         </section>
       `).join('')}

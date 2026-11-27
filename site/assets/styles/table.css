@@ -115,7 +115,8 @@
 .full-suite-results { border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); }
 .full-suite-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .full-suite-table th, .full-suite-table td { padding: 10px 14px; text-align: right; border-bottom: 1px solid var(--rule); }
-.full-suite-table th:first-child { width: 46%; text-align: left; overflow-wrap: anywhere; }
+.full-suite-table thead th:first-child { width: 8%; }
+.full-suite-table th:nth-child(2) { width: 38%; text-align: left; overflow-wrap: anywhere; }
 .full-suite-table th:last-child { width: 20%; }
 .full-suite-table thead th { font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .full-suite-table tbody th { font-weight: 500; }
@@ -150,8 +151,10 @@
   .safety-badge { max-width: 100%; padding-inline: 5px; }
   .safety-sub { overflow-wrap: anywhere; }
   .full-suite-table th, .full-suite-table td { padding-inline: 6px; }
-  .full-suite-table th:first-child { width: 34%; }
-  .full-suite-table th:nth-child(2) { width: 25%; }
+  .full-suite-table thead th:first-child { width: 10%; }
+  .full-suite-table tr > :first-child { padding-inline: 3px; }
+  .full-suite-table th:nth-child(2) { width: 26%; }
+  .full-suite-table thead th:nth-child(3) { width: 25%; }
   .full-suite-table th:last-child { width: 22%; }
   .full-suite-totals span { display: block; }
   .full-suite-totals span + span { margin-left: 0; }

@@ -51,7 +51,7 @@ function tieSignature(model) {
   ].join('|');
 }
 
-function computeTieMeta(models) {
+export function computeTieMeta(models) {
   const counts = new Map();
   const minRank = new Map();
   for (const m of models) {
@@ -207,9 +207,10 @@ export function modelCellsMarkup(model, selected = false, options = {}) {
   const s = model.scores || {};
   const d = model.diagnostics || {};
   const u = model.usage || {};
+  const displayRank = rankLabel.startsWith('T') ? rankLabel : `#${rankLabel}`;
   const rankTitle = s.rank_interval
-    ? `Rank #${int(model.rank)} (95% rank range: ${formatInterval(s.rank_interval, false)})`
-    : `Rank #${int(model.rank)}`;
+    ? `Rank ${displayRank} (95% rank range: ${formatInterval(s.rank_interval, false)})`
+    : `Rank ${displayRank}`;
   const speedText = duration(d.median_slot_wall_time_s);
   const speedTitle = `Median time per scenario: ${speedText} (${num(d.mean_turns, 1)} avg turns, ${tokPerSec(d.generation_tokens_per_second)})`;
   const showUnitCost = sortKey === 'cost_per_resolved';

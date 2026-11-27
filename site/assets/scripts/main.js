@@ -66,16 +66,19 @@ function fillSummary(data) {
   document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
   const full = data.confirmatory;
   const first = full?.entries?.[0];
+  const leaders = full?.entries?.filter((entry) => entry.rank === 1) || [];
   document.getElementById('full-overview').textContent = first
-    ? `${int(full.entries.length)} complete · ${int(full.scenarios)} scenarios`
+    ? `${int(full.entries.length)} ranked · ${int(full.scenarios)} scenarios`
     : 'Awaiting completed runs';
-  document.getElementById('full-overview-lede').textContent = first
-    ? `${first.name} · ${int(first.resolved_slots)}/${int(full.scenarios)} clean solves`
-    : 'Unranked results on fresh scenarios';
+  if (first) {
+    const lead = leaders.length > 1 ? `${int(leaders.length)} entries tie` : `${first.name} leads`;
+    document.getElementById('full-overview-lede').textContent =
+      `${lead} at ${pct(first.safety_adjusted_score_tenths / (10 * full.scenarios), 2)}.`;
+  }
   const provenance = document.getElementById('provenance');
   provenance.replaceChildren();
   const rows = [
-    ['Ranked suite', `${data.suite.id} (${data.suite.visibility})`],
+    ['Core suite', `${data.suite.id} (${data.suite.visibility})`],
     ['Protocol', data.protocol_id],
     ['Core episodes SHA-256', data.suite.episodes_sha256],
     ['Core oracles SHA-256', data.suite.oracles_sha256],
@@ -85,7 +88,7 @@ function fillSummary(data) {
     ['Pricing SHA-256', data.pricing_sha256 || 'Set at leaderboard build'],
   ];
   if (full) {
-    rows.push(['Confirmatory suite', `${full.suite_id} (private)`], ['Full-suite seal SHA-256', full.seal_sha256]);
+    rows.push(['Full suite', `${full.suite_id} (private)`], ['Full-suite seal SHA-256', full.seal_sha256]);
   }
   for (const [label, value] of rows) {
     const dt = document.createElement('dt');
@@ -117,7 +120,11 @@ export function fillConfirmatory(root, report, coreModels = []) {
     return;
   }
   summary.textContent =
-    `${int(entries.length)} completed runs on ${int(report.scenarios)} fresh private scenarios. Each run has all ${int(report.scenarios)} outcomes scored. The confirmatory suite is unranked.`;
+    `${int(entries.length)} entries ranked by safety-adjusted score on ${int(report.scenarios)} fresh private scenarios. Exact scores share a rank.`;
+  if (entries.every((entry) => typeof entry.probe_receipt_bound === 'boolean')) {
+    const bound = entries.filter((entry) => entry.probe_receipt_bound).length;
+    summary.textContent += ` ${int(bound)} of ${int(entries.length)} runs have a bound context-probe receipt.`;
+  }
   const completed = new Set(entries.map((row) => [row.model_id, row.reasoning_effort, row.transport_id].join('::')));
   const awaiting = coreModels.filter((row) => !completed.has(row.id)).map((row) => row.name);
   if (awaiting.length) {
@@ -125,8 +132,12 @@ export function fillConfirmatory(root, report, coreModels = []) {
     pending.textContent = `Awaiting full-suite results for ${names}.`;
     pending.hidden = false;
   }
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     const row = document.createElement('tr');
+    const rank = document.createElement('td');
+    const tied = entries[index - 1]?.rank === entry.rank || entries[index + 1]?.rank === entry.rank;
+    rank.textContent = tied ? `T${int(entry.rank)}` : int(entry.rank);
+    row.append(rank);
     const model = document.createElement('th');
     model.scope = 'row';
     model.textContent = `${entry.name} `;
@@ -135,6 +146,11 @@ export function fillConfirmatory(root, report, coreModels = []) {
     const effort = entry.reasoning_effort === 'transport_default' ? 'Default' : entry.reasoning_effort;
     config.textContent = `${effort[0].toUpperCase() + effort.slice(1)} · ${entry.transport} `;
     model.append(config);
+    const receipt = document.createElement('span');
+    receipt.className = 'full-suite-config';
+    receipt.textContent = entry.probe_receipt_bound === undefined ? 'Probe receipt status unavailable'
+      : entry.probe_receipt_bound ? 'Bound probe receipt' : 'No bound probe receipt';
+    model.append(receipt);
     const terminal = [
       [entry.step_limit_slots, 'turn limit'],
       [entry.parse_failure_slots, 'parse failure'],

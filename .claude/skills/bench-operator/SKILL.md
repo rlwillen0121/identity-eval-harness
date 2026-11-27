@@ -86,12 +86,15 @@ It ranks only `v53_core` entries that pass every `SPEC-v5.3` §10.1 condition an
 Use `scripts/import-v53-run.mjs` to import publishable aggregate v5.3 leaderboard and run artifacts into `reports/v53/` (and rebuild `site/data/leaderboard.json` via `node site/build.mjs`):
 
 ```sh
-node scripts/import-v53-run.mjs --leaderboard <leaderboard-dir>
+node scripts/import-v53-run.mjs --leaderboard <core-leaderboard-dir>
+node scripts/import-v53-run.mjs --confirmatory <full-leaderboard-dir> --published-on YYYY-MM-DD
 node scripts/import-v53-run.mjs --run <run-dir> --name <slug>
 node site/build.mjs && node site/build.mjs --check
 ```
 
 `import-v53-run.mjs` validates `SPEC-v5.3` / `identitybench.v5.3.leaderboard.v1`, refuses `test_only` boards and private-suite per-slot rows, scans for local filesystem paths and private episode identifiers, and copies only publishable aggregate artifacts (`leaderboard.json` + `leaderboard.md`, or `summary.json` + `report.md` per run). Never copy raw `manifest.json`, `episodes.jsonl`, `probe_receipt.json`, checkpoints, configs, or transcripts. Keep retired `scripts/import-v51-run.mjs` untouched for archival `SPEC-v5.1` reference only.
+
+For the 96-scenario full standings, the offline `--confirmatory` importer validates native full entries and publishes their aggregate ranks to `confirmatory.json` under the [full publication rules](../../../docs/v531-scoring-addendum.md#full-suite-publication).
 
 ## Run integrity
 
