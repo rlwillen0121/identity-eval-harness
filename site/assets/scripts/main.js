@@ -1,5 +1,6 @@
 import { int, date } from './format.js';
 import { mount as mountFullTable } from './full-table.js';
+import { mountAnalysis } from './charts/full.js';
 import { mount as mountUpdates } from './updates.js';
 
 function sameStoreValue(key, left, right) {
@@ -146,6 +147,12 @@ async function boot() {
     scrollToSelection();
   });
   scrollToSelection();
+  await document.fonts?.ready;
+  mountAnalysis(document, data, store ?? createStore({ vendors: new Set() }), (id) => {
+    const button = document.getElementById(`model-${id}`)?.querySelector('.model-name');
+    button?.focus({ preventScroll: true });
+    scrollToSelection();
+  });
 }
 
 if (typeof document !== 'undefined') {

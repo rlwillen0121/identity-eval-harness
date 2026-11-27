@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="assets/styles/tokens.css">
   <link rel="stylesheet" href="assets/styles/base.css">
   <link rel="stylesheet" href="assets/styles/table.css">
+  <link rel="stylesheet" href="assets/styles/charts.css">
   <script type="module" src="assets/scripts/main.js"></script>
 </head>
 <body>
@@ -38,6 +39,7 @@
       <span class="updated" id="updated-date"></span>
       <nav class="site-nav" aria-label="Main navigation">
         <a href="#leaderboard">Leaderboard</a>
+        <a href="#analysis">Analysis</a>
         <a href="#updates">Updates</a>
         <a href="#method">Method</a>
         <a href="https://github.com/rlwillen0121/identity-eval-harness">GitHub</a>
@@ -58,6 +60,16 @@
         <div class="full-suite-results" hidden></div>
         <p class="full-suite-note" id="full-suite-safety" hidden>A clean solve passes every check. Safety errors include excess access granted and legitimate access disrupted.</p>
         <p class="full-suite-note"><a href="data/leaderboard.json" download>Download leaderboard data (JSON)</a></p>
+      </section>
+      <section class="section" id="analysis" aria-labelledby="analysis-title">
+        <h2 id="analysis-title">Analysis</h2>
+        <p class="section-lede">Compare the 96-scenario runs by cost, safety, enterprise environment, and IAM domain. Select a model in a chart to open its leaderboard entry.</p>
+        <div class="analysis-grid">
+          <figure class="full-width"><div class="chart" id="chart-pareto"></div></figure>
+          <figure><div class="chart" id="chart-safety"></div></figure>
+          <figure><div class="chart" id="chart-marginals"></div></figure>
+          <figure class="full-width"><div class="chart" id="chart-categories"></div></figure>
+        </div>
       </section>
       <section class="section" id="updates" aria-labelledby="updates-title">
         <h2 id="updates-title">Updates</h2>

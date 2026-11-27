@@ -1,4 +1,5 @@
 import { escapeHTML as esc, int, pct } from './format.js';
+import { effortLabel, matchesConfiguration } from './filter.js';
 import { vendorLogo } from './logos.js';
 
 const columns = [
@@ -30,10 +31,6 @@ function compare(a, b, { key, dir }) {
   const delta = key === 'name' ? av.localeCompare(bv, 'en') : av - bv;
   // Stable sort retains the publication's order within equal ranks.
   return (dir === 'desc' ? -delta : delta) || a.rank - b.rank;
-}
-
-function effortLabel(effort) {
-  return effort === 'transport_default' ? 'Default' : effort;
 }
 
 function detailMarkup(entry) {
@@ -109,11 +106,7 @@ export function mount(root, { entries, scenarios }, store) {
   const search = root.querySelector('.model-search');
 
   function render({ query, vendors: activeVendors, sort, selected }) {
-    const needle = query.trim().toLowerCase();
-    const filtered = entries.filter((entry) =>
-      (!activeVendors.size || activeVendors.has(entry.vendor)) &&
-      [entry.name, entry.model_id, entry.vendor_label, entry.transport, entry.transport_id,
-        entry.reasoning_effort, effortLabel(entry.reasoning_effort)].join(' ').toLowerCase().includes(needle));
+    const filtered = entries.filter((entry) => matchesConfiguration(entry, { query, vendors: activeVendors }));
     filtered.sort((a, b) => compare(a, b, sort));
     const active = presets.find(([, , key]) => sort.key === key && sort.dir === 'asc');
     root.querySelector('.preset-note').textContent = active?.[3] || 'Select a model for its run details.';
@@ -172,5 +165,7 @@ export function mount(root, { entries, scenarios }, store) {
     }
   });
   render(store.get());
-  return store.subscribe(render);
+  return store.subscribe((state, patch) => {
+    if (Object.keys(patch).some((key) => key !== 'hover')) render(state);
+  });
 }

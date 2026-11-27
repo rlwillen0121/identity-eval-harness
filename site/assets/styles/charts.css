@@ -149,3 +149,5 @@
 @media (prefers-reduced-motion: reduce) {
   .analysis-chart *, .analysis-chart *::before, .analysis-chart *::after { transition: none; }
 }
+.heatmap-scroll { overflow-x: auto; }
+.heatmap-scroll .chart-svg { max-width: none; }
