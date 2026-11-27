@@ -44,6 +44,11 @@ const FULL_CATEGORIES = [
   'access_policy', 'cloud_entitlements', 'certification_remediation', 'change_cutover_safety',
 ];
 const FULL_REGIMES = ['R1', 'R2', 'R3', 'R4'];
+const FULL_ANALYSIS_FIELDS = [
+  'category_pass_rates', 'regime_g_srr', 'macro_cat_acc', 'estimated_cost_usd',
+  'estimated_cost_pricing_sha256',
+];
+const FULL_EFFICIENCY_FIELDS = ['total_tokens', 'mean_task_time_s'];
 const SHA256 = /^[a-f0-9]{64}$/;
 const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9_.:/-]*$/;
 
@@ -358,12 +363,21 @@ function isRate(value) {
 }
 
 function validateFullAnalysis(analysis, resolved) {
-  if (!hasExactFields(analysis, ['category_pass_rates', 'regime_g_srr', 'macro_cat_acc',
-    'estimated_cost_usd', 'estimated_cost_pricing_sha256'])
+  const hasEfficiency = FULL_EFFICIENCY_FIELDS.some((key) => Object.hasOwn(analysis || {}, key));
+  const allowedFields = hasEfficiency
+    ? [...FULL_ANALYSIS_FIELDS, ...FULL_EFFICIENCY_FIELDS]
+    : FULL_ANALYSIS_FIELDS;
+  if (!hasExactFields(analysis, allowedFields)
       || !hasExactFields(analysis.category_pass_rates, FULL_CATEGORIES)
       || !Object.values(analysis.category_pass_rates).every(isRate)
       || !isRate(analysis.macro_cat_acc) || !hasExactFields(analysis.regime_g_srr, FULL_REGIMES)) {
     throw new Error('Invalid full-suite analysis fields or accuracy rates');
+  }
+  if (hasEfficiency && ((analysis.total_tokens !== null
+        && (!Number.isSafeInteger(analysis.total_tokens) || analysis.total_tokens < 0))
+      || (analysis.mean_task_time_s !== null
+        && (!Number.isFinite(analysis.mean_task_time_s) || analysis.mean_task_time_s < 0)))) {
+    throw new Error('Invalid full-suite token or task-time metric');
   }
   const perRegime = FULL_SCENARIOS / FULL_REGIMES.length;
   let regimeSolves = 0;
@@ -447,6 +461,43 @@ function countFromFullRate(rate) {
   return count;
 }
 
+function optionalTokenCount(value, label) {
+  if (value === null || value === undefined) return null;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Invalid full-suite ${label}`);
+  }
+  return value;
+}
+
+function totalTokensFromUsage(usage) {
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null;
+  // Rust stores the disjoint input accounting buckets separately. `reasoning_tokens` is a
+  // provider breakdown of output usage, so adding it to `output_tokens` would double count it.
+  const parts = [
+    optionalTokenCount(usage.uncached_input_tokens, 'uncached input token usage'),
+    optionalTokenCount(usage.cache_read_tokens, 'cache-read token usage'),
+    optionalTokenCount(usage.cache_write_tokens, 'cache-write token usage'),
+    optionalTokenCount(usage.output_tokens, 'output token usage'),
+  ];
+  if (parts.some((value) => value === null)) return null;
+  const total = parts.reduce((sum, value) => sum + value, 0);
+  if (!Number.isSafeInteger(total)) throw new Error('Full-suite total token usage exceeds the safe integer range');
+  // Native provider adapters use zero defaults when a transport omits usage telemetry.
+  return total === 0 ? null : total;
+}
+
+function meanTaskTimeSeconds(totalSlotWallTimeSeconds, observedSlots) {
+  if (totalSlotWallTimeSeconds === null || totalSlotWallTimeSeconds === undefined
+      || observedSlots === null || observedSlots === undefined) return null;
+  if (!Number.isFinite(totalSlotWallTimeSeconds) || totalSlotWallTimeSeconds < 0
+      || !Number.isSafeInteger(observedSlots) || observedSlots <= 0) {
+    throw new Error('Invalid full-suite slot wall-time metric');
+  }
+  // Older/native artifacts can carry a zero default when elapsed telemetry is absent.
+  if (totalSlotWallTimeSeconds === 0) return null;
+  return Math.round((totalSlotWallTimeSeconds / observedSlots) * 1_000_000) / 1_000_000;
+}
+
 export function projectV53Confirmatory(board, sealBytes, publishedOn) {
   validateV53Leaderboard(board);
   const seal = parseArtifactJson(sealBytes, 'public seal');
@@ -504,6 +555,8 @@ export function projectV53Confirmatory(board, sealBytes, publishedOn) {
         macro_cat_acc: scores.macro_cat_acc,
         estimated_cost_usd: run.usage?.estimated_cost_usd,
         estimated_cost_pricing_sha256: run.usage?.estimated_cost_pricing_sha256,
+        total_tokens: totalTokensFromUsage(run.usage),
+        mean_task_time_s: meanTaskTimeSeconds(diagnostics.total_slot_wall_time_s, scores.observed_slots),
       },
     };
   });
