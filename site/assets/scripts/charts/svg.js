@@ -267,6 +267,19 @@ const selectedCandidates = (point, plot) => {
   return result;
 };
 
+const directCandidates = (point, plot) => {
+  const width = Array.from(point.label).length * 7.2 + 6;
+  const height = 16;
+  return selectedCandidates(point, plot).map(({x, y}) => {
+    const nearestX = Math.max(x, Math.min(point.x, x + width));
+    const nearestY = Math.max(y, Math.min(point.y, y + height));
+    const distance = Math.hypot(point.x - nearestX, point.y - nearestY);
+    return {x, y, distance, leader: distance > 10 ? {
+      x1: point.x, y1: point.y, x2: nearestX, y2: nearestY
+    } : null};
+  }).sort((a, b) => a.distance - b.distance || a.y - b.y || a.x - b.x);
+};
+
 const safetyCandidates = point => {
   const width = Array.from(point.label).length * 7.2 + 6;
   const offsets = [0, -10, 10, -20, 20, -30, 30, -40, 40, -50, 50, -60, 60];
@@ -368,12 +381,20 @@ export function scatter(svg, points, plot, store, tip, root, labelIds = new Set(
     ...points.map(p => ({x: p.x - 5, y: p.y - 5, width: 10, height: 10}))];
   const withLabel = (p, expanded = false) => {
     const point = {...p, label: p.model.name, plot};
-    const candidates = options.labelMode === 'frontier' ? frontierCandidates(point) :
+    const direct = options.labelMode === 'direct' || options.directLabelIds?.has(p.model.id);
+    const candidates = direct ? directCandidates(point, plot) :
+      options.labelMode === 'frontier' ? frontierCandidates(point) :
       options.labelMode === 'safety' ? safetyCandidates(point) : undefined;
-    return {...point, candidates: expanded ? [...(candidates || []), ...selectedCandidates(point, plot)] : candidates};
+    return {...point, candidates: expanded && !direct ? [...(candidates || []), ...directCandidates(point, plot)] : candidates};
   };
   // Reserve default labels once. Hover and filtering never move the remaining labels.
-  const fixedCandidates = points.filter(p => labelIds.has(p.model.id)).sort((a, b) => b.y - a.y)
+  const labelPriority = new Map((options.labelPriority || []).map((id, index) => [id, index]));
+  const fixedCandidates = points.filter(p => labelIds.has(p.model.id)).sort((a, b) => {
+    const aPriority = labelPriority.get(a.model.id);
+    const bPriority = labelPriority.get(b.model.id);
+    if (aPriority !== undefined || bPriority !== undefined) return (aPriority ?? Infinity) - (bPriority ?? Infinity);
+    return b.y - a.y;
+  })
     .map(p => withLabel(p));
   const fixed = placeLabels(fixedCandidates, plot, obstacles);
   if (options.labelMode === 'safety' && fixed.length < fixedCandidates.length) {

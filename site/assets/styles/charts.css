@@ -77,6 +77,10 @@
 .chart-outcome-key { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--ink-2); font: 400 11px/1.3 var(--sans); }
 .chart-outcome-key > span { display: inline-flex; align-items: center; gap: 5px; }
 .chart-outcome-key .chart-scale-swatch { display: inline-block; width: 14px; height: 8px; }
+.chart-resource-legend { flex: 1 1 100%; gap: 5px 14px; margin: -3px 0 0; }
+.chart-resource-swatch { position: relative; display: inline-block; width: 16px; height: 10px; }
+.chart-resource-swatch::before { position: absolute; top: 5px; left: 0; width: 16px; border-top: 2px solid var(--accent); content: ''; }
+.chart-resource-swatch::after { position: absolute; top: 2px; left: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); content: ''; }
 .analysis-chart :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chart-segmented {
   display: inline-flex;

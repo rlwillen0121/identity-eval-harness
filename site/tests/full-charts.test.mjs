@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { installDOM } from './dom-stub.mjs';
 import { createStore } from '../assets/scripts/main.js';
@@ -114,9 +115,14 @@ test('primary chart title and frontier caption match all nine score-resource com
     scoreSelect.dispatchEvent({ type: 'change' });
     for (const resource of resources) {
       metricButton(chart, resource.id).dispatchEvent({ type: 'click' });
-      assert.equal(chart.querySelector('.chart-title').textContent, `${score.title} vs. ${resource.title}`);
-      assert.equal([...chart.querySelectorAll('.chart-sub')].find((node) => node.parentNode === chart)?.textContent,
-        `The line shows the best ${score.frontier} at or below each ${resource.frontier} among plotted runs.`);
+      const expectedTitle = score.id === 'safety_adjusted_score' && resource.id === 'cost'
+        ? 'What does a higher score cost?' : `${score.title} vs. ${resource.title}`;
+      assert.equal(chart.querySelector('.chart-title').textContent, expectedTitle);
+      const expectedCaption = `The line shows the best ${score.frontier} at or below each ${resource.frontier} among plotted runs.`;
+      const caption = [...chart.querySelectorAll('.chart-sub')].find((node) => node.parentNode === chart)?.textContent;
+      assert.ok(caption.startsWith(expectedCaption));
+      if (score.id === 'macro_cat_acc') assert.match(caption, /The vertical scale starts at 50%\./);
+      else assert.equal(caption, expectedCaption);
       assert.match(chart.querySelector('svg').getAttribute('aria-label'), new RegExp(`${score.title.toLowerCase()} across 96 scenarios against`));
     }
   }
@@ -184,7 +190,7 @@ test('heatmaps distinguish an observed zero from an unavailable value', () => {
   const row = chart.querySelector('.chart-model-row');
   assert.equal(row.getAttribute('role'), 'button');
   assert.match(row.getAttribute('aria-label'), /Regulated access: 0\.0%/);
-  assert.match(row.getAttribute('aria-label'), /People with two roles: n\/a/);
+  assert.match(row.getAttribute('aria-label'), /Campuses and hospitals: n\/a/);
 
   const zeroCell = row.querySelector('.chart-heat-zero');
   assert.equal(zeroCell.tagName, 'rect');
@@ -244,6 +250,61 @@ test('log axes remain finite for the smallest and largest finite positive values
       assert.ok(Number.isFinite(Number(circle.getAttribute('cy'))));
     }
   }
+});
+
+test('published resource plot labels its top models and cheapest option at desktop and phone widths', () => {
+  const published = JSON.parse(readFileSync(new URL('../data/leaderboard.json', import.meta.url), 'utf8'));
+  const entries = published.confirmatory.entries;
+  const top = entries.slice().sort((a, b) => a.rank - b.rank).slice(0, 2);
+  const cheapest = entries.filter((entry) => Number.isFinite(entry.analysis?.estimated_cost_usd) && entry.analysis.estimated_cost_usd > 0)
+    .slice().sort((a, b) => a.analysis.estimated_cost_usd - b.analysis.estimated_cost_usd)[0];
+  const { root, store } = mount(entries, { width: 1120 });
+  store.set({ query: '', vendors: new Set() });
+  const chart = root.querySelector('#chart-pareto');
+  const labels = chart.querySelectorAll('.chart-direct-label').filter((label) => label.getAttribute('display') !== 'none');
+  const visibleNames = labels.map((label) => label.textContent);
+  for (const model of new Map([...top, cheapest].filter(Boolean).map((model) => [model.id, model])).values()) {
+    assert.ok(visibleNames.includes(model.name), model.name);
+  }
+  assert.ok(chart.querySelectorAll('.chart-label-leader').some((line) => line.getAttribute('display') !== 'none'));
+  assert.match(chart.querySelector('.chart-resource-legend').textContent, /Blue dots and the line show the best score/);
+  const costTicks = chart.querySelectorAll('.chart-tick').filter((tick) => tick.getAttribute('text-anchor') === 'middle');
+  assert.ok(costTicks.length >= 3 && costTicks.length <= 5);
+
+  const phone = mount(entries, { width: 390 });
+  phone.store.set({ query: '', vendors: new Set() });
+  const phoneLabels = phone.root.querySelector('#chart-pareto').querySelectorAll('.chart-direct-label')
+    .filter((label) => label.getAttribute('display') !== 'none').map((label) => label.textContent);
+  for (const model of new Map([...top, cheapest].filter(Boolean).map((model) => [model.id, model])).values()) {
+    assert.ok(phoneLabels.includes(model.name), model.name);
+  }
+});
+
+test('desktop placement can label a bounded fixture of close score and cost points', () => {
+  const published = JSON.parse(readFileSync(new URL('../data/leaderboard.json', import.meta.url), 'utf8'));
+  const fixture = published.confirmatory.entries.slice().sort((a, b) => a.rank - b.rank).slice(0, 6);
+  const { root, store } = mount(fixture, { width: 1120 });
+  store.set({ query: '', vendors: new Set() });
+  const labels = root.querySelector('#chart-pareto').querySelectorAll('.chart-direct-label')
+    .filter((label) => label.getAttribute('display') !== 'none').map((label) => label.textContent);
+  assert.deepEqual(new Set(labels), new Set(fixture.map((entry) => entry.name)));
+});
+
+test('safety chart plots summed errors in scenario units used by the results table', () => {
+  const published = JSON.parse(readFileSync(new URL('../data/leaderboard.json', import.meta.url), 'utf8'));
+  const { root, store } = mount(published.confirmatory.entries);
+  store.set({ query: '', vendors: new Set() });
+  const chart = root.querySelector('#chart-safety');
+  assert.match(chart.textContent, /summed across all 96 scenarios/);
+  assert.match(chart.querySelector('svg').getAttribute('aria-label'), /total safety errors across all scenarios/);
+  assert.ok(chart.querySelector('.chart-axis-title').textContent.includes('Total safety errors across 96 scenarios'));
+  assert.ok(chart.querySelectorAll('.chart-tick').some((tick) => tick.textContent === '300'));
+  const fable = chart.querySelector('[data-model-id="claude-fable-5-2::high::claude_cli"]');
+  assert.match(fable.getAttribute('aria-label'), /Overgrants \/ breaches: 0 \/ 2/);
+  assert.match(fable.getAttribute('aria-label'), /Total safety errors: 2/);
+  assert.match(fable.getAttribute('aria-label'), /Errors \/ scenario: 0\.02/);
+  const neon = chart.querySelector('[data-model-id="gemini-4-neon::high::agy_cli"]');
+  assert.match(neon.getAttribute('aria-label'), /Total safety errors: 0/);
 });
 
 test('chart filters match transport labels, effort and the full table configuration ID', () => {

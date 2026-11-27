@@ -3,7 +3,7 @@ import { heatmap } from './heatmap.js';
 const headings = {
   identity_resolution: ['Matching', 'identities'],
   human_lifecycle: ['Joiners, movers', 'and leavers'],
-  nhi_agent_governance: ['Service accounts', 'and AI agents'],
+  nhi_agent_governance: ['Machine identities', 'and AI agents'],
   integration_fulfillment: ['App', 'provisioning'],
   access_policy: ['Access', 'policies'],
   cloud_entitlements: ['Cloud', 'permissions'],
