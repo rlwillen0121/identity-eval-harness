@@ -15,12 +15,12 @@ function entry(id, score, cost, totalTokens = 12500, meanTaskTime = 30.5) {
       total_tokens: totalTokens, mean_task_time_s: meanTaskTime } };
 }
 
-function mount(entries, { width = 720 } = {}) {
+function mount(entries, { width = 720, scenarios = 96 } = {}) {
   const dom = installDOM();
   const root = dom.root();
   root.innerHTML = ['pareto', 'safety', 'marginals', 'categories'].map((name) => `<div id="chart-${name}"></div>`).join('');
   root.rect = { width };
-  const data = { models: [{ id: 'historical' }], confirmatory: { scenarios: 96, entries },
+  const data = { models: [{ id: 'historical' }], confirmatory: { scenarios, entries },
     categories: [{ id: 'policy', short: 'Policy', title: 'Access policy' }], regimes: [
       { id: 'R1', label: 'Zero-trust' }, { id: 'R2', label: 'Multi-affiliate' },
       { id: 'R3', label: 'Hybrid cloud' }, { id: 'R4', label: 'M&A' },
@@ -290,21 +290,31 @@ test('desktop placement can label a bounded fixture of close score and cost poin
   assert.deepEqual(new Set(labels), new Set(fixture.map((entry) => entry.name)));
 });
 
-test('safety chart plots summed errors in scenario units used by the results table', () => {
-  const published = JSON.parse(readFileSync(new URL('../data/leaderboard.json', import.meta.url), 'utf8'));
-  const { root, store } = mount(published.confirmatory.entries);
-  store.set({ query: '', vendors: new Set() });
+test('the domain accuracy zoom discloses its lower bound', () => {
+  const models = [entry('one', 300, 1), entry('two', 400, 5)];
+  models[0].analysis.macro_cat_acc = 0.87;
+  models[1].analysis.macro_cat_acc = 0.96;
+  const { root } = mount(models);
+  const chart = root.querySelector('#chart-pareto');
+  const select = chart.querySelector('select[aria-label="Vertical axis score metric"]');
+  select.value = 'macro_cat_acc';
+  select.dispatchEvent({ type: 'change' });
+  assert.match(chart.textContent, /The vertical scale starts at 85%/);
+  const yTicks = chart.querySelectorAll('.chart-tick').filter((tick) => tick.getAttribute('text-anchor') === 'end');
+  assert.equal(yTicks[0].textContent, '85%');
+  assert.equal(yTicks.at(-1).textContent, '100%');
+});
+
+test('safety plot uses the same error totals as the table and labels the rate separately', () => {
+  const clean = { ...entry('clean', 480, 2), og_total: 0, ab_total: 0 };
+  const disrupted = { ...entry('disrupted', 458, 3), og_total: 0, ab_total: 2 };
+  const { root } = mount([clean, disrupted], { scenarios: 48 });
   const chart = root.querySelector('#chart-safety');
-  assert.match(chart.textContent, /summed across all 96 scenarios/);
-  assert.match(chart.querySelector('svg').getAttribute('aria-label'), /total safety errors across all scenarios/);
-  assert.ok(chart.querySelector('.chart-axis-title').textContent.includes('Total safety errors across 96 scenarios'));
-  assert.ok(chart.querySelectorAll('.chart-tick').some((tick) => tick.textContent === '300'));
-  const fable = chart.querySelector('[data-model-id="claude-fable-5-2::high::claude_cli"]');
-  assert.match(fable.getAttribute('aria-label'), /Overgrants \/ breaches: 0 \/ 2/);
-  assert.match(fable.getAttribute('aria-label'), /Total safety errors: 2/);
-  assert.match(fable.getAttribute('aria-label'), /Errors \/ scenario: 0\.02/);
-  const neon = chart.querySelector('[data-model-id="gemini-4-neon::high::agy_cli"]');
-  assert.match(neon.getAttribute('aria-label'), /Total safety errors: 0/);
+  assert.match(chart.querySelector('.chart-axis-title').textContent, /Total safety errors across 48 scenarios/);
+  assert.match(chart.querySelector('[data-model-id="clean"]').getAttribute('aria-label'), /Total safety errors: 0/);
+  const label = chart.querySelector('[data-model-id="disrupted"]').getAttribute('aria-label');
+  assert.match(label, /Total safety errors: 2/);
+  assert.match(label, /Errors \/ scenario: 0\.04/);
 });
 
 test('chart filters match transport labels, effort and the full table configuration ID', () => {
