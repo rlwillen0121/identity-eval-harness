@@ -236,6 +236,7 @@ test('full-suite results and publication dates render independently of core rank
   const tie = { ...report.entries[0], model_id: 'second', probe_receipt_bound: true };
   fillConfirmatory(root, { ...report, entries: [report.entries[0], tie] });
   assert.deepEqual([...root.querySelectorAll('tr')].map((r) => r.querySelector('td').textContent), ['T1', 'T1']);
+  assert.match(root.querySelector('#full-suite-summary').textContent, /1 of 2 runs have a bound context-probe receipt/);
   const updates = dom.root();
   mountUpdates(updates, { ...data, models: [], confirmatory: report }, createStore({}));
   assert.match(updates.textContent, /26 Nov 2026/);

@@ -108,6 +108,9 @@ test('confirmatory import projects complete full runs and accepts rounded native
   assert.throws(project, /receipt binding/);
   run.metadata.receipt_sha256 = null;
   assert.equal(project().entries[0].probe_receipt_bound, false);
+  run.eligibility.reasons.push({ code: 'probe_receipt_digest_mismatch' });
+  assert.throws(project, /incomplete or inconsistent/);
+  run.eligibility.reasons.pop();
   run.eligibility.reasons.push({ code: 'native_tool_activity' });
   assert.throws(project, /incomplete or inconsistent/);
   run.eligibility.reasons.pop();
@@ -138,25 +141,18 @@ test('confirmatory import projects complete full runs and accepts rounded native
   assert.throws(project, /incomplete/);
 });
 
-test('legacy full aggregates acquire exact competition ranks and ranked aggregates verify order and ranks', () => {
+test('full publication verifies exact competition ranks, byte-wise display order, and receipt status', () => {
   const seal = 'a'.repeat(64);
-  const row = (model_id, reasoning_effort, transport_id, numerator) => ({
-    model_id, reasoning_effort, transport_id, resolved_slots: 0, safety_adjusted_score_tenths: numerator,
-    og_total: -numerator, ab_total: 0, step_limit_slots: 0, parse_failure_slots: 0, refusal_slots: 0,
-    withheld_bundle_sha256: 'b'.repeat(64),
+  const row = (rank, model_id, reasoning_effort, transport_id, numerator) => ({
+    rank, probe_receipt_bound: false, model_id, reasoning_effort, transport_id,
+    resolved_slots: 0, safety_adjusted_score_tenths: numerator, og_total: -numerator, ab_total: 0,
+    step_limit_slots: 0, parse_failure_slots: 0, refusal_slots: 0, withheld_bundle_sha256: 'b'.repeat(64),
   });
-  const legacy = {
+  const canonical = {
     suite_id: 'v53_full', scenarios: 96, repeats: 1, published_on: '2026-11-26', seal_sha256: seal,
-    entries: [row('A', 'low', 'z', -12), row('a', 'low', 'a', -12), row('W', 'high', 'a', -13),
-      row('A', 'low', 'a', -12), row('A', 'high', 'a', -12), row('Z', 'low', 'a', 0)],
+    entries: [row(1, 'Z', 'low', 'a', 0), row(2, 'A', 'high', 'a', -12), row(2, 'A', 'low', 'a', -12),
+      row(2, 'A', 'low', 'z', -12), row(2, 'a', 'low', 'a', -12), row(6, 'W', 'high', 'a', -13)],
   };
-  const canonical = validateV53Confirmatory(legacy, seal);
-  assert.deepEqual(canonical.entries.map((r) => [r.rank, r.model_id, r.reasoning_effort, r.transport_id]), [
-    [1, 'Z', 'low', 'a'], [2, 'A', 'high', 'a'], [2, 'A', 'low', 'a'], [2, 'A', 'low', 'z'],
-    [2, 'a', 'low', 'a'], [6, 'W', 'high', 'a'],
-  ]);
-  assert.equal(canonical.entries[0].probe_receipt_bound, undefined);
-  for (const r of canonical.entries) r.probe_receipt_bound = false;
   assert.deepEqual(validateV53Confirmatory(canonical, seal), canonical);
   const invalid = structuredClone(canonical);
   invalid.entries[4].rank = 5;
@@ -164,8 +160,11 @@ test('legacy full aggregates acquire exact competition ranks and ranked aggregat
   invalid.entries[4].rank = 2;
   [invalid.entries[1], invalid.entries[2]] = [invalid.entries[2], invalid.entries[1]];
   assert.throws(() => validateV53Confirmatory(invalid, seal), /rank or display order/);
-  delete invalid.entries[0].rank;
-  assert.throws(() => validateV53Confirmatory(invalid, seal), /Invalid/);
+  for (const key of ['rank', 'probe_receipt_bound']) {
+    const incomplete = structuredClone(canonical);
+    delete incomplete.entries[2][key];
+    assert.throws(() => validateV53Confirmatory(incomplete, seal), /Reimport the native offline leaderboard/);
+  }
 });
 
 test('importV53Leaderboard and importV53Run copy only publishable artifacts', () => {

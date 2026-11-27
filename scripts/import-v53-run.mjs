@@ -139,17 +139,17 @@ export function validateV53Confirmatory(report, sealSha256) {
     throw new Error('Invalid v53_full confirmatory report metadata');
   }
   const identities = new Set();
-  // Before publication ranks were introduced, every row omitted rank.
-  const ranked = report.entries.some((row) => Object.hasOwn(row, 'rank'));
   for (const row of report.entries) {
+    if (!Number.isSafeInteger(row?.rank) || typeof row.probe_receipt_bound !== 'boolean') {
+      throw new Error('Full standings require rank and probe_receipt_bound for every entry. Reimport the native offline leaderboard with --confirmatory.');
+    }
     const { model_id, reasoning_effort, transport_id, resolved_slots, safety_adjusted_score_tenths,
       og_total, ab_total, step_limit_slots, parse_failure_slots, refusal_slots,
       withheld_bundle_sha256 } = row;
     const identity = JSON.stringify([model_id, reasoning_effort, transport_id]);
     const counts = [resolved_slots, og_total, ab_total, step_limit_slots, parse_failure_slots, refusal_slots];
     const scoredMisses = FULL_SCENARIOS - resolved_slots - step_limit_slots - parse_failure_slots - refusal_slots;
-    if (Object.keys(row).length !== (ranked ? 13 : 11)
-        || (ranked && (!Number.isSafeInteger(row.rank) || typeof row.probe_receipt_bound !== 'boolean'))
+    if (Object.keys(row).length !== 13
         || ![model_id, reasoning_effort, transport_id].every((v) =>
           typeof v === 'string' && IDENTIFIER.test(v) && !v.includes('://'))
         || typeof withheld_bundle_sha256 !== 'string' || !SHA256.test(withheld_bundle_sha256) || identities.has(identity)
@@ -164,13 +164,13 @@ export function validateV53Confirmatory(report, sealSha256) {
   }
   assertNoPrivateLeaks(JSON.stringify(report), FULL_SUITE, 'confirmatory.json');
   const entries = rankFullEntries(report.entries);
-  if (ranked && entries.some((row, index) =>
+  if (entries.some((row, index) =>
     row.rank !== report.entries[index].rank || row.model_id !== report.entries[index].model_id
     || row.reasoning_effort !== report.entries[index].reasoning_effort
     || row.transport_id !== report.entries[index].transport_id)) {
     throw new Error('Incorrect v53_full publication rank or display order');
   }
-  return { ...report, entries };
+  return report;
 }
 
 // The native leaderboard rounds rates to six decimal places for JSON output.
