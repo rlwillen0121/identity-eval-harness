@@ -497,11 +497,17 @@ export function buildFullSiteData({
     },
     confirmatory: report ? {
       ...report,
-      entries: report.entries.map((row) => ({
-        ...row,
-        name: formatModelName(row.model_id),
-        transport: formatTransport(row.transport_id),
-      })),
+      entries: report.entries.map((row) => {
+        const vendor = inferVendor(row.model_id);
+        return {
+          ...row,
+          id: [row.model_id, row.reasoning_effort, row.transport_id].map(encodeURIComponent).join('::'),
+          name: formatModelName(row.model_id),
+          transport: formatTransport(row.transport_id),
+          vendor,
+          vendor_label: VENDOR_LABELS[vendor],
+        };
+      }),
     } : null,
   };
 }

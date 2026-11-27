@@ -98,7 +98,12 @@ test('public site data contains only the full leaderboard and its matching seal'
   assert.equal(data.suite.scenarios, 96);
   assert.equal(data.suite.seal_sha256, report.seal_sha256);
   assert.equal(data.updated, report.published_on);
-  assert.deepEqual(data.confirmatory.entries.map(({ name, transport, ...row }) => row), report.entries);
+  const published = data.confirmatory.entries.map(({ id, name, transport, vendor, vendor_label, ...row }) => {
+    assert.equal(id, [row.model_id, row.reasoning_effort, row.transport_id].map(encodeURIComponent).join('::'));
+    assert.ok(name && transport && vendor && vendor_label);
+    return row;
+  });
+  assert.deepEqual(published, report.entries);
   assert.equal(Object.hasOwn(data, 'models'), false);
   assert.equal(Object.hasOwn(data, 'history'), false);
 
@@ -177,4 +182,19 @@ test('buildV53SiteData preserves §9 order regardless of cost and separates unra
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('distinct full configurations keep distinct model links when identifiers contain colons', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-full-ids-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const report = JSON.parse(fs.readFileSync(new URL('../../reports/v53/confirmatory.json', import.meta.url)));
+  const row = report.entries[0];
+  report.entries = [
+    { ...row, model_id: 'model', reasoning_effort: 'high::fast' },
+    { ...row, model_id: 'model::high', reasoning_effort: 'fast' },
+  ];
+  const confirmatoryPath = path.join(tmp, 'confirmatory.json');
+  fs.writeFileSync(confirmatoryPath, JSON.stringify(report));
+  const { entries } = buildFullSiteData({ confirmatoryPath }).confirmatory;
+  assert.notEqual(entries[0].id, entries[1].id);
 });

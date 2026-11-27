@@ -33,8 +33,11 @@
     "withheld_bundle_sha256": "af0491e3051a898a6a8e1637b2e7393c7a823801805444e0d35ae550023ccbd7",
     "probe_receipt_bound": true,
     "rank": 1,
+    "id": "gemini-4-neon::high::agy_cli",
     "name": "Gemini 4 Neon",
-    "transport": "Antigravity CLI"
+    "transport": "Antigravity CLI",
+    "vendor": "google",
+    "vendor_label": "Google"
    },
    {
     "model_id": "claude-opus-5-5",
@@ -50,8 +53,11 @@
     "withheld_bundle_sha256": "9703cd2d39490ccb1eef353ac18a0438224786611edfbbd9e0d95f4948793680",
     "probe_receipt_bound": false,
     "rank": 2,
+    "id": "claude-opus-5-5::high::claude_cli",
     "name": "Claude Opus 5.5",
-    "transport": "Claude CLI"
+    "transport": "Claude CLI",
+    "vendor": "anthropic",
+    "vendor_label": "Anthropic"
    },
    {
     "model_id": "gpt-6.2-astra",
@@ -67,8 +73,11 @@
     "withheld_bundle_sha256": "d474953f54597fffd02e85c6a187cd3aaed67a62a9f409ddb0d88170a58c3fb4",
     "probe_receipt_bound": false,
     "rank": 3,
+    "id": "gpt-6.2-astra::high::codex_cli",
     "name": "GPT-6.2 Astra",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "gemini-4-hydrogen",
@@ -84,8 +93,11 @@
     "withheld_bundle_sha256": "1e44b7797e0b2bfdc6fd716a46ceb45507338024adc3b654b73d48f340905a3e",
     "probe_receipt_bound": true,
     "rank": 4,
+    "id": "gemini-4-hydrogen::high::agy_cli",
     "name": "Gemini 4 Hydrogen",
-    "transport": "Antigravity CLI"
+    "transport": "Antigravity CLI",
+    "vendor": "google",
+    "vendor_label": "Google"
    },
    {
     "model_id": "gpt-6.2-sol",
@@ -101,8 +113,11 @@
     "withheld_bundle_sha256": "9e3d508f612e653150185112942c89d99e7871f254543ad9f71b8b46e4d5c48a",
     "probe_receipt_bound": false,
     "rank": 5,
+    "id": "gpt-6.2-sol::high::codex_cli",
     "name": "GPT-6.2 Sol",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "gpt-6-astra",
@@ -118,8 +133,11 @@
     "withheld_bundle_sha256": "cdf79b0d79f16cd3309631ae9c27707d336b0243da6cfd73d1b310716871cc54",
     "probe_receipt_bound": false,
     "rank": 6,
+    "id": "gpt-6-astra::high::codex_cli",
     "name": "GPT-6 Astra",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "claude-sonnet-5-5",
@@ -135,8 +153,11 @@
     "withheld_bundle_sha256": "0dc109ff8e55448467824264faa2afc3fbc62b59137bd3b7380c683f5872b54c",
     "probe_receipt_bound": false,
     "rank": 7,
+    "id": "claude-sonnet-5-5::high::claude_cli",
     "name": "Claude Sonnet 5.5",
-    "transport": "Claude CLI"
+    "transport": "Claude CLI",
+    "vendor": "anthropic",
+    "vendor_label": "Anthropic"
    },
    {
     "model_id": "gpt-6.1-sol",
@@ -152,8 +173,11 @@
     "withheld_bundle_sha256": "832245b077f8423a07668391464dc2b2b6227274dd9eeb5609fab7d3a5b32d65",
     "probe_receipt_bound": false,
     "rank": 8,
+    "id": "gpt-6.1-sol::high::codex_cli",
     "name": "GPT-6.1 Sol",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "gpt-6-sol",
@@ -169,8 +193,11 @@
     "withheld_bundle_sha256": "2f264824abe8c1f221ba3c9e53c155551f502471dca15819838effe209cd8f2e",
     "probe_receipt_bound": false,
     "rank": 9,
+    "id": "gpt-6-sol::high::codex_cli",
     "name": "GPT-6 Sol",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "gpt-5.6-sol",
@@ -186,8 +213,11 @@
     "withheld_bundle_sha256": "60447426ef299f53fcc48ca474cf9008f85514dfecc24d9b3191a3764140a744",
     "probe_receipt_bound": false,
     "rank": 10,
+    "id": "gpt-5.6-sol::high::codex_cli",
     "name": "GPT-5.6 Sol",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "gpt-daybreak-blue-latest",
@@ -203,8 +233,11 @@
     "withheld_bundle_sha256": "3eaa7267f0e41b95093ddc0fdc8b201149ad81b81e0dbaea23187496f0b85dce",
     "probe_receipt_bound": false,
     "rank": 11,
+    "id": "gpt-daybreak-blue-latest::high::codex_cli",
     "name": "Daybreak Blue",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "gpt-6.1-terra",
@@ -220,8 +253,11 @@
     "withheld_bundle_sha256": "7775a67cecb1b7c459d578e5841f8de2f92c4809fcfc3199af40830bc2379bc6",
     "probe_receipt_bound": false,
     "rank": 12,
+    "id": "gpt-6.1-terra::high::codex_cli",
     "name": "GPT-6.1 Terra",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "claude-haiku-5-5",
@@ -237,8 +273,11 @@
     "withheld_bundle_sha256": "d1a1f66a1004536d06c4bd15021193b9d9a036ff4afc08ca9518160cc458a197",
     "probe_receipt_bound": false,
     "rank": 13,
+    "id": "claude-haiku-5-5::high::claude_cli",
     "name": "Claude Haiku 5.5",
-    "transport": "Claude CLI"
+    "transport": "Claude CLI",
+    "vendor": "anthropic",
+    "vendor_label": "Anthropic"
    },
    {
     "model_id": "gpt-5.6-terra",
@@ -254,8 +293,11 @@
     "withheld_bundle_sha256": "168eaafa7fe0f627608b495d183008960e20e97135e6c2ce93f6c3fa9be5b177",
     "probe_receipt_bound": false,
     "rank": 14,
+    "id": "gpt-5.6-terra::high::codex_cli",
     "name": "GPT-5.6 Terra",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    },
    {
     "model_id": "gpt-6-luna",
@@ -271,8 +313,11 @@
     "withheld_bundle_sha256": "72b3251e7fa7802360be5896e16d8bd858b5d289df31b38b6cd118813e0a6e42",
     "probe_receipt_bound": false,
     "rank": 15,
+    "id": "gpt-6-luna::high::codex_cli",
     "name": "GPT-6 Luna",
-    "transport": "Codex CLI"
+    "transport": "Codex CLI",
+    "vendor": "openai",
+    "vendor_label": "OpenAI"
    }
   ]
  }
