@@ -166,6 +166,7 @@ class Node {
 
 export function installDOM() {
   const body = new Node('body');
+  const resizeObservers = [];
   globalThis.Element = Node;
   globalThis.document = {
     body,
@@ -177,8 +178,14 @@ export function installDOM() {
   globalThis.window = { innerWidth: 1120, location: { href: 'https://identitybench.ai/v52/' } };
   globalThis.getComputedStyle = () => ({ fontFamily: 'Inter, sans-serif' });
   globalThis.ResizeObserver = class {
-    observe() {}
-    disconnect() {}
+    constructor(callback) { this.callback = callback; resizeObservers.push(this); }
+    observe(target) { this.target = target; }
+    disconnect() { this.target = null; }
   };
-  return { root: () => new Node('div'), body };
+  return {
+    root: () => new Node('div'), body,
+    resize() {
+      for (const observer of resizeObservers) if (observer.target) observer.callback([{ target: observer.target }]);
+    },
+  };
 }
