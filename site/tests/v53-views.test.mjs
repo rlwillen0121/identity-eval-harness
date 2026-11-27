@@ -217,7 +217,10 @@ test('full-suite results and publication dates render independently of core rank
 
   const store = fillConfirmatory(root, report);
   assert.equal(root.querySelector('.full-suite-results').hidden, false);
-  assert.match(root.querySelector('#full-suite-summary').textContent, /96 private scenarios at simulated organizations/);
+  const intro = root.querySelector('#full-suite-summary').textContent;
+  assert.match(intro, /96 private identity governance scenarios/);
+  assert.match(intro, /10 basic tools/);
+  assert.match(intro, /no custom skills or web access/);
   const row = root.querySelector('.model-row');
   assert.equal(row.querySelector('.rank-cell').textContent, '1');
   assert.match(row.textContent, /−1.25%/);
