@@ -221,10 +221,12 @@ test('full-suite results and publication dates render independently of core rank
   const row = root.querySelector('.model-row');
   assert.equal(row.querySelector('.rank-cell').textContent, '1');
   assert.match(row.textContent, /-1.25%/);
-  assert.match(row.textContent, /6\/96/);
+  assert.doesNotMatch(row.textContent, /6\/96/);
+  assert.ok(row.querySelector('.score-bar'));
   const metrics = row.querySelectorAll('.usage-cell').map((cell) => cell.textContent);
   assert.deepEqual(metrics, ['Tokens1.3M', 'Est. cost$8.00', 'Time / task2.0 min']);
   store.set({ selected: model.id });
+  assert.match(root.textContent, /Clean solves6\/96/);
   assert.match(root.textContent, /No bound probe receipt/i);
   assert.match(root.textContent, /turn limit/i);
   assert.match(root.textContent, /parse failure/i);
