@@ -374,9 +374,9 @@ function validateFullAnalysis(analysis, resolved) {
     throw new Error('Invalid full-suite analysis fields or accuracy rates');
   }
   if (hasEfficiency && ((analysis.total_tokens !== null
-        && (!Number.isSafeInteger(analysis.total_tokens) || analysis.total_tokens < 0))
+        && (!Number.isSafeInteger(analysis.total_tokens) || analysis.total_tokens <= 0))
       || (analysis.mean_task_time_s !== null
-        && (!Number.isFinite(analysis.mean_task_time_s) || analysis.mean_task_time_s < 0)))) {
+        && (!Number.isFinite(analysis.mean_task_time_s) || analysis.mean_task_time_s <= 0)))) {
     throw new Error('Invalid full-suite token or task-time metric');
   }
   const perRegime = FULL_SCENARIOS / FULL_REGIMES.length;

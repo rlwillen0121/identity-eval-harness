@@ -325,10 +325,12 @@ test('full analysis validates only named chart aggregates and preserves older ra
   row.analysis = { ...analysis, total_tokens: 100 };
   delete row.analysis.mean_task_time_s;
   assert.throws(validate, /analysis fields/);
-  row.analysis = { ...analysis, total_tokens: -1 };
-  assert.throws(validate, /token or task-time metric/);
-  row.analysis = { ...analysis, mean_task_time_s: -1 };
-  assert.throws(validate, /token or task-time metric/);
+  for (const value of [0, -1]) {
+    for (const key of ['total_tokens', 'mean_task_time_s']) {
+      row.analysis = { ...analysis, [key]: value };
+      assert.throws(validate, /token or task-time metric/);
+    }
+  }
 });
 
 test('full publication verifies exact competition ranks, byte-wise display order, and receipt status', () => {
