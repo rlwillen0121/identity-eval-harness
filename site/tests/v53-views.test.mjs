@@ -217,15 +217,16 @@ test('full-suite results and publication dates render independently of core rank
 
   const store = fillConfirmatory(root, report);
   assert.equal(root.querySelector('.full-suite-results').hidden, false);
-  assert.match(root.querySelector('#full-suite-summary').textContent, /96 private scenarios/);
+  assert.match(root.querySelector('#full-suite-summary').textContent, /96 private enterprise access scenarios/);
   const row = root.querySelector('.model-row');
   assert.equal(row.querySelector('.rank-cell').textContent, '1');
-  assert.match(row.textContent, /-1.25%/);
+  assert.match(row.textContent, /−1.25%/);
   assert.doesNotMatch(row.textContent, /6\/96/);
-  assert.ok(row.querySelector('.score-bar'));
+  assert.equal(row.querySelector('.score-value').textContent, '−1.25%');
   const metrics = row.querySelectorAll('.usage-cell').map((cell) => cell.textContent);
-  assert.deepEqual(metrics, ['Tokens1.3M', 'Est. cost$8.00', 'Time / task2.0 min']);
+  assert.deepEqual(metrics, ['1.3M', '$8.00', '2.0 min']);
   store.set({ selected: model.id });
+  assert.match(root.querySelector('.expanded-metrics').textContent, /Total tokens1,250,000/);
   assert.match(root.textContent, /Clean solves6\/96/);
   assert.match(root.textContent, /No bound probe receipt/i);
   assert.match(root.textContent, /turn limit/i);

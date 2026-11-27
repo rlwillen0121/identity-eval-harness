@@ -148,6 +148,7 @@ export const MODEL_META = {
   'gemini-4-hydrogen': { name: 'Gemini 4 Hydrogen', vendor: 'google' },
   'gemini-3.8-flash': { name: 'Gemini 3.8 Flash', vendor: 'google' },
   'deepseek/deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', vendor: 'deepseek' },
+  'hf:deepseek-ai/DeepSeek-V4.1-Flash-1017': { name: 'DeepSeek V4.1 Flash (1017)', vendor: 'deepseek' },
   'grok-4.7': { name: 'Grok 4.7', vendor: 'xai' },
   'grok-4.7-high': { name: 'Grok 4.7', vendor: 'xai' },
 };

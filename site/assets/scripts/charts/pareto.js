@@ -4,18 +4,21 @@ import { chart, el, log, linear, scatter, stepObstacles, stepPath, svgCanvas, te
 const METRICS = [
   {
     id: 'cost', label: 'Cost', accessibleLabel: 'Estimated total cost', field: 'estimated_cost_usd',
+    title: 'estimated cost', frontierUnit: 'estimated cost',
     axisLabel: 'Estimated total cost · USD (log scale)',
     tick: (value) => value < 1 ? usd(value) : `$${compact(value)}`,
     zeroNote: (models) => `$0 estimates for ${models.map((m) => m.name).join(', ')}`,
   },
   {
     id: 'tokens', label: 'Tokens', accessibleLabel: 'Total tokens', field: 'total_tokens',
+    title: 'total tokens', frontierUnit: 'token total',
     axisLabel: 'Total tokens (log scale)',
     tick: compact,
     zeroNote: (models) => `zero token totals for ${models.map((m) => m.name).join(', ')}`,
   },
   {
     id: 'time', label: 'Time / task', accessibleLabel: 'Mean time per task', field: 'mean_task_time_s',
+    title: 'time per task', frontierUnit: 'time per task',
     axisLabel: 'Mean time per task (log scale)',
     tick: formatTimeTick,
     zeroNote: (models) => `0s mean time per task for ${models.map((m) => m.name).join(', ')}`,
@@ -23,9 +26,9 @@ const METRICS = [
 ];
 
 const SCORE_METRICS = [
-  { id: 'safety_adjusted_score', label: 'Score', axisLabel: 'Safety-adjusted score', tooltipLabel: (n) => `Safety-adjusted score (${n} scenarios)`, format: (m) => pct(m.scores?.safety_adjusted_score, 2) },
-  { id: 'g_srr', label: 'Clean solve rate', axisLabel: 'Clean solve rate', tooltipLabel: (n) => `Clean solve rate (${n} scenarios)`, format: (m) => gSrrPct(m.scores?.g_srr) },
-  { id: 'macro_cat_acc', label: 'Domain accuracy', axisLabel: 'Domain accuracy', tooltipLabel: (n) => `Domain accuracy averaged across ${n} scenarios`, format: (m) => pct(m.scores?.macro_cat_acc, 1) },
+  { id: 'safety_adjusted_score', label: 'Safety-adjusted score', frontierLabel: 'score', axisLabel: 'Safety-adjusted score', tooltipLabel: (n) => `Safety-adjusted score (${n} scenarios)`, format: (m) => pct(m.scores?.safety_adjusted_score, 2) },
+  { id: 'g_srr', label: 'Clean solve rate', frontierLabel: 'clean solve rate', axisLabel: 'Clean solve rate', tooltipLabel: (n) => `Clean solve rate (${n} scenarios)`, format: (m) => gSrrPct(m.scores?.g_srr) },
+  { id: 'macro_cat_acc', label: 'Domain accuracy', frontierLabel: 'domain accuracy', axisLabel: 'Domain accuracy', tooltipLabel: (n) => `Domain accuracy averaged across ${n} scenarios`, format: (m) => pct(m.scores?.macro_cat_acc, 1) },
 ];
 
 function formatTaskTime(seconds) {
@@ -99,7 +102,9 @@ export function mount(root, data, store) {
   const models = data.models || [];
   let metric = METRICS[0];
   let scoreMetric = SCORE_METRICS[0];
-  const view = chart(root, 'Score vs. resource use', 'The blue line shows the best score among plotted runs at each resource budget.', store, ({ width, canvas, tip }) => {
+  const view = chart(root, 'Safety-adjusted score vs. estimated cost',
+    'The line shows the best score at or below each estimated cost among plotted runs.',
+    store, ({ width, canvas, tip }) => {
     const measured = models.filter((m) => Number.isFinite(m.scores?.[scoreMetric.id]) && Number.isFinite(valueOf(m, metric.field)));
     const positive = measured.filter((m) => valueOf(m, metric.field) > 0);
     const zero = measured.filter((m) => valueOf(m, metric.field) === 0);
@@ -162,6 +167,12 @@ export function mount(root, data, store) {
       sync(state);
     };
   });
+  const updateChartCopy = () => {
+    const title = view.header.querySelector('.chart-title');
+    if (title) title.textContent = `${scoreMetric.label} vs. ${metric.title}`;
+    const caption = [...root.querySelectorAll('.chart-sub')].find((node) => node.parentNode === root);
+    if (caption) caption.textContent = `The line shows the best ${scoreMetric.frontierLabel} at or below each ${metric.frontierUnit} among plotted runs.`;
+  };
   const control = document.createElement('div');
   control.className = 'chart-controls';
   const switcher = document.createElement('div');
@@ -178,6 +189,7 @@ export function mount(root, data, store) {
     btn.addEventListener('click', () => {
       metric = nextMetric;
       buttons.forEach((button, index) => button.setAttribute('aria-pressed', String(METRICS[index] === metric)));
+      updateChartCopy();
       view.redraw();
     });
     switcher.append(btn);
@@ -195,10 +207,12 @@ export function mount(root, data, store) {
   }
   scoreSelect.addEventListener('change', () => {
     scoreMetric = SCORE_METRICS.find((option) => option.id === scoreSelect.value) || SCORE_METRICS[0];
+    updateChartCopy();
     view.redraw();
   });
   scoreLabel.append(scoreSelect);
   control.append(switcher, scoreLabel);
   view.header.append(control);
+  updateChartCopy();
   return () => view.destroy();
 }

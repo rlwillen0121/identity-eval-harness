@@ -143,17 +143,24 @@
 .chart-scale-swatch { width: 14px; height: 10px; border-radius: 1px; }
 .chart-cell-label { fill: var(--ink); font: 500 10px/1 var(--mono); pointer-events: none; }
 .chart-cell-label.is-dark-cell { fill: var(--page); }
+.chart-heatmap-legend > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.heatmap-zero-key { display: inline-block; width: 14px; height: 10px; border-radius: 2px; background: var(--seq-1); }
+.heatmap-unavailable-key { display: inline-block; width: 14px; height: 10px; border: 1px dashed var(--muted); box-sizing: border-box; }
+.chart-heat-unavailable { stroke: var(--muted); stroke-dasharray: 2 2; }
+.chart-heat-zero { fill: var(--seq-1); }
+.chart-environments .chart-column-label { font-size: 10px; }
+.chart-scroll-cue { margin: 0 0 8px; color: var(--muted); font: 400 11px/1.4 var(--sans); }
+.heatmap-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chart-header .chart-legend { display: inline-flex; align-items: center; gap: 6px; margin: 0; font: 400 10.5px/1 var(--mono); color: var(--muted); }
 .legend-ramp { display: inline-flex; gap: 2px; }
 .legend-ramp i { display: block; width: 10px; height: 10px; border-radius: 2px; }
-.legend-ramp i:nth-child(1) { background: var(--seq-0); }
-.legend-ramp i:nth-child(2) { background: var(--seq-1); }
-.legend-ramp i:nth-child(3) { background: var(--seq-2); }
-.legend-ramp i:nth-child(4) { background: var(--seq-3); }
-.legend-ramp i:nth-child(5) { background: var(--seq-4); }
-.legend-ramp i:nth-child(6) { background: var(--seq-5); }
-.legend-ramp i:nth-child(7) { background: var(--seq-6); }
-.legend-ramp i:nth-child(8) { background: var(--seq-7); }
+.legend-ramp i:nth-child(1) { background: var(--seq-1); }
+.legend-ramp i:nth-child(2) { background: var(--seq-2); }
+.legend-ramp i:nth-child(3) { background: var(--seq-3); }
+.legend-ramp i:nth-child(4) { background: var(--seq-4); }
+.legend-ramp i:nth-child(5) { background: var(--seq-5); }
+.legend-ramp i:nth-child(6) { background: var(--seq-6); }
+.legend-ramp i:nth-child(7) { background: var(--seq-7); }
 @media (max-width: 639px) {
   .chart-header { align-items: flex-start; }
   .chart-title { font-size: 21px; }
@@ -164,5 +171,5 @@
 @media (prefers-reduced-motion: reduce) {
   .analysis-chart *, .analysis-chart *::before, .analysis-chart *::after { transition: none; }
 }
-.heatmap-scroll { overflow-x: auto; }
+.heatmap-scroll { overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
 .heatmap-scroll .chart-svg { max-width: none; }
