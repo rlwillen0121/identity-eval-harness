@@ -5,11 +5,11 @@ import { vendorLogo } from './logos.js';
 const columns = [
   ['rank', '#', 'Published rank', 'asc'],
   ['name', 'Model', 'Model name', 'asc'],
-  ['score', 'Safety-adjusted score', 'Safety-adjusted score', 'desc'],
+  ['score', 'Score', 'Safety-adjusted score', 'desc'],
   ['violations', 'Safety errors', 'Total overgrants and availability breaches', 'asc'],
   ['tokens', 'Tokens', 'Total recorded tokens', 'asc'],
   ['cost', 'Est. cost', 'Estimated retail cost of the run', 'asc'],
-  ['time', 'Time / task', 'Mean elapsed time per scenario', 'asc'],
+  ['time', 'Time / task', 'Mean active time per scenario', 'asc'],
 ];
 
 function sortValue(entry, key) {
@@ -40,10 +40,14 @@ function detailMarkup(entry, scenarios) {
     `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('');
   return `<tr role="row" class="detail-row"><td colspan="${columns.length}">
     <div class="model-detail" id="detail-${esc(entry.id)}" role="region" aria-label="${esc(entry.name)} run details">
+      <dl class="expanded-metrics">${fields([
+        ['Safety errors', int(sortValue(entry, 'violations'))], ['Total tokens', int(sortValue(entry, 'tokens'))],
+        ['Est. run cost', usd(sortValue(entry, 'cost'))], ['Time / task', duration(sortValue(entry, 'time'))],
+      ])}</dl>
       <div class="detail-columns">
         <div><h3>Run configuration</h3><dl class="detail-figures">${fields([
           ['Model ID', entry.model_id], ['Reasoning effort', effortLabel(entry.reasoning_effort)],
-          ['Transport', entry.transport], ['Context probe', receipt],
+          ['Connection', entry.transport], ['Context probe', receipt],
         ])}</dl></div>
         <div><h3>Scored outcomes</h3><dl class="detail-figures">${fields([
           ['Clean solves', `${int(entry.resolved_slots)}/${int(scenarios)}`],
@@ -56,38 +60,27 @@ function detailMarkup(entry, scenarios) {
     </div></td></tr>`;
 }
 
-function rowMarkup(entry, scenarios, rankLabel, expanded, scoreFloor) {
+function rowMarkup(entry, scenarios, rankLabel, expanded) {
   const tokens = sortValue(entry, 'tokens');
   const cost = sortValue(entry, 'cost');
   const time = sortValue(entry, 'time');
   const errors = entry.og_total + entry.ab_total;
   const score = entry.safety_adjusted_score_tenths / (10 * scenarios);
-  const scale = 100 / (1 - scoreFloor);
-  const zero = -scoreFloor * scale;
-  const start = zero + Math.min(0, score) * scale;
   return `<tr role="row" class="model-row${expanded ? ' is-selected' : ''}" id="model-${esc(entry.id)}" data-model-id="${esc(entry.id)}">
     <td class="rank-cell">${esc(rankLabel)}</td>
     <td class="identity-cell">${vendorLogo(entry.vendor, entry.vendor_label)}
       <button type="button" class="model-name" aria-label="${esc(entry.name)}, ${esc(effortLabel(entry.reasoning_effort))}, ${esc(entry.transport)}" aria-expanded="${expanded}"${expanded ? ` aria-controls="detail-${esc(entry.id)}"` : ''}>${esc(entry.name)}</button>
-      <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))}</span>
+      <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))} effort</span>
     </td>
-    <td class="resolution-cell"><span class="score-comparison"><span class="metric-caption">Score</span>
-      <svg class="score-bar" viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true">
-        <path d="M0 6H100" class="score-track"/>
-        <rect class="score-fill${score < 0 ? ' negative' : ''}" x="${start}" y="3" width="${Math.abs(score) * scale}" height="6" rx="1"/>
-        <path d="M${zero} 1v10" class="score-zero"/>
-      </svg><span class="score-value">${pct(score, 2)}</span></span></td>
-    <td class="error-count"><span class="metric-caption">Safety errors</span>${int(errors)}</td>
-    <td class="usage-cell" title="${int(tokens)} total tokens"><span class="metric-caption">Tokens</span>${compact(tokens)}</td>
-    <td class="usage-cell"><span class="metric-caption">Est. cost</span>${usd(cost)}</td>
-    <td class="usage-cell"><span class="metric-caption">Time / task</span>${duration(time)}</td>
+    <td class="resolution-cell"><span class="score-value${score < 0 ? ' negative' : ''}">${pct(score, 2).replace('-', '−')}</span></td>
+    <td class="error-count">${int(errors)}</td>
+    <td class="usage-cell" title="${int(tokens)} total tokens">${compact(tokens)}</td>
+    <td class="usage-cell">${usd(cost)}</td>
+    <td class="usage-cell">${duration(time)}</td>
   </tr>${expanded ? detailMarkup(entry, scenarios) : ''}`;
 }
 
 export function mount(root, { entries, scenarios }, store) {
-  // Keep the same zero line for every row, including after sorting or filtering.
-  const lowest = entries.reduce((min, entry) => Math.min(min, entry.safety_adjusted_score_tenths), 0);
-  const scoreFloor = Math.floor(lowest / (10 * scenarios) * 4) / 4;
   const vendors = new Map();
   const ranks = new Map();
   for (const entry of entries) {
@@ -112,7 +105,7 @@ export function mount(root, { entries, scenarios }, store) {
     </div>
     <table role="table" class="leaderboard-table explorer-table" aria-label="Full-suite leaderboard" aria-describedby="full-suite-summary">
       <caption class="sr-only">Select a model to expand its run configuration and outcomes.</caption>
-      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"><button class="sort-button" type="button" data-sort="${key}" aria-label="Sort by ${title.toLowerCase()}" title="${title}">${label}<span class="sort-indicator" aria-hidden="true"></span></button><span class="mobile-heading">${title}</span></th>`).join('')}</tr></thead>
+      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"><button class="sort-button" type="button" data-sort="${key}" aria-label="Sort by ${title.toLowerCase()}" title="${title}">${label}<span class="sort-indicator" aria-hidden="true"></span></button></th>`).join('')}</tr></thead>
       <tbody role="rowgroup" id="full-suite-rows"></tbody>
     </table>`;
 
@@ -137,7 +130,7 @@ export function mount(root, { entries, scenarios }, store) {
       header.querySelector('.sort-indicator').textContent = sorted ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
     }
     body.innerHTML = filtered.map((entry) => rowMarkup(entry, scenarios,
-      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id, scoreFloor)).join('')
+      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id)).join('')
       || `<tr class="empty-row"><td colspan="${columns.length}">No configurations match these filters.</td></tr>`;
   }
 
