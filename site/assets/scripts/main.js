@@ -1,5 +1,4 @@
 import { pct, int, date } from './format.js';
-import { mount as mountTable } from './table.js';
 import { mount as mountUpdates } from './updates.js';
 
 function sameStoreValue(key, left, right) {
@@ -38,58 +37,18 @@ export function createStore(initial) {
   };
 }
 
-function modelScore(m) {
-  const s = m?.scores || {};
-  const val = s.safety_adjusted_score ?? s.g_srr;
-  return typeof val === 'number' && Number.isFinite(val) ? val : 0;
-}
-
-export function leaderboardLede(data) {
-  if (!data.models?.length) {
-    return `Awaiting the first completed ${int(data.suite.episodes)}-scenario ranked entry.`;
-  }
-  const topScore = Math.max(...data.models.map(modelScore));
-  const leaders = data.models.filter((m) => Math.abs(modelScore(m) - topScore) < 1e-9);
-  if (leaders.length === 2) {
-    return `${leaders[0].name} and ${leaders[1].name} tie at ${pct(topScore, 1)} overall score.`;
-  }
-  if (leaders.length > 2) {
-    return `${int(leaders.length)} models tie at ${pct(topScore, 1)} overall score.`;
-  }
-  return `${leaders[0].name} leads at ${pct(topScore, 1)} overall score.`;
-}
-
-function fillSummary(data) {
-  const models = data.models || [];
-  document.getElementById('core-overview').textContent =
-    `${int(models.length)} models · ${int(data.suite.episodes)} scenarios`;
-  document.getElementById('leaderboard-lede').textContent = leaderboardLede(data);
-  const full = data.confirmatory;
-  const first = full?.entries?.[0];
-  const leaders = full?.entries?.filter((entry) => entry.rank === 1) || [];
-  document.getElementById('full-overview').textContent = first
-    ? `${int(full.entries.length)} ranked · ${int(full.scenarios)} scenarios`
-    : 'Awaiting completed runs';
-  if (first) {
-    const lead = leaders.length > 1 ? `${int(leaders.length)} entries tie` : `${first.name} leads`;
-    document.getElementById('full-overview-lede').textContent =
-      `${lead} at ${pct(first.safety_adjusted_score_tenths / (10 * full.scenarios), 2)}.`;
-  }
+function fillProvenance({ suite, updated }) {
   const provenance = document.getElementById('provenance');
-  provenance.replaceChildren();
   const rows = [
-    ['Core suite', `${data.suite.id} (${data.suite.visibility})`],
-    ['Protocol', data.protocol_id],
-    ['Core episodes SHA-256', data.suite.episodes_sha256],
-    ['Core oracles SHA-256', data.suite.oracles_sha256],
-    ['Spec SHA-256', data.suite.spec_sha256],
-    ['Commit C_K', data.suite.c_k || 'n/a'],
-    ['drand round', data.suite.round ? `${data.suite.round} (beacon ${data.suite.beacon_randomness_hex || 'pending'})` : 'n/a'],
-    ['Pricing SHA-256', data.pricing_sha256 || 'Set at leaderboard build'],
+    ['Suite', `${suite.id} (private)`],
+    ['Protocol', suite.protocol_id],
+    ['Seal SHA-256', suite.seal_sha256],
+    ['Episodes SHA-256', suite.episodes_sha256],
+    ['Oracles SHA-256', suite.oracles_sha256],
+    ['Spec SHA-256', suite.spec_sha256],
+    ['Commit C_K', suite.c_k],
+    ['drand round', suite.round],
   ];
-  if (full) {
-    rows.push(['Full suite', `${full.suite_id} (private)`], ['Full-suite seal SHA-256', full.seal_sha256]);
-  }
   for (const [label, value] of rows) {
     const dt = document.createElement('dt');
     const dd = document.createElement('dd');
@@ -97,24 +56,20 @@ function fillSummary(data) {
     dd.textContent = String(value);
     provenance.append(dt, dd);
   }
-  const contam = document.getElementById('contamination-note');
-  if (contam && data.contamination_notice) {
-    contam.textContent = data.contamination_notice;
+  if (updated) {
+    document.getElementById('updated-date').textContent = `Updated ${date(updated)}`;
+    document.getElementById('published-date').textContent = `Results updated ${date(updated)}`;
   }
-  document.getElementById('updated-date').textContent = `Updated ${date(data.updated)}`;
-  document.getElementById('published-date').textContent = `Results updated ${date(data.updated)}`;
 }
 
-export function fillConfirmatory(root, report, coreModels = []) {
+export function fillConfirmatory(root, report) {
   const summary = root.querySelector('#full-suite-summary');
-  const pending = root.querySelector('#full-suite-pending');
   const table = root.querySelector('.full-suite-results');
   const safety = root.querySelector('#full-suite-safety');
   const rows = root.querySelector('#full-suite-rows');
   const entries = report?.entries || [];
   rows.replaceChildren();
   table.hidden = safety.hidden = entries.length === 0;
-  pending.hidden = true;
   if (!entries.length) {
     summary.textContent = 'No completed full-suite runs are published yet.';
     return;
@@ -124,13 +79,6 @@ export function fillConfirmatory(root, report, coreModels = []) {
   if (entries.every((entry) => typeof entry.probe_receipt_bound === 'boolean')) {
     const bound = entries.filter((entry) => entry.probe_receipt_bound).length;
     summary.textContent += ` ${int(bound)} of ${int(entries.length)} runs have a bound context-probe receipt.`;
-  }
-  const completed = new Set(entries.map((row) => [row.model_id, row.reasoning_effort, row.transport_id].join('::')));
-  const awaiting = coreModels.filter((row) => !completed.has(row.id)).map((row) => row.name);
-  if (awaiting.length) {
-    const names = new Intl.ListFormat('en', { type: 'conjunction' }).format(awaiting);
-    pending.textContent = `Awaiting full-suite results for ${names}.`;
-    pending.hidden = false;
   }
   for (const [index, entry] of entries.entries()) {
     const row = document.createElement('tr');
@@ -210,12 +158,6 @@ function setupTheme() {
   render();
 }
 
-async function fontsReady(limit = 1500) {
-  if (!document.fonts?.load) return;
-  const fonts = Promise.all([document.fonts.load('400 12px Inter'), document.fonts.load('400 10px "Geist Mono"')]);
-  await Promise.race([fonts.catch(() => {}), new Promise((resolve) => setTimeout(resolve, limit))]);
-}
-
 function reveal() {
   document.documentElement.classList.remove('is-loading');
   document.documentElement.classList.add('is-ready');
@@ -226,62 +168,15 @@ async function boot() {
   const response = await fetch(new URL('../../data/leaderboard.json', import.meta.url), { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Data request failed (${response.status})`);
   const data = await response.json();
-  const ids = new Set((data.models || []).map((m) => m.id));
-  function selectionFromHash() {
-    if (!location.hash.startsWith('#m=')) return null;
-    try {
-      const id = decodeURIComponent(location.hash.slice(3));
-      return ids.has(id) ? id : null;
-    } catch { return null; }
-  }
-  const store = createStore({ sort: { key: 'rank', dir: 'asc' }, vendors: new Set(), query: '', selected: selectionFromHash(), hover: null });
-  fillSummary(data);
-  fillConfirmatory(document.getElementById('full-suite'), data.confirmatory, data.models);
-  mountTable(document.getElementById('leaderboard-root'), data, store);
-  mountUpdates(document.getElementById('updates-root'), data, store);
+  fillProvenance(data);
+  fillConfirmatory(document.getElementById('full-suite'), data.confirmatory);
+  mountUpdates(document.getElementById('updates-root'), data.confirmatory);
   document.getElementById('load-status').hidden = true;
   reveal();
-  if (location.hash === '#full-suite') {
-    requestAnimationFrame(() => document.getElementById('full-suite').scrollIntoView({ block: 'start' }));
-  }
 
-  let lastSelected = store.get().selected;
-  function scrollToModel(id) {
-    requestAnimationFrame(() => document.getElementById(`model-${id}`)?.scrollIntoView({ block: 'start' }));
+  if (location.hash === '#full-suite' || location.hash === '#leaderboard' || location.hash.startsWith('#m=')) {
+    requestAnimationFrame(() => document.getElementById('leaderboard').scrollIntoView({ block: 'start' }));
   }
-  store.subscribe(({ selected }, patch) => {
-    if (selected === lastSelected) {
-      if (selected && patch.selected === selected) scrollToModel(selected);
-      return;
-    }
-    lastSelected = selected;
-    const hash = selected ? `#m=${encodeURIComponent(selected)}` : (location.hash.startsWith('#m=') ? '' : location.hash);
-    if (hash !== location.hash) history.pushState(null, '', `${location.pathname}${location.search}${hash}`);
-    if (selected) scrollToModel(selected);
-  });
-  window.addEventListener('hashchange', () => store.set({ selected: selectionFromHash() }));
-  if (lastSelected) scrollToModel(lastSelected);
-
-  const charts = [
-    ['chart-pareto', () => import('./charts/pareto.js')],
-    ['chart-safety', () => import('./charts/safety.js')],
-    ['chart-marginals', () => import('./charts/marginals.js')],
-    ['chart-categories', () => import('./charts/categories.js')],
-  ];
-  await fontsReady();
-  await Promise.all(charts.map(async ([id, load]) => {
-    const root = document.getElementById(id);
-    try {
-      const chartMod = await load();
-      await chartMod.mount(root, data, store);
-    } catch (error) {
-      console.error(`Chart unavailable: ${id}`, error);
-      const note = document.createElement('p');
-      note.className = 'status-note';
-      note.textContent = 'Chart unavailable';
-      root.replaceChildren(note);
-    }
-  }));
 }
 
 if (typeof document !== 'undefined') {

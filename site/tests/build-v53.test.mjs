@@ -9,6 +9,7 @@ import {
   FAMILIES,
   REGIMES,
   buildV53SiteData,
+  buildFullSiteData,
   serializeV53SiteData,
 } from '../build.mjs';
 import { hasVendorLogo } from '../assets/scripts/logos.js';
@@ -90,6 +91,23 @@ test('buildV53SiteData renders valid empty state from committed SEAL.json when n
   assert.ok(data.suite.round);
 });
 
+test('public site data contains only the full leaderboard and its matching seal', () => {
+  const data = buildFullSiteData();
+  const report = JSON.parse(fs.readFileSync(new URL('../../reports/v53/confirmatory.json', import.meta.url)));
+  assert.equal(data.suite.id, 'v53_full');
+  assert.equal(data.suite.scenarios, 96);
+  assert.equal(data.suite.seal_sha256, report.seal_sha256);
+  assert.equal(data.updated, report.published_on);
+  assert.deepEqual(data.confirmatory.entries.map(({ name, transport, ...row }) => row), report.entries);
+  assert.equal(Object.hasOwn(data, 'models'), false);
+  assert.equal(Object.hasOwn(data, 'history'), false);
+
+  const empty = buildFullSiteData({ confirmatoryPath: '/nonexistent/confirmatory.json' });
+  assert.equal(empty.updated, null);
+  assert.equal(empty.confirmatory, null);
+  assert.equal(empty.suite.scenarios, 96);
+});
+
 test('site build rejects legacy full rows until the native leaderboard is reimported', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-legacy-full-'));
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -100,7 +118,7 @@ test('site build rejects legacy full rows until the native leaderboard is reimpo
   }
   const confirmatoryPath = path.join(tmp, 'confirmatory.json');
   fs.writeFileSync(confirmatoryPath, JSON.stringify(report));
-  assert.throws(() => buildV53SiteData({ confirmatoryPath }), /Reimport the native offline leaderboard with --confirmatory/);
+  assert.throws(() => buildFullSiteData({ confirmatoryPath }), /Reimport the native offline leaderboard with --confirmatory/);
 });
 
 test('buildV53SiteData preserves §9 order regardless of cost and separates unranked/pending', () => {
