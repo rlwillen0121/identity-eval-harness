@@ -11,7 +11,9 @@ import {
   assertNoPrivateLeaks,
   importV53Leaderboard,
   importV53Run,
+  parseArtifactJson,
   projectV53Confirmatory,
+  readArtifactFile,
   validateV53Confirmatory,
   validateV53Leaderboard,
   validateV53RunSummary,
@@ -71,9 +73,65 @@ test('validateV53Leaderboard rejects private per-slot rows and empty withheld_un
 
 test('assertNoPrivateLeaks rejects local paths and private episode IDs', () => {
   assert.throws(() => assertNoPrivateLeaks('path /Users/alice/foo', 'v53_core', 'doc'), /local filesystem path/);
+  assert.throws(() => assertNoPrivateLeaks('path /private/var/folders/job', 'v53_core', 'doc'), /local filesystem path/);
+  assert.throws(() => assertNoPrivateLeaks('path file:///tmp/job', 'v53_core', 'doc'), /local filesystem path/);
+  assert.throws(() => assertNoPrivateLeaks('path C:\\Temp\\job', 'v53_core', 'doc'), /local filesystem path/);
   assert.throws(() => assertNoPrivateLeaks('failed on v53_core_F01_R1_s00', 'v53_core', 'doc'), /private episode identifier/);
   assert.throws(() => assertNoPrivateLeaks('v53_full_F01_R1_s00_r1.jsonl', 'v53_full'), /private episode identifier/);
   assert.doesNotThrow(() => assertNoPrivateLeaks('public v53_dev_F01_R1_s00 ok', 'v53_dev', 'doc'));
+});
+
+test('publishable schemas reject unknown and sensitive artifact fields', () => {
+  assert.throws(
+    () => validateV53RunSummary(sampleSummary({ provider_diagnostic: 'must stay private' })),
+    /unexpected field/i,
+  );
+  const board = sampleLeaderboard();
+  board.entries[0].metadata = { endpoint_url: 'internal value' };
+  assert.throws(() => validateV53Leaderboard(board), /endpoint_url/);
+  board.entries[0] = { ...board.entries[0], metadata: { receipt_sha256: 'a'.repeat(64) } };
+  board.reliability_panel = {
+    status: 'complete',
+    entries: [{ rank: 1, entry: board.entries[0].entry, base: {}, extension: {}, scores: {} }],
+  };
+  assert.doesNotThrow(() => validateV53Leaderboard(board));
+  board.reliability_panel.entries[0].private_detail = 'must stay private';
+  assert.throws(() => validateV53Leaderboard(board), /unexpected field/);
+});
+
+test('artifact IO rejects links, special files, and reads beyond its byte limit', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-v53-artifact-io-'));
+  try {
+    const regular = path.join(tmp, 'regular.json');
+    const linked = path.join(tmp, 'linked.json');
+    fs.writeFileSync(regular, '{}');
+    fs.symlinkSync(regular, linked);
+    assert.throws(() => readArtifactFile(linked, { label: 'linked artifact' }), /safely|regular file/);
+
+    const oversized = path.join(tmp, 'oversized.json');
+    fs.writeFileSync(oversized, '12345');
+    assert.throws(
+      () => readArtifactFile(oversized, { label: 'oversized artifact', maxBytes: 4 }),
+      /byte limit/,
+    );
+
+    const runSrc = path.join(tmp, 'run');
+    const outDir = path.join(tmp, 'out');
+    const destDir = path.join(outDir, 'run');
+    const sentinel = path.join(tmp, 'sentinel');
+    fs.mkdirSync(runSrc);
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(runSrc, 'summary.json'), JSON.stringify(sampleSummary()));
+    fs.writeFileSync(sentinel, 'unchanged');
+    fs.symlinkSync(sentinel, path.join(destDir, 'summary.json'));
+    assert.throws(
+      () => importV53Run({ runDir: runSrc, name: 'run', outDir }),
+      /regular file|filesystem link/,
+    );
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'unchanged');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('confirmatory import projects complete full runs and accepts rounded native rates', () => {
@@ -255,4 +313,11 @@ test('importV53Leaderboard and importV53Run copy only publishable artifacts', ()
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('artifact diagnostics withhold malformed JSON content and detect decoded Windows paths', () => {
+  assert.throws(() => parseArtifactJson('operator-private-marker', 'summary.json'),
+    { message: 'summary.json contains invalid JSON' });
+  assert.throws(() => validateV53RunSummary(sampleSummary({ model_label: String.raw`C:\Users\operator\run` })),
+    /local filesystem path/);
 });

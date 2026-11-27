@@ -6,10 +6,15 @@
  *   node site/build.mjs [--input <confirmatory.json>] [--out <out.json>] [--check]
  */
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateV53Confirmatory } from '../scripts/import-v53-run.mjs';
+import {
+  assertNoPrivateLeaks,
+  parseArtifactJson,
+  readArtifactFile,
+  validateV53Confirmatory,
+  writeArtifactFile,
+} from '../scripts/import-v53-run.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -158,15 +163,17 @@ const TRANSPORT_LABELS = {
   openai_compatible: 'OpenAI-compat API',
 };
 
-const LOCAL_PATH_RE = /\/Users\/|\/home\/|[A-Za-z]:\\Users\\/;
-const PRIVATE_EPISODE_RE = /\bv5[23]_(?:core|full)_F\d{2}_R\d(?:_s\d+)?\b/i;
-
 function sha256File(filePath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  return crypto.createHash('sha256').update(readArtifactFile(
+    filePath, { label: path.basename(filePath), encoding: null },
+  )).digest('hex');
 }
 
 function readJsonIfExists(filePath) {
-  return fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf8')) : null;
+  const text = readArtifactFile(filePath, {
+    label: path.basename(filePath), optional: true,
+  });
+  return text === null ? null : parseArtifactJson(text, path.basename(filePath));
 }
 
 export function inferVendor(modelId) {
@@ -339,7 +346,7 @@ export function buildV53SiteData({
   precommitPath = path.join(ROOT, 'datasets/v53/PRECOMMIT.json'),
   confirmatoryPath = path.join(ROOT, 'reports/v53/confirmatory.json'),
 } = {}) {
-  const seal = JSON.parse(fs.readFileSync(sealPath, 'utf8'));
+  const seal = parseArtifactJson(readArtifactFile(sealPath, { label: 'v53_core SEAL.json' }), 'v53_core SEAL.json');
   if (seal.suite_id !== SUITE_ID || seal.protocol_id !== PROTOCOL_ID) {
     throw new Error(`Unexpected seal ${seal.suite_id} / ${seal.protocol_id}`);
   }
@@ -456,13 +463,7 @@ export function buildV53SiteData({
   };
 
   const serialized = JSON.stringify(output);
-  if (LOCAL_PATH_RE.test(serialized)) {
-    throw new Error('Generated site data contains a local filesystem path');
-  }
-  const epMatch = PRIVATE_EPISODE_RE.exec(serialized);
-  if (epMatch) {
-    throw new Error(`Generated site data leaks private episode ID (${epMatch[0]})`);
-  }
+  assertNoPrivateLeaks(serialized, rawBoard.suite_id || SUITE_ID, 'Generated site data');
   return output;
 }
 
@@ -474,7 +475,7 @@ export function buildFullSiteData({
   confirmatoryPath = path.join(ROOT, 'reports/v53/confirmatory.json'),
 } = {}) {
   const sealPath = path.join(ROOT, 'datasets/v53/v53_full/SEAL.json');
-  const seal = JSON.parse(fs.readFileSync(sealPath, 'utf8'));
+  const seal = parseArtifactJson(readArtifactFile(sealPath, { label: 'v53_full SEAL.json' }), 'v53_full SEAL.json');
   if (seal.suite_id !== 'v53_full' || seal.episode_count !== 96 || seal.protocol_id !== PROTOCOL_ID) {
     throw new Error('Unexpected v53_full seal');
   }
@@ -541,7 +542,9 @@ function main() {
   const next = serializeV53SiteData(data);
   const counts = `${data.confirmatory?.entries.length ?? 0} ranked runs on ${data.suite.scenarios} scenarios`;
   if (args.check) {
-    const current = fs.existsSync(args.out) ? fs.readFileSync(args.out, 'utf8') : '';
+    const current = readArtifactFile(args.out, {
+      label: 'site leaderboard data', optional: true,
+    }) ?? '';
     if (current !== next) {
       console.error(`${path.relative(ROOT, args.out)} is out of date. Run: node site/build.mjs`);
       process.exit(1);
@@ -549,8 +552,7 @@ function main() {
     console.log(`${path.relative(ROOT, args.out)} is up to date (${counts}).`);
     return;
   }
-  fs.mkdirSync(path.dirname(args.out), { recursive: true });
-  fs.writeFileSync(args.out, next, 'utf8');
+  writeArtifactFile(args.out, next, 'site leaderboard data');
   console.log(`Wrote ${path.relative(ROOT, args.out)} (${counts}).`);
 }
 
