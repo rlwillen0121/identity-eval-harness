@@ -228,7 +228,7 @@ test('full-suite results and publication dates render independently of core rank
   store.set({ selected: model.id });
   assert.match(root.querySelector('.expanded-metrics').textContent, /Total tokens1,250,000/);
   assert.match(root.textContent, /Clean solves6\/96/);
-  assert.match(root.textContent, /No bound probe receipt/i);
+  assert.match(root.textContent, /No check linked to this run/i);
   assert.match(root.textContent, /turn limit/i);
   assert.match(root.textContent, /parse failure/i);
 

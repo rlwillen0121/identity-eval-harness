@@ -23,6 +23,8 @@ svg { vertical-align: middle; }
 .site-nav { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .site-nav a { border-radius: 999px; padding: 6px 12px; color: var(--ink-2); font-size: 13.5px; text-decoration: none; }
 .site-nav a:hover { background: var(--wash); color: var(--ink); }
+.site-nav .site-nav-github { color: var(--accent-ink); font-weight: 600; }
+.site-nav .site-nav-github:hover { color: var(--ink); }
 .theme-toggle { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-left: -6px; border: 0; border-radius: 999px; padding: 0; color: var(--ink-2); line-height: 1; }
 .theme-toggle:hover { background: var(--wash); color: var(--ink); }
 .theme-toggle svg { width: 17px; height: 17px; }
@@ -91,9 +93,12 @@ p { margin: 0 0 16px; }
   .container { padding-inline: 16px; }
   .site-header { gap: 8px 12px; padding-block: 16px 10px; }
   .site-nav { order: 3; width: calc(100% + 12px); margin: 0 -6px; justify-content: space-between; gap: 0; }
-  .site-nav a { padding: 6px; font-size: 13px; }
+  .site-nav a { padding: 6px 5px; font-size: 13px; }
   .theme-toggle { margin: -4px -8px -4px auto; }
   .hero { padding-block: 24px 18px; }
+  .section { margin-top: 72px; padding-top: 32px; }
+  h2 { margin-bottom: 24px; }
+  .section-lede { margin-bottom: 26px; font-size: 15px; }
   .provenance { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .method-glossary { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .site-footer { margin-top: 64px; flex-direction: column; gap: 16px; }
