@@ -18,7 +18,11 @@ export function fullChartData({ confirmatory, categories = [], regimes = [] }) {
         macro_cat_acc: analysis.macro_cat_acc,
         category_pass_rates: analysis.category_pass_rates,
       },
-      usage: { estimated_cost_usd: analysis.estimated_cost_pricing_sha256 ? analysis.estimated_cost_usd : undefined },
+      usage: {
+        estimated_cost_usd: analysis.estimated_cost_pricing_sha256 ? analysis.estimated_cost_usd : undefined,
+        total_tokens: analysis.total_tokens,
+        mean_task_time_s: analysis.mean_task_time_s,
+      },
       marginals: { regime_g_srr: analysis.regime_g_srr },
     };
   });

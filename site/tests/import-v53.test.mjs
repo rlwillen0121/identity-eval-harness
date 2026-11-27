@@ -170,6 +170,7 @@ test('confirmatory import projects complete full runs and accepts rounded native
   assert.deepEqual(entry.analysis, {
     category_pass_rates: run.scores.category_pass_rates, regime_g_srr: run.marginals.regime_g_srr,
     macro_cat_acc: 0.7, estimated_cost_usd: 0, estimated_cost_pricing_sha256: board.pricing_sha256,
+    total_tokens: null, mean_task_time_s: null,
   });
   run.usage.estimated_cost_pricing_sha256 = '2'.repeat(64);
   assert.throws(project, /differs from the native leaderboard/);
@@ -215,12 +216,83 @@ test('confirmatory import projects complete full runs and accepts rounded native
   assert.throws(project, /incomplete/);
 });
 
+test('confirmatory metrics count disjoint input buckets and preserve missing usage as unknown', () => {
+  const seal = {
+    suite_id: 'v53_full', episode_count: 96, protocol_id: 'identitybench.v5.3.protocol.v1',
+    contract_id: 'contract', spec_sha256: 'a'.repeat(64), episodes_sha256: 'b'.repeat(64),
+    oracles_sha256: 'c'.repeat(64),
+  };
+  const run = {
+    rank: null, status: 'unranked',
+    entry: { model_id: 'example-model', reasoning_effort: 'high', transport_id: 'codex_cli' },
+    eligibility: { eligible: false, reasons: [{ code: 'suite_not_ranked' }] },
+    scores: {
+      planned_slots: 96, observed_slots: 96, repeats: 1, resolved_slots: 96,
+      committed_slots: 96, safety_adjusted_score_tenths: 960, safety_adjusted_score: 1,
+      g_srr: 1, og_total: 0, ab_total: 0, macro_cat_acc: 1,
+      category_pass_rates: Object.fromEntries(CATEGORIES.map(({ id }) => [id, 1])),
+    },
+    diagnostics: {
+      provider_failure_slots: 0, transport_integrity_slots: 0, turn_budget_exhaustion_rate: 0,
+      parse_failure_rate: 0, refusal_rate: 0, total_slot_wall_time_s: 1200,
+    },
+    metadata: { receipt_sha256: 'a'.repeat(64), withheld_bundle_sha256: 'd'.repeat(64) },
+    marginals: { regime_g_srr: { R1: 1, R2: 1, R3: 1, R4: 1 } },
+    usage: {
+      uncached_input_tokens: 100, cache_read_tokens: 20, cache_write_tokens: 5,
+      output_tokens: 75, reasoning_tokens: 50,
+      estimated_cost_usd: 1, estimated_cost_pricing_sha256: '1'.repeat(64),
+    },
+  };
+  const board = sampleLeaderboard({
+    suite_id: 'v53_full', ranked_suite: false, entries: [], unranked_entries: [run],
+    published_seal: seal, pricing_sha256: '1'.repeat(64),
+  });
+  const project = () => projectV53Confirmatory(board, JSON.stringify(seal), '2026-11-26');
+  let analysis = project().entries[0].analysis;
+  assert.equal(analysis.total_tokens, 200);
+  assert.equal(analysis.mean_task_time_s, 12.5);
+  run.usage.cache_write_tokens = 0;
+  assert.equal(project().entries[0].analysis.total_tokens, 195);
+  run.usage.cache_write_tokens = 5;
+
+  run.usage.cache_write_tokens = null;
+  analysis = project().entries[0].analysis;
+  assert.equal(analysis.total_tokens, null);
+  assert.equal(analysis.mean_task_time_s, 12.5);
+  delete run.usage.cache_write_tokens;
+  assert.equal(project().entries[0].analysis.total_tokens, null);
+  run.usage.cache_write_tokens = 5;
+
+  run.diagnostics.total_slot_wall_time_s = null;
+  analysis = project().entries[0].analysis;
+  assert.equal(analysis.total_tokens, 200);
+  assert.equal(analysis.mean_task_time_s, null);
+
+  run.usage = {
+    uncached_input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
+    output_tokens: 0, reasoning_tokens: 0,
+    estimated_cost_usd: 0, estimated_cost_pricing_sha256: '1'.repeat(64),
+  };
+  run.diagnostics.total_slot_wall_time_s = 0;
+  analysis = project().entries[0].analysis;
+  assert.equal(analysis.total_tokens, null);
+  assert.equal(analysis.mean_task_time_s, null);
+  assert.equal(analysis.estimated_cost_usd, 0);
+});
+
 test('full analysis validates only named chart aggregates and preserves older ranked reports', () => {
   const source = JSON.parse(fs.readFileSync(new URL('../../reports/v53/confirmatory.json', import.meta.url)));
   const report = structuredClone(source);
   const row = report.entries[0];
   const validate = () => validateV53Confirmatory(report, source.seal_sha256);
   const analysis = row.analysis;
+  const legacy = structuredClone(report);
+  for (const entry of legacy.entries) {
+    delete entry.analysis?.total_tokens;
+    delete entry.analysis?.mean_task_time_s;
+  }
+  assert.doesNotThrow(() => validateV53Confirmatory(legacy, source.seal_sha256));
   delete row.analysis;
   assert.doesNotThrow(validate);
   row.analysis = null;
@@ -248,6 +320,17 @@ test('full analysis validates only named chart aggregates and preserves older ra
   }
   row.analysis = { ...analysis, estimated_cost_pricing_sha256: 'a'.repeat(64) };
   assert.throws(validate, /one shared pricing artifact/);
+  row.analysis = { ...analysis, total_tokens: null, mean_task_time_s: null };
+  assert.doesNotThrow(validate);
+  row.analysis = { ...analysis, total_tokens: 100 };
+  delete row.analysis.mean_task_time_s;
+  assert.throws(validate, /analysis fields/);
+  for (const value of [0, -1]) {
+    for (const key of ['total_tokens', 'mean_task_time_s']) {
+      row.analysis = { ...analysis, [key]: value };
+      assert.throws(validate, /token or task-time metric/);
+    }
+  }
 });
 
 test('full publication verifies exact competition ranks, byte-wise display order, and receipt status', () => {

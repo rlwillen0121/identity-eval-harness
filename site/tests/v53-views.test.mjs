@@ -199,6 +199,7 @@ test('full-suite results and publication dates render independently of core rank
       transport: model.transport_label,
       safety_adjusted_score_tenths: -12,
       resolved_slots: 6,
+      analysis: { total_tokens: 1_250_000, mean_task_time_s: 120, estimated_cost_usd: 8, estimated_cost_pricing_sha256: 'a'.repeat(64) },
       og_total: 3,
       ab_total: 2,
       step_limit_slots: 6,
@@ -209,7 +210,6 @@ test('full-suite results and publication dates render independently of core rank
   root.innerHTML = `
     <p id="full-suite-summary"></p>
     <div class="full-suite-results"><table><tbody id="full-suite-rows"></tbody></table></div>
-    <p id="full-suite-safety"></p>
   `;
   fillConfirmatory(root, null);
   assert.match(root.querySelector('#full-suite-summary').textContent, /No completed/);
@@ -217,11 +217,13 @@ test('full-suite results and publication dates render independently of core rank
 
   const store = fillConfirmatory(root, report);
   assert.equal(root.querySelector('.full-suite-results').hidden, false);
-  assert.match(root.querySelector('#full-suite-summary').textContent, /96 fresh private scenarios/);
+  assert.match(root.querySelector('#full-suite-summary').textContent, /96 private scenarios/);
   const row = root.querySelector('.model-row');
   assert.equal(row.querySelector('.rank-cell').textContent, '1');
   assert.match(row.textContent, /-1.25%/);
   assert.match(row.textContent, /6\/96/);
+  const metrics = row.querySelectorAll('.usage-cell').map((cell) => cell.textContent);
+  assert.deepEqual(metrics, ['Tokens1.3M', 'Est. cost$8.00', 'Time / task2.0 min']);
   store.set({ selected: model.id });
   assert.match(root.textContent, /No bound probe receipt/i);
   assert.match(root.textContent, /turn limit/i);
@@ -230,17 +232,22 @@ test('full-suite results and publication dates render independently of core rank
   const other = {
     ...report.entries[0],
     id: 'second::high::codex_cli', name: 'Second', model_id: 'second', transport_id: 'codex_cli',
-    vendor: 'openai', vendor_label: 'OpenAI', probe_receipt_bound: true,
+    vendor: 'openai', vendor_label: 'OpenAI', probe_receipt_bound: true, analysis: {},
   };
   const ties = fillConfirmatory(root, { ...report, entries: [report.entries[0], other] });
   const ranks = () => root.querySelectorAll('.rank-cell').map((cell) => cell.textContent);
   assert.deepEqual(ranks(), ['T1', 'T1']);
+  for (const key of ['tokens', 'cost', 'time']) {
+    for (const dir of ['asc', 'desc']) {
+      ties.set({ sort: { key, dir } });
+      assert.deepEqual(root.querySelectorAll('.model-row').map((r) => r.dataset.modelId), [model.id, other.id]);
+    }
+  }
   ties.set({ vendors: new Set(['openai']) });
   assert.deepEqual(ranks(), ['T1']);
   assert.match(root.querySelector('.model-row').textContent, /Second/);
   ties.set({ query: 'not a model' });
   assert.deepEqual(ranks(), []);
-  assert.match(root.querySelector('#full-suite-summary').textContent, /1 of 2 runs have a bound context-probe receipt/);
   const updates = dom.root();
   mountUpdates(updates, report);
   assert.match(updates.textContent, /26 Nov 2026/);
@@ -252,7 +259,7 @@ test('safety and score controls reorder the full runs while preserving their pub
   const dom = installDOM();
   const { confirmatory } = buildFullSiteData();
   const root = dom.root();
-  root.innerHTML = '<p id="full-suite-summary"></p><div class="full-suite-results"></div><p id="full-suite-safety"></p>';
+  root.innerHTML = '<p id="full-suite-summary"></p><div class="full-suite-results"></div>';
   fillConfirmatory(root, confirmatory);
 
   const displayed = () => root.querySelectorAll('.model-row')
@@ -261,7 +268,7 @@ test('safety and score controls reorder the full runs while preserving their pub
   const idsAndRanks = (entries) => entries.map(({ id }) => [id, rankLabels.get(id)]);
   const safetyErrors = (row) => row.og_total + row.ab_total;
 
-  root.querySelector('.view-controls').dispatchEvent({ type: 'click', target: root.querySelector('[data-preset="safety"]') });
+  root.querySelector('thead').dispatchEvent({ type: 'click', target: root.querySelector('[data-sort="violations"]') });
   const bySafety = [...confirmatory.entries].sort((a, b) => safetyErrors(a) - safetyErrors(b) || a.rank - b.rank);
   assert.deepEqual(displayed(), idsAndRanks(bySafety));
 
