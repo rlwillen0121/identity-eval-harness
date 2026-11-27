@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,6 +14,18 @@ import {
   serializeV53SiteData,
 } from '../build.mjs';
 import { hasVendorLogo } from '../assets/scripts/logos.js';
+
+test('the published retail rates match the pricing digest on every priced run', () => {
+  const home = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const source = home.match(/href="https:\/\/github\.com\/rlwillen0121\/identity-eval-harness\/blob\/main\/(pricing\/[\w.-]+\.json)">frozen retail rates</);
+  assert.ok(source, 'Method links to the published pricing snapshot');
+  const snapshot = fs.readFileSync(new URL(`../../${source[1]}`, import.meta.url));
+  const digest = createHash('sha256').update(snapshot).digest('hex');
+  const { entries } = buildFullSiteData().confirmatory;
+  for (const row of entries.filter((entry) => entry.analysis?.estimated_cost_usd != null)) {
+    assert.equal(row.analysis.estimated_cost_pricing_sha256, digest, row.model_id);
+  }
+});
 
 function makeEntry({ rank = null, status = 'ranked', modelId, effort = 'high', transport = 'claude_cli', gSrr, cost, reasons = [] }) {
   return {

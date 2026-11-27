@@ -12,6 +12,7 @@ on:
       - "datasets/v53/v53_full/SEAL.json"
       - "datasets/v53/PRECOMMIT.json"
       - "pricing/v53-pricing-table.json"
+      - "pricing/v53-full-pricing-*.json"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - "datasets/v53/v53_full/SEAL.json"
       - "datasets/v53/PRECOMMIT.json"
       - "pricing/v53-pricing-table.json"
+      - "pricing/v53-full-pricing-*.json"
       - ".github/workflows/site.yml"
 
 permissions:
