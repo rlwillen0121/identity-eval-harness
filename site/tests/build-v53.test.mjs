@@ -98,7 +98,12 @@ test('public site data contains only the full leaderboard and its matching seal'
   assert.equal(data.suite.scenarios, 96);
   assert.equal(data.suite.seal_sha256, report.seal_sha256);
   assert.equal(data.updated, report.published_on);
-  assert.deepEqual(data.confirmatory.entries.map(({ name, transport, ...row }) => row), report.entries);
+  const published = data.confirmatory.entries.map(({ id, name, transport, vendor, vendor_label, ...row }) => {
+    assert.equal(id, [row.model_id, row.reasoning_effort, row.transport_id].join('::'));
+    assert.ok(name && transport && vendor && vendor_label);
+    return row;
+  });
+  assert.deepEqual(published, report.entries);
   assert.equal(Object.hasOwn(data, 'models'), false);
   assert.equal(Object.hasOwn(data, 'history'), false);
 
