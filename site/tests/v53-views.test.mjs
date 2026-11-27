@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { CATEGORIES, FAMILIES, REGIMES, buildV53SiteData } from '../build.mjs';
+import { CATEGORIES, FAMILIES, REGIMES, buildFullSiteData, buildV53SiteData } from '../build.mjs';
 import { duration, formatInterval, gSrrPct, pct, tokPerSec, usd } from '../assets/scripts/format.js';
 import { createStore, fillConfirmatory } from '../assets/scripts/main.js';
 import { mount as mountTable } from '../assets/scripts/table.js';
@@ -190,6 +190,7 @@ test('full-suite results and publication dates render independently of core rank
     scenarios: 96,
     published_on: '2026-11-26',
     entries: [{
+      id: model.id, vendor: model.vendor, vendor_label: model.vendor_label,
       rank: 1, probe_receipt_bound: false,
       name: model.name,
       model_id: model.model_id,
@@ -214,21 +215,61 @@ test('full-suite results and publication dates render independently of core rank
   assert.match(root.querySelector('#full-suite-summary').textContent, /No completed/);
   assert.equal(root.querySelector('.full-suite-results').hidden, true);
 
-  fillConfirmatory(root, report);
+  const store = fillConfirmatory(root, report);
   assert.equal(root.querySelector('.full-suite-results').hidden, false);
   assert.match(root.querySelector('#full-suite-summary').textContent, /96 fresh private scenarios/);
-  const row = root.querySelector('#full-suite-rows').querySelector('tr');
-  assert.deepEqual([...row.querySelectorAll('td')].slice(0, 3).map((cell) => cell.textContent), ['1', '-1.25%', '6/96']);
-  assert.match(row.textContent, /No bound probe receipt/);
-  assert.match(row.textContent, /6 turn limits, 1 parse failure/);
+  const row = root.querySelector('.model-row');
+  assert.equal(row.querySelector('.rank-cell').textContent, '1');
+  assert.match(row.textContent, /-1.25%/);
+  assert.match(row.textContent, /6\/96/);
+  store.set({ selected: model.id });
+  assert.match(root.textContent, /No bound probe receipt/i);
+  assert.match(root.textContent, /turn limit/i);
+  assert.match(root.textContent, /parse failure/i);
 
-  const tie = { ...report.entries[0], model_id: 'second', probe_receipt_bound: true };
-  fillConfirmatory(root, { ...report, entries: [report.entries[0], tie] });
-  assert.deepEqual([...root.querySelectorAll('tr')].map((r) => r.querySelector('td').textContent), ['T1', 'T1']);
+  const other = {
+    ...report.entries[0],
+    id: 'second::high::codex_cli', name: 'Second', model_id: 'second', transport_id: 'codex_cli',
+    vendor: 'openai', vendor_label: 'OpenAI', probe_receipt_bound: true,
+  };
+  const ties = fillConfirmatory(root, { ...report, entries: [report.entries[0], other] });
+  const ranks = () => root.querySelectorAll('.rank-cell').map((cell) => cell.textContent);
+  assert.deepEqual(ranks(), ['T1', 'T1']);
+  ties.set({ vendors: new Set(['openai']) });
+  assert.deepEqual(ranks(), ['T1']);
+  assert.match(root.querySelector('.model-row').textContent, /Second/);
+  ties.set({ query: 'not a model' });
+  assert.deepEqual(ranks(), []);
   assert.match(root.querySelector('#full-suite-summary').textContent, /1 of 2 runs have a bound context-probe receipt/);
   const updates = dom.root();
   mountUpdates(updates, report);
   assert.match(updates.textContent, /26 Nov 2026/);
   assert.match(updates.textContent, /96-scenario leaderboard/);
   assert.equal(updates.querySelector('.update-full-link').getAttribute('href'), '#leaderboard');
+});
+
+test('safety and score controls reorder the full runs while preserving their published ranks', () => {
+  const dom = installDOM();
+  const { confirmatory } = buildFullSiteData();
+  const root = dom.root();
+  root.innerHTML = '<p id="full-suite-summary"></p><div class="full-suite-results"></div><p id="full-suite-safety"></p>';
+  fillConfirmatory(root, confirmatory);
+
+  const displayed = () => root.querySelectorAll('.model-row')
+    .map((row) => [row.dataset.modelId, row.querySelector('.rank-cell').textContent]);
+  const rankLabels = new Map(displayed());
+  const idsAndRanks = (entries) => entries.map(({ id }) => [id, rankLabels.get(id)]);
+  const safetyErrors = (row) => row.og_total + row.ab_total;
+
+  root.querySelector('.view-controls').dispatchEvent({ type: 'click', target: root.querySelector('[data-preset="safety"]') });
+  const bySafety = [...confirmatory.entries].sort((a, b) => safetyErrors(a) - safetyErrors(b) || a.rank - b.rank);
+  assert.deepEqual(displayed(), idsAndRanks(bySafety));
+
+  const header = root.querySelector('thead');
+  const score = root.querySelector('[data-sort="score"]');
+  header.dispatchEvent({ type: 'click', target: score });
+  assert.deepEqual(displayed(), idsAndRanks(confirmatory.entries));
+  header.dispatchEvent({ type: 'click', target: score });
+  const byAscendingScore = [...confirmatory.entries].sort((a, b) => a.safety_adjusted_score_tenths - b.safety_adjusted_score_tenths);
+  assert.deepEqual(displayed(), idsAndRanks(byAscendingScore));
 });

@@ -55,19 +55,8 @@
       <section class="section leaderboard" id="full-suite" aria-labelledby="leaderboard">
         <h2 id="leaderboard">Leaderboard · 96 scenarios</h2>
         <p class="section-lede" id="full-suite-summary"></p>
-        <div class="full-suite-results" hidden>
-          <table class="full-suite-table" aria-labelledby="leaderboard" aria-describedby="full-suite-summary full-suite-safety">
-            <thead><tr>
-              <th scope="col" aria-label="Rank">#</th>
-              <th scope="col">Model</th>
-              <th scope="col"><abbr title="Safety-adjusted score">Score</abbr></th>
-              <th scope="col">Clean solves</th>
-              <th scope="col">Safety</th>
-            </tr></thead>
-            <tbody id="full-suite-rows"></tbody>
-          </table>
-        </div>
-        <p class="full-suite-note" id="full-suite-safety" hidden>OG means overgrants. AB means availability breaches. Turn limits, parse failures, and refusals count as scored misses.</p>
+        <div class="full-suite-results" hidden></div>
+        <p class="full-suite-note" id="full-suite-safety" hidden>A clean solve passes every check. Safety errors include excess access granted and legitimate access disrupted.</p>
         <p class="full-suite-note"><a href="data/leaderboard.json" download>Download leaderboard data (JSON)</a></p>
       </section>
       <section class="section" id="updates" aria-labelledby="updates-title">

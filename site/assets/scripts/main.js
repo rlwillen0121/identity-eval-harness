@@ -1,4 +1,5 @@
-import { pct, int, date } from './format.js';
+import { int, date } from './format.js';
+import { mount as mountFullTable } from './full-table.js';
 import { mount as mountUpdates } from './updates.js';
 
 function sameStoreValue(key, left, right) {
@@ -19,12 +20,7 @@ export function createStore(initial) {
     get: () => state,
     set(patch) {
       const next = { ...state, ...patch };
-      const selecting = Boolean(patch.selected);
-      if (selecting) {
-        next.query = '';
-        next.vendors = new Set();
-      }
-      const repeatedSelection = selecting && patch.selected === state.selected;
+      const repeatedSelection = patch.selected && patch.selected === state.selected;
       const unchanged = Object.keys(patch).every((key) => sameStoreValue(key, next[key], state[key]));
       if (unchanged && !repeatedSelection) return;
       state = next;
@@ -62,76 +58,25 @@ function fillProvenance({ suite, updated }) {
   }
 }
 
-export function fillConfirmatory(root, report) {
+export function fillConfirmatory(root, report, selected = null) {
   const summary = root.querySelector('#full-suite-summary');
   const table = root.querySelector('.full-suite-results');
   const safety = root.querySelector('#full-suite-safety');
-  const rows = root.querySelector('#full-suite-rows');
   const entries = report?.entries || [];
-  rows.replaceChildren();
+  table.replaceChildren();
   table.hidden = safety.hidden = entries.length === 0;
   if (!entries.length) {
     summary.textContent = 'No completed full-suite runs are published yet.';
-    return;
+    return null;
   }
-  summary.textContent =
-    `${int(entries.length)} entries ranked by safety-adjusted score on ${int(report.scenarios)} fresh private scenarios. Exact scores share a rank.`;
+  summary.textContent = `${int(entries.length)} ranked configurations on ${int(report.scenarios)} fresh private scenarios.`;
   if (entries.every((entry) => typeof entry.probe_receipt_bound === 'boolean')) {
     const bound = entries.filter((entry) => entry.probe_receipt_bound).length;
     summary.textContent += ` ${int(bound)} of ${int(entries.length)} runs have a bound context-probe receipt.`;
   }
-  for (const [index, entry] of entries.entries()) {
-    const row = document.createElement('tr');
-    const rank = document.createElement('td');
-    const tied = entries[index - 1]?.rank === entry.rank || entries[index + 1]?.rank === entry.rank;
-    rank.textContent = tied ? `T${int(entry.rank)}` : int(entry.rank);
-    row.append(rank);
-    const model = document.createElement('th');
-    model.scope = 'row';
-    model.textContent = `${entry.name} `;
-    const config = document.createElement('span');
-    config.className = 'full-suite-config';
-    const effort = entry.reasoning_effort === 'transport_default' ? 'Default' : entry.reasoning_effort;
-    config.textContent = `${effort[0].toUpperCase() + effort.slice(1)} · ${entry.transport} `;
-    model.append(config);
-    const receipt = document.createElement('span');
-    receipt.className = 'full-suite-config';
-    receipt.textContent = entry.probe_receipt_bound === undefined ? 'Probe receipt status unavailable'
-      : entry.probe_receipt_bound ? 'Bound probe receipt' : 'No bound probe receipt';
-    model.append(receipt);
-    const terminal = [
-      [entry.step_limit_slots, 'turn limit'],
-      [entry.parse_failure_slots, 'parse failure'],
-      [entry.refusal_slots, 'refusal'],
-    ].filter(([count]) => count > 0)
-      .map(([count, label]) => `${int(count)} ${label}${count === 1 ? '' : 's'}`);
-    if (terminal.length) {
-      const note = document.createElement('span');
-      note.className = 'full-suite-config';
-      note.textContent = terminal.join(', ');
-      model.append(note);
-    }
-    row.append(model);
-    const values = [
-      pct(entry.safety_adjusted_score_tenths / (10 * report.scenarios), 2),
-      `${int(entry.resolved_slots)}/${int(report.scenarios)}`,
-    ];
-    for (const value of values) {
-      const cell = document.createElement('td');
-      cell.textContent = value;
-      row.append(cell);
-    }
-    const totals = document.createElement('td');
-    totals.className = 'full-suite-totals';
-    for (const [count, label] of [[entry.og_total, 'OG'], [entry.ab_total, 'AB']]) {
-      const value = document.createElement('span');
-      value.textContent = `${int(count)} ${label}`;
-      if (totals.childNodes.length) totals.append(document.createTextNode(' '));
-      totals.append(value);
-    }
-    row.append(totals);
-    rows.append(row);
-  }
+  const store = createStore({ sort: { key: 'rank', dir: 'asc' }, query: '', vendors: new Set(), selected });
+  mountFullTable(table, report, store);
+  return store;
 }
 
 function setupTheme() {
@@ -169,14 +114,38 @@ async function boot() {
   if (!response.ok) throw new Error(`Data request failed (${response.status})`);
   const data = await response.json();
   fillProvenance(data);
-  fillConfirmatory(document.getElementById('full-suite'), data.confirmatory);
+  const entries = data.confirmatory?.entries || [];
+  function fromHash() {
+    if (!location.hash.startsWith('#m=')) return null;
+    try {
+      const id = decodeURIComponent(location.hash.slice(3));
+      return entries.find((entry) => entry.id === id)?.id ?? null;
+    } catch { return null; }
+  }
+  const store = fillConfirmatory(document.getElementById('full-suite'), data.confirmatory, fromHash());
   mountUpdates(document.getElementById('updates-root'), data.confirmatory);
   document.getElementById('load-status').hidden = true;
   reveal();
 
-  if (location.hash === '#full-suite' || location.hash === '#leaderboard' || location.hash.startsWith('#m=')) {
-    requestAnimationFrame(() => document.getElementById('leaderboard').scrollIntoView({ block: 'start' }));
+  function scrollToSelection() {
+    const id = store?.get().selected;
+    if (id || ['#full-suite', '#leaderboard'].includes(location.hash) || location.hash.startsWith('#m=')) {
+      requestAnimationFrame(() => (document.getElementById(`model-${id}`) || document.getElementById('leaderboard')).scrollIntoView({ block: 'start' }));
+    }
   }
+  store?.subscribe(({ selected }, patch) => {
+    if (!('selected' in patch)) return;
+    const hash = selected ? `#m=${encodeURIComponent(selected)}` : '#leaderboard';
+    if (hash !== location.hash && (selected || location.hash.startsWith('#m='))) {
+      history.pushState(null, '', `${location.pathname}${location.search}${hash}`);
+    }
+  });
+  window.addEventListener('hashchange', () => {
+    const selected = fromHash();
+    store?.set(selected ? { selected, query: '', vendors: new Set() } : { selected });
+    scrollToSelection();
+  });
+  scrollToSelection();
 }
 
 if (typeof document !== 'undefined') {
