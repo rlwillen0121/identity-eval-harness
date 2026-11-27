@@ -165,6 +165,29 @@ async fn replay_round_trip_jsonl_costs_and_has() {
 }
 
 #[test]
+fn replay_file_must_be_bounded_regular_and_not_a_symlink() {
+    let tmp = TempDir::new().unwrap();
+    let regular = tmp.path().join("responses.jsonl");
+    fs::write(&regular, b"\n").unwrap();
+
+    #[cfg(unix)]
+    {
+        let linked = tmp.path().join("linked.jsonl");
+        std::os::unix::fs::symlink(&regular, &linked).unwrap();
+        assert!(load_responses_jsonl(&linked).is_err());
+
+        let directory = tmp.path().join("responses.directory");
+        fs::create_dir(&directory).unwrap();
+        assert!(load_responses_jsonl(&directory).is_err());
+    }
+
+    let oversized = tmp.path().join("oversized.jsonl");
+    let file = fs::File::create(&oversized).unwrap();
+    file.set_len(256 * 1024 * 1024 + 1).unwrap();
+    assert!(load_responses_jsonl(&oversized).is_err());
+}
+
+#[test]
 fn factory_validation_yaml_and_make_provider() {
     assert_eq!(
         PROVIDER_KINDS,

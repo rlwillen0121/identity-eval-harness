@@ -1,7 +1,6 @@
 //! Replay provider: serves recorded responses by cache key, for CI and re-scoring (SPEC §11.1).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
@@ -22,6 +21,8 @@ use crate::subprocess::{redact, redact_diagnostics_map};
 
 pub const CACHE_KEY_PARAM: &str = "cache_key";
 const MAX_REPLAY_RECORD_BYTES: usize = 16 * 1024 * 1024;
+const MAX_REPLAY_FILE_BYTES: usize = 256 * 1024 * 1024;
+const MAX_REPLAY_RECORDS: usize = 100_000;
 const MAX_REPLAY_KEY_BYTES: usize = 4 * 1024;
 
 const RESPONSE_FIELDS: &[&str] = &[
@@ -415,16 +416,24 @@ pub fn recorded_cost_from(
 fn load_records(
     path: &Path,
 ) -> Result<BTreeMap<String, (ModelResponse, Option<RecordedCost>)>, ReplayError> {
-    let file = File::open(path).map_err(|error| {
+    let file = ib_core::artifact::regular_file(path).map_err(|error| {
         ReplayError(format!(
             "replay file could not be read ({:?})",
             error.kind()
         ))
     })?;
+    if file.metadata().map_or(true, |metadata| {
+        metadata.len() > MAX_REPLAY_FILE_BYTES as u64
+    }) {
+        return Err(ReplayError(format!(
+            "replay file exceeds the {MAX_REPLAY_FILE_BYTES} byte limit"
+        )));
+    }
     let mut reader = BufReader::new(file);
     let mut line = Vec::new();
     let mut records = BTreeMap::new();
     let mut number = 0usize;
+    let mut total_bytes = 0usize;
     loop {
         line.clear();
         let read = read_bounded_line(&mut reader, &mut line, MAX_REPLAY_RECORD_BYTES).map_err(
@@ -442,7 +451,18 @@ fn load_records(
         if !read {
             break;
         }
+        total_bytes = total_bytes.saturating_add(line.len());
+        if total_bytes > MAX_REPLAY_FILE_BYTES {
+            return Err(ReplayError(format!(
+                "replay file exceeds the {MAX_REPLAY_FILE_BYTES} byte limit"
+            )));
+        }
         number += 1;
+        if number > MAX_REPLAY_RECORDS {
+            return Err(ReplayError(format!(
+                "replay file exceeds the {MAX_REPLAY_RECORDS} record limit"
+            )));
+        }
         if line.last() == Some(&b'\n') {
             line.pop();
             if line.last() == Some(&b'\r') {

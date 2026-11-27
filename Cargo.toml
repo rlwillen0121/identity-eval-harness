@@ -25,7 +25,7 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 async-trait = "0.1"
 tempfile = "3"
-url = "2"
+url = "2.5.9"
 nix = { version = "0.32", features = ["signal", "user"] }
 
 # Serialization. `arbitrary_precision` keeps Python big ints and float text intact through
