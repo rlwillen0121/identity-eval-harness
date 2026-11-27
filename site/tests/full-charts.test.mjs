@@ -14,16 +14,20 @@ function entry(id, score, cost, totalTokens = 12500, meanTaskTime = 30.5) {
       total_tokens: totalTokens, mean_task_time_s: meanTaskTime } };
 }
 
-function mount(entries) {
+function mount(entries, { width = 720 } = {}) {
   const dom = installDOM();
   const root = dom.root();
   root.innerHTML = ['pareto', 'safety', 'marginals', 'categories'].map((name) => `<div id="chart-${name}"></div>`).join('');
+  root.rect = { width };
   const data = { models: [{ id: 'historical' }], confirmatory: { scenarios: 96, entries },
-    categories: [{ id: 'policy', short: 'Policy', title: 'Access policy' }], regimes: [{ id: 'R1', label: 'Zero-trust' }] };
+    categories: [{ id: 'policy', short: 'Policy', title: 'Access policy' }], regimes: [
+      { id: 'R1', label: 'Zero-trust' }, { id: 'R2', label: 'Multi-affiliate' },
+      { id: 'R3', label: 'Hybrid cloud' }, { id: 'R4', label: 'M&A' },
+    ] };
   const store = createStore({ selected: null, query: 'other', vendors: new Set(['other']) });
   const opened = [];
   mountAnalysis(root, data, store, (id) => opened.push(id));
-  return { root, store, opened, data };
+  return { root, store, opened, data, dom };
 }
 
 function metricButton(chart, id) {
@@ -85,6 +89,40 @@ test('cost frontier and plotted coordinates preserve negative, zero and positive
     /Domain accuracy averaged across 96 scenarios: 50\.0%/);
 });
 
+test('primary chart title and frontier caption match all nine score-resource combinations', () => {
+  const { root } = mount([entry('first', 100, 1), entry('second', 300, 5)]);
+  const chart = root.querySelector('#chart-pareto');
+  const querySelectorAll = root.querySelectorAll.bind(root);
+  root.querySelectorAll = (selector) => {
+    const nodes = querySelectorAll(selector);
+    if (selector !== '.chart-sub') return nodes;
+    return { length: nodes.length, [Symbol.iterator]: function* iterator() { yield* nodes; } };
+  };
+  const scoreSelect = chart.querySelector('select[aria-label="Vertical axis score metric"]');
+  const scores = [
+    { id: 'safety_adjusted_score', title: 'Safety-adjusted score', frontier: 'score' },
+    { id: 'g_srr', title: 'Clean solve rate', frontier: 'clean solve rate' },
+    { id: 'macro_cat_acc', title: 'Domain accuracy', frontier: 'domain accuracy' },
+  ];
+  const resources = [
+    { id: 'cost', title: 'estimated cost', frontier: 'estimated cost' },
+    { id: 'tokens', title: 'total tokens', frontier: 'token total' },
+    { id: 'time', title: 'time per task', frontier: 'time per task' },
+  ];
+  for (const score of scores) {
+    scoreSelect.value = score.id;
+    scoreSelect.dispatchEvent({ type: 'change' });
+    for (const resource of resources) {
+      metricButton(chart, resource.id).dispatchEvent({ type: 'click' });
+      assert.equal(chart.querySelector('.chart-title').textContent, `${score.title} vs. ${resource.title}`);
+      assert.equal([...chart.querySelectorAll('.chart-sub')].find((node) => node.parentNode === chart)?.textContent,
+        `The line shows the best ${score.frontier} at or below each ${resource.frontier} among plotted runs.`);
+      assert.match(chart.querySelector('svg').getAttribute('aria-label'), new RegExp(`${score.title.toLowerCase()} across 96 scenarios against`));
+    }
+  }
+  assert.equal(root.querySelectorAll('.analysis-chart').length, 4);
+});
+
 test('optional analysis never creates zero-valued costs or heatmap cells for unreported runs', () => {
   const only = { ...entry('no-analysis', -5, 50), analysis: undefined };
   const { root } = mount([only]);
@@ -136,6 +174,60 @@ test('zero and missing time remain distinct and zero-only metrics get an exclusi
   metricButton(tokensChart, 'tokens').dispatchEvent({ type: 'click' });
   assert.match(tokensChart.textContent, /zero token totals for zero-only/);
   assert.equal(tokensChart.querySelectorAll('svg').length, 0);
+});
+
+test('heatmaps distinguish an observed zero from an unavailable value', () => {
+  const zero = entry('zero-regime', 100, 1);
+  zero.analysis.regime_g_srr = { R1: 0 };
+  const { root } = mount([zero], { width: 390 });
+  const chart = root.querySelector('#chart-marginals');
+  const row = chart.querySelector('.chart-model-row');
+  assert.equal(row.getAttribute('role'), 'button');
+  assert.match(row.getAttribute('aria-label'), /Zero-trust: 0\.0%/);
+  assert.match(row.getAttribute('aria-label'), /Multi-affiliate: n\/a/);
+
+  const zeroCell = row.querySelector('.chart-heat-zero');
+  assert.equal(zeroCell.tagName, 'rect');
+  assert.equal(zeroCell.getAttribute('fill'), 'var(--seq-1)');
+  assert.equal(row.querySelectorAll('.chart-heat-unavailable').length, 3);
+  assert.ok(row.querySelectorAll('.chart-heat-unavailable').every((cell) => cell.tagName === 'rect' && cell.getAttribute('stroke-dasharray') === '2 2'));
+  const cellLabels = row.querySelectorAll('.chart-cell-label');
+  assert.equal(cellLabels[0].textContent, '0%');
+  assert.equal(cellLabels[1].textContent, '—');
+  const legend = chart.querySelector('.chart-heatmap-legend');
+  assert.match(legend.textContent, /0% observed/);
+  assert.match(legend.textContent, /Not reported/);
+
+  const environmentCanvas = chart.querySelector('.chart-canvas');
+  assert.equal(environmentCanvas.classList.contains('heatmap-scroll'), false);
+  assert.equal(environmentCanvas.getAttribute('tabindex'), null);
+  assert.equal(chart.querySelector('.chart-scroll-cue'), null);
+  assert.equal(chart.querySelector('svg').getAttribute('width'), '390');
+});
+
+test('narrow heatmaps expose a keyboard-scrollable region and cue only when they overflow', () => {
+  const zero = entry('zero-regime', 100, 1);
+  zero.analysis.regime_g_srr = { R1: 0 };
+  const { root, dom } = mount([zero], { width: 320 });
+  const environmentChart = root.querySelector('#chart-marginals');
+  const canvas = environmentChart.querySelector('.chart-canvas');
+  const cue = environmentChart.querySelector('.chart-scroll-cue');
+  assert.ok(cue);
+  assert.equal(cue.textContent, 'Scroll horizontally to see all 4 enterprise environments.');
+  assert.equal(canvas.getAttribute('role'), 'region');
+  assert.equal(canvas.getAttribute('tabindex'), '0');
+  assert.equal(canvas.getAttribute('aria-describedby'), cue.getAttribute('id'));
+  assert.equal(canvas.classList.contains('heatmap-scroll'), true);
+  assert.equal(environmentChart.querySelector('svg').getAttribute('width'), '370');
+  assert.equal(root.querySelector('#chart-categories').querySelector('.chart-scroll-cue'), null);
+
+  root.rect.width = 390;
+  dom.resize();
+  assert.equal(environmentChart.querySelector('.chart-scroll-cue'), null);
+  assert.equal(canvas.classList.contains('heatmap-scroll'), false);
+  assert.equal(canvas.getAttribute('tabindex'), null);
+  assert.equal(canvas.getAttribute('role'), null);
+  assert.equal(canvas.getAttribute('aria-describedby'), null);
 });
 
 test('log axes remain finite for the smallest and largest finite positive values', () => {

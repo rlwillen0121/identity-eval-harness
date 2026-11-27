@@ -1,7 +1,7 @@
 import { pct } from '../format.js';
 import { bindMark, chart, el, markPosition, modelRow, nameColumn, svgCanvas, text, tipContent } from './svg.js';
 
-export function heatmap(root, data, store, { title, subtitle, empty, columns, rates }) {
+export function heatmap(root, data, store, { title, subtitle, empty, columns, rates, scrollLabel = 'columns', columnWidth }) {
   const models = data.models.filter((model) => columns.some((col) => Number.isFinite(rates(model)?.[col.id])));
   const view = chart(root, title, subtitle, store, ({ width, canvas, tip }) => {
     if (!models.length) {
@@ -11,9 +11,29 @@ export function heatmap(root, data, store, { title, subtitle, empty, columns, ra
       canvas.append(p);
       return;
     }
-    // Scroll the matrix on narrow screens so row labels and percentages stay readable.
-    const chartWidth = Math.max(width, columns.length * (columns.length > 4 ? 51 : 72) + 154);
-    canvas.classList.add('heatmap-scroll');
+    const minColumnWidth = columnWidth ?? (columns.length > 4 ? 51 : 72);
+    const minimumWidth = columns.length * minColumnWidth + 154;
+    const needsScroll = minimumWidth > width;
+    const chartWidth = Math.max(width, minimumWidth);
+    canvas.classList.toggle('heatmap-scroll', needsScroll);
+    if (needsScroll) {
+      const cue = document.createElement('p');
+      cue.className = 'chart-scroll-cue';
+      const cueId = `${root.getAttribute('id') || 'heatmap'}-scroll-cue`;
+      cue.setAttribute('id', cueId);
+      cue.setAttribute('role', 'note');
+      cue.textContent = `Scroll horizontally to see all ${columns.length} ${scrollLabel}.`;
+      canvas.append(cue);
+      canvas.setAttribute('tabindex', '0');
+      canvas.setAttribute('role', 'region');
+      canvas.setAttribute('aria-label', `Scrollable heatmap by ${scrollLabel}`);
+      canvas.setAttribute('aria-describedby', cueId);
+    } else {
+      canvas.removeAttribute('tabindex');
+      canvas.removeAttribute('role');
+      canvas.removeAttribute('aria-label');
+      canvas.removeAttribute('aria-describedby');
+    }
     const left = nameColumn(chartWidth, models);
     const rowH = 28;
     const top = 34;
@@ -32,13 +52,16 @@ export function heatmap(root, data, store, { title, subtitle, empty, columns, ra
       for (const [ci, col] of columns.entries()) {
         const rate = rates(model)?.[col.id];
         const valid = Number.isFinite(rate);
-        const bucket = valid ? Math.min(7, Math.ceil(rate * 7)) : null;
+        const zero = valid && rate === 0;
+        const bucket = valid ? Math.min(7, Math.max(1, Math.ceil(rate * 7))) : null;
         const x = left + ci * colW + 3;
         const w = colW - 6;
         const cell = el('rect', { x, y: y + 2, width: w, height: 18, rx: 3,
-          fill: valid ? `var(--seq-${bucket})` : 'none', class: 'chart-heat-cell' });
+          fill: valid ? `var(--seq-${bucket})` : 'none', stroke: valid ? 'none' : 'var(--muted)',
+          'stroke-dasharray': valid ? 'none' : '2 2', class: `chart-heat-cell${zero ? ' chart-heat-zero' : valid ? '' : ' chart-heat-unavailable'}`,
+          'aria-hidden': 'true' });
         const label = text(x + w / 2, y + 14.5, valid ? pct(rate, 0) : '—',
-          { 'text-anchor': 'middle', class: `chart-cell-label${valid && bucket >= 4 ? ' is-dark-cell' : ''}` });
+          { 'text-anchor': 'middle', class: `chart-cell-label${valid && bucket >= 4 ? ' is-dark-cell' : ''}`, 'aria-hidden': 'true' });
         cell.addEventListener('pointerenter', () => {
           store.set({ hover: model.id });
           const [px, py] = markPosition(svg, root, x, y);
@@ -59,9 +82,8 @@ export function heatmap(root, data, store, { title, subtitle, empty, columns, ra
   });
   if (models.length) {
     const legend = document.createElement('div');
-    legend.className = 'chart-legend';
-    legend.setAttribute('aria-hidden', 'true');
-    legend.innerHTML = '<span>0%</span><span class="legend-ramp"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span>100%</span>';
+    legend.className = 'chart-legend chart-heatmap-legend';
+    legend.innerHTML = '<span><i class="heatmap-zero-key" aria-hidden="true"></i>0% observed</span><span><i class="heatmap-unavailable-key" aria-hidden="true"></i>Not reported</span><span class="chart-scale-key"><span>&gt;0%</span><span class="legend-ramp"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span>100%</span></span>';
     view.header.append(legend);
   }
   return () => view.destroy();
