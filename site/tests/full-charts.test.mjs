@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { installDOM } from './dom-stub.mjs';
 import { createStore } from '../assets/scripts/main.js';
@@ -14,12 +15,12 @@ function entry(id, score, cost, totalTokens = 12500, meanTaskTime = 30.5) {
       total_tokens: totalTokens, mean_task_time_s: meanTaskTime } };
 }
 
-function mount(entries, { width = 720 } = {}) {
+function mount(entries, { width = 720, scenarios = 96 } = {}) {
   const dom = installDOM();
   const root = dom.root();
   root.innerHTML = ['pareto', 'safety', 'marginals', 'categories'].map((name) => `<div id="chart-${name}"></div>`).join('');
   root.rect = { width };
-  const data = { models: [{ id: 'historical' }], confirmatory: { scenarios: 96, entries },
+  const data = { models: [{ id: 'historical' }], confirmatory: { scenarios, entries },
     categories: [{ id: 'policy', short: 'Policy', title: 'Access policy' }], regimes: [
       { id: 'R1', label: 'Zero-trust' }, { id: 'R2', label: 'Multi-affiliate' },
       { id: 'R3', label: 'Hybrid cloud' }, { id: 'R4', label: 'M&A' },
@@ -114,9 +115,14 @@ test('primary chart title and frontier caption match all nine score-resource com
     scoreSelect.dispatchEvent({ type: 'change' });
     for (const resource of resources) {
       metricButton(chart, resource.id).dispatchEvent({ type: 'click' });
-      assert.equal(chart.querySelector('.chart-title').textContent, `${score.title} vs. ${resource.title}`);
-      assert.equal([...chart.querySelectorAll('.chart-sub')].find((node) => node.parentNode === chart)?.textContent,
-        `The line shows the best ${score.frontier} at or below each ${resource.frontier} among plotted runs.`);
+      const expectedTitle = score.id === 'safety_adjusted_score' && resource.id === 'cost'
+        ? 'What does a higher score cost?' : `${score.title} vs. ${resource.title}`;
+      assert.equal(chart.querySelector('.chart-title').textContent, expectedTitle);
+      const expectedCaption = `The line shows the best ${score.frontier} at or below each ${resource.frontier} among plotted runs.`;
+      const caption = [...chart.querySelectorAll('.chart-sub')].find((node) => node.parentNode === chart)?.textContent;
+      assert.ok(caption.startsWith(expectedCaption));
+      if (score.id === 'macro_cat_acc') assert.match(caption, /The vertical scale starts at 50%\./);
+      else assert.equal(caption, expectedCaption);
       assert.match(chart.querySelector('svg').getAttribute('aria-label'), new RegExp(`${score.title.toLowerCase()} across 96 scenarios against`));
     }
   }
@@ -142,7 +148,7 @@ test('heatmap keyboard selection opens the full configuration and clears table f
     const chart = root.querySelector(`#chart-${id}`);
     const rows = chart.querySelectorAll('.chart-model-row');
     assert.equal(rows.length, 1);
-    assert.match(rows[0].getAttribute('aria-label'), id === 'categories' ? /Access policy: 0.0%/ : /Zero-trust: 25.0%/);
+    assert.match(rows[0].getAttribute('aria-label'), id === 'categories' ? /Access policy: 0.0%/ : /Regulated access: 25.0%/);
     rows[0].dispatchEvent({ type: 'keydown', key: 'Enter' });
     assert.equal(store.get().selected, 'priced');
     assert.equal(store.get().query, '');
@@ -183,8 +189,8 @@ test('heatmaps distinguish an observed zero from an unavailable value', () => {
   const chart = root.querySelector('#chart-marginals');
   const row = chart.querySelector('.chart-model-row');
   assert.equal(row.getAttribute('role'), 'button');
-  assert.match(row.getAttribute('aria-label'), /Zero-trust: 0\.0%/);
-  assert.match(row.getAttribute('aria-label'), /Multi-affiliate: n\/a/);
+  assert.match(row.getAttribute('aria-label'), /Regulated access: 0\.0%/);
+  assert.match(row.getAttribute('aria-label'), /Campuses and hospitals: n\/a/);
 
   const zeroCell = row.querySelector('.chart-heat-zero');
   assert.equal(zeroCell.tagName, 'rect');
@@ -244,6 +250,71 @@ test('log axes remain finite for the smallest and largest finite positive values
       assert.ok(Number.isFinite(Number(circle.getAttribute('cy'))));
     }
   }
+});
+
+test('published resource plot labels its top models and cheapest option at desktop and phone widths', () => {
+  const published = JSON.parse(readFileSync(new URL('../data/leaderboard.json', import.meta.url), 'utf8'));
+  const entries = published.confirmatory.entries;
+  const top = entries.slice().sort((a, b) => a.rank - b.rank).slice(0, 2);
+  const cheapest = entries.filter((entry) => Number.isFinite(entry.analysis?.estimated_cost_usd) && entry.analysis.estimated_cost_usd > 0)
+    .slice().sort((a, b) => a.analysis.estimated_cost_usd - b.analysis.estimated_cost_usd)[0];
+  const { root, store } = mount(entries, { width: 1120 });
+  store.set({ query: '', vendors: new Set() });
+  const chart = root.querySelector('#chart-pareto');
+  const labels = chart.querySelectorAll('.chart-direct-label').filter((label) => label.getAttribute('display') !== 'none');
+  const visibleNames = labels.map((label) => label.textContent);
+  for (const model of new Map([...top, cheapest].filter(Boolean).map((model) => [model.id, model])).values()) {
+    assert.ok(visibleNames.includes(model.name), model.name);
+  }
+  assert.ok(chart.querySelectorAll('.chart-label-leader').some((line) => line.getAttribute('display') !== 'none'));
+  assert.match(chart.querySelector('.chart-resource-legend').textContent, /Blue dots and the line show the best score/);
+  const costTicks = chart.querySelectorAll('.chart-tick').filter((tick) => tick.getAttribute('text-anchor') === 'middle');
+  assert.ok(costTicks.length >= 3 && costTicks.length <= 5);
+
+  const phone = mount(entries, { width: 390 });
+  phone.store.set({ query: '', vendors: new Set() });
+  const phoneLabels = phone.root.querySelector('#chart-pareto').querySelectorAll('.chart-direct-label')
+    .filter((label) => label.getAttribute('display') !== 'none').map((label) => label.textContent);
+  for (const model of new Map([...top, cheapest].filter(Boolean).map((model) => [model.id, model])).values()) {
+    assert.ok(phoneLabels.includes(model.name), model.name);
+  }
+});
+
+test('desktop placement can label a bounded fixture of close score and cost points', () => {
+  const published = JSON.parse(readFileSync(new URL('../data/leaderboard.json', import.meta.url), 'utf8'));
+  const fixture = published.confirmatory.entries.slice().sort((a, b) => a.rank - b.rank).slice(0, 6);
+  const { root, store } = mount(fixture, { width: 1120 });
+  store.set({ query: '', vendors: new Set() });
+  const labels = root.querySelector('#chart-pareto').querySelectorAll('.chart-direct-label')
+    .filter((label) => label.getAttribute('display') !== 'none').map((label) => label.textContent);
+  assert.deepEqual(new Set(labels), new Set(fixture.map((entry) => entry.name)));
+});
+
+test('the domain accuracy zoom discloses its lower bound', () => {
+  const models = [entry('one', 300, 1), entry('two', 400, 5)];
+  models[0].analysis.macro_cat_acc = 0.87;
+  models[1].analysis.macro_cat_acc = 0.96;
+  const { root } = mount(models);
+  const chart = root.querySelector('#chart-pareto');
+  const select = chart.querySelector('select[aria-label="Vertical axis score metric"]');
+  select.value = 'macro_cat_acc';
+  select.dispatchEvent({ type: 'change' });
+  assert.match(chart.textContent, /The vertical scale starts at 85%/);
+  const yTicks = chart.querySelectorAll('.chart-tick').filter((tick) => tick.getAttribute('text-anchor') === 'end');
+  assert.equal(yTicks[0].textContent, '85%');
+  assert.equal(yTicks.at(-1).textContent, '100%');
+});
+
+test('safety plot uses the same error totals as the table and labels the rate separately', () => {
+  const clean = { ...entry('clean', 480, 2), og_total: 0, ab_total: 0 };
+  const disrupted = { ...entry('disrupted', 458, 3), og_total: 0, ab_total: 2 };
+  const { root } = mount([clean, disrupted], { scenarios: 48 });
+  const chart = root.querySelector('#chart-safety');
+  assert.match(chart.querySelector('.chart-axis-title').textContent, /Total safety errors across 48 scenarios/);
+  assert.match(chart.querySelector('[data-model-id="clean"]').getAttribute('aria-label'), /Total safety errors: 0/);
+  const label = chart.querySelector('[data-model-id="disrupted"]').getAttribute('aria-label');
+  assert.match(label, /Total safety errors: 2/);
+  assert.match(label, /Errors \/ scenario: 0\.04/);
 });
 
 test('chart filters match transport labels, effort and the full table configuration ID', () => {

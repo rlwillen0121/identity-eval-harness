@@ -36,11 +36,17 @@ export function heatmap(root, data, store, { title, subtitle, empty, columns, ra
     }
     const left = nameColumn(chartWidth, models);
     const rowH = 28;
-    const top = 34;
+    const top = columns.some((col) => col.lines?.length > 1) ? 43 : 34;
     const colW = (chartWidth - left - 16) / columns.length;
     const svg = svgCanvas(canvas, chartWidth, top + models.length * rowH + 12, title);
-    columns.forEach((col, i) => svg.append(text(left + (i + 0.5) * colW, 18, col.short,
-      { 'text-anchor': 'middle', class: 'chart-column-label' })));
+    columns.forEach((col, i) => {
+      const x = left + (i + 0.5) * colW;
+      const heading = text(x, 16, '', { 'text-anchor': 'middle', class: 'chart-column-label', 'aria-label': col.title });
+      (col.lines ?? [col.short]).forEach((line, index) => {
+        heading.append(el('tspan', { x, dy: index === 0 ? 0 : 13 }, [line]));
+      });
+      svg.append(heading);
+    });
 
     const rows = models.map((model, ri) => {
       const y = top + ri * rowH;

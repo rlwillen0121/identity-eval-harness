@@ -35,7 +35,7 @@ function compare(a, b, { key, dir }) {
 
 function detailMarkup(entry, scenarios) {
   const receipt = entry.probe_receipt_bound === undefined ? 'Status unavailable'
-    : entry.probe_receipt_bound ? 'Bound probe receipt' : 'No bound probe receipt';
+    : entry.probe_receipt_bound ? 'Verified for this run' : 'No check linked to this run';
   const fields = (pairs) => pairs.map(([label, value]) =>
     `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('');
   return `<tr role="row" class="detail-row"><td colspan="${columns.length}">
@@ -45,22 +45,23 @@ function detailMarkup(entry, scenarios) {
         ['Est. run cost', usd(sortValue(entry, 'cost'))], ['Time / task', duration(sortValue(entry, 'time'))],
       ])}</dl>
       <div class="detail-columns">
-        <div><h3>Run configuration</h3><dl class="detail-figures">${fields([
+        <div><h3>How the model ran</h3><dl class="detail-figures">${fields([
           ['Model ID', entry.model_id], ['Reasoning effort', effortLabel(entry.reasoning_effort)],
-          ['Connection', entry.transport], ['Context probe', receipt],
+          ['Connection', entry.transport], ['Model connection check', receipt],
         ])}</dl></div>
-        <div><h3>Scored outcomes</h3><dl class="detail-figures">${fields([
+        <div><h3>What happened</h3><dl class="detail-figures">${fields([
           ['Clean solves', `${int(entry.resolved_slots)}/${int(scenarios)}`],
-          ['Overgrants', int(entry.og_total)], ['Availability breaches', int(entry.ab_total)],
+          ['Excess access', int(entry.og_total)], ['Availability breaches', int(entry.ab_total)],
           ['Turn limits', int(entry.step_limit_slots)], ['Parse failures', int(entry.parse_failure_slots)],
           ['Refusals', int(entry.refusal_slots)],
         ])}</dl></div>
       </div>
-      ${entry.withheld_bundle_sha256 ? `<details class="tech-details"><summary>Withheld bundle SHA-256</summary><code>${esc(entry.withheld_bundle_sha256)}</code></details>` : ''}
+      ${entry.withheld_bundle_sha256 ? `<details class="tech-details"><summary>Private run record (SHA-256)</summary><code>${esc(entry.withheld_bundle_sha256)}</code></details>` : ''}
     </div></td></tr>`;
 }
 
-function rowMarkup(entry, scenarios, rankLabel, expanded) {
+function rowMarkup(entry, scenarios, rankLabel, expanded, mobileMetric) {
+  const visibleMetric = (key) => key === mobileMetric ? ' mobile-result' : '';
   const tokens = sortValue(entry, 'tokens');
   const cost = sortValue(entry, 'cost');
   const time = sortValue(entry, 'time');
@@ -72,11 +73,11 @@ function rowMarkup(entry, scenarios, rankLabel, expanded) {
       <button type="button" class="model-name" aria-label="${esc(entry.name)}, ${esc(effortLabel(entry.reasoning_effort))}, ${esc(entry.transport)}" aria-expanded="${expanded}"${expanded ? ` aria-controls="detail-${esc(entry.id)}"` : ''}>${esc(entry.name)}</button>
       <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))} effort</span>
     </td>
-    <td class="resolution-cell"><span class="score-value${score < 0 ? ' negative' : ''}">${pct(score, 2).replace('-', '−')}</span></td>
-    <td class="error-count">${int(errors)}</td>
-    <td class="usage-cell" title="${int(tokens)} total tokens">${compact(tokens)}</td>
-    <td class="usage-cell">${usd(cost)}</td>
-    <td class="usage-cell">${duration(time)}</td>
+    <td class="resolution-cell${visibleMetric('score')}"><span class="score-value${score < 0 ? ' negative' : ''}">${pct(score, 2).replace('-', '−')}</span></td>
+    <td class="error-count${visibleMetric('violations')}">${int(errors)}</td>
+    <td class="usage-cell${visibleMetric('tokens')}" title="${int(tokens)} total tokens">${compact(tokens)}</td>
+    <td class="usage-cell${visibleMetric('cost')}">${usd(cost)}</td>
+    <td class="usage-cell${visibleMetric('time')}">${duration(time)}</td>
   </tr>${expanded ? detailMarkup(entry, scenarios) : ''}`;
 }
 
@@ -123,14 +124,16 @@ export function mount(root, { entries, scenarios }, store) {
       const id = button.dataset.vendor;
       button.setAttribute('aria-pressed', String(id ? activeVendors.has(id) : !activeVendors.size));
     }
+    const mobileMetric = ['rank', 'name'].includes(sort.key) ? 'score' : sort.key;
     for (const header of root.querySelectorAll('th[data-key]')) {
+      header.classList.toggle('mobile-result', header.dataset.key === mobileMetric);
       const sorted = header.dataset.key === sort.key;
       if (sorted) header.setAttribute('aria-sort', sort.dir === 'asc' ? 'ascending' : 'descending');
       else header.removeAttribute('aria-sort');
       header.querySelector('.sort-indicator').textContent = sorted ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
     }
     body.innerHTML = filtered.map((entry) => rowMarkup(entry, scenarios,
-      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id)).join('')
+      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id, mobileMetric)).join('')
       || `<tr class="empty-row"><td colspan="${columns.length}">No configurations match these filters.</td></tr>`;
   }
 

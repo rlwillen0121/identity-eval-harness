@@ -98,6 +98,38 @@ function logAxis(metric, observedMin, observedMax) {
   return { domain: [min, max], ticks: selected };
 }
 
+function scoreAxis(metric, models) {
+  if (metric.id === 'macro_cat_acc') {
+    const observedMin = Math.min(...models.map((model) => model.scores[metric.id]));
+    const floor = Math.max(0, Math.floor(observedMin * 20) / 20);
+    const min = floor >= 1 ? 0.95 : floor;
+    return { min, count: 4, zoomed: min > 0 };
+  }
+  const min = Math.min(0, ...models.map((model) => Math.floor(4 * model.scores[metric.id]) / 4));
+  return { min, count: Math.min(8, Math.max(1, Math.ceil((1 - min) * 4))), zoomed: false };
+}
+
+function labelPlan(models, frontier, metric, width) {
+  const byRank = models.slice().sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
+  const cheapest = models.slice().sort((a, b) => valueOf(a, metric.field) - valueOf(b, metric.field))[0];
+  const priority = [...new Set([
+    ...byRank.slice(0, 2).map((model) => model.id),
+    ...(cheapest ? [cheapest.id] : []),
+    ...frontier.map((model) => model.id),
+    ...byRank.map((model) => model.id),
+  ])];
+  if (width >= 850) return { ids: new Set(models.map((model) => model.id)), priority, mode: 'direct' };
+  const directIds = new Set([
+    ...byRank.slice(0, 2).map((model) => model.id),
+    ...(cheapest ? [cheapest.id] : []),
+  ]);
+  const narrowIds = new Set([
+    ...directIds,
+    ...frontier.map((model) => model.id),
+  ]);
+  return { ids: narrowIds, directIds, priority, mode: 'frontier' };
+}
+
 export function mount(root, data, store) {
   const models = data.models || [];
   let metric = METRICS[0];
@@ -130,11 +162,11 @@ export function mount(root, data, store) {
     const observedMax = Math.max(...values);
     const { domain, ticks: xTicks } = logAxis(metric, observedMin, observedMax);
     const x = log(domain, [plot.left + 8, plot.right - 8]);
-    const minScore = Math.min(0, ...positive.map((m) => Math.floor(4 * m.scores[scoreMetric.id]) / 4));
-    const y = linear([minScore, 1], [plot.bottom, plot.top + 24]);
+    const yBounds = scoreAxis(scoreMetric, positive);
+    const y = linear([yBounds.min, 1], [plot.bottom, plot.top + 24]);
     const frontier = paretoFrontier(positive, scoreMetric.id, metric.field);
     const svg = svgCanvas(canvas, width, 352, `Scatter plot of ${scoreMetric.label.toLowerCase()} across 96 scenarios against ${metric.accessibleLabel.toLowerCase()} for ${positive.length} configurations.`);
-    yAxis(svg, plot, y, ticks(minScore, 1, Math.min(8, Math.max(1, Math.ceil((1 - minScore) * 4)))), (v) => pct(v, 0));
+    yAxis(svg, plot, y, ticks(yBounds.min, 1, yBounds.count), (v) => pct(v, 0));
     svg.append(text(plot.left, 12, scoreMetric.axisLabel, { class: 'chart-axis-title' }));
     for (const v of xTicks) {
       svg.append(
@@ -152,7 +184,8 @@ export function mount(root, data, store) {
       x: x(valueOf(m, metric.field)),
       y: y(m.scores[scoreMetric.id]),
       color: ids.has(m.id) ? 'var(--accent)' : 'var(--ink-2)',
-      opacity: ids.has(m.id) ? 1 : 0.65,
+      opacity: ids.has(m.id) ? 1 : 0.8,
+      radius: ids.has(m.id) ? 5.5 : 5,
       lines: [
         [scoreMetric.tooltipLabel(data.scenarios ?? 96), scoreMetric.format(m)],
         ...SCORE_METRICS.filter((score) => score.id !== scoreMetric.id).map((score) => [score.tooltipLabel(data.scenarios ?? 96), score.format(m)]),
@@ -161,7 +194,11 @@ export function mount(root, data, store) {
         ['Mean time per task', formatTaskTime(m.usage?.mean_task_time_s)],
       ],
     }));
-    const sync = scatter(svg, points, plot, store, tip, root, ids, { labelMode: 'frontier', obstacles: stepObstacles(frontierPoints, plot.right) });
+    const plan = labelPlan(positive, frontier, metric, width);
+    const sync = scatter(svg, points, plot, store, tip, root, plan.ids, {
+      labelMode: plan.mode, labelPriority: plan.priority, directLabelIds: plan.directIds,
+      obstacles: stepObstacles(frontierPoints, plot.right),
+    });
     return (state) => {
       line.setAttribute('opacity', state.hover ? 0.35 : 1);
       sync(state);
@@ -169,9 +206,19 @@ export function mount(root, data, store) {
   });
   const updateChartCopy = () => {
     const title = view.header.querySelector('.chart-title');
-    if (title) title.textContent = `${scoreMetric.label} vs. ${metric.title}`;
+    if (title) title.textContent = metric.id === 'cost' && scoreMetric.id === 'safety_adjusted_score'
+      ? 'What does a higher score cost?'
+      : `${scoreMetric.label} vs. ${metric.title}`;
     const caption = [...root.querySelectorAll('.chart-sub')].find((node) => node.parentNode === root);
-    if (caption) caption.textContent = `The line shows the best ${scoreMetric.frontierLabel} at or below each ${metric.frontierUnit} among plotted runs.`;
+    if (caption) {
+      const frontierCopy = `The line shows the best ${scoreMetric.frontierLabel} at or below each ${metric.frontierUnit} among plotted runs.`;
+      const currentModels = models.filter((model) => Number.isFinite(model.scores?.[scoreMetric.id]) &&
+        Number.isFinite(valueOf(model, metric.field)) && valueOf(model, metric.field) > 0);
+      const axis = currentModels.length ? scoreAxis(scoreMetric, currentModels) : { zoomed: false, min: 0 };
+      caption.textContent = axis.zoomed
+        ? `${frontierCopy} The vertical scale starts at ${pct(axis.min, 0)}.`
+        : frontierCopy;
+    }
   };
   const control = document.createElement('div');
   control.className = 'chart-controls';
@@ -213,6 +260,15 @@ export function mount(root, data, store) {
   scoreLabel.append(scoreSelect);
   control.append(switcher, scoreLabel);
   view.header.append(control);
+  const legend = document.createElement('div');
+  legend.className = 'chart-outcome-key chart-resource-legend';
+  legend.setAttribute('aria-label', 'Chart legend');
+  const legendItem = document.createElement('span');
+  const swatch = document.createElement('i');
+  swatch.className = 'chart-resource-swatch';
+  legendItem.append(swatch, document.createTextNode('Blue dots and the line show the best score reached so far.'));
+  legend.append(legendItem);
+  view.header.append(legend);
   updateChartCopy();
   return () => view.destroy();
 }
