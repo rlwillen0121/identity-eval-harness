@@ -40,7 +40,7 @@ function detailMarkup(entry) {
     : entry.probe_receipt_bound ? 'Bound probe receipt' : 'No bound probe receipt';
   const fields = (pairs) => pairs.map(([label, value]) =>
     `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('');
-  return `<tr class="detail-row"><td colspan="${columns.length}">
+  return `<tr role="row" class="detail-row"><td colspan="${columns.length}">
     <div class="model-detail" id="detail-${esc(entry.id)}" role="region" aria-label="${esc(entry.name)} run details">
       <div class="detail-columns">
         <div><h3>Run configuration</h3><dl class="detail-figures">${fields([
@@ -66,7 +66,7 @@ function rowMarkup(entry, scenarios, rankLabel, expanded) {
   const safety = errors
     ? `<span class="safety-badge ${errors >= 15 ? 'is-high' : 'is-warn'}">${int(errors)} error${errors === 1 ? '' : 's'}</span><span class="safety-sub">${int(entry.og_total)} excess, ${int(entry.ab_total)} broken</span>`
     : '<span class="safety-badge is-clean"><span aria-hidden="true">✓</span> 0 errors</span>';
-  return `<tr class="model-row${expanded ? ' is-selected' : ''}" id="model-${esc(entry.id)}" data-model-id="${esc(entry.id)}">
+  return `<tr role="row" class="model-row${expanded ? ' is-selected' : ''}" id="model-${esc(entry.id)}" data-model-id="${esc(entry.id)}">
     <td class="rank-cell">${esc(rankLabel)}</td>
     <td class="identity-cell">${vendorLogo(entry.vendor, entry.vendor_label)}
       <button type="button" class="model-name" aria-label="${esc(entry.name)}, ${esc(effortLabel(entry.reasoning_effort))}, ${esc(entry.transport)}" aria-expanded="${expanded}"${expanded ? ` aria-controls="detail-${esc(entry.id)}"` : ''}>${esc(entry.name)}</button>
@@ -104,10 +104,10 @@ export function mount(root, { entries, scenarios }, store) {
         <select class="sort-select" aria-label="Sort leaderboard">${columns.map(([key, label]) => `<option value="${key}">${key === 'rank' ? 'Rank' : label}</option>`).join('')}</select>
       </label>
     </div>
-    <table class="leaderboard-table explorer-table" aria-label="Full-suite leaderboard" aria-describedby="full-suite-summary">
+    <table role="table" class="leaderboard-table explorer-table" aria-label="Full-suite leaderboard" aria-describedby="full-suite-summary">
       <caption class="sr-only">Select a model to expand its run configuration and outcomes.</caption>
-      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"><button class="sort-button" type="button" data-sort="${key}" aria-label="Sort by ${title.toLowerCase()}" title="${title}">${label}<span class="sort-indicator" aria-hidden="true"></span></button></th>`).join('')}</tr></thead>
-      <tbody id="full-suite-rows"></tbody>
+      <thead><tr>${columns.map(([key, label, title]) => `<th scope="col" data-key="${key}"><button class="sort-button" type="button" data-sort="${key}" aria-label="Sort by ${title.toLowerCase()}" title="${title}">${label}<span class="sort-indicator" aria-hidden="true"></span></button><span class="mobile-heading">${title}</span></th>`).join('')}</tr></thead>
+      <tbody role="rowgroup" id="full-suite-rows"></tbody>
     </table>`;
 
   const body = root.querySelector('tbody');

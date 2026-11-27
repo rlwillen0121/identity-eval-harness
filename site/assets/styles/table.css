@@ -159,7 +159,7 @@
 .explorer-table tbody tr:last-child > td { border-bottom: 0; }
 .solve-meter { width: 42px; height: 4px; overflow: hidden; background: var(--grid); border-radius: 3px; }
 .solve-meter > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
-.mobile-sort, .metric-caption { display: none; }
+.mobile-sort, .metric-caption, .mobile-heading { display: none; }
 
 @media (min-width: 761px) and (max-width: 959px) {
   .explorer-table td, .explorer-table th { padding-inline: 7px; }
@@ -177,7 +177,9 @@
   .mobile-sort { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 4px; color: var(--ink-2); font-size: 12px; }
   .sort-select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 2px; }
   .explorer-table, .explorer-table tbody, .explorer-table .detail-row, .explorer-table .detail-row > td { display: block; }
-  .explorer-table thead { display: none; }
+  .explorer-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .explorer-table th .sort-button { display: none; }
+  .explorer-table .mobile-heading { display: inline; }
   .explorer-table .model-row { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center; gap: 3px 6px; border-top: 1px solid var(--rule); padding: 12px 14px; }
   .explorer-table .model-row > td { height: auto; border: 0; padding: 0; }
   .explorer-table .rank-cell { position: absolute; top: 16px; left: 12px; }
