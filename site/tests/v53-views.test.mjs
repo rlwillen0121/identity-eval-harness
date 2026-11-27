@@ -217,7 +217,7 @@ test('full-suite results and publication dates render independently of core rank
 
   const store = fillConfirmatory(root, report);
   assert.equal(root.querySelector('.full-suite-results').hidden, false);
-  assert.match(root.querySelector('#full-suite-summary').textContent, /96 private enterprise access scenarios/);
+  assert.match(root.querySelector('#full-suite-summary').textContent, /96 private scenarios at simulated organizations/);
   const row = root.querySelector('.model-row');
   assert.equal(row.querySelector('.rank-cell').textContent, '1');
   assert.match(row.textContent, /−1.25%/);
@@ -282,4 +282,30 @@ test('safety and score controls reorder the full runs while preserving their pub
   header.dispatchEvent({ type: 'click', target: score });
   const byAscendingScore = [...confirmatory.entries].sort((a, b) => a.safety_adjusted_score_tenths - b.safety_adjusted_score_tenths);
   assert.deepEqual(displayed(), idsAndRanks(byAscendingScore));
+});
+
+test('mobile sorting exposes the selected metric and its reversible column header', () => {
+  const dom = installDOM();
+  const { confirmatory } = buildFullSiteData();
+  const root = dom.root();
+  root.innerHTML = '<p id="full-suite-summary"></p><div class="full-suite-results"></div>';
+  fillConfirmatory(root, confirmatory);
+  const select = root.querySelector('.sort-select');
+  const header = root.querySelector('thead');
+  for (const sort of ['tokens', 'cost', 'time', 'violations', 'name', 'rank']) {
+    select.value = sort;
+    select.dispatchEvent({ type: 'change' });
+    const metric = ['rank', 'name'].includes(sort) ? 'score' : sort;
+    const visible = header.querySelector('.mobile-result');
+    assert.equal(visible.dataset.key, metric);
+    for (const row of root.querySelectorAll('.model-row')) {
+      assert.equal(row.querySelectorAll('.mobile-result').length, 1);
+      assert.equal(row.children.indexOf(row.querySelector('.mobile-result')), header.querySelectorAll('th').indexOf(visible));
+    }
+    if (sort === metric) {
+      assert.equal(visible.getAttribute('aria-sort'), 'ascending');
+      header.dispatchEvent({ type: 'click', target: visible.querySelector('button') });
+      assert.equal(visible.getAttribute('aria-sort'), 'descending');
+    }
+  }
 });

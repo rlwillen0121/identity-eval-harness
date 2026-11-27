@@ -60,7 +60,8 @@ function detailMarkup(entry, scenarios) {
     </div></td></tr>`;
 }
 
-function rowMarkup(entry, scenarios, rankLabel, expanded) {
+function rowMarkup(entry, scenarios, rankLabel, expanded, mobileMetric) {
+  const visibleMetric = (key) => key === mobileMetric ? ' mobile-result' : '';
   const tokens = sortValue(entry, 'tokens');
   const cost = sortValue(entry, 'cost');
   const time = sortValue(entry, 'time');
@@ -72,11 +73,11 @@ function rowMarkup(entry, scenarios, rankLabel, expanded) {
       <button type="button" class="model-name" aria-label="${esc(entry.name)}, ${esc(effortLabel(entry.reasoning_effort))}, ${esc(entry.transport)}" aria-expanded="${expanded}"${expanded ? ` aria-controls="detail-${esc(entry.id)}"` : ''}>${esc(entry.name)}</button>
       <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))} effort</span>
     </td>
-    <td class="resolution-cell"><span class="score-value${score < 0 ? ' negative' : ''}">${pct(score, 2).replace('-', '−')}</span></td>
-    <td class="error-count">${int(errors)}</td>
-    <td class="usage-cell" title="${int(tokens)} total tokens">${compact(tokens)}</td>
-    <td class="usage-cell">${usd(cost)}</td>
-    <td class="usage-cell">${duration(time)}</td>
+    <td class="resolution-cell${visibleMetric('score')}"><span class="score-value${score < 0 ? ' negative' : ''}">${pct(score, 2).replace('-', '−')}</span></td>
+    <td class="error-count${visibleMetric('violations')}">${int(errors)}</td>
+    <td class="usage-cell${visibleMetric('tokens')}" title="${int(tokens)} total tokens">${compact(tokens)}</td>
+    <td class="usage-cell${visibleMetric('cost')}">${usd(cost)}</td>
+    <td class="usage-cell${visibleMetric('time')}">${duration(time)}</td>
   </tr>${expanded ? detailMarkup(entry, scenarios) : ''}`;
 }
 
@@ -123,14 +124,16 @@ export function mount(root, { entries, scenarios }, store) {
       const id = button.dataset.vendor;
       button.setAttribute('aria-pressed', String(id ? activeVendors.has(id) : !activeVendors.size));
     }
+    const mobileMetric = ['rank', 'name'].includes(sort.key) ? 'score' : sort.key;
     for (const header of root.querySelectorAll('th[data-key]')) {
+      header.classList.toggle('mobile-result', header.dataset.key === mobileMetric);
       const sorted = header.dataset.key === sort.key;
       if (sorted) header.setAttribute('aria-sort', sort.dir === 'asc' ? 'ascending' : 'descending');
       else header.removeAttribute('aria-sort');
       header.querySelector('.sort-indicator').textContent = sorted ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
     }
     body.innerHTML = filtered.map((entry) => rowMarkup(entry, scenarios,
-      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id)).join('')
+      `${ranks.get(entry.rank) > 1 ? 'T' : ''}${int(entry.rank)}`, selected === entry.id, mobileMetric)).join('')
       || `<tr class="empty-row"><td colspan="${columns.length}">No configurations match these filters.</td></tr>`;
   }
 
