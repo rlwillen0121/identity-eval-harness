@@ -46,7 +46,7 @@ function detailMarkup(entry, scenarios) {
       ])}</dl>
       <div class="detail-columns">
         <div><h3>How the model ran</h3><dl class="detail-figures">${fields([
-          ['Model ID', entry.model_id], ['Reasoning effort', effortLabel(entry.reasoning_effort)],
+          ['Model ID', entry.model_id], ['Requested reasoning effort', effortLabel(entry.reasoning_effort)],
           ['Connection', entry.transport], ['Model connection check', receipt],
         ])}</dl></div>
         <div><h3>What happened</h3><dl class="detail-figures">${fields([
@@ -70,8 +70,8 @@ function rowMarkup(entry, scenarios, rankLabel, expanded, mobileMetric) {
   return `<tr role="row" class="model-row${expanded ? ' is-selected' : ''}" id="model-${esc(entry.id)}" data-model-id="${esc(entry.id)}">
     <td class="rank-cell">${esc(rankLabel)}</td>
     <td class="identity-cell">${vendorLogo(entry.vendor, entry.vendor_label)}
-      <button type="button" class="model-name" aria-label="${esc(entry.name)}, ${esc(effortLabel(entry.reasoning_effort))}, ${esc(entry.transport)}" aria-expanded="${expanded}"${expanded ? ` aria-controls="detail-${esc(entry.id)}"` : ''}>${esc(entry.name)}</button>
-      <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))} effort</span>
+      <button type="button" class="model-name" aria-label="${esc(entry.name)}, ${esc(effortLabel(entry.reasoning_effort))} effort requested, ${esc(entry.transport)}" aria-expanded="${expanded}"${expanded ? ` aria-controls="detail-${esc(entry.id)}"` : ''}>${esc(entry.name)}</button>
+      <span class="model-subline">${esc(entry.vendor_label)} · ${esc(effortLabel(entry.reasoning_effort))} effort requested</span>
     </td>
     <td class="resolution-cell${visibleMetric('score')}"><span class="score-value${score < 0 ? ' negative' : ''}">${pct(score, 2).replace('-', '−')}</span></td>
     <td class="error-count${visibleMetric('violations')}">${int(errors)}</td>
