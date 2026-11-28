@@ -1,0 +1,214 @@
+{
+  "schema": "identitybench-v52-pricing-table-v1",
+  "as_of": "2026-11-28",
+  "models": {
+    "claude-fable-5-2": {
+      "uncached_input_micros_per_million": 8000000,
+      "cached_input_micros_per_million": 200000,
+      "cache_write_micros_per_million": 10000000,
+      "output_micros_per_million": 40000000,
+      "reasoning_micros_per_million": 40000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-fable-5-1": {
+      "uncached_input_micros_per_million": 10000000,
+      "cached_input_micros_per_million": 250000,
+      "cache_write_micros_per_million": 12500000,
+      "output_micros_per_million": 50000000,
+      "reasoning_micros_per_million": 50000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-opus-5-5": {
+      "uncached_input_micros_per_million": 4000000,
+      "cached_input_micros_per_million": 200000,
+      "cache_write_micros_per_million": 5000000,
+      "output_micros_per_million": 20000000,
+      "reasoning_micros_per_million": 20000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-sonnet-5-5": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 100000,
+      "cache_write_micros_per_million": 2500000,
+      "output_micros_per_million": 10000000,
+      "reasoning_micros_per_million": 10000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-haiku-5-5": {
+      "uncached_input_micros_per_million": 100000,
+      "cached_input_micros_per_million": 10000,
+      "cache_write_micros_per_million": 125000,
+      "output_micros_per_million": 500000,
+      "reasoning_micros_per_million": 500000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "gpt-6.2-astra": {
+      "uncached_input_micros_per_million": 8000000,
+      "cached_input_micros_per_million": 400000,
+      "cache_write_micros_per_million": 10000000,
+      "output_micros_per_million": 40000000,
+      "reasoning_micros_per_million": 40000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-6.2-sol": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 100000,
+      "cache_write_micros_per_million": 2500000,
+      "output_micros_per_million": 10000000,
+      "reasoning_micros_per_million": 10000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-6.1-sol": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 100000,
+      "cache_write_micros_per_million": 2500000,
+      "output_micros_per_million": 10000000,
+      "reasoning_micros_per_million": 10000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-6.1-terra": {
+      "uncached_input_micros_per_million": 1000000,
+      "cached_input_micros_per_million": 50000,
+      "cache_write_micros_per_million": 1250000,
+      "output_micros_per_million": 5000000,
+      "reasoning_micros_per_million": 5000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-6-astra": {
+      "uncached_input_micros_per_million": 10000000,
+      "cached_input_micros_per_million": 1000000,
+      "cache_write_micros_per_million": 12500000,
+      "output_micros_per_million": 50000000,
+      "reasoning_micros_per_million": 50000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-6-sol": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 200000,
+      "cache_write_micros_per_million": 2500000,
+      "output_micros_per_million": 10000000,
+      "reasoning_micros_per_million": 10000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-6-luna": {
+      "uncached_input_micros_per_million": 100000,
+      "cached_input_micros_per_million": 10000,
+      "cache_write_micros_per_million": 125000,
+      "output_micros_per_million": 500000,
+      "reasoning_micros_per_million": 500000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-daybreak-blue-latest": {
+      "uncached_input_micros_per_million": 4000000,
+      "cached_input_micros_per_million": 400000,
+      "cache_write_micros_per_million": 5000000,
+      "output_micros_per_million": 20000000,
+      "reasoning_micros_per_million": 20000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-5.6-sol": {
+      "uncached_input_micros_per_million": 5000000,
+      "cached_input_micros_per_million": 500000,
+      "cache_write_micros_per_million": 6250000,
+      "output_micros_per_million": 30000000,
+      "reasoning_micros_per_million": 30000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-5.6-terra": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 200000,
+      "cache_write_micros_per_million": 2500000,
+      "output_micros_per_million": 12000000,
+      "reasoning_micros_per_million": 12000000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-5.6-luna": {
+      "uncached_input_micros_per_million": 200000,
+      "cached_input_micros_per_million": 20000,
+      "cache_write_micros_per_million": 250000,
+      "output_micros_per_million": 1200000,
+      "reasoning_micros_per_million": 1200000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gemini-4-carbon": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 100000,
+      "cache_write_micros_per_million": 2000000,
+      "output_micros_per_million": 10000000,
+      "reasoning_micros_per_million": 10000000,
+      "source_url": "https://aistudio.google.com/docs/pricing#gemini-4-carbon"
+    },
+    "gemini-4-argon": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 100000,
+      "cache_write_micros_per_million": 2000000,
+      "output_micros_per_million": 10000000,
+      "reasoning_micros_per_million": 10000000,
+      "source_url": "https://aistudio.google.com/docs/pricing#gemini-4-argon"
+    },
+    "gemini-4-neon": {
+      "uncached_input_micros_per_million": 3000000,
+      "cached_input_micros_per_million": 150000,
+      "cache_write_micros_per_million": 3000000,
+      "output_micros_per_million": 15000000,
+      "reasoning_micros_per_million": 15000000,
+      "source_url": "https://aistudio.google.com/docs/pricing#gemini-4-neon"
+    },
+    "gemini-4-hydrogen": {
+      "uncached_input_micros_per_million": 1500000,
+      "cached_input_micros_per_million": 75000,
+      "cache_write_micros_per_million": 1500000,
+      "output_micros_per_million": 7500000,
+      "reasoning_micros_per_million": 7500000,
+      "source_url": "https://aistudio.google.com/docs/pricing#gemini-4-hydrogen"
+    },
+    "gemini-3.8-flash": {
+      "uncached_input_micros_per_million": 750000,
+      "cached_input_micros_per_million": 75000,
+      "cache_write_micros_per_million": 750000,
+      "output_micros_per_million": 3750000,
+      "reasoning_micros_per_million": 3750000,
+      "source_url": "https://aistudio.google.com/docs/pricing#gemini-3.8-flash"
+    },
+    "deepseek/deepseek-v4.1-flash": {
+      "uncached_input_micros_per_million": 140000,
+      "cached_input_micros_per_million": 4200,
+      "cache_write_micros_per_million": 140000,
+      "output_micros_per_million": 420000,
+      "reasoning_micros_per_million": 420000,
+      "source_url": "https://openrouter.ai/deepseek/deepseek-v4.1-flash"
+    },
+    "grok-4.7": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 500000,
+      "cache_write_micros_per_million": 2000000,
+      "output_micros_per_million": 6000000,
+      "reasoning_micros_per_million": 6000000,
+      "source_url": "https://docs.x.ai/developers/pricing"
+    },
+    "grok-4.7-high": {
+      "uncached_input_micros_per_million": 2000000,
+      "cached_input_micros_per_million": 500000,
+      "cache_write_micros_per_million": 2000000,
+      "output_micros_per_million": 6000000,
+      "reasoning_micros_per_million": 6000000,
+      "source_url": "https://docs.x.ai/developers/pricing"
+    },
+    "hf:deepseek-ai/DeepSeek-V4.1-Flash-1017": {
+      "uncached_input_micros_per_million": 600000,
+      "cached_input_micros_per_million": 30000,
+      "cache_write_micros_per_million": 600000,
+      "output_micros_per_million": 1200000,
+      "reasoning_micros_per_million": 1200000,
+      "source_url": "https://synthetic.new/pricing/models"
+    },
+    "claude-haiku-4-5-20251001": {
+      "uncached_input_micros_per_million": 1000000,
+      "cached_input_micros_per_million": 100000,
+      "cache_write_micros_per_million": 1250000,
+      "output_micros_per_million": 5000000,
+      "reasoning_micros_per_million": 5000000,
+      "source_url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    }
+  }
+}
